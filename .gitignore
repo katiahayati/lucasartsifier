@@ -4,3 +4,4 @@ __pycache__/
 ir/*.json
 .venv/
 scratch/
+out/

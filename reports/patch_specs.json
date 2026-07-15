@@ -1,0 +1,50 @@
+[
+ {
+  "op": "add_guard",
+  "pattern": "irreversible-edge / LucasArts invariant",
+  "room": 26,
+  "newroom_target": 27,
+  "require_items": [
+   {
+    "id": 5,
+    "name": "Swimsuit"
+   },
+   {
+    "id": 8,
+    "name": "Grotesque_Gulp"
+   },
+   {
+    "id": 9,
+    "name": "Sunscreen"
+   }
+  ],
+  "guard_sexpr": "(and (gEgo has: 5) (gEgo has: 8) (gEgo has: 9))",
+  "rationale": "crossing rm26->rm27 strands Swimsuit, Grotesque_Gulp, Sunscreen (obtainable before, needed after, not gettable after)"
+ },
+ {
+  "op": "add_guard",
+  "pattern": "irreversible-edge / LucasArts invariant",
+  "room": 38,
+  "newroom_target": 131,
+  "require_items": [
+   {
+    "id": 11,
+    "name": "Fruit"
+   },
+   {
+    "id": 12,
+    "name": "Sewing_Kit"
+   },
+   {
+    "id": 13,
+    "name": "Spinach_Dip"
+   },
+   {
+    "id": 14,
+    "name": "Wig"
+   }
+  ],
+  "guard_sexpr": "(and (gEgo has: 11) (gEgo has: 12) (gEgo has: 13) (gEgo has: 14))",
+  "rationale": "crossing rm38->rm131 strands Fruit, Sewing_Kit, Spinach_Dip, Wig (obtainable before, needed after, not gettable after)"
+ }
+]

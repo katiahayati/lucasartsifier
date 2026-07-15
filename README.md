@@ -75,10 +75,26 @@ python3 src/discover.py
 Validation: `discover.py` checks its output against the hand-set `config.LSL2` and
 reproduces it (start ✓, every real timer ✓, goal cluster surfaced ✓).
 
+## Phase B — neutralizing softlocks (the LucasArts invariant)
+
+```bash
+python3 src/patch.py           # synthesize remedies from the frontier analysis
+python3 src/patch_sci0.py      # realize them as source edits -> out/patched_src/
+python3 src/validate_patch.py  # guard-aware regression: softlock-free & still winnable?
+```
+
+Fixes every detected softlock with one method: the **maximally-permissive supervisor of the
+winnability game** — *you can't cross an irreversible edge until you hold everything you'll
+need past it* (and forcing timers are deleted). Two auto-synthesized act-boundary guards
+neutralize all 10 LSL2 softlocks; `validate_patch.py` proves the patched game is
+softlock-free and still winnable. Details in `reports/lsl2_phaseB.md`.
+
 ## Status
-Phase A (static detection) is complete and reproducible. **Not engine-verified**
-yet (ScummVM-in-the-loop is a deferred future phase). Phase B (drop-in patches)
-is not started. See `PLAN.md`.
+- **Phase A** (static detection) — complete, reproducible, self-configuring.
+- **Phase B** (neutralization) — complete and validated *in-model*; shippable drop-in
+  binary (compile → loose `script.NNN`) is the remaining last-mile (SCI-compiler-on-Linux
+  spike).
+- **Not engine-verified** yet (ScummVM-in-the-loop is a deferred future phase). See `PLAN.md`.
 
 ## Input note
 The analyzer reads a **decompilation** (vendored from
