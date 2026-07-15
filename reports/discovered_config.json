@@ -1,0 +1,156 @@
+{
+ "timers": {
+  "timers": [
+   "gCurrentStatus",
+   "gCurrentTimer",
+   "gGameMinutes",
+   "gGameSeconds",
+   "gIslandStatus",
+   "gOldTime",
+   "gPastQuicksand",
+   "gRgTimer",
+   "gScore",
+   "gSecondsInRoom",
+   "gSpeed"
+  ],
+  "per_cycle_timers": [
+   "gCurrentStatus",
+   "gCurrentTimer",
+   "gGameMinutes",
+   "gGameSeconds",
+   "gOldTime",
+   "gPastQuicksand",
+   "gRgTimer",
+   "gSecondsInRoom"
+  ],
+  "stepped_timers": [
+   "gGameSeconds",
+   "gIslandStatus",
+   "gRgTimer",
+   "gScore",
+   "gSecondsInRoom",
+   "gSpeed"
+  ],
+  "evidence": "compared-in-guard AND (written per-cycle in a doit OR stepped ++/--)"
+ },
+ "start": {
+  "proposed": 11,
+  "start_act_rooms": [
+   10,
+   11,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17,
+   18,
+   19,
+   20,
+   21,
+   22,
+   23,
+   24,
+   25,
+   26,
+   99,
+   101,
+   102,
+   103,
+   104,
+   114,
+   115,
+   116,
+   118,
+   125
+  ],
+  "max_forward_reach": 85,
+  "evidence": "player-controlled room with ~maximal forward reachability"
+ },
+ "goal": {
+  "candidates_for_confirmation": [
+   {
+    "room": 75,
+    "victory_hits": 5,
+    "late": true,
+    "sink": false,
+    "is_death": false,
+    "rank": 7
+   },
+   {
+    "room": 104,
+    "victory_hits": 3,
+    "late": true,
+    "sink": false,
+    "is_death": false,
+    "rank": 5
+   },
+   {
+    "room": 77,
+    "victory_hits": 3,
+    "late": true,
+    "sink": false,
+    "is_death": false,
+    "rank": 5
+   },
+   {
+    "room": 114,
+    "victory_hits": 1,
+    "late": true,
+    "sink": false,
+    "is_death": false,
+    "rank": 3
+   },
+   {
+    "room": 181,
+    "victory_hits": 1,
+    "late": true,
+    "sink": false,
+    "is_death": false,
+    "rank": 3
+   },
+   {
+    "room": 78,
+    "victory_hits": 1,
+    "late": true,
+    "sink": false,
+    "is_death": false,
+    "rank": 3
+   },
+   {
+    "room": 33,
+    "victory_hits": 1,
+    "late": false,
+    "sink": false,
+    "is_death": false,
+    "rank": 1
+   },
+   {
+    "room": 42,
+    "victory_hits": 1,
+    "late": false,
+    "sink": false,
+    "is_death": false,
+    "rank": 1
+   }
+  ],
+  "death_rooms_detected": [
+   90,
+   91,
+   92,
+   93
+  ],
+  "evidence": "victory text + late/sink structure, minus death modal"
+ },
+ "region_labels": {
+  "200": "airport",
+  "7": "cruise ship",
+  "300": "cruise ship",
+  "8": "cruise ship",
+  "400": "airport",
+  "401": "airport",
+  "500": "airport",
+  "600": "airplane",
+  "700": "island"
+ }
+}

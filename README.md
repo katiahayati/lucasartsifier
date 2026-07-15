@@ -53,17 +53,27 @@ one place, `src/config.py`:
 To target another SCI0 game, point `config.ACTIVE` at a new `GameConfig`.
 
 ### Auto-discovering the config
-These knobs are set once per game today, but most are discoverable, not
-fundamental:
-- **Timers** — already a static pattern (a global incremented per cycle in `doit`
-  and compared to a threshold); `analyze.py` detects them, so `timer_globals`
-  could be replaced by that detection.
-- **Start room** — the source of the SCC condensation DAG (earliest act that
-  reaches all others), or traced from the game's `init`/first `HandsOn`.
-- **Goal** — proposed from heuristics (a reachable non-death terminal with
-  ending/credits text, a sink in the act-DAG, the max-score award) and then
-  **confirmed once by a human** — the plan's single intended manual step.
-- **Region labels** — cosmetic only; the analysis uses region numbers.
+`src/discover.py` performs this automatically and emits a *proposed* config
+(`reports/discovered_config.json` + a paste-able snippet):
+
+```bash
+python3 src/discover.py
+```
+
+- **Timers** — globals compared in a guard that are also driven like a clock
+  (written per-cycle in a `doit`, or stepped `++`/`--`). Finds every real LSL2
+  timer, incl. the *countdown* `gRgTimer` — no human input.
+- **Start room** — the player-controlled room whose forward reach covers ~every
+  other room (the source act). Recovers the LA act; hand-set `rm21` is in it.
+- **Goal** — rooms ranked by victory text + late/sink structure, minus the death
+  modal. Surfaces the wedding cluster (rm75/77/78) and, tellingly, the *intermediate*
+  lottery "win" (rm104) — which is why the final pick is **confirmed once by a
+  human** (the plan's single intended manual step).
+- **Region labels** — cosmetic only; best-effort and the noisiest of the four
+  (the analysis itself uses region numbers, so this doesn't affect results).
+
+Validation: `discover.py` checks its output against the hand-set `config.LSL2` and
+reproduces it (start ✓, every real timer ✓, goal cluster surfaced ✓).
 
 ## Status
 Phase A (static detection) is complete and reproducible. **Not engine-verified**
