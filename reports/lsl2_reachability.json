@@ -1,0 +1,360 @@
+{
+ "method": "SCC-condensation + goal-aware frontier (tractable exact reachability)",
+ "note": "Naive product-state BFS over (room, item-subset, flag-subset) is intractable here (21 winnability items => 2^21 subsets; hits the state cap). SCC condensation collapses freely-explorable room sets into a DAG of acts whose one-way edges are the true points of no return.",
+ "coi_slice": {
+  "items": 21,
+  "of_items": 32,
+  "flags": 43,
+  "of_globals": 480
+ },
+ "rooms": 100,
+ "sccs": 30,
+ "acts_freely_explorable": [
+  {
+   "component": 4,
+   "size": 37,
+   "rooms": [
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    61,
+    62,
+    63,
+    64,
+    65,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78,
+    79,
+    80,
+    81,
+    82,
+    83,
+    84,
+    85,
+    90,
+    91,
+    92,
+    93,
+    151,
+    152,
+    181
+   ]
+  },
+  {
+   "component": 13,
+   "size": 25,
+   "rooms": [
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    101,
+    102,
+    103,
+    104,
+    114,
+    115,
+    116,
+    118,
+    125
+   ]
+  },
+  {
+   "component": 10,
+   "size": 9,
+   "rooms": [
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    134
+   ]
+  },
+  {
+   "component": 7,
+   "size": 3,
+   "rooms": [
+    41,
+    42,
+    47
+   ]
+  }
+ ],
+ "goal_rooms": [
+  75,
+  76,
+  77,
+  78,
+  178
+ ],
+ "start_room": 21,
+ "softlock_candidates": [
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 5,
+   "item_name": "Swimsuit",
+   "need_component_id": 10,
+   "need_rooms_sample": [
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38
+   ],
+   "need_region": [
+    "7=interior/overlay",
+    "8=interior/overlay",
+    "300=cruise ship / voyage"
+   ],
+   "source_rooms": [
+    116
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm26->rm27"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 8,
+   "item_name": "Grotesque_Gulp",
+   "need_component_id": 8,
+   "need_rooms_sample": [
+    138
+   ],
+   "need_region": [],
+   "source_rooms": [
+    114
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm26->rm27"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 9,
+   "item_name": "Sunscreen",
+   "need_component_id": 9,
+   "need_rooms_sample": [
+    131
+   ],
+   "need_region": [
+    "300=cruise ship / voyage"
+   ],
+   "source_rooms": [
+    118
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm26->rm27"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 9,
+   "item_name": "Sunscreen",
+   "need_component_id": 10,
+   "need_rooms_sample": [
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38
+   ],
+   "need_region": [
+    "7=interior/overlay",
+    "8=interior/overlay",
+    "300=cruise ship / voyage"
+   ],
+   "source_rooms": [
+    118
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm26->rm27"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 11,
+   "item_name": "Fruit",
+   "need_component_id": 8,
+   "need_rooms_sample": [
+    138
+   ],
+   "need_region": [],
+   "source_rooms": [
+    32
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm34->rm95",
+    "rm35->rm95",
+    "rm35->rm96",
+    "rm38->rm131"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 11,
+   "item_name": "Fruit",
+   "need_component_id": 9,
+   "need_rooms_sample": [
+    131
+   ],
+   "need_region": [
+    "300=cruise ship / voyage"
+   ],
+   "source_rooms": [
+    32
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm34->rm95",
+    "rm35->rm95",
+    "rm35->rm96",
+    "rm38->rm131"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 12,
+   "item_name": "Sewing_Kit",
+   "need_component_id": 8,
+   "need_rooms_sample": [
+    138
+   ],
+   "need_region": [],
+   "source_rooms": [
+    33
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm34->rm95",
+    "rm35->rm95",
+    "rm35->rm96",
+    "rm38->rm131"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 13,
+   "item_name": "Spinach_Dip",
+   "need_component_id": 8,
+   "need_rooms_sample": [
+    138
+   ],
+   "need_region": [],
+   "source_rooms": [
+    35
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm34->rm95",
+    "rm35->rm95",
+    "rm35->rm96",
+    "rm38->rm131"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 13,
+   "item_name": "Spinach_Dip",
+   "need_component_id": 9,
+   "need_rooms_sample": [
+    131
+   ],
+   "need_region": [
+    "300=cruise ship / voyage"
+   ],
+   "source_rooms": [
+    35
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm34->rm95",
+    "rm35->rm95",
+    "rm35->rm96",
+    "rm38->rm131"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 14,
+   "item_name": "Wig",
+   "need_component_id": 9,
+   "need_rooms_sample": [
+    131
+   ],
+   "need_region": [
+    "300=cruise ship / voyage"
+   ],
+   "source_rooms": [
+    37
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm34->rm95",
+    "rm35->rm95",
+    "rm35->rm96",
+    "rm38->rm131"
+   ],
+   "goal_still_reachable_from_need": true
+  }
+ ]
+}

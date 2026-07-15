@@ -1,0 +1,850 @@
+{
+ "goal_death": {
+  "death_terminal_rooms": [],
+  "ending_terminal_rooms": [],
+  "other_terminal_rooms": [
+   5,
+   7,
+   8,
+   9,
+   40,
+   86,
+   95,
+   96,
+   200,
+   300,
+   400,
+   401,
+   500,
+   600,
+   700
+  ]
+ },
+ "items": {
+  "0": "NoInv",
+  "1": "Dollar_Bill",
+  "2": "Lottery_Ticket",
+  "3": "Cruise_Ticket",
+  "4": "Million_Dollar_Bill",
+  "5": "Swimsuit",
+  "6": "Wad_O__Dough",
+  "7": "Passport",
+  "8": "Grotesque_Gulp",
+  "9": "Sunscreen",
+  "10": "Onklunk",
+  "11": "Fruit",
+  "12": "Sewing_Kit",
+  "13": "Spinach_Dip",
+  "14": "Wig",
+  "15": "Bikini_Top",
+  "16": "Bikini_Bottom",
+  "17": "Knife",
+  "18": "Soap",
+  "19": "Matches",
+  "20": "Flower",
+  "21": "Hair_Rejuvenator",
+  "22": "Suitcase",
+  "23": "Airline_Ticket",
+  "24": "Parachute",
+  "25": "Bobby_Pin",
+  "26": "Pamphlet",
+  "27": "Airsick_Bag",
+  "28": "Stout_Stick",
+  "29": "Vine",
+  "30": "Ashes",
+  "31": "Sand"
+ },
+ "n_globals": 480,
+ "item_sources": {
+  "Dollar_Bill": [
+   23
+  ],
+  "Lottery_Ticket": [
+   114
+  ],
+  "Cruise_Ticket": [
+   102
+  ],
+  "Million_Dollar_Bill": [
+   104
+  ],
+  "Swimsuit": [
+   116
+  ],
+  "Wad_O__Dough": [
+   116
+  ],
+  "Passport": [
+   23
+  ],
+  "Grotesque_Gulp": [
+   114
+  ],
+  "Sunscreen": [
+   118
+  ],
+  "Onklunk": [
+   115
+  ],
+  "Fruit": [
+   32
+  ],
+  "Sewing_Kit": [
+   33
+  ],
+  "Spinach_Dip": [
+   35
+  ],
+  "Wig": [
+   37
+  ],
+  "Bikini_Top": [
+   134
+  ],
+  "Bikini_Bottom": [
+   41
+  ],
+  "Knife": [
+   43
+  ],
+  "Soap": [
+   44
+  ],
+  "Matches": [
+   44,
+   82
+  ],
+  "Flower": [
+   40
+  ],
+  "Hair_Rejuvenator": [
+   82,
+   151
+  ],
+  "Suitcase": [
+   54
+  ],
+  "Airline_Ticket": [
+   52
+  ],
+  "Parachute": [
+   55
+  ],
+  "Bobby_Pin": [
+   55
+  ],
+  "Pamphlet": [
+   57
+  ],
+  "Airsick_Bag": [
+   62,
+   82
+  ],
+  "Stout_Stick": [
+   71
+  ],
+  "Vine": [
+   74
+  ],
+  "Ashes": [
+   77
+  ],
+  "Sand": [
+   75
+  ]
+ },
+ "item_required_at": {
+  "Lottery_Ticket": [
+   200
+  ],
+  "Swimsuit": [
+   32
+  ],
+  "Wad_O__Dough": [
+   114,
+   118,
+   125
+  ],
+  "Grotesque_Gulp": [
+   0,
+   138
+  ],
+  "Sunscreen": [
+   118,
+   300
+  ],
+  "Onklunk": [
+   0
+  ],
+  "Fruit": [
+   138,
+   300
+  ],
+  "Sewing_Kit": [
+   138
+  ],
+  "Spinach_Dip": [
+   131,
+   138,
+   300
+  ],
+  "Wig": [
+   131
+  ],
+  "Bikini_Top": [
+   44
+  ],
+  "Bikini_Bottom": [
+   44
+  ],
+  "Soap": [
+   44
+  ],
+  "Matches": [
+   0,
+   82
+  ],
+  "Hair_Rejuvenator": [
+   0,
+   63,
+   81,
+   82
+  ],
+  "Parachute": [
+   63
+  ],
+  "Bobby_Pin": [
+   63
+  ],
+  "Pamphlet": [
+   62
+  ],
+  "Airsick_Bag": [
+   82,
+   600
+  ],
+  "Stout_Stick": [
+   700
+  ],
+  "Vine": [
+   700
+  ],
+  "Ashes": [
+   81,
+   700
+  ],
+  "Sand": [
+   81
+  ]
+ },
+ "item_reversible_drop": {
+  "Dollar_Bill": [
+   114
+  ],
+  "Lottery_Ticket": [
+   101,
+   200
+  ],
+  "Cruise_Ticket": [
+   26
+  ],
+  "Million_Dollar_Bill": [
+   116
+  ],
+  "Swimsuit": [
+   42
+  ],
+  "Wad_O__Dough": [
+   71
+  ],
+  "Passport": [
+   71
+  ],
+  "Grotesque_Gulp": [
+   0,
+   138
+  ],
+  "Sunscreen": [
+   42,
+   118
+  ],
+  "Onklunk": [
+   71
+  ],
+  "Fruit": [
+   42,
+   138,
+   300
+  ],
+  "Sewing_Kit": [
+   42
+  ],
+  "Spinach_Dip": [
+   131,
+   138,
+   300
+  ],
+  "Wig": [
+   42
+  ],
+  "Knife": [
+   71
+  ],
+  "Matches": [
+   0,
+   82
+  ],
+  "Flower": [
+   50
+  ],
+  "Hair_Rejuvenator": [
+   0,
+   63,
+   81,
+   82
+  ],
+  "Suitcase": [
+   52
+  ],
+  "Airline_Ticket": [
+   61
+  ],
+  "Parachute": [
+   0,
+   71
+  ],
+  "Bobby_Pin": [
+   63
+  ],
+  "Pamphlet": [
+   62
+  ],
+  "Airsick_Bag": [
+   82,
+   600
+  ],
+  "Stout_Stick": [
+   72,
+   700
+  ],
+  "Vine": [
+   79,
+   700
+  ],
+  "Ashes": [
+   81,
+   700
+  ],
+  "Sand": [
+   81
+  ]
+ },
+ "irreversible_global_latches": {
+  "global56": [
+   "1"
+  ],
+  "gVolume": [
+   "15"
+  ],
+  "gPossibleScore": [
+   "500"
+  ],
+  "gFilthLevel": [
+   "4"
+  ],
+  "gDebugging": [
+   "1"
+  ],
+  "gScoredRm102Sit": [
+   "1"
+  ],
+  "gScoredSunscreen": [
+   "1"
+  ],
+  "gLAhaircut": [
+   "1"
+  ],
+  "gScoredKnothole": [
+   "1"
+  ],
+  "gWearingWig": [
+   "1"
+  ],
+  "gLAhenchAfterEgo": [
+   "1"
+  ],
+  "gScoredRosella": [
+   "1"
+  ],
+  "gBombStatus": [
+   "1",
+   "2",
+   "3"
+  ],
+  "gScoredJogger": [
+   "1"
+  ],
+  "gWearingSunscreen": [
+   "1",
+   "2",
+   "3"
+  ],
+  "gScoredWoreSunscreen": [
+   "1"
+  ],
+  "gReappliedSunscreen": [
+   "1"
+  ],
+  "gScoredChaise": [
+   "1"
+  ],
+  "gLoweredLifeboats": [
+   "1"
+  ],
+  "gScoredLifeboat": [
+   "1"
+  ],
+  "gRmAfter40": [
+   "42",
+   "43"
+  ],
+  "gTalkedToMD": [
+   "1"
+  ],
+  "gScoredRm43Sit": [
+   "1"
+  ],
+  "gBodyWaxed": [
+   "1"
+  ],
+  "gConfusedKrishnas": [
+   "1"
+  ],
+  "gSeenCustomsJoke": [
+   "1"
+  ],
+  "gBoreStatus": [
+   "255"
+  ],
+  "gAirplaneDoorStatus": [
+   "1",
+   "2",
+   "3"
+  ],
+  "gSnakeState": [
+   "1",
+   "2",
+   "3"
+  ],
+  "gPastQuicksand": [
+   "1"
+  ],
+  "gPastPiranha": [
+   "1"
+  ]
+ },
+ "timed_edges": [
+  {
+   "room": 0,
+   "context": "LSL2:doit",
+   "timer_guard": [
+    "gRgTimer>0"
+   ],
+   "effects": [
+    "set(gRgTimer=--)"
+   ]
+  },
+  {
+   "room": 200,
+   "context": "rm200:doit",
+   "timer_guard": [
+    "gCurrentTimer==1"
+   ],
+   "effects": [
+    "set(gCurrentStatus=1001)"
+   ]
+  },
+  {
+   "room": 200,
+   "context": "rm200:doit",
+   "timer_guard": [
+    "gCurrentTimer==1"
+   ],
+   "effects": [
+    "set(gCurrentTimer=0)"
+   ]
+  },
+  {
+   "room": 200,
+   "context": "rm200:doit",
+   "timer_guard": [
+    "gGameSeconds==1"
+   ],
+   "effects": [
+    "set(gGameSeconds=++)"
+   ]
+  },
+  {
+   "room": 200,
+   "context": "<room doit ticks a timer>",
+   "timer_guard": [
+    "increments gCurrentTimer,gGameSeconds"
+   ],
+   "effects": []
+  },
+  {
+   "room": 300,
+   "context": "rm300:doit",
+   "timer_guard": [
+    "gCurrentTimer==3"
+   ],
+   "effects": [
+    "set(gCurrentStatus=1001)"
+   ]
+  },
+  {
+   "room": 300,
+   "context": "rm300:doit",
+   "timer_guard": [
+    "gCurrentTimer==3"
+   ],
+   "effects": [
+    "set(gCurrentTimer=0)"
+   ]
+  },
+  {
+   "room": 32,
+   "context": "rm32:init",
+   "timer_guard": [
+    "gCurrentTimer==2"
+   ],
+   "effects": [
+    "set(gCurrentStatus=1000)"
+   ]
+  },
+  {
+   "room": 500,
+   "context": "rm500:doit",
+   "timer_guard": [
+    "gCurrentTimer==4"
+   ],
+   "effects": [
+    "set(gCurrentStatus=1001)"
+   ]
+  },
+  {
+   "room": 500,
+   "context": "rm500:doit",
+   "timer_guard": [
+    "gCurrentTimer==4"
+   ],
+   "effects": [
+    "set(gCurrentTimer=0)"
+   ]
+  },
+  {
+   "room": 600,
+   "context": "rm600:doit",
+   "timer_guard": [
+    "gCurrentTimer==5"
+   ],
+   "effects": [
+    "set(gCurrentStatus=1001)"
+   ]
+  },
+  {
+   "room": 600,
+   "context": "rm600:doit",
+   "timer_guard": [
+    "gCurrentTimer==5"
+   ],
+   "effects": [
+    "set(gCurrentTimer=0)"
+   ]
+  },
+  {
+   "room": 600,
+   "context": "rm600:doit",
+   "timer_guard": [
+    "gCurrentTimer==5",
+    "gRgTimer==300"
+   ],
+   "effects": [
+    "set(gRgTimer=--)"
+   ]
+  },
+  {
+   "room": 62,
+   "context": "rm62Script:doit",
+   "timer_guard": [
+    "gCurrentTimer==5"
+   ],
+   "effects": [
+    "set(gCurrentStatus=1000)"
+   ]
+  },
+  {
+   "room": 62,
+   "context": "rm62Script:doit",
+   "timer_guard": [
+    "gCurrentTimer==5"
+   ],
+   "effects": [
+    "set(gCurrentTimer=0)"
+   ]
+  }
+ ],
+ "softlock_candidates": [
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 16,
+   "item_name": "Bikini_Bottom",
+   "needed_at_script": 44,
+   "needed_where": "rm44",
+   "need_region": [
+    "400=Nontoonyt Island"
+   ],
+   "source_rooms": [
+    "rm41"
+   ],
+   "source_region": [
+    "8=interior/overlay",
+    "401=island"
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm34->rm95",
+    "rm35->rm95",
+    "rm35->rm96",
+    "rm41->rm95",
+    "rm42->rm40",
+    "rm47->rm48"
+   ],
+   "confidence": "high",
+   "note": "no source reachable once the need-location is reached (point of no return)"
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 15,
+   "item_name": "Bikini_Top",
+   "needed_at_script": 44,
+   "needed_where": "rm44",
+   "need_region": [
+    "400=Nontoonyt Island"
+   ],
+   "source_rooms": [
+    "rm134"
+   ],
+   "source_region": [
+    "300=cruise ship / voyage"
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm34->rm95",
+    "rm35->rm95",
+    "rm35->rm96",
+    "rm38->rm131"
+   ],
+   "confidence": "high",
+   "note": "no source reachable once the need-location is reached (point of no return)"
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 9,
+   "item_name": "Sunscreen",
+   "needed_at_script": 300,
+   "needed_where": "rm300",
+   "need_region": [
+    "8=interior/overlay",
+    "300=cruise ship / voyage"
+   ],
+   "source_rooms": [
+    "rm118"
+   ],
+   "source_region": [
+    "200=Los Angeles"
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm26->rm27"
+   ],
+   "confidence": "high",
+   "note": "no source reachable once the need-location is reached (point of no return)"
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 5,
+   "item_name": "Swimsuit",
+   "needed_at_script": 32,
+   "needed_where": "rm32",
+   "need_region": [
+    "300=cruise ship / voyage"
+   ],
+   "source_rooms": [
+    "rm116"
+   ],
+   "source_region": [
+    "200=Los Angeles"
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm26->rm27"
+   ],
+   "confidence": "high",
+   "note": "no source reachable once the need-location is reached (point of no return)"
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 14,
+   "item_name": "Wig",
+   "needed_at_script": 131,
+   "needed_where": "rm131",
+   "need_region": [
+    "300=cruise ship / voyage"
+   ],
+   "source_rooms": [
+    "rm37"
+   ],
+   "source_region": [
+    "7=interior/overlay"
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm34->rm95",
+    "rm35->rm95",
+    "rm35->rm96",
+    "rm38->rm131"
+   ],
+   "confidence": "high",
+   "note": "no source reachable once the need-location is reached (point of no return)"
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 11,
+   "item_name": "Fruit",
+   "needed_at_script": 138,
+   "needed_where": "rm138",
+   "need_region": [],
+   "source_rooms": [
+    "rm32"
+   ],
+   "source_region": [
+    "300=cruise ship / voyage"
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm34->rm95",
+    "rm35->rm95",
+    "rm35->rm96",
+    "rm38->rm131"
+   ],
+   "confidence": "medium",
+   "note": "no source reachable once the need-location is reached (point of no return)"
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 8,
+   "item_name": "Grotesque_Gulp",
+   "needed_at_script": 138,
+   "needed_where": "rm138",
+   "need_region": [],
+   "source_rooms": [
+    "rm114"
+   ],
+   "source_region": [
+    "200=Los Angeles"
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm26->rm27"
+   ],
+   "confidence": "medium",
+   "note": "no source reachable once the need-location is reached (point of no return)"
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 12,
+   "item_name": "Sewing_Kit",
+   "needed_at_script": 138,
+   "needed_where": "rm138",
+   "need_region": [],
+   "source_rooms": [
+    "rm33"
+   ],
+   "source_region": [
+    "300=cruise ship / voyage"
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm34->rm95",
+    "rm35->rm95",
+    "rm35->rm96",
+    "rm38->rm131"
+   ],
+   "confidence": "medium",
+   "note": "no source reachable once the need-location is reached (point of no return)"
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 13,
+   "item_name": "Spinach_Dip",
+   "needed_at_script": 131,
+   "needed_where": "rm131",
+   "need_region": [
+    "300=cruise ship / voyage"
+   ],
+   "source_rooms": [
+    "rm35"
+   ],
+   "source_region": [
+    "8=interior/overlay",
+    "300=cruise ship / voyage"
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm34->rm95",
+    "rm35->rm95",
+    "rm35->rm96",
+    "rm38->rm131"
+   ],
+   "confidence": "medium",
+   "note": "no source reachable once the need-location is reached (point of no return)"
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 13,
+   "item_name": "Spinach_Dip",
+   "needed_at_script": 138,
+   "needed_where": "rm138",
+   "need_region": [],
+   "source_rooms": [
+    "rm35"
+   ],
+   "source_region": [
+    "8=interior/overlay",
+    "300=cruise ship / voyage"
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm34->rm95",
+    "rm35->rm95",
+    "rm35->rm96",
+    "rm38->rm131"
+   ],
+   "confidence": "medium",
+   "note": "no source reachable once the need-location is reached (point of no return)"
+  }
+ ],
+ "movement_rooms": 100,
+ "movement_edges": 171
+}

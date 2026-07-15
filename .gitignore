@@ -1,0 +1,6 @@
+vendor/
+__pycache__/
+*.pyc
+ir/*.json
+.venv/
+scratch/
