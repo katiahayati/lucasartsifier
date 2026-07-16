@@ -5,3 +5,4 @@ ir/*.json
 .venv/
 scratch/
 out/
+tools/scicompile/build/
