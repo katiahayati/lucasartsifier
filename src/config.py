@@ -50,6 +50,19 @@ LSL2 = GameConfig(
     },
 )
 
+KQ4 = GameConfig(
+    name="King's Quest IV: The Perils of Rosella (v1.006.004, SCI0, DOS/English)",
+    src_dir=os.path.join(_ROOT, "vendor", "sci-decomp-archive", "kq4", "SRC"),
+    # discover.py proposed start=23; goal confirmed as the Daventry ending where
+    # Rosella cures King Graham (rm694, grahamFace; reached rm693->694, after
+    # gamePhase=endGame(99) is set in rm92 when Lolotte dies).
+    start_room=23,
+    goal_rooms=frozenset({693, 694}),
+    goal_scripts=(693, 694),
+    timer_globals=frozenset({"gameHours", "gameMinutes"}),   # the day/night deadline clock
+    region_labels={},
+)
+
 # The config the pipeline runs against. Swap this (or set it from run.py) to target
 # a different game.
 ACTIVE = LSL2

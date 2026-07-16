@@ -58,7 +58,7 @@ class SexprError(Exception):
     pass
 
 
-_DELIMS = "(){}';"
+_DELIMS = "(){}';\""
 _WS = " \t\r\n\f"
 
 
@@ -96,6 +96,9 @@ class _Lexer:
             if c == "{":  # brace string, honoring backslash escapes
                 yield ("atom", self._read_delimited("{", "}", Str))
                 continue
+            if c == '"':  # EricOakford-dialect double-quote string, e.g. name "Magic Hen"
+                yield ("atom", self._read_delimited('"', '"', Str))
+                continue
             if c == "'":  # Said spec (opaque: may contain parens, commas, slashes)
                 yield ("atom", self._read_delimited("'", "'", Said))
                 continue
@@ -103,6 +106,9 @@ class _Lexer:
             j = self.i
             while j < n and s[j] not in _WS and s[j] not in _DELIMS:
                 j += 1
+            if j == self.i:  # at an unhandled delimiter (e.g. a stray '}'): skip it, never spin
+                self.i += 1
+                continue
             raw = s[self.i:j]
             self.i = j
             yield ("atom", self._classify(raw))

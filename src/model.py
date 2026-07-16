@@ -121,12 +121,22 @@ class Game:
     items: dict                      # index -> name
     scripts: dict                    # num -> Script
     name_by_num: dict                # script num -> name (from game.ini)
+    item_ids: dict = field(default_factory=dict)   # item-constant name -> number
 
     def item_name(self, i):
         return self.items.get(i, f"item{i}")
 
     def is_global(self, name):
         return name in self.globals
+
+    def resolve_item(self, a0):
+        """Item reference -> number. Accepts a raw int (sluicebox `has: 3`) or an
+        item-constant Sym (EricOakford `has: iMagicHen`, resolved via game.sh)."""
+        if isinstance(a0, int):
+            return a0
+        if isinstance(a0, Sym) and a0.name in self.item_ids:
+            return self.item_ids[a0.name]
+        return None
 
 
 # --------------------------------------------------------------------------
@@ -164,6 +174,22 @@ def _parse_items(main_forms):
             items[idx] = f[1].name
             idx += 1
     return items
+
+
+def _parse_item_enum(src_dir):
+    """EricOakford dialect: game.sh declares the inventory as an enum `iName ;N`.
+    Returns ({num: name}, {name: num}); empty dicts if there is no such enum. This
+    is how KQ4 (and LSL2's EricOakford tree) number items -- guards then reference
+    the named constant, e.g. `(ego has: iMagicHen)`, not a raw integer."""
+    import re
+    items, name2num = {}, {}
+    gsh = os.path.join(src_dir, "game.sh")
+    if os.path.exists(gsh):
+        for name, num in re.findall(r"(i[A-Za-z0-9_]+)\s*;\s*(\d+)",
+                                    open(gsh, encoding="latin-1").read()):
+            items[int(num)] = name
+            name2num[name] = int(num)
+    return items, name2num
 
 
 def _parse_game_ini(src_dir):
@@ -235,9 +261,11 @@ def _norm_guard(expr, game, want=True, out=None):
     if len(expr) >= 2 and isinstance(expr[1], Sym) and expr[1].is_selector():
         sel = expr[1].sel
         a0 = expr[2] if len(expr) >= 3 else None
-        if sel == OWN_SEL and isinstance(a0, int):
-            out.append(Pred("OWN", var=a0, want=want))
-            return out
+        if sel == OWN_SEL:
+            iid = game.resolve_item(a0)
+            if iid is not None:
+                out.append(Pred("OWN", var=iid, want=want))
+                return out
         if sel in POSITIONAL_SELS:
             out.append(Pred("POS", text=sel))
             return out
@@ -364,10 +392,11 @@ class _Walker:
                 groups.append((cur, args))
             for sel, a in groups:
                 a0 = a[0] if a else None
-                if sel == ACQUIRE_SEL and isinstance(a0, int):
-                    self._emit(Effect("ACQUIRE", arg=a0, receiver=recv), guards, context)
-                elif sel == DROP_SEL and isinstance(a0, int):
-                    self._emit(Effect("DROP", arg=a0, receiver=recv), guards, context)
+                iid = self.game.resolve_item(a0)
+                if sel == ACQUIRE_SEL and iid is not None:
+                    self._emit(Effect("ACQUIRE", arg=iid, receiver=recv), guards, context)
+                elif sel == DROP_SEL and iid is not None:
+                    self._emit(Effect("DROP", arg=iid, receiver=recv), guards, context)
                 elif sel == SCORE_SEL and isinstance(a0, int):
                     self._emit(Effect("SCORE", arg=a0, receiver=recv), guards, context)
                 elif sel in ROOM_SELS and isinstance(a0, int):
@@ -402,6 +431,14 @@ EXIT_DIRS = {"north", "south", "east", "west", "northEast", "northWest",
              "southEast", "southWest"}
 
 
+def _final_room_int(v):
+    """Room number of an exit assignment, following chained `(= north (= east 80))`
+    -> 80. None if the value isn't an integer literal (e.g. a computed exit)."""
+    while isinstance(v, list) and len(v) >= 3 and head_is(v, "="):
+        v = v[2]
+    return v if isinstance(v, int) else None
+
+
 def _extract_nav(forms):
     """Room navigation edges: Rm-instance edge properties (north/south/east/west
     -> dest room) and Door `entranceTo:` targets. These are how SCI0 encodes
@@ -426,6 +463,14 @@ def _extract_nav(forms):
             return
         if head_is(form, "properties"):
             scan_props(form)
+        # exits set in CODE (EricOakford/KQ4 idiom): (= north 80), (= south 30),
+        # including chained (= north (= east 80)). LSL2 declares these in the
+        # properties block instead; capture both dialects.
+        if head_is(form, "=") and len(form) >= 3 and isinstance(form[1], Sym) \
+                and form[1].name in EXIT_DIRS:
+            v = _final_room_int(form[2])
+            if v and v > 0:
+                exits[form[1].name] = v
         # message-send forms:  ... entranceTo: 118 ... / ... setRegions: 200 ...
         for i, tok in enumerate(form):
             if isinstance(tok, Sym) and i + 1 < len(form) and isinstance(form[i + 1], int) \
@@ -446,9 +491,10 @@ def _extract_nav(forms):
 def load_game(src_dir=SRC_DEFAULT):
     main = read_file(os.path.join(src_dir, "Main.sc"))
     globals_, inits = _parse_globals(main)
-    items = _parse_items(main)
+    enum_items, item_ids = _parse_item_enum(src_dir)   # EricOakford game.sh enum (KQ4)
+    items = enum_items or _parse_items(main)            # else sluicebox Iitem instances (LSL2)
     name_by_num = _parse_game_ini(src_dir)
-    game = Game(globals_, inits, items, {}, name_by_num)
+    game = Game(globals_, inits, items, {}, name_by_num, item_ids)
     for path in sorted(glob.glob(os.path.join(src_dir, "*.sc"))):
         forms = read_file(path)
         num = _script_num(forms)
