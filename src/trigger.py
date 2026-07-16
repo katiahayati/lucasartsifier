@@ -185,9 +185,78 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
     if not meth_rel:
         return text, 0
     m0, m1 = i0 + meth_rel[0], i0 + meth_rel[1]
-    pat = re.compile(r"\(self\s+changeState:\s*%d\s*\)" % k)
-    new_meth, n = _wrap_matches_in(text[m0:m1], None, pat, guard_sexpr, refuse)
-    return text[:m0] + new_meth + text[m1:], n
+    region = text[m0:m1]
+    csm = re.search(r"\(self\s+changeState:\s*%d\s*\)" % k, region)
+    if not csm:
+        return text, 0
+    # Guard the WHOLE enclosing cond-clause body, not just the changeState call:
+    # side-effecting siblings before it (score, (Ok), flag sets) must not run
+    # before the refusal. rm38 awarded the score + played "Ok" then "Not now!"
+    # because only the changeState was wrapped. Falls back to wrapping the
+    # changeState alone when it is not inside a cond-clause.
+    clause = _enclosing_clause_body(region, csm.start())
+    if clause:
+        bs, be = clause
+        wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
+                   f"\t\t\t\t{refuse}  ; softlock-guard\n\t\t\t)")
+        new_meth = region[:bs] + wrapped + region[be:]
+    else:
+        new_meth, _ = _wrap_matches_in(
+            region, None, re.compile(r"\(self\s+changeState:\s*%d\s*\)" % k),
+            guard_sexpr, refuse)
+    return text[:m0] + new_meth + text[m1:], 1
+
+
+def _enclosing_clause_body(region, pos):
+    """Innermost cond-clause containing `pos`: return (body_start, body_end) = the
+    span after the clause's condition/`else` head, so a guard wraps the whole
+    committed action. None if `pos` is not inside a cond-clause."""
+    cond_span = None
+    for m in re.finditer(r"\(cond\b", region):
+        s, e = _block_span(region, m.start())
+        if s <= pos < e and (cond_span is None or s > cond_span[0]):
+            cond_span = (s, e)
+    if cond_span is None:
+        return None
+    cs, ce = cond_span
+    k = cs + 1
+    mk = re.match(r"\s*cond\b", region[k:])
+    if mk:
+        k += mk.end()
+    while k < ce - 1:
+        c = region[k]
+        if c in " \t\r\n":
+            k += 1
+        elif c == ";":
+            nl = region.find("\n", k)
+            k = ce if nl < 0 else nl + 1
+        elif c == "(":
+            clause_s, clause_e = _block_span(region, k)
+            if clause_s <= pos < clause_e:
+                return _clause_body(region, clause_s, clause_e)
+            k = clause_e
+        else:
+            k += 1
+    return None
+
+
+def _clause_body(region, cs, ce):
+    """Body span of a clause `(head body...)` at [cs, ce): everything after head."""
+    k = cs + 1
+    while k < ce and region[k] in " \t\r\n":
+        k += 1
+    if k < ce and region[k] == "(":
+        _, he = _block_span(region, k)
+    else:
+        m = re.match(r"[^\s()]+", region[k:])
+        he = k + (m.end() if m else 1)
+    bs = he
+    while bs < ce and region[bs] in " \t\r\n":
+        bs += 1
+    be = ce - 1
+    while be > bs and region[be - 1] in " \t\r\n":
+        be -= 1
+    return bs, be
 
 
 def _wrap_matches_in(region, _unused, pat, guard_sexpr, refuse):
