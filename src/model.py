@@ -431,6 +431,14 @@ class _Walker:
                     self._emit(Effect("SCORE", arg=a0, receiver=recv), guards, context)
                 elif sel in ROOM_SELS and isinstance(a0, int):
                     self._emit(Effect("GOTO", arg=a0, receiver=recv), guards, context)
+                elif sel in ROOM_SELS and isinstance(a0, Sym) \
+                        and self.game.is_global(a0.name):
+                    # A DYNAMIC exit: `(gCurRoom newRoom: gRmAfter40)`. The
+                    # destination is data, not a literal, so it used to vanish --
+                    # and rm43 (the Knife) has NO other way in, which silently made
+                    # the whole LSL2 island unreachable. Emit it symbolically;
+                    # movement_graph resolves the global to the rooms it can hold.
+                    self._emit(Effect("GOTO", arg=a0.name, receiver=recv), guards, context)
                 for x in a:
                     self._walk(x, guards, context)
             self._walk(form[0], guards, context)

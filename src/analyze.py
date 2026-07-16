@@ -113,14 +113,30 @@ def movement_graph(game: Game):
     north/south/east/west, (3) Door `entranceTo:` targets."""
     edges = defaultdict(set)       # from_room -> {to_room}
     edge_kind = defaultdict(set)   # (from,to) -> {'goto','edge','door'}
+    # Room numbers a global can hold, to resolve dynamic exits like
+    # `(gCurRoom newRoom: gRmAfter40)`. Rare (2 in LSL2, 1 in KQ4) but load-bearing:
+    # rm43 has no other entrance, so missing it hid the entire LSL2 island.
+    gvals = defaultdict(set)
+    for s in game.scripts.values():
+        for t in s.transitions:
+            for e in t.effects:
+                if e.kind == "SET":
+                    v = str(e.value).strip()
+                    if v.lstrip("-").isdigit():
+                        gvals[e.arg].add(int(v))
     for num, s in game.scripts.items():
         if not is_room(game, num):
             continue
         for t in s.transitions:
             for e in t.effects:
-                if e.kind == "GOTO" and isinstance(e.arg, int) and e.arg != num:
-                    edges[num].add(e.arg)
-                    edge_kind[(num, e.arg)].add("goto")
+                if e.kind != "GOTO":
+                    continue
+                dests = ([e.arg] if isinstance(e.arg, int)
+                         else [v for v in gvals.get(e.arg, ()) if v > 0])
+                for d in dests:
+                    if d != num:
+                        edges[num].add(d)
+                        edge_kind[(num, d)].add("goto")
         for _dir, dest in s.exits.items():
             if dest != num:
                 edges[num].add(dest)
