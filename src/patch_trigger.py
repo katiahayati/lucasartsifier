@@ -46,7 +46,10 @@ def main():
     for spec in specs:
         room, target = spec["room"], spec["newroom_target"]
         names = [consts.get(i["id"], f"item{i['id']}") for i in spec["require_items"]]
-        guard = "(and " + " ".join(f"(ego has: {n})" for n in names) + ")"
+        checks = [f"(ego has: {n})" for n in names]
+        # a single check must NOT be wrapped in (and ...): SCICompanion's parser
+        # rejects a one-operand `and`.
+        guard = checks[0] if len(checks) == 1 else "(and " + " ".join(checks) + ")"
 
         src_path = os.path.join(ERIC, f"rm{room}.sc")
         if not os.path.isfile(src_path):
