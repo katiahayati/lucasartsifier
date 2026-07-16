@@ -23,9 +23,41 @@ from config import ACTIVE as CFG
 
 REPORTS = os.path.join(os.path.dirname(__file__), "..", "reports")
 
-# game clocks / timers, for timed-gate detection; region labels for readability
-TIMER_GLOBALS = CFG.timer_globals
-REGION_LABELS = CFG.region_labels
+# game clocks / timers, for timed-gate detection; region labels for readability.
+# NOTE: these were bound at import time, so swapping config.ACTIVE afterwards left
+# them pointing at the old game. Read through to the live config instead.
+class _LiveCfg:
+    def __init__(self, attr):
+        self._attr = attr
+
+    def _v(self):
+        import config
+        return getattr(config.ACTIVE, self._attr)
+
+    def __contains__(self, x):
+        return x in self._v()
+
+    def __iter__(self):
+        return iter(self._v())
+
+    def __len__(self):
+        return len(self._v())
+
+    def get(self, k, d=None):
+        return self._v().get(k, d)
+
+    def __getitem__(self, k):
+        return self._v()[k]
+
+    def items(self):
+        return self._v().items()
+
+    def __repr__(self):
+        return repr(self._v())
+
+
+TIMER_GLOBALS = _LiveCfg("timer_globals")
+REGION_LABELS = _LiveCfg("region_labels")
 
 
 def is_room(game: Game, num: int) -> bool:
@@ -133,33 +165,96 @@ def irreversible_globals(game: Game, global_sets):
     return latches
 
 
-def terminals(game: Game, edges):
-    """Rooms with no outgoing movement edge: candidate death/ending terminals.
-    Death is signalled by the Main restart modal; ending rooms show congrats text."""
-    death_rooms, ending_rooms, other = [], [], []
-    import glob as _glob
-    import os as _os
-    srcdir = SRC_DIR_HINT[0]
+# Deaths. `terminals()` used to live here: it looked for rooms with no outgoing
+# edge whose text mentioned the restart modal. It could never work -- in BOTH games
+# death is raised from Main's doit via a global write, not from a terminal room, so
+# it returned zero death rooms for LSL2. The model now emits Effect("DEATH")
+# directly (see config.death_signal), with the path condition attached, so we
+# classify those instead of guessing from room text.
+
+TRIGGER_SAID = "SAID"            # a player verb reached it
+TRIGGER_TIMED = "TIMED"          # a clock/counter guard reached it
+TRIGGER_RANDOM = "RANDOM"        # a Random() decides whether the hazard fires
+TRIGGER_POSITIONAL = "POSITIONAL"  # proximity / onControl geometry
+TRIGGER_SCRIPTED = "SCRIPTED"    # a changeState sequence with no other tell
+
+PROT_ITEM = "ITEM"               # `ego has: X` avoids it
+PROT_GLOBAL = "GLOBAL"           # a flag avoids it (LSL2 gWearingSunscreen)
+PROT_POSITIONAL = "POSITIONAL"   # only geometry avoids it ("don't walk on green")
+PROT_NONE = "NONE"               # unavoidable / narrative
+
+
+def _instance_of(context):
+    """`deadTimer:changeState` -> `deadTimer`. The Script instance owning a death."""
+    return (context or "").split(":", 1)[0]
+
+
+def death_sites(game: Game):
+    """Every DEATH effect, classified.
+
+    Crucially the protective condition is almost never on the death transition
+    itself: the item check SELECTS WHICH STATE you enter, and the death sits in a
+    later state with no guard at all (rm34 sunscreen in state 13, death in 14;
+    rm44 feather in state 0, death in 22 -- 86 source lines apart; rm16 scarab in
+    state 3, death in 13). So we aggregate evidence across the whole owning Script
+    INSTANCE, not just the death's own path condition.
+
+    We classify trigger/protection only. Fairness is deliberately NOT decided here
+    -- it is not syntactically separable (protective conditions are often globals
+    in another state, sometimes inverted, while genuinely reckless deaths do carry
+    `has:` guards). A death is 'actionable' iff its protection turns out to be
+    STRANDED, which the stranding analysis decides.
+    """
+    out = []
     for num, s in game.scripts.items():
-        outdeg = len(edges.get(num, ()))
-        if not is_room(game, num) or outdeg > 0:
-            continue
-        path = _os.path.join(srcdir, f"{s.name}.sc") if srcdir else None
-        txt = ""
-        if path and _os.path.exists(path):
-            txt = open(path, encoding="latin-1").read()
-        if "restart:" in txt or "you've screwed up" in txt.lower():
-            death_rooms.append(num)
-        elif "ongratulat" in txt or "you win" in txt.lower() or "married" in txt.lower():
-            ending_rooms.append(num)
-        else:
-            other.append(num)
-    return {"death_terminal_rooms": sorted(death_rooms),
-            "ending_terminal_rooms": sorted(ending_rooms),
-            "other_terminal_rooms": sorted(other)}
+        for t in s.transitions:
+            if not any(e.kind == "DEATH" for e in t.effects):
+                continue
+            ctx = t.context or ""
+            inst = _instance_of(ctx)
+            # Scope = the whole ROOM SCRIPT, not just the owning instance. The whale
+            # forced this: rm44's death is in `deadTimer`, but the feather check that
+            # saves you is in `Room44:handleEvent` -- a different instance entirely.
+            # (Guards also only survive if they gate a MODELED effect, so we rely on
+            # a nearby SCORE/STATE/SET in the same branch carrying them.)
+            sib_guards = [p for st in s.transitions for p in st.guards]
+            sib_kinds = {p.kind for p in sib_guards}
 
+            # --- protection: what, anywhere in this state machine, avoids it? ---
+            # Either polarity counts: `(ego has: iScarab) -> survive` and
+            # `(not (ego has: iAirsickBag)) -> die` both mark the item protective.
+            prot_items = sorted({p.var for p in sib_guards if p.kind == "OWN"})
+            # FLAG is a bare truthiness test; CMP is `(== gWearingSunscreen 1)` --
+            # LSL2's protective conditions are mostly the latter, so both count.
+            prot_flags = sorted({p.var for p in sib_guards
+                                 if p.kind in ("FLAG", "CMP") and p.var not in TIMER_GLOBALS})
+            if prot_items:
+                prot = PROT_ITEM
+            elif prot_flags:
+                prot = PROT_GLOBAL
+            elif "POS" in sib_kinds:
+                prot = PROT_POSITIONAL
+            else:
+                prot = PROT_NONE
 
-SRC_DIR_HINT = [None]  # set in main() so terminals() can read raw source for text cues
+            # --- trigger: what reached this death (instance-wide evidence) ---
+            if any(p.kind == "CMP" and p.var in TIMER_GLOBALS for p in sib_guards):
+                trig = TRIGGER_TIMED
+            elif "SAID" in sib_kinds:
+                trig = TRIGGER_SAID
+            elif "POS" in sib_kinds or ":doit" in ctx:
+                trig = TRIGGER_POSITIONAL
+            else:
+                trig = TRIGGER_SCRIPTED
+
+            out.append({
+                "script": num, "name": s.name, "context": ctx, "instance": inst,
+                "trigger": trig, "protection": prot,
+                "protective_items": [game.item_name(i) for i in prot_items],
+                "protective_flags": prot_flags,
+                "own_guards": [str(p) for p in t.guards][:4],
+            })
+    return out
 
 
 def timed_edges(game: Game):
@@ -269,17 +364,16 @@ def prereq_before_gate(game: Game, sources, required, edges):
 def main(src_dir=None):
     game = load_game(src_dir) if src_dir else load_game()
     from model import SRC_DEFAULT
-    SRC_DIR_HINT[0] = src_dir or SRC_DEFAULT
     sources, drops, required, global_sets = derived_maps(game)
     edges, edge_info = movement_graph(game)
     latches = irreversible_globals(game, global_sets)
     timers = timed_edges(game)
     cands = prereq_before_gate(game, sources, required, edges)
-    term = terminals(game, edges)
+    deaths = death_sites(game)
 
     os.makedirs(REPORTS, exist_ok=True)
     report = {
-        "goal_death": term,
+        "death_sites": deaths,
         "items": {str(k): v for k, v in game.items.items()},
         "n_globals": len(game.globals),
         "item_sources": {game.item_name(i): sorted(r) for i, r in sorted(sources.items())},
@@ -296,8 +390,9 @@ def main(src_dir=None):
 
     print(f"rooms={report['movement_rooms']} edges={report['movement_edges']} "
           f"latches={len(latches)} timed={len(timers)} candidates={len(cands)}")
-    print(f"terminals: death={term['death_terminal_rooms']} ending={term['ending_terminal_rooms']} "
-          f"other={term['other_terminal_rooms']}")
+    from collections import Counter as _C
+    print(f"death sites: {len(deaths)}  by trigger={dict(_C(d['trigger'] for d in deaths))}  "
+          f"by protection={dict(_C(d['protection'] for d in deaths))}")
     print("\n=== irreversible global latches (set-once, never reset) — top 12 ===")
     for k, v in list(latches.items())[:12]:
         print(f"  {k} := {v}")

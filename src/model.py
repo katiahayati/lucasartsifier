@@ -28,6 +28,12 @@ SRC_DEFAULT = CFG.src_dir
 
 # selectors we treat as effects / guards
 ACQUIRE_SEL, DROP_SEL, OWN_SEL, SCORE_SEL = "get", "put", "has", "changeScore"
+# `(self changeState: K)` selects the next state of a Script state machine. It must
+# be a modeled effect: guards are only recorded when they gate an emitted effect, and
+# the protective condition for a death usually gates exactly this call (rm16:
+# `((ego has: iScarab) (self changeState: 4))`). Without it the guard evaporates and
+# every KQ4 death looks unprotected.
+STATE_SEL = "changeState"
 ROOM_SELS = {"newRoom", "startRoom"}
 # receivers / calls that are positional or parser gating -> lifted away
 POSITIONAL_SELS = {"inRect", "onControl", "observeControl", "ignoreControl",
@@ -122,6 +128,7 @@ class Game:
     scripts: dict                    # num -> Script
     name_by_num: dict                # script num -> name (from game.ini)
     item_ids: dict = field(default_factory=dict)   # item-constant name -> number
+    death_signal: tuple = ()         # (global, value) whose write means death
 
     def item_name(self, i):
         return self.items.get(i, f"item{i}")
@@ -137,6 +144,14 @@ class Game:
         if isinstance(a0, Sym) and a0.name in self.item_ids:
             return self.item_ids[a0.name]
         return None
+
+    def is_death_write(self, gname, value):
+        """Does writing `value` to global `gname` mean DEATH? Per-game, from
+        config.death_signal -- e.g. ("gCurrentStatus", 1001) / ("dead", "TRUE").
+        Compares the _short()-rendered value so ints and Syms both work."""
+        if not self.death_signal or gname != self.death_signal[0]:
+            return False
+        return str(value).strip() == str(self.death_signal[1]).strip()
 
 
 # --------------------------------------------------------------------------
@@ -397,6 +412,8 @@ class _Walker:
                     self._emit(Effect("ACQUIRE", arg=iid, receiver=recv), guards, context)
                 elif sel == DROP_SEL and iid is not None:
                     self._emit(Effect("DROP", arg=iid, receiver=recv), guards, context)
+                elif sel == STATE_SEL and isinstance(a0, int):
+                    self._emit(Effect("STATE", arg=a0, receiver=recv), guards, context)
                 elif sel == SCORE_SEL and isinstance(a0, int):
                     self._emit(Effect("SCORE", arg=a0, receiver=recv), guards, context)
                 elif sel in ROOM_SELS and isinstance(a0, int):
@@ -412,6 +429,13 @@ class _Walker:
             if isinstance(tgt, Sym) and self.game.is_global(tgt.name):
                 val = _short(form[2]) if len(form) >= 3 else head.name
                 self._emit(Effect("SET", arg=tgt.name, value=val, receiver=head.name), guards, context)
+                # Death is just a global write in both games (LSL2 gCurrentStatus=1001,
+                # KQ4 dead=TRUE), raised from Main's doit -- never a terminal room. Emit
+                # it as a first-class effect too; _emit snapshots the path condition, so
+                # each death arrives with the guards that lead to it.
+                if self.game.is_death_write(tgt.name, val):
+                    self._emit(Effect("DEATH", arg=tgt.name, value=val, receiver=head.name),
+                               guards, context)
             for sub in form[1:]:
                 self._walk(sub, guards, context)
             return
@@ -420,10 +444,34 @@ class _Walker:
             self._walk(sub, guards, context)
 
 
-def _script_num(forms):
+def _parse_script_consts(src_dir):
+    """game.sh constants, for resolving a symbolic `(script# SWAMP)`. The header
+    declares both `(define NAME N)` and enum members annotated `NAME ;N` (the same
+    shape as the item enum). Returns {name: int}; empty if there is no game.sh."""
+    import re
+    consts = {}
+    gsh = os.path.join(src_dir, "game.sh")
+    if os.path.exists(gsh):
+        txt = open(gsh, encoding="latin-1").read()
+        for name, num in re.findall(r"\(define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(-?\d+)\s*\)", txt):
+            consts[name] = int(num)
+        for name, num in re.findall(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*;\s*(\d+)\s*$", txt, re.M):
+            consts.setdefault(name, int(num))
+    return consts
+
+
+def _script_num(forms, consts=None):
+    """Script number. EricOakford writes `(script# SWAMP)` using a game.sh constant;
+    without resolving it every such script collapses to -1 and they silently
+    overwrite each other in game.scripts (34 of them in KQ4, incl. every region
+    script). sluicebox always writes an integer, so this is a no-op there."""
     for f in forms:
-        if head_is(f, "script#") and len(f) > 1 and isinstance(f[1], int):
-            return f[1]
+        if head_is(f, "script#") and len(f) > 1:
+            v = f[1]
+            if isinstance(v, int):
+                return v
+            if isinstance(v, Sym) and consts and v.name in consts:
+                return consts[v.name]
     return -1
 
 
@@ -494,10 +542,17 @@ def load_game(src_dir=SRC_DEFAULT):
     enum_items, item_ids = _parse_item_enum(src_dir)   # EricOakford game.sh enum (KQ4)
     items = enum_items or _parse_items(main)            # else sluicebox Iitem instances (LSL2)
     name_by_num = _parse_game_ini(src_dir)
-    game = Game(globals_, inits, items, {}, name_by_num, item_ids)
+    game = Game(globals_, inits, items, {}, name_by_num, item_ids, CFG.death_signal)
+    consts = _parse_script_consts(src_dir)
+    unresolved = -1          # unique synthetic keys, so unnumbered scripts (the SCI
+                             # class library, whose constants live in SCICompanion's
+                             # includes) don't all collapse onto -1 and overwrite
+                             # each other. They carry no rooms, so they stay inert.
     for path in sorted(glob.glob(os.path.join(src_dir, "*.sc"))):
         forms = read_file(path)
-        num = _script_num(forms)
+        num = _script_num(forms, consts)
+        if num == -1:
+            num, unresolved = unresolved, unresolved - 1
         base = os.path.splitext(os.path.basename(path))[0]
         sc = Script(num, name_by_num.get(num, base))
         sc.transitions = _Walker(game, num).run(forms)

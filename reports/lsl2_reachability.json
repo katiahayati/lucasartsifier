@@ -309,6 +309,23 @@
   },
   {
    "pattern": "missing-prereq-before-gate",
+   "item": 23,
+   "item_name": "Airline_Ticket",
+   "need_component_id": 4,
+   "need_room": 57,
+   "need_region": [
+    "500=island interior"
+   ],
+   "source_rooms": [
+    52
+   ],
+   "frontier_edges": [
+    "rm55->rm56"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
    "item": 24,
    "item_name": "Parachute",
    "need_component_id": 4,

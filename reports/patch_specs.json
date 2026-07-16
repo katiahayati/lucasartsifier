@@ -50,6 +50,20 @@
  {
   "op": "add_guard",
   "pattern": "irreversible-edge / LucasArts invariant",
+  "room": 55,
+  "newroom_target": 56,
+  "require_items": [
+   {
+    "id": 23,
+    "name": "Airline_Ticket"
+   }
+  ],
+  "guard_sexpr": "(and (gEgo has: 23))",
+  "rationale": "crossing rm55->rm56 strands Airline_Ticket (obtainable before, needed after, not gettable after)"
+ },
+ {
+  "op": "add_guard",
+  "pattern": "irreversible-edge / LucasArts invariant",
   "room": 57,
   "newroom_target": 58,
   "require_items": [

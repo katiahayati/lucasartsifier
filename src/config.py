@@ -28,6 +28,12 @@ class GameConfig:
     goal_scripts: tuple             # scripts whose guards seed the COI goal cone
     timer_globals: frozenset        # per-cycle game-clock globals (timed gates)
     region_labels: dict = field(default_factory=dict)   # region# -> label (report only)
+    # (global, value) whose assignment IS death. Both games raise death from Main's
+    # doit via a plain global write, so the IR already carries these as SET effects
+    # with their path condition -- we only need to recognize them.
+    #   LSL2: Main.sc:973 (if (== gCurrentStatus 1001) (gCurRoom setScript: dyingScript))
+    #   KQ4 : Main.sc:722 (if dead ...restart modal...)
+    death_signal: tuple = ()
 
 
 LSL2 = GameConfig(
@@ -48,6 +54,7 @@ LSL2 = GameConfig(
         401: "island", 500: "island interior", 600: "airport/plane",
         700: "volcano/jungle", 7: "interior/overlay", 8: "interior/overlay",
     },
+    death_signal=("gCurrentStatus", 1001),
 )
 
 KQ4 = GameConfig(
@@ -61,6 +68,7 @@ KQ4 = GameConfig(
     goal_scripts=(693, 694),
     timer_globals=frozenset({"gameHours", "gameMinutes"}),   # the day/night deadline clock
     region_labels={},
+    death_signal=("dead", "TRUE"),
 )
 
 # The config the pipeline runs against. Swap this (or set it from run.py) to target

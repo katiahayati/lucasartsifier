@@ -1,25 +1,749 @@
 {
- "goal_death": {
-  "death_terminal_rooms": [],
-  "ending_terminal_rooms": [],
-  "other_terminal_rooms": [
-   5,
-   7,
-   8,
-   9,
-   40,
-   86,
-   95,
-   96,
-   200,
-   300,
-   400,
-   401,
-   500,
-   600,
-   700
-  ]
- },
+ "death_sites": [
+  {
+   "script": 0,
+   "name": "Main",
+   "context": "LSL2:handleEvent",
+   "instance": "LSL2",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Swimsuit",
+    "Wad_O__Dough",
+    "Passport",
+    "Grotesque_Gulp",
+    "Onklunk",
+    "Fruit",
+    "Bikini_Top",
+    "Bikini_Bottom",
+    "Knife",
+    "Matches",
+    "Hair_Rejuvenator",
+    "Airsick_Bag"
+   ],
+   "protective_flags": [
+    "gOldTime"
+   ],
+   "own_guards": [
+    "opaque(or)",
+    "\u00acown(6)",
+    "Said",
+    "opaque(or)"
+   ]
+  },
+  {
+   "script": 0,
+   "name": "Main",
+   "context": "LSL2:handleEvent",
+   "instance": "LSL2",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Swimsuit",
+    "Wad_O__Dough",
+    "Passport",
+    "Grotesque_Gulp",
+    "Onklunk",
+    "Fruit",
+    "Bikini_Top",
+    "Bikini_Bottom",
+    "Knife",
+    "Matches",
+    "Hair_Rejuvenator",
+    "Airsick_Bag"
+   ],
+   "protective_flags": [
+    "gOldTime"
+   ],
+   "own_guards": [
+    "opaque(or)",
+    "\u00acown(6)",
+    "Said",
+    "opaque(or)"
+   ]
+  },
+  {
+   "script": 114,
+   "name": "rm114",
+   "context": "rm114Script:changeState",
+   "instance": "rm114Script",
+   "trigger": "POSITIONAL",
+   "protection": "ITEM",
+   "protective_items": [
+    "Dollar_Bill",
+    "Lottery_Ticket",
+    "Million_Dollar_Bill",
+    "Wad_O__Dough",
+    "Grotesque_Gulp"
+   ],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 134,
+   "name": "rm134",
+   "context": "rm134Script:doit",
+   "instance": "rm134Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus"
+   ],
+   "own_guards": [
+    "opaque((== passInRoom 400))",
+    "gCurrentStatus!=1001"
+   ]
+  },
+  {
+   "script": 138,
+   "name": "rm138",
+   "context": "rm138Script:changeState",
+   "instance": "rm138Script",
+   "trigger": "SCRIPTED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Grotesque_Gulp",
+    "Fruit",
+    "Sewing_Kit",
+    "Spinach_Dip"
+   ],
+   "protective_flags": [
+    "gWearingWig"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 152,
+   "name": "rm152",
+   "context": "rm152Script:changeState",
+   "instance": "rm152Script",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus"
+   ],
+   "own_guards": [
+    "gCurrentStatus==15"
+   ]
+  },
+  {
+   "script": 152,
+   "name": "rm152",
+   "context": "rm152Script:changeState",
+   "instance": "rm152Script",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus"
+   ],
+   "own_guards": [
+    "gCurrentStatus!=15",
+    "gCurrentStatus==14"
+   ]
+  },
+  {
+   "script": 152,
+   "name": "rm152",
+   "context": "rm152Script:changeState",
+   "instance": "rm152Script",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus"
+   ],
+   "own_guards": [
+    "gCurrentStatus!=15",
+    "gCurrentStatus!=14",
+    "gCurrentStatus==16"
+   ]
+  },
+  {
+   "script": 152,
+   "name": "rm152",
+   "context": "rm152Script:changeState",
+   "instance": "rm152Script",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus"
+   ],
+   "own_guards": [
+    "gCurrentStatus!=15",
+    "gCurrentStatus!=14",
+    "gCurrentStatus!=16",
+    "gCurrentStatus!=7"
+   ]
+  },
+  {
+   "script": 152,
+   "name": "rm152",
+   "context": "rm152Script:changeState",
+   "instance": "rm152Script",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus"
+   ],
+   "own_guards": [
+    "gCurrentStatus!=15",
+    "gCurrentStatus!=14",
+    "gCurrentStatus!=16",
+    "gCurrentStatus!=7"
+   ]
+  },
+  {
+   "script": 181,
+   "name": "rm181",
+   "context": "rm181Script:changeState",
+   "instance": "rm181Script",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gDebugging"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 200,
+   "name": "rm200",
+   "context": "rm200:doit",
+   "instance": "rm200",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Lottery_Ticket"
+   ],
+   "protective_flags": [
+    "gCurRoomNum",
+    "gCurrentStatus",
+    "gGameMinutes",
+    "gSecondsInRoom"
+   ],
+   "own_guards": [
+    "gCurrentTimer==1",
+    "\u00acflag(gRgTimer)",
+    "gCurRoomNum<26",
+    "gSecondsInRoom>5"
+   ]
+  },
+  {
+   "script": 300,
+   "name": "rm300",
+   "context": "rm300:doit",
+   "instance": "rm300",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Sunscreen",
+    "Fruit",
+    "Sewing_Kit",
+    "Spinach_Dip",
+    "Wig"
+   ],
+   "protective_flags": [
+    "gCurRoomNum",
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gReappliedSunscreen",
+    "gScoredWoreSunscreen",
+    "gSecondsInRoom",
+    "gWearingSunscreen"
+   ],
+   "own_guards": [
+    "gCurrentTimer==3",
+    "\u00acflag(gRgTimer)",
+    "gCurRoomNum!=38",
+    "gCurRoomNum!=31"
+   ]
+  },
+  {
+   "script": 32,
+   "name": "rm32",
+   "context": "rm32Script:changeState",
+   "instance": "rm32Script",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Swimsuit",
+    "Fruit"
+   ],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gTimesInRm33"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 33,
+   "name": "rm33",
+   "context": "rm33Script:changeState",
+   "instance": "rm33Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 34,
+   "name": "rm34",
+   "context": "rm34Script:changeState",
+   "instance": "rm34Script",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gHenchOnScreen",
+    "gPrevRoomNum",
+    "gScoredChaise",
+    "gWearingSunscreen"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 34,
+   "name": "rm34",
+   "context": "rm34Script:changeState",
+   "instance": "rm34Script",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gHenchOnScreen",
+    "gPrevRoomNum",
+    "gScoredChaise",
+    "gWearingSunscreen"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 36,
+   "name": "rm36",
+   "context": "rm36Script:changeState",
+   "instance": "rm36Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gLoweredLifeboats"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 36,
+   "name": "rm36",
+   "context": "rm36Script:changeState",
+   "instance": "rm36Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gLoweredLifeboats"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 38,
+   "name": "rm38",
+   "context": "rm38Script:handleEvent",
+   "instance": "rm38Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gLoweredLifeboats",
+    "gScoredLifeboat"
+   ],
+   "own_guards": [
+    "Said"
+   ]
+  },
+  {
+   "script": 38,
+   "name": "rm38",
+   "context": "rm38Script:handleEvent",
+   "instance": "rm38Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gLoweredLifeboats",
+    "gScoredLifeboat"
+   ],
+   "own_guards": [
+    "Said"
+   ]
+  },
+  {
+   "script": 43,
+   "name": "rm43",
+   "context": "rm43Script:changeState",
+   "instance": "rm43Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gScoredRm43Sit",
+    "gTalkedToMD"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 44,
+   "name": "rm44",
+   "context": "rm44Script:changeState",
+   "instance": "rm44Script",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "Bikini_Top",
+    "Bikini_Bottom",
+    "Soap"
+   ],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 50,
+   "name": "rm50",
+   "context": "copScript:changeState",
+   "instance": "copScript",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gConfusedKrishnas",
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gForceAtest"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 500,
+   "name": "rm500",
+   "context": "rm500:doit",
+   "instance": "rm500",
+   "trigger": "TIMED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurRoomNum",
+    "gSecondsInRoom"
+   ],
+   "own_guards": [
+    "gCurrentTimer==4",
+    "\u00acflag(gRgTimer)",
+    "gCurRoomNum!=57",
+    "gSecondsInRoom>5"
+   ]
+  },
+  {
+   "script": 55,
+   "name": "rm55",
+   "context": "rm55Script:changeState",
+   "instance": "rm55Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gPrevRoomNum"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 600,
+   "name": "rm600",
+   "context": "rm600:doit",
+   "instance": "rm600",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Airsick_Bag"
+   ],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gSecondsInRoom"
+   ],
+   "own_guards": [
+    "gCurrentTimer==5",
+    "\u00acflag(gRgTimer)",
+    "gSecondsInRoom>5",
+    "gCurrentStatus==0"
+   ]
+  },
+  {
+   "script": 61,
+   "name": "rm61",
+   "context": "rm61Script:changeState",
+   "instance": "rm61Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gPrevRoomNum"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 62,
+   "name": "rm62",
+   "context": "boreScript:changeState",
+   "instance": "boreScript",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Pamphlet"
+   ],
+   "protective_flags": [
+    "gBoreStatus",
+    "gCurrentStatus"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 65,
+   "name": "rm65",
+   "context": "rm65Script:changeState",
+   "instance": "rm65Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gWearingParachute"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 70,
+   "name": "rm70",
+   "context": "rm70Script:changeState",
+   "instance": "rm70Script",
+   "trigger": "SCRIPTED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Knife"
+   ],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 71,
+   "name": "rm71",
+   "context": "rm71Script:changeState",
+   "instance": "rm71Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gPrevRoomNum"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 72,
+   "name": "rm72",
+   "context": "rm72Script:changeState",
+   "instance": "rm72Script",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gSnakeState"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 73,
+   "name": "rm73",
+   "context": "rm73Script:changeState",
+   "instance": "rm73Script",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gPastQuicksand"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 74,
+   "name": "rm74",
+   "context": "rm74Script:changeState",
+   "instance": "rm74Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gPastPiranha"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 78,
+   "name": "rm78",
+   "context": "rm78Script:changeState",
+   "instance": "rm78Script",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gForceAtest",
+    "gIslandStatus"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 79,
+   "name": "rm79",
+   "context": "rm79Script:changeState",
+   "instance": "rm79Script",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "Vine"
+   ],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gDebugging",
+    "gIslandStatus"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 82,
+   "name": "rm82",
+   "context": "rm82Script:changeState",
+   "instance": "rm82Script",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "Matches",
+    "Hair_Rejuvenator",
+    "Airsick_Bag"
+   ],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gDebugging"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 82,
+   "name": "rm82",
+   "context": "rm82Script:changeState",
+   "instance": "rm82Script",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "Matches",
+    "Hair_Rejuvenator",
+    "Airsick_Bag"
+   ],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gDebugging"
+   ],
+   "own_guards": [
+    "\u00acown(27)"
+   ]
+  },
+  {
+   "script": 82,
+   "name": "rm82",
+   "context": "rm82Script:changeState",
+   "instance": "rm82Script",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "Matches",
+    "Hair_Rejuvenator",
+    "Airsick_Bag"
+   ],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gDebugging"
+   ],
+   "own_guards": [
+    "\u00acown(19)"
+   ]
+  },
+  {
+   "script": 82,
+   "name": "rm82",
+   "context": "rm82Script:changeState",
+   "instance": "rm82Script",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "Matches",
+    "Hair_Rejuvenator",
+    "Airsick_Bag"
+   ],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gDebugging"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 95,
+   "name": "rm95",
+   "context": "rm95Script:changeState",
+   "instance": "rm95Script",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentHenchView"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 96,
+   "name": "rm96",
+   "context": "rm96Script:changeState",
+   "instance": "rm96Script",
+   "trigger": "SCRIPTED",
+   "protection": "NONE",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  }
+ ],
  "items": {
   "0": "NoInv",
   "1": "Dollar_Bill",
@@ -154,7 +878,11 @@
   ]
  },
  "item_required_at": {
+  "Dollar_Bill": [
+   114
+  ],
   "Lottery_Ticket": [
+   101,
    200
   ],
   "Swimsuit": [
@@ -165,8 +893,12 @@
    118,
    125
   ],
+  "Passport": [
+   26
+  ],
   "Grotesque_Gulp": [
    0,
+   114,
    138
   ],
   "Sunscreen": [
@@ -174,7 +906,8 @@
    300
   ],
   "Onklunk": [
-   0
+   0,
+   22
   ],
   "Fruit": [
    138,
@@ -197,6 +930,9 @@
   "Bikini_Bottom": [
    44
   ],
+  "Knife": [
+   70
+  ],
   "Soap": [
    44
   ],
@@ -209,6 +945,9 @@
    63,
    81,
    82
+  ],
+  "Airline_Ticket": [
+   57
   ],
   "Parachute": [
    63
@@ -227,6 +966,7 @@
    700
   ],
   "Vine": [
+   79,
    700
   ],
   "Ashes": [
@@ -764,6 +1504,25 @@
     "rm10->rm90",
     "rm22->rm96",
     "rm26->rm27"
+   ],
+   "confidence": "medium",
+   "note": "no source reachable once the need-location is reached (point of no return)"
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 17,
+   "item_name": "Knife",
+   "needed_at_script": 70,
+   "needed_where": "rm70",
+   "need_region": [
+    "700=volcano/jungle"
+   ],
+   "source_rooms": [
+    "rm43"
+   ],
+   "source_region": [],
+   "frontier_edges": [
+    "rm43->rm40"
    ],
    "confidence": "medium",
    "note": "no source reachable once the need-location is reached (point of no return)"

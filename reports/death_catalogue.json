@@ -1,0 +1,1567 @@
+{
+ "LSL2": [
+  {
+   "script": 0,
+   "name": "Main",
+   "context": "LSL2:handleEvent",
+   "instance": "LSL2",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Swimsuit",
+    "Wad_O__Dough",
+    "Passport",
+    "Grotesque_Gulp",
+    "Onklunk",
+    "Fruit",
+    "Bikini_Top",
+    "Bikini_Bottom",
+    "Knife",
+    "Matches",
+    "Hair_Rejuvenator",
+    "Airsick_Bag"
+   ],
+   "protective_flags": [
+    "gOldTime"
+   ],
+   "own_guards": [
+    "opaque(or)",
+    "\u00acown(6)",
+    "Said",
+    "opaque(or)"
+   ]
+  },
+  {
+   "script": 0,
+   "name": "Main",
+   "context": "LSL2:handleEvent",
+   "instance": "LSL2",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Swimsuit",
+    "Wad_O__Dough",
+    "Passport",
+    "Grotesque_Gulp",
+    "Onklunk",
+    "Fruit",
+    "Bikini_Top",
+    "Bikini_Bottom",
+    "Knife",
+    "Matches",
+    "Hair_Rejuvenator",
+    "Airsick_Bag"
+   ],
+   "protective_flags": [
+    "gOldTime"
+   ],
+   "own_guards": [
+    "opaque(or)",
+    "\u00acown(6)",
+    "Said",
+    "opaque(or)"
+   ]
+  },
+  {
+   "script": 114,
+   "name": "rm114",
+   "context": "rm114Script:changeState",
+   "instance": "rm114Script",
+   "trigger": "POSITIONAL",
+   "protection": "ITEM",
+   "protective_items": [
+    "Dollar_Bill",
+    "Lottery_Ticket",
+    "Million_Dollar_Bill",
+    "Wad_O__Dough",
+    "Grotesque_Gulp"
+   ],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 134,
+   "name": "rm134",
+   "context": "rm134Script:doit",
+   "instance": "rm134Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus"
+   ],
+   "own_guards": [
+    "opaque((== passInRoom 400))",
+    "gCurrentStatus!=1001"
+   ]
+  },
+  {
+   "script": 138,
+   "name": "rm138",
+   "context": "rm138Script:changeState",
+   "instance": "rm138Script",
+   "trigger": "SCRIPTED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Grotesque_Gulp",
+    "Fruit",
+    "Sewing_Kit",
+    "Spinach_Dip"
+   ],
+   "protective_flags": [
+    "gWearingWig"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 152,
+   "name": "rm152",
+   "context": "rm152Script:changeState",
+   "instance": "rm152Script",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus"
+   ],
+   "own_guards": [
+    "gCurrentStatus==15"
+   ]
+  },
+  {
+   "script": 152,
+   "name": "rm152",
+   "context": "rm152Script:changeState",
+   "instance": "rm152Script",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus"
+   ],
+   "own_guards": [
+    "gCurrentStatus!=15",
+    "gCurrentStatus==14"
+   ]
+  },
+  {
+   "script": 152,
+   "name": "rm152",
+   "context": "rm152Script:changeState",
+   "instance": "rm152Script",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus"
+   ],
+   "own_guards": [
+    "gCurrentStatus!=15",
+    "gCurrentStatus!=14",
+    "gCurrentStatus==16"
+   ]
+  },
+  {
+   "script": 152,
+   "name": "rm152",
+   "context": "rm152Script:changeState",
+   "instance": "rm152Script",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus"
+   ],
+   "own_guards": [
+    "gCurrentStatus!=15",
+    "gCurrentStatus!=14",
+    "gCurrentStatus!=16",
+    "gCurrentStatus!=7"
+   ]
+  },
+  {
+   "script": 152,
+   "name": "rm152",
+   "context": "rm152Script:changeState",
+   "instance": "rm152Script",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus"
+   ],
+   "own_guards": [
+    "gCurrentStatus!=15",
+    "gCurrentStatus!=14",
+    "gCurrentStatus!=16",
+    "gCurrentStatus!=7"
+   ]
+  },
+  {
+   "script": 181,
+   "name": "rm181",
+   "context": "rm181Script:changeState",
+   "instance": "rm181Script",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gDebugging"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 200,
+   "name": "rm200",
+   "context": "rm200:doit",
+   "instance": "rm200",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Lottery_Ticket"
+   ],
+   "protective_flags": [
+    "gCurRoomNum",
+    "gCurrentStatus",
+    "gGameMinutes",
+    "gSecondsInRoom"
+   ],
+   "own_guards": [
+    "gCurrentTimer==1",
+    "\u00acflag(gRgTimer)",
+    "gCurRoomNum<26",
+    "gSecondsInRoom>5"
+   ]
+  },
+  {
+   "script": 300,
+   "name": "rm300",
+   "context": "rm300:doit",
+   "instance": "rm300",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Sunscreen",
+    "Fruit",
+    "Sewing_Kit",
+    "Spinach_Dip",
+    "Wig"
+   ],
+   "protective_flags": [
+    "gCurRoomNum",
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gReappliedSunscreen",
+    "gScoredWoreSunscreen",
+    "gSecondsInRoom",
+    "gWearingSunscreen"
+   ],
+   "own_guards": [
+    "gCurrentTimer==3",
+    "\u00acflag(gRgTimer)",
+    "gCurRoomNum!=38",
+    "gCurRoomNum!=31"
+   ]
+  },
+  {
+   "script": 32,
+   "name": "rm32",
+   "context": "rm32Script:changeState",
+   "instance": "rm32Script",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Swimsuit",
+    "Fruit"
+   ],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gTimesInRm33"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 33,
+   "name": "rm33",
+   "context": "rm33Script:changeState",
+   "instance": "rm33Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 34,
+   "name": "rm34",
+   "context": "rm34Script:changeState",
+   "instance": "rm34Script",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gHenchOnScreen",
+    "gPrevRoomNum",
+    "gScoredChaise",
+    "gWearingSunscreen"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 34,
+   "name": "rm34",
+   "context": "rm34Script:changeState",
+   "instance": "rm34Script",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gHenchOnScreen",
+    "gPrevRoomNum",
+    "gScoredChaise",
+    "gWearingSunscreen"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 36,
+   "name": "rm36",
+   "context": "rm36Script:changeState",
+   "instance": "rm36Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gLoweredLifeboats"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 36,
+   "name": "rm36",
+   "context": "rm36Script:changeState",
+   "instance": "rm36Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gLoweredLifeboats"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 38,
+   "name": "rm38",
+   "context": "rm38Script:handleEvent",
+   "instance": "rm38Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gLoweredLifeboats",
+    "gScoredLifeboat"
+   ],
+   "own_guards": [
+    "Said"
+   ]
+  },
+  {
+   "script": 38,
+   "name": "rm38",
+   "context": "rm38Script:handleEvent",
+   "instance": "rm38Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gLoweredLifeboats",
+    "gScoredLifeboat"
+   ],
+   "own_guards": [
+    "Said"
+   ]
+  },
+  {
+   "script": 43,
+   "name": "rm43",
+   "context": "rm43Script:changeState",
+   "instance": "rm43Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gScoredRm43Sit",
+    "gTalkedToMD"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 44,
+   "name": "rm44",
+   "context": "rm44Script:changeState",
+   "instance": "rm44Script",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "Bikini_Top",
+    "Bikini_Bottom",
+    "Soap"
+   ],
+   "protective_flags": [
+    "gCurrentEgoView",
+    "gCurrentStatus"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 50,
+   "name": "rm50",
+   "context": "copScript:changeState",
+   "instance": "copScript",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gConfusedKrishnas",
+    "gCurrentEgoView",
+    "gCurrentStatus",
+    "gForceAtest"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 500,
+   "name": "rm500",
+   "context": "rm500:doit",
+   "instance": "rm500",
+   "trigger": "TIMED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurRoomNum",
+    "gSecondsInRoom"
+   ],
+   "own_guards": [
+    "gCurrentTimer==4",
+    "\u00acflag(gRgTimer)",
+    "gCurRoomNum!=57",
+    "gSecondsInRoom>5"
+   ]
+  },
+  {
+   "script": 55,
+   "name": "rm55",
+   "context": "rm55Script:changeState",
+   "instance": "rm55Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gPrevRoomNum"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 600,
+   "name": "rm600",
+   "context": "rm600:doit",
+   "instance": "rm600",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Airsick_Bag"
+   ],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gSecondsInRoom"
+   ],
+   "own_guards": [
+    "gCurrentTimer==5",
+    "\u00acflag(gRgTimer)",
+    "gSecondsInRoom>5",
+    "gCurrentStatus==0"
+   ]
+  },
+  {
+   "script": 61,
+   "name": "rm61",
+   "context": "rm61Script:changeState",
+   "instance": "rm61Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gPrevRoomNum"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 62,
+   "name": "rm62",
+   "context": "boreScript:changeState",
+   "instance": "boreScript",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Pamphlet"
+   ],
+   "protective_flags": [
+    "gBoreStatus",
+    "gCurrentStatus"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 65,
+   "name": "rm65",
+   "context": "rm65Script:changeState",
+   "instance": "rm65Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gWearingParachute"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 70,
+   "name": "rm70",
+   "context": "rm70Script:changeState",
+   "instance": "rm70Script",
+   "trigger": "SCRIPTED",
+   "protection": "ITEM",
+   "protective_items": [
+    "Knife"
+   ],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 71,
+   "name": "rm71",
+   "context": "rm71Script:changeState",
+   "instance": "rm71Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gPrevRoomNum"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 72,
+   "name": "rm72",
+   "context": "rm72Script:changeState",
+   "instance": "rm72Script",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gSnakeState"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 73,
+   "name": "rm73",
+   "context": "rm73Script:changeState",
+   "instance": "rm73Script",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gPastQuicksand"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 74,
+   "name": "rm74",
+   "context": "rm74Script:changeState",
+   "instance": "rm74Script",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gPastPiranha"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 78,
+   "name": "rm78",
+   "context": "rm78Script:changeState",
+   "instance": "rm78Script",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gForceAtest",
+    "gIslandStatus"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 79,
+   "name": "rm79",
+   "context": "rm79Script:changeState",
+   "instance": "rm79Script",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "Vine"
+   ],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gDebugging",
+    "gIslandStatus"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 82,
+   "name": "rm82",
+   "context": "rm82Script:changeState",
+   "instance": "rm82Script",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "Matches",
+    "Hair_Rejuvenator",
+    "Airsick_Bag"
+   ],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gDebugging"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 82,
+   "name": "rm82",
+   "context": "rm82Script:changeState",
+   "instance": "rm82Script",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "Matches",
+    "Hair_Rejuvenator",
+    "Airsick_Bag"
+   ],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gDebugging"
+   ],
+   "own_guards": [
+    "\u00acown(27)"
+   ]
+  },
+  {
+   "script": 82,
+   "name": "rm82",
+   "context": "rm82Script:changeState",
+   "instance": "rm82Script",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "Matches",
+    "Hair_Rejuvenator",
+    "Airsick_Bag"
+   ],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gDebugging"
+   ],
+   "own_guards": [
+    "\u00acown(19)"
+   ]
+  },
+  {
+   "script": 82,
+   "name": "rm82",
+   "context": "rm82Script:changeState",
+   "instance": "rm82Script",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "Matches",
+    "Hair_Rejuvenator",
+    "Airsick_Bag"
+   ],
+   "protective_flags": [
+    "gCurrentStatus",
+    "gDebugging"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 95,
+   "name": "rm95",
+   "context": "rm95Script:changeState",
+   "instance": "rm95Script",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gCurrentHenchView"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 96,
+   "name": "rm96",
+   "context": "rm96Script:changeState",
+   "instance": "rm96Script",
+   "trigger": "SCRIPTED",
+   "protection": "NONE",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  }
+ ],
+ "KQ4": [
+  {
+   "script": 513,
+   "name": "SwampReg",
+   "context": "swamp:changeState",
+   "instance": "swamp",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iCrown"
+   ],
+   "protective_flags": [
+    "curRoomNum",
+    "currentStatus",
+    "laidDownBoard"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 513,
+   "name": "SwampReg",
+   "context": "swamp:changeState",
+   "instance": "swamp",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iCrown"
+   ],
+   "protective_flags": [
+    "curRoomNum",
+    "currentStatus",
+    "laidDownBoard"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 302,
+   "name": "TimeOut",
+   "context": "timeOut:changeState",
+   "instance": "timeOut",
+   "trigger": "SCRIPTED",
+   "protection": "NONE",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 307,
+   "name": "openPbox",
+   "context": "openPbox:changeState",
+   "instance": "openPbox",
+   "trigger": "SCRIPTED",
+   "protection": "NONE",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 605,
+   "name": "regTroll",
+   "context": "gotchaScript:changeState",
+   "instance": "gotchaScript",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "curRoomNum",
+    "trollAttacks"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 10,
+   "name": "rm10",
+   "context": "ogreActions:changeState",
+   "instance": "ogreActions",
+   "trigger": "SCRIPTED",
+   "protection": "ITEM",
+   "protective_items": [
+    "iMagicHen"
+   ],
+   "protective_flags": [
+    "ogre",
+    "ogreState",
+    "prevRoomNum"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 11,
+   "name": "rm11",
+   "context": "grabbed:changeState",
+   "instance": "grabbed",
+   "trigger": "SCRIPTED",
+   "protection": "NONE",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 12,
+   "name": "rm12",
+   "context": "grabbed:changeState",
+   "instance": "grabbed",
+   "trigger": "SCRIPTED",
+   "protection": "NONE",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 16,
+   "name": "rm16",
+   "context": "z1Actions:changeState",
+   "instance": "z1Actions",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iScarab",
+    "iShovel"
+   ],
+   "protective_flags": [
+    "currentStatus",
+    "mansionPhase",
+    "timesUsedShovel"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 16,
+   "name": "rm16",
+   "context": "z2Actions:changeState",
+   "instance": "z2Actions",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iScarab",
+    "iShovel"
+   ],
+   "protective_flags": [
+    "currentStatus",
+    "mansionPhase",
+    "timesUsedShovel"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 16,
+   "name": "rm16",
+   "context": "z3Actions:changeState",
+   "instance": "z3Actions",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iScarab",
+    "iShovel"
+   ],
+   "protective_flags": [
+    "currentStatus",
+    "mansionPhase",
+    "timesUsedShovel"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 17,
+   "name": "rm17",
+   "context": "z6Actions:changeState",
+   "instance": "z6Actions",
+   "trigger": "POSITIONAL",
+   "protection": "POSITIONAL",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 18,
+   "name": "rm18",
+   "context": "z4Actions:changeState",
+   "instance": "z4Actions",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iScarab",
+    "iShovel"
+   ],
+   "protective_flags": [
+    "cryptDoorState",
+    "currentStatus",
+    "gamePhase",
+    "mansionPhase",
+    "timesUsedShovel",
+    "unlockedCryptDoor"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 18,
+   "name": "rm18",
+   "context": "z5Actions:changeState",
+   "instance": "z5Actions",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iScarab",
+    "iShovel"
+   ],
+   "protective_flags": [
+    "cryptDoorState",
+    "currentStatus",
+    "gamePhase",
+    "mansionPhase",
+    "timesUsedShovel",
+    "unlockedCryptDoor"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 18,
+   "name": "rm18",
+   "context": "z1Actions:changeState",
+   "instance": "z1Actions",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iScarab",
+    "iShovel"
+   ],
+   "protective_flags": [
+    "cryptDoorState",
+    "currentStatus",
+    "gamePhase",
+    "mansionPhase",
+    "timesUsedShovel",
+    "unlockedCryptDoor"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 19,
+   "name": "rm19",
+   "context": "fallLmagenta:changeState",
+   "instance": "fallLmagenta",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "howFast",
+    "whereIsMinstrel"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 19,
+   "name": "rm19",
+   "context": "fallLred:changeState",
+   "instance": "fallLred",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "howFast",
+    "whereIsMinstrel"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 19,
+   "name": "rm19",
+   "context": "fallGrey:changeState",
+   "instance": "fallGrey",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "howFast",
+    "whereIsMinstrel"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 19,
+   "name": "rm19",
+   "context": "fallLgrey:changeState",
+   "instance": "fallLgrey",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "howFast",
+    "whereIsMinstrel"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 19,
+   "name": "rm19",
+   "context": "fallRed:changeState",
+   "instance": "fallRed",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "howFast",
+    "whereIsMinstrel"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 19,
+   "name": "rm19",
+   "context": "fallBrown:changeState",
+   "instance": "fallBrown",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "howFast",
+    "whereIsMinstrel"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 19,
+   "name": "rm19",
+   "context": "fallGreen:changeState",
+   "instance": "fallGreen",
+   "trigger": "SCRIPTED",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "howFast",
+    "whereIsMinstrel"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 30,
+   "name": "rm30",
+   "context": "deadFall:changeState",
+   "instance": "deadFall",
+   "trigger": "SCRIPTED",
+   "protection": "NONE",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 30,
+   "name": "rm30",
+   "context": "deadMagenta:changeState",
+   "instance": "deadMagenta",
+   "trigger": "SCRIPTED",
+   "protection": "NONE",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 31,
+   "name": "rm31",
+   "context": "drown:changeState",
+   "instance": "drown",
+   "trigger": "SCRIPTED",
+   "protection": "NONE",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 31,
+   "name": "rm31",
+   "context": "sharkActions:changeState",
+   "instance": "sharkActions",
+   "trigger": "SCRIPTED",
+   "protection": "NONE",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 4,
+   "name": "rm4",
+   "context": "ogressActions:changeState",
+   "instance": "ogressActions",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gamePhase",
+    "global179",
+    "ogre",
+    "ogreState",
+    "ogressIsHome",
+    "prevRoomNum"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 4,
+   "name": "rm4",
+   "context": "ogreActions:changeState",
+   "instance": "ogreActions",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gamePhase",
+    "global179",
+    "ogre",
+    "ogreState",
+    "ogressIsHome",
+    "prevRoomNum"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 4,
+   "name": "rm4",
+   "context": "killOgre:cue",
+   "instance": "killOgre",
+   "trigger": "SAID",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "gamePhase",
+    "global179",
+    "ogre",
+    "ogreState",
+    "ogressIsHome",
+    "prevRoomNum"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 43,
+   "name": "rm43",
+   "context": "deathTimer:changeState",
+   "instance": "deathTimer",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iFish",
+    "iWhistle"
+   ],
+   "protective_flags": [
+    "blewWhistle",
+    "currentStatus"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 44,
+   "name": "rm44",
+   "context": "deadTimer:changeState",
+   "instance": "deadTimer",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iFeather"
+   ],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 48,
+   "name": "rm48",
+   "context": "ogressChase:changeState",
+   "instance": "ogressChase",
+   "trigger": "SAID",
+   "protection": "POSITIONAL",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 49,
+   "name": "rm49",
+   "context": "ogreStuff:changeState",
+   "instance": "ogreStuff",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iBone",
+    "iMagicHen"
+   ],
+   "protective_flags": [
+    "currentStatus",
+    "enteredOgreKitchen",
+    "ogreState",
+    "prevRoomNum"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 49,
+   "name": "rm49",
+   "context": "ogreAwake:changeState",
+   "instance": "ogreAwake",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iBone",
+    "iMagicHen"
+   ],
+   "protective_flags": [
+    "currentStatus",
+    "enteredOgreKitchen",
+    "ogreState",
+    "prevRoomNum"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 49,
+   "name": "rm49",
+   "context": "ogressChase:changeState",
+   "instance": "ogressChase",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iBone",
+    "iMagicHen"
+   ],
+   "protective_flags": [
+    "currentStatus",
+    "enteredOgreKitchen",
+    "ogreState",
+    "prevRoomNum"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 49,
+   "name": "rm49",
+   "context": "chaseEgo:changeState",
+   "instance": "chaseEgo",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iBone",
+    "iMagicHen"
+   ],
+   "protective_flags": [
+    "currentStatus",
+    "enteredOgreKitchen",
+    "ogreState",
+    "prevRoomNum"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 5,
+   "name": "rm5",
+   "context": "grabbed:changeState",
+   "instance": "grabbed",
+   "trigger": "SCRIPTED",
+   "protection": "NONE",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 50,
+   "name": "rm50",
+   "context": "ogressChase:changeState",
+   "instance": "ogressChase",
+   "trigger": "SAID",
+   "protection": "POSITIONAL",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 57,
+   "name": "rm57",
+   "context": "witchChase:changeState",
+   "instance": "witchChase",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iGlassEye",
+    "iScarab"
+   ],
+   "protective_flags": [
+    "gamePhase",
+    "witchesTossedScarab"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 58,
+   "name": "rm58",
+   "context": "fallHole:changeState",
+   "instance": "fallHole",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iSheetMusic"
+   ],
+   "protective_flags": [
+    "playedOrgan"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 61,
+   "name": "rm61",
+   "context": "fallStairs:changeState",
+   "instance": "fallStairs",
+   "trigger": "POSITIONAL",
+   "protection": "POSITIONAL",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 63,
+   "name": "rm63",
+   "context": "fallDead:changeState",
+   "instance": "fallDead",
+   "trigger": "SAID",
+   "protection": "POSITIONAL",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 66,
+   "name": "rm66",
+   "context": "stairTrip:changeState",
+   "instance": "stairTrip",
+   "trigger": "SAID",
+   "protection": "POSITIONAL",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 69,
+   "name": "rm69",
+   "context": "doMummy:changeState",
+   "instance": "doMummy",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iScarab"
+   ],
+   "protective_flags": [
+    "gotPandorasBox",
+    "lolotteAlive",
+    "ropeLadderLowered"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 69,
+   "name": "rm69",
+   "context": "cryptFall:changeState",
+   "instance": "cryptFall",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iScarab"
+   ],
+   "protective_flags": [
+    "gotPandorasBox",
+    "lolotteAlive",
+    "ropeLadderLowered"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 692,
+   "name": "rm692",
+   "context": "egoActions:changeState",
+   "instance": "egoActions",
+   "trigger": "SCRIPTED",
+   "protection": "NONE",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 694,
+   "name": "rm694",
+   "context": "actions:changeState",
+   "instance": "actions",
+   "trigger": "SCRIPTED",
+   "protection": "ITEM",
+   "protective_items": [
+    "iMagicFruit"
+   ],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 76,
+   "name": "rm76",
+   "context": "fallChasm:changeState",
+   "instance": "fallChasm",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "laidDownBoard"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 78,
+   "name": "rm78",
+   "context": "snakeActions:changeState",
+   "instance": "snakeActions",
+   "trigger": "SAID",
+   "protection": "ITEM",
+   "protective_items": [
+    "iFlute",
+    "iBoard",
+    "iMagicFruit"
+   ],
+   "protective_flags": [
+    "charmedSnake",
+    "currentStatus",
+    "putBoardOverSwamp"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 79,
+   "name": "rm79",
+   "context": "egoDead:changeState",
+   "instance": "egoDead",
+   "trigger": "POSITIONAL",
+   "protection": "ITEM",
+   "protective_items": [
+    "iPandorasBox",
+    "iMagicHen"
+   ],
+   "protective_flags": [
+    "currentStatus",
+    "gamePhase"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 80,
+   "name": "rm80",
+   "context": "falling:changeState",
+   "instance": "falling",
+   "trigger": "POSITIONAL",
+   "protection": "POSITIONAL",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 82,
+   "name": "rm82",
+   "context": "egoZapped:changeState",
+   "instance": "egoZapped",
+   "trigger": "TIMED",
+   "protection": "ITEM",
+   "protective_items": [
+    "iTalisman"
+   ],
+   "protective_flags": [
+    "lolotteAlive"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 85,
+   "name": "rm85",
+   "context": "fallStairs:changeState",
+   "instance": "fallStairs",
+   "trigger": "POSITIONAL",
+   "protection": "POSITIONAL",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 88,
+   "name": "rm88",
+   "context": "fallStairs:changeState",
+   "instance": "fallStairs",
+   "trigger": "POSITIONAL",
+   "protection": "POSITIONAL",
+   "protective_items": [],
+   "protective_flags": [],
+   "own_guards": []
+  },
+  {
+   "script": 90,
+   "name": "rm90",
+   "context": "fallingToDeath:changeState",
+   "instance": "fallingToDeath",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "henchChasingEgo"
+   ],
+   "own_guards": []
+  },
+  {
+   "script": 93,
+   "name": "rm93",
+   "context": "falling:changeState",
+   "instance": "falling",
+   "trigger": "POSITIONAL",
+   "protection": "GLOBAL",
+   "protective_items": [],
+   "protective_flags": [
+    "henchChasingEgo"
+   ],
+   "own_guards": []
+  }
+ ]
+}
