@@ -77,6 +77,12 @@ class FixModel:
 
         self.init_flags = {k: {_lit(v)} for k, v in game.global_inits.items()}
 
+        # Items that GATE something -- the only ones that can strand you. An item
+        # nothing ever tests can't make the goal unreachable.
+        self.gating_items = {p.var for s in game.scripts.values()
+                             for t in s.transitions for p in t.guards
+                             if p.kind == "OWN" and p.want}
+
     def _rooms_of(self, num):
         """Where do this script's effects happen?
 
@@ -185,6 +191,79 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
 def winnable(m: FixModel, start_room, held=(), flags=None, exhausted=(), goals=None):
     goals = set(goals if goals is not None else CFG.goal_rooms)
     return bool(closure(m, start_room, held, flags, exhausted).rooms & goals)
+
+
+def strandings(m: FixModel, start=None, goals=None):
+    """Softlock findings, as post-state queries over irreversible actions.
+
+    Not a feature -- a query. `W(room, x)` asks: standing in `room` holding
+    everything EXCEPT x, can you still win? (The closure re-acquires x for free if
+    a source is still reachable, so a "no" means genuinely unrecoverable.)
+
+    An edge a->b then strands x exactly when  W(a,x) and not W(b,x)  -- obtainable
+    before, unrecoverable after. That is the LucasArts invariant, derived rather
+    than guessed: no `_sealed`, no reciprocity heuristic, no SCC condensation.
+
+    Memoised on (room, x), not (a, b, x): winnability past an edge depends only on
+    where you land and what you lack.
+    """
+    start = CFG.start_room if start is None else start
+    goals = set(CFG.goal_rooms if goals is None else goals)
+    base = closure(m, start)
+    imax = frozenset(base.items)
+
+    # only items that actually gate something can strand you
+    cand = sorted(x for x in m.gating_items if x in imax)
+
+    memo = {}
+
+    def W(room, x):
+        k = (room, x)
+        if k not in memo:
+            memo[k] = bool(closure(m, room, imax - {x}).rooms & goals)
+        return memo[k]
+
+    def winnable_from(room):
+        k = (room, None)
+        if k not in memo:
+            memo[k] = bool(closure(m, room, imax).rooms & goals)
+        return memo[k]
+
+    out = []
+    for a in sorted(base.rooms):
+        for b in sorted(m.edges.get(a, ())):
+            if b not in base.rooms:
+                continue
+            if not winnable_from(b):
+                continue          # absorbing sink (a death room): you lose there
+                                  # holding EVERYTHING, so it strands nothing --
+                                  # it just says "dying loses", which is not news.
+            already = {p.var for p in m.edge_reqs.get((a, b), ())
+                       if p.kind == "OWN" and p.want}
+            for x in cand:
+                if x in already:
+                    continue          # the game already refuses to let you cross
+                if W(a, x) and not W(b, x):
+                    out.append({"from_room": a, "to_room": b, "item": x,
+                                "item_name": m.g.item_name(x)})
+    return out
+
+
+def consumable_strandings(m: FixModel, start=None, goals=None):
+    """Items whose LOSS is unrecoverable and fatal to winning -- e.g. eating the
+    magic fruit. Post-state = the item gone AND its sources exhausted (a one-shot
+    pickup does not respawn just because you can walk back to the room)."""
+    start = CFG.start_room if start is None else start
+    goals = set(CFG.goal_rooms if goals is None else goals)
+    base = closure(m, start)
+    out = []
+    for x in sorted(m.gating_items):
+        if x not in base.items:
+            continue
+        r = closure(m, start, exhausted={x})
+        if not (r.rooms & goals):
+            out.append({"item": x, "item_name": m.g.item_name(x)})
+    return out
 
 
 def main():

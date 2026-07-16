@@ -508,7 +508,20 @@ def _final_room_int(v):
     return v if isinstance(v, int) else None
 
 
-def _extract_nav(forms):
+def _const_int(v, consts):
+    """An int literal, or a game.sh constant resolved to one. KQ4 writes
+    `setRegions: GENESTA`; LSL2 writes `setRegions: 200`. Without resolving the
+    symbolic form, KQ4's regions are never attached -- which makes every region
+    script look like global code and its effects available from anywhere (the
+    peacock feather could then be picked up from inside the whale)."""
+    if isinstance(v, int):
+        return v
+    if isinstance(v, Sym) and consts:
+        return consts.get(v.name)
+    return None
+
+
+def _extract_nav(forms, consts=None):
     """Room navigation edges: Rm-instance edge properties (north/south/east/west
     -> dest room) and Door `entranceTo:` targets. These are how SCI0 encodes
     walk-off-the-edge and through-door movement -- they are NOT `newRoom` calls,
@@ -541,13 +554,16 @@ def _extract_nav(forms):
             if v and v > 0:
                 exits[form[1].name] = v
         # message-send forms:  ... entranceTo: 118 ... / ... setRegions: 200 ...
+        # (KQ4 writes these as game.sh constants: `setRegions: GENESTA`)
         for i, tok in enumerate(form):
-            if isinstance(tok, Sym) and i + 1 < len(form) and isinstance(form[i + 1], int) \
-                    and form[i + 1] > 0:
+            if isinstance(tok, Sym) and i + 1 < len(form):
+                val = _const_int(form[i + 1], consts)
+                if not val or val <= 0:
+                    continue
                 if tok.name == "entranceTo:":
-                    doors.append(form[i + 1])
+                    doors.append(val)
                 elif tok.name == "setRegions:":
-                    regions.add(form[i + 1])
+                    regions.add(val)
         for sub in form:
             walk(sub)
 
@@ -577,7 +593,7 @@ def load_game(src_dir=SRC_DEFAULT):
         base = os.path.splitext(os.path.basename(path))[0]
         sc = Script(num, name_by_num.get(num, base))
         sc.transitions = _Walker(game, num).run(forms)
-        sc.exits, sc.doors, sc.regions = _extract_nav(forms)
+        sc.exits, sc.doors, sc.regions = _extract_nav(forms, consts)
         game.scripts[num] = sc
     return game
 
