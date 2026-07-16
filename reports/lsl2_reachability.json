@@ -123,27 +123,14 @@
    "item": 5,
    "item_name": "Swimsuit",
    "need_component_id": 10,
-   "need_rooms_sample": [
-    31,
-    32,
-    33,
-    34,
-    35,
-    36,
-    37,
-    38
-   ],
+   "need_room": 32,
    "need_region": [
-    "7=interior/overlay",
-    "8=interior/overlay",
     "300=cruise ship / voyage"
    ],
    "source_rooms": [
     116
    ],
    "frontier_edges": [
-    "rm10->rm90",
-    "rm22->rm96",
     "rm26->rm27"
    ],
    "goal_still_reachable_from_need": true
@@ -153,37 +140,14 @@
    "item": 8,
    "item_name": "Grotesque_Gulp",
    "need_component_id": 8,
-   "need_rooms_sample": [
+   "need_room": 138,
+   "need_region": [
     138
    ],
-   "need_region": [],
    "source_rooms": [
     114
    ],
    "frontier_edges": [
-    "rm10->rm90",
-    "rm22->rm96",
-    "rm26->rm27"
-   ],
-   "goal_still_reachable_from_need": true
-  },
-  {
-   "pattern": "missing-prereq-before-gate",
-   "item": 9,
-   "item_name": "Sunscreen",
-   "need_component_id": 9,
-   "need_rooms_sample": [
-    131
-   ],
-   "need_region": [
-    "300=cruise ship / voyage"
-   ],
-   "source_rooms": [
-    118
-   ],
-   "frontier_edges": [
-    "rm10->rm90",
-    "rm22->rm96",
     "rm26->rm27"
    ],
    "goal_still_reachable_from_need": true
@@ -193,27 +157,31 @@
    "item": 9,
    "item_name": "Sunscreen",
    "need_component_id": 10,
-   "need_rooms_sample": [
-    31,
-    32,
-    33,
-    34,
-    35,
-    36,
-    37,
-    38
-   ],
+   "need_room": 31,
    "need_region": [
-    "7=interior/overlay",
-    "8=interior/overlay",
     "300=cruise ship / voyage"
    ],
    "source_rooms": [
     118
    ],
    "frontier_edges": [
-    "rm10->rm90",
-    "rm22->rm96",
+    "rm26->rm27"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 9,
+   "item_name": "Sunscreen",
+   "need_component_id": 9,
+   "need_room": 131,
+   "need_region": [
+    "300=cruise ship / voyage"
+   ],
+   "source_rooms": [
+    118
+   ],
+   "frontier_edges": [
     "rm26->rm27"
    ],
    "goal_still_reachable_from_need": true
@@ -222,20 +190,15 @@
    "pattern": "missing-prereq-before-gate",
    "item": 11,
    "item_name": "Fruit",
-   "need_component_id": 8,
-   "need_rooms_sample": [
-    138
+   "need_component_id": 9,
+   "need_room": 131,
+   "need_region": [
+    "300=cruise ship / voyage"
    ],
-   "need_region": [],
    "source_rooms": [
     32
    ],
    "frontier_edges": [
-    "rm10->rm90",
-    "rm22->rm96",
-    "rm34->rm95",
-    "rm35->rm95",
-    "rm35->rm96",
     "rm38->rm131"
    ],
    "goal_still_reachable_from_need": true
@@ -244,22 +207,15 @@
    "pattern": "missing-prereq-before-gate",
    "item": 11,
    "item_name": "Fruit",
-   "need_component_id": 9,
-   "need_rooms_sample": [
-    131
-   ],
+   "need_component_id": 8,
+   "need_room": 138,
    "need_region": [
-    "300=cruise ship / voyage"
+    138
    ],
    "source_rooms": [
     32
    ],
    "frontier_edges": [
-    "rm10->rm90",
-    "rm22->rm96",
-    "rm34->rm95",
-    "rm35->rm95",
-    "rm35->rm96",
     "rm38->rm131"
    ],
    "goal_still_reachable_from_need": true
@@ -269,19 +225,31 @@
    "item": 12,
    "item_name": "Sewing_Kit",
    "need_component_id": 8,
-   "need_rooms_sample": [
+   "need_room": 138,
+   "need_region": [
     138
    ],
-   "need_region": [],
    "source_rooms": [
     33
    ],
    "frontier_edges": [
-    "rm10->rm90",
-    "rm22->rm96",
-    "rm34->rm95",
-    "rm35->rm95",
-    "rm35->rm96",
+    "rm38->rm131"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 13,
+   "item_name": "Spinach_Dip",
+   "need_component_id": 9,
+   "need_room": 131,
+   "need_region": [
+    "300=cruise ship / voyage"
+   ],
+   "source_rooms": [
+    35
+   ],
+   "frontier_edges": [
     "rm38->rm131"
    ],
    "goal_still_reachable_from_need": true
@@ -291,43 +259,14 @@
    "item": 13,
    "item_name": "Spinach_Dip",
    "need_component_id": 8,
-   "need_rooms_sample": [
+   "need_room": 138,
+   "need_region": [
     138
    ],
-   "need_region": [],
    "source_rooms": [
     35
    ],
    "frontier_edges": [
-    "rm10->rm90",
-    "rm22->rm96",
-    "rm34->rm95",
-    "rm35->rm95",
-    "rm35->rm96",
-    "rm38->rm131"
-   ],
-   "goal_still_reachable_from_need": true
-  },
-  {
-   "pattern": "missing-prereq-before-gate",
-   "item": 13,
-   "item_name": "Spinach_Dip",
-   "need_component_id": 9,
-   "need_rooms_sample": [
-    131
-   ],
-   "need_region": [
-    "300=cruise ship / voyage"
-   ],
-   "source_rooms": [
-    35
-   ],
-   "frontier_edges": [
-    "rm10->rm90",
-    "rm22->rm96",
-    "rm34->rm95",
-    "rm35->rm95",
-    "rm35->rm96",
     "rm38->rm131"
    ],
    "goal_still_reachable_from_need": true
@@ -337,9 +276,7 @@
    "item": 14,
    "item_name": "Wig",
    "need_component_id": 9,
-   "need_rooms_sample": [
-    131
-   ],
+   "need_room": 131,
    "need_region": [
     "300=cruise ship / voyage"
    ],
@@ -347,12 +284,95 @@
     37
    ],
    "frontier_edges": [
-    "rm10->rm90",
-    "rm22->rm96",
-    "rm34->rm95",
-    "rm35->rm95",
-    "rm35->rm96",
     "rm38->rm131"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 21,
+   "item_name": "Hair_Rejuvenator",
+   "need_component_id": 4,
+   "need_room": 63,
+   "need_region": [
+    "600=airport/plane"
+   ],
+   "source_rooms": [
+    82,
+    151
+   ],
+   "frontier_edges": [
+    "rm10->rm90",
+    "rm57->rm58",
+    "rm82->rm83"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 24,
+   "item_name": "Parachute",
+   "need_component_id": 4,
+   "need_room": 63,
+   "need_region": [
+    "600=airport/plane"
+   ],
+   "source_rooms": [
+    55
+   ],
+   "frontier_edges": [
+    "rm57->rm58"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 25,
+   "item_name": "Bobby_Pin",
+   "need_component_id": 4,
+   "need_room": 63,
+   "need_region": [
+    "600=airport/plane"
+   ],
+   "source_rooms": [
+    55
+   ],
+   "frontier_edges": [
+    "rm57->rm58"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 30,
+   "item_name": "Ashes",
+   "need_component_id": 4,
+   "need_room": 80,
+   "need_region": [
+    "700=volcano/jungle"
+   ],
+   "source_rooms": [
+    77
+   ],
+   "frontier_edges": [
+    "rm79->rm80"
+   ],
+   "goal_still_reachable_from_need": true
+  },
+  {
+   "pattern": "missing-prereq-before-gate",
+   "item": 31,
+   "item_name": "Sand",
+   "need_component_id": 4,
+   "need_room": 81,
+   "need_region": [
+    "700=volcano/jungle"
+   ],
+   "source_rooms": [
+    75
+   ],
+   "frontier_edges": [
+    "rm79->rm80"
    ],
    "goal_still_reachable_from_need": true
   }

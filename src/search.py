@@ -123,6 +123,13 @@ class SccReach:
             for r in srcs:
                 if r in self.comp_of:
                     self.items_in_comp[self.comp_of[r]].add(it)
+        # room-level reachability from start (for gate-aware stranded-item analysis)
+        self.reach_rooms = reachable(self.edges, {START_ROOM})
+        # region model + goal comps, so the stranding core is self-contained and
+        # shared by BOTH the report (analyze) and the patcher (Synth).
+        self.members, self.room_region, self.controllers = region_maps(self.g)
+        self.goal_comps = {self.comp_of[r] for r in GOAL_ROOMS if r in self.comp_of}
+        self._reob = {}                              # memo: item -> reobtainable rooms
 
     def comp_reach_source(self, item):
         """comps from which item is still obtainable (this comp or a downstream one)."""
@@ -133,70 +140,131 @@ class SccReach:
                 out.add(c)
         return out
 
+    def _sealed(self, R, srcs):
+        """Is requiring-room R a one-way POCKET w.r.t. these item sources? True iff,
+        after deleting R's OWN one-way exits (its irreversible commit edges), R can
+        no longer reach any source. The plane rm63's only exit is the gated jump
+        rm63->64, so deleting it seals rm63 -> stranded. rm81 (throw sand at the
+        ice) keeps a reciprocal exit that loops out to the sand beach and back, so
+        deleting its one-way exit still reaches the source -> NOT sealed -> a normal
+        fetch, not a strand. This is what separates a movement-gate from a
+        side-action requirement without needing a death model."""
+        e2 = {a: set(b) for a, b in self.edges.items()}
+        for Rp in list(e2.get(R, ())):
+            if R not in self.edges.get(Rp, set()):       # R->Rp is one-way
+                e2[R].discard(Rp)
+        return not (reachable(e2, {R}) & srcs)
+
+    def reobtainable_rooms(self, item):
+        """Rooms from which `item` can still be ACQUIRED, GATE-AWARE. From a SEALED
+        requiring room (see _sealed) you may not leave via a one-way edge -- taking
+        it presupposes already owning `item` (the parachute jump). This breaks the
+        circular dependency that welds the plane onto the island as one mega-SCC and
+        hides the stranding, while leaving open-area side-action requirements alone."""
+        if item in self._reob:
+            return self._reob[item]
+        srcs = self.sources.get(item, set())
+        if not srcs:
+            self._reob[item] = set()
+            return self._reob[item]
+        sealed = {R for R in self.required.get(item, set())
+                  if R in self.edges and self._sealed(R, srcs)}
+        rev = defaultdict(set)                           # allowed reverse adjacency
+        for R, outs in self.edges.items():
+            for Rp in outs:
+                one_way = R not in self.edges.get(Rp, set())
+                if R in sealed and one_way:
+                    continue                             # gated commit edge out of a sealed pocket
+                rev[Rp].add(R)
+        seen = set(srcs)
+        q = deque(seen)
+        while q:
+            u = q.popleft()
+            for w in rev.get(u, ()):
+                if w not in seen:
+                    seen.add(w)
+                    q.append(w)
+        self._reob[item] = seen
+        return seen
+
+    def _need_rooms(self, item):
+        """Rooms where OWN(item) is actually faced (region controllers -> members)."""
+        out = set()
+        for R in self.required.get(item, set()):
+            if R in self.controllers:
+                out |= set(self.members.get(R, ()))
+            else:
+                out.add(R)
+        return out
+
+    # -- THE single gate-aware detection primitive, shared by the report and the
+    #    patcher, so the two can never drift apart again. --------------------
+    def edge_strandings(self):
+        """For every guardable one-way `newRoom` edge a->b, the items obtainable
+        before the edge but LOST after it (gate-aware) and still needed on a path
+        that reaches the goal. `guard(a->b) = AND own(item)` is exactly the
+        LucasArts invariant. Death sinks (crossings that can't reach the goal) and
+        reversible walk edges are excluded."""
+        reob = {it: self.reobtainable_rooms(it)
+                for it in self.required if self.sources.get(it)}
+        out = []
+        for a, bs in self.edges.items():
+            if a not in self.reach_rooms:
+                continue                                 # unreachable-from-start (e.g. the
+                                                         # pre-game copy-protection screen rm10)
+            for b in sorted(bs):
+                if "goto" not in self.edge_kind.get((a, b), set()):
+                    continue                             # only code-guardable newRoom edges
+                if a in self.edges.get(b, set()):
+                    continue                             # reversible walk -> not a commit
+                cb = self.comp_of.get(b)
+                if cb is None:
+                    continue
+                fwd = self.creach.get(cb, set())         # comps reachable from b (incl b's)
+                if self.goal_comps and not (self.goal_comps & fwd):
+                    continue                             # crossing b can't win -> death sink
+                items = []
+                for it, R in reob.items():
+                    if a in R and b not in R:            # obtainable before a, lost after b
+                        if any(self.comp_of.get(nr) in fwd for nr in self._need_rooms(it)):
+                            items.append(it)             # still needed past the edge
+                if items:
+                    out.append({"from_room": a, "to_room": b, "items": sorted(items)})
+        return out
+
     def analyze(self):
-        start_c = self.comp_of.get(START_ROOM)
-        reach_from_start = self.creach.get(start_c, set()) if start_c is not None else set()
-        goal_comps = {self.comp_of[r] for r in GOAL_ROOMS if r in self.comp_of}
-        members, room_region, controllers = region_maps(self.g)
-
-        cands = []
-        for item in sorted(self.coi_items):
-            if item not in self.required:
-                continue  # not read by any guard -> can't gate progress
-            srcs = self.sources.get(item, set())
-            if not srcs:
-                continue
-            can_get = self.comp_reach_source(item)
-            # comps where the item is needed (a guard reads own(item) in a room there)
-            need_comps = set()
-            for R in self.required[item]:
-                if R in controllers:                # region controller (isolated SCC):
-                    for m in members.get(R, ()):    # face the need in its member rooms
-                        if m in self.comp_of:
-                            need_comps.add(self.comp_of[m])
-                elif R in self.comp_of:
-                    need_comps.add(self.comp_of[R])
-            for c in sorted(need_comps):
-                if c not in reach_from_start:
-                    continue                         # unreachable context, ignore
-                if c in can_get:
-                    continue                         # can still fetch it -> fine
-                if goal_comps and not (self.creach[c] & goal_comps):
-                    continue                         # from here you can't reach goal anyway
-                cands.append(self._mk_cand(item, c, srcs, room_region))
-        # dedup by (item, need-comp)
-        seen, uniq = set(), []
-        for c in cands:
-            k = (c["item"], c["need_component_id"])
-            if k not in seen:
+        """Report view over the single edge_strandings() core -- one row per
+        (item, need-component) so report and patcher never diverge."""
+        by_item = defaultdict(set)                       # item -> {stranding edges}
+        for e in self.edge_strandings():
+            for it in e["items"]:
+                by_item[it].add((e["from_room"], e["to_room"]))
+        cands, seen = [], set()
+        for it in sorted(by_item):
+            reob = self.reobtainable_rooms(it)
+            frontier = sorted(f"rm{a}->rm{b}" for a, b in by_item[it])
+            for R in sorted(self._need_rooms(it)):
+                if R not in self.reach_rooms or R in reob:
+                    continue
+                c = self.comp_of.get(R)
+                if c is None:
+                    continue
+                k = (it, c)
+                if k in seen:
+                    continue
                 seen.add(k)
-                uniq.append(c)
-        return uniq
-
-    def _mk_cand(self, item, need_c, srcs, room_region):
-        src_c = sorted({self.comp_of[r] for r in srcs if r in self.comp_of})
-        # frontier = one-way edges out of comps that can still reach the item into comps that can't
-        can_get = self.comp_reach_source(item)
-        fr = []
-        for a in can_get:
-            for b in self.cedges.get(a, ()):
-                if b not in can_get:
-                    for ra in self.comps[a]:
-                        for rb in self.comps[b]:
-                            if rb in self.edges.get(ra, ()):
-                                fr.append(f"rm{ra}->rm{rb}")
-        need_rooms = sorted(self.comps[need_c])
-        need_regs = sorted({r for rm in need_rooms for r in room_region.get(rm, set())})
-        return {
-            "pattern": "missing-prereq-before-gate",
-            "item": item, "item_name": self.g.item_name(item),
-            "need_component_id": need_c,
-            "need_rooms_sample": need_rooms[:8],
-            "need_region": [f"{r}={REGION_LABELS.get(r, r)}" for r in need_regs],
-            "source_rooms": sorted(srcs),
-            "frontier_edges": sorted(set(fr))[:6],
-            "goal_still_reachable_from_need": True,
-        }
+                regs = sorted(self.room_region.get(R, set()))
+                cands.append({
+                    "pattern": "missing-prereq-before-gate",
+                    "item": it, "item_name": self.g.item_name(it),
+                    "need_component_id": c,
+                    "need_room": R,
+                    "need_region": [f"{r}={REGION_LABELS.get(r, r)}" for r in regs] or [R],
+                    "source_rooms": sorted(self.sources.get(it, [])),
+                    "frontier_edges": frontier[:6],
+                    "goal_still_reachable_from_need": True,
+                })
+        return cands
 
 
 def main():

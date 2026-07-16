@@ -27,82 +27,32 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from model import load_game, Game                        # noqa: E402
-from analyze import region_maps                          # noqa: E402
-from search import SccReach, GOAL_ROOMS                  # noqa: E402
+from search import SccReach                              # noqa: E402
 
 
 class Synth:
     def __init__(self, game: Game):
         self.g = game
         self.s = SccReach(game)
-        self.members, self.room_region, self.controllers = region_maps(game)
-        self.goal_comps = {self.s.comp_of[r] for r in GOAL_ROOMS if r in self.s.comp_of}
-
-    def _src_comps(self, item):
-        return {self.s.comp_of[r] for r in self.s.sources.get(item, set()) if r in self.s.comp_of}
-
-    def can_get_from(self, comp, item):
-        """Is a source of `item` still reachable once you are at component `comp`?"""
-        return bool(self.s.creach.get(comp, set()) & self._src_comps(item))
-
-    def _need_comps(self, item):
-        out = set()
-        for R in self.s.required.get(item, set()):
-            if R in self.controllers:                      # region controller -> members
-                for m in self.members.get(R, ()):
-                    if m in self.s.comp_of:
-                        out.add(self.s.comp_of[m])
-            elif R in self.s.comp_of:
-                out.add(self.s.comp_of[R])
-        return out
-
-    def stranded_by(self, a, b):
-        """Resources obtainable before crossing a->b, not after, and needed after."""
-        out = []
-        for item in sorted(self.s.required):
-            if not self.s.sources.get(item):
-                continue
-            if (self.can_get_from(a, item) and not self.can_get_from(b, item)
-                    and (self._need_comps(item) & self.s.creach.get(b, set()))):
-                out.append(item)
-        return out
-
-    def gates(self):
-        """Irreversible condensation edges worth guarding, with their stranded set."""
-        specs = []
-        for a, bs in self.s.cedges.items():
-            for b in bs:
-                # only guard crossings that still lead to victory (skip death sinks)
-                if not (self.s.creach.get(b, set()) & self.goal_comps):
-                    continue
-                stranded = self.stranded_by(a, b)
-                if not stranded:
-                    continue
-                # room-level newRoom edges realizing this act boundary (guardable in code)
-                realizers = [(ra, rb) for ra in self.s.comps[a] for rb in self.s.comps[b]
-                             if rb in self.s.edges.get(ra, set())
-                             and "goto" in self.s.edge_kind.get((ra, rb), set())]
-                if not realizers:
-                    continue
-                specs.append({"comp_from": a, "comp_to": b,
-                              "realizers": realizers, "stranded": stranded})
-        return specs
 
     def patch_specs(self):
+        # Detection and synthesis are the SAME object: guards come straight from the
+        # shared gate-aware stranding core (SccReach.edge_strandings), the same
+        # primitive the report (search.analyze) reads. One library, no drift.
         out = []
-        for gate in self.gates():
-            items = [{"id": i, "name": self.g.item_name(i)} for i in gate["stranded"]]
-            for (ra, rb) in gate["realizers"]:
-                out.append({
-                    "op": "add_guard",
-                    "pattern": "irreversible-edge / LucasArts invariant",
-                    "room": ra, "newroom_target": rb,
-                    "require_items": items,
-                    "guard_sexpr": "(and " + " ".join(f"(gEgo has: {i['id']})" for i in items) + ")",
-                    "rationale": (f"crossing rm{ra}->rm{rb} strands "
-                                  + ", ".join(i["name"] for i in items)
-                                  + " (obtainable before, needed after, not gettable after)"),
-                })
+        for es in self.s.edge_strandings():
+            ra, rb = es["from_room"], es["to_room"]
+            items = [{"id": i, "name": self.g.item_name(i)} for i in es["items"]]
+            out.append({
+                "op": "add_guard",
+                "pattern": "irreversible-edge / LucasArts invariant",
+                "room": ra, "newroom_target": rb,
+                "require_items": items,
+                "guard_sexpr": "(and " + " ".join(f"(gEgo has: {i['id']})" for i in items) + ")",
+                "rationale": (f"crossing rm{ra}->rm{rb} strands "
+                              + ", ".join(i["name"] for i in items)
+                              + " (obtainable before, needed after, not gettable after)"),
+            })
         # forcing timers: uncontrollable transitions that set an irreversible latch
         for tspec in self._forcing_timers():
             out.append(tspec)
