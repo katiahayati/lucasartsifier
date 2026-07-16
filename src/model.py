@@ -74,6 +74,31 @@ class Pred:
         return f"opaque({self.text})"
 
 
+# --------------------------------------------------------------------------
+# Guard TREES. A guard is a boolean expression; the flat `guards` list below is a
+# CONJUNCTION and cannot represent `or` -- it emits OPAQUE("or") and drops the
+# disjuncts. That silently deletes real conditions: the LSL2 raft's day-3 check is
+# `(or (== gWearingSunscreen 1) (== gWearingSunscreen 3))`, so the sunscreen simply
+# vanishes and a solver concludes you can win without it. Same root cause as the
+# glacier needing Sand OR Ashes. Trees keep the structure; `closure.eval3`
+# evaluates them with 3-valued logic (unknown stays unknown, so we only ever block
+# on a PROVABLY false guard).
+# --------------------------------------------------------------------------
+@dataclass
+class GAnd:
+    kids: list
+
+
+@dataclass
+class GOr:
+    kids: list
+
+
+@dataclass
+class GNot:
+    kid: object
+
+
 @dataclass
 class Effect:
     kind: str            # ACQUIRE | DROP | SCORE | GOTO | SET
@@ -97,8 +122,12 @@ class Effect:
 class Transition:
     script: int
     context: str
-    guards: list = field(default_factory=list)       # list[Pred]
+    guards: list = field(default_factory=list)       # list[Pred] -- flat CONJUNCTION
     effects: list = field(default_factory=list)       # list[Effect]
+    guard_tree: object = None    # GAnd/GOr/GNot/Pred -- the real boolean structure.
+                                 # `guards` above cannot express `or` and silently
+                                 # drops the disjuncts; keep both while the fixpoint
+                                 # migration is in flight.
 
     @property
     def said_gated(self):
@@ -336,7 +365,8 @@ class _Walker:
         preds = []
         for g in guards:
             _norm_guard(g, self.game, out=preds)
-        self.transitions.append(Transition(self.num, context, preds, [eff]))
+        tree = GAnd([norm_tree(g, self.game) for g in guards]) if guards else GAnd([])
+        self.transitions.append(Transition(self.num, context, preds, [eff], tree))
 
     def _walk(self, form, guards, context):
         if not isinstance(form, list) or not form:
@@ -479,6 +509,52 @@ def _parse_script_consts(src_dir):
         for name, num in re.findall(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*;\s*(\d+)\s*$", txt, re.M):
             consts.setdefault(name, int(num))
     return consts
+
+
+def norm_tree(expr, game):
+    """Normalize a guard expression into a TREE (GAnd/GOr/GNot/Pred), preserving
+    the boolean structure that `_norm_guard` flattens away. Atoms it cannot
+    interpret become Pred("OPAQUE"/"SAID"/"POS"), which `closure.eval3` reads as
+    UNKNOWN rather than True -- so a negated unknown stays unknown instead of
+    flipping to a false 'this is blocked'."""
+    if isinstance(expr, Sym):
+        if game.is_global(expr.name):
+            return Pred("FLAG", var=expr.name, want=True)
+        return Pred("OPAQUE", text=expr.name)
+    if isinstance(expr, Said):
+        return Pred("SAID")
+    if isinstance(expr, (int, Str)):
+        return Pred("OPAQUE", text=str(expr))
+    if not isinstance(expr, list) or not expr:
+        return Pred("OPAQUE", text="?")
+    head = expr[0]
+
+    if is_sym(head, "not") and len(expr) == 2:
+        return GNot(norm_tree(expr[1], game))
+    if is_sym(head, "and"):
+        return GAnd([norm_tree(s, game) for s in expr[1:]])
+    if is_sym(head, "or"):
+        return GOr([norm_tree(s, game) for s in expr[1:]])
+    if is_sym(head, "Said"):
+        return Pred("SAID")
+
+    if len(expr) >= 2 and isinstance(expr[1], Sym) and expr[1].is_selector():
+        sel = expr[1].sel
+        a0 = expr[2] if len(expr) >= 3 else None
+        if sel == OWN_SEL:
+            iid = game.resolve_item(a0)
+            if iid is not None:
+                return Pred("OWN", var=iid, want=True)
+        if sel in POSITIONAL_SELS:
+            return Pred("POS", text=sel)
+        return Pred("OPAQUE", text=f"{_short(expr[0])}.{sel}")
+
+    if isinstance(head, Sym) and head.name in ("==", "!=", "<", ">", "<=", ">=", "u<", "u>"):
+        if len(expr) >= 3 and isinstance(expr[1], Sym) and game.is_global(expr[1].name):
+            return Pred("CMP", var=expr[1].name, op=head.name, value=_short(expr[2]))
+    if is_sym(head, "&") or is_sym(head, "bit-and"):
+        return Pred("POS", text="bittest")
+    return Pred("OPAQUE", text=_short(expr))
 
 
 def _script_num(forms, consts=None):

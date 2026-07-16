@@ -174,13 +174,9 @@ def edge_requirements(game: Game):
     under-approximates the precondition -- conservative: it can only ever miss a
     requirement, never invent one.
     """
-    def _evaluable(preds):
-        return [p for p in preds if p.kind in ("OWN", "FLAG", "CMP")]
+    from model import GAnd, GOr
 
-    def _key(p):
-        return (p.kind, p.var, p.op, str(p.value), p.want)
-
-    reqs = {}
+    reqs = defaultdict(list)
     for num, s in game.scripts.items():
         acts = defaultdict(list)                # instance -> [(target_state, transition)]
         for t in s.transitions:
@@ -201,7 +197,7 @@ def edge_requirements(game: Game):
             for e in t.effects:
                 if e.kind != "GOTO" or not isinstance(e.arg, int):
                     continue
-                ps = {_key(p): p for p in _evaluable(t.guards)}
+                parts = [t.guard_tree] if t.guard_tree is not None else []
                 # Which trigger leads HERE? A machine has many entry points (rm57Script
                 # is entered at 1, 4, ...); the one that reaches state `st` is the
                 # nearest with target K <= st. Same heuristic trigger.py already proves.
@@ -209,16 +205,17 @@ def edge_requirements(game: Game):
                          if st is None or k <= st]
                 if cands:
                     kmax = max(k for k, _ in cands)
-                    sets = [{_key(p): p for p in _evaluable(at.guards)}
-                            for k, at in cands if k == kmax]
-                    common = set(sets[0])
-                    for d in sets[1:]:
-                        common &= set(d)        # several routes to K -> intersect
-                    for key in common:
-                        ps.setdefault(key, sets[0][key])
-                if ps:
-                    reqs.setdefault((num, e.arg), {}).update(ps)
-    return {k: list(v.values()) for k, v in reqs.items()}
+                    routes = [at.guard_tree for k, at in cands
+                              if k == kmax and at.guard_tree is not None]
+                    if routes:
+                        # several routes to the same K are ALTERNATIVES -> OR them,
+                        # which is now expressible. (The old code intersected flat
+                        # Pred sets, which silently wiped every precondition whenever
+                        # a machine had more than one entry point.)
+                        parts.append(routes[0] if len(routes) == 1 else GOr(routes))
+                if parts:
+                    reqs[(num, e.arg)].extend(parts)
+    return {k: GAnd(v) for k, v in reqs.items()}
 
 
 def reachable(edges, start_set):

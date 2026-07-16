@@ -70,10 +70,10 @@ class FixModel:
                 for e in t.effects:
                     if e.kind == "ACQUIRE":
                         for r in self._rooms_of(num):
-                            self.acq[e.arg].append((r, t.guards))
+                            self.acq[e.arg].append((r, t.guard_tree))
                     elif e.kind == "SET":
                         for r in self._rooms_of(num):
-                            self.sets[e.arg].append((r, _lit(e.value), t.guards))
+                            self.sets[e.arg].append((r, _lit(e.value), t.guard_tree))
 
         self.init_flags = {k: {_lit(v)} for k, v in game.global_inits.items()}
 
@@ -129,6 +129,100 @@ def _cmp_ok(v, op, want):
             "<=": v <= w, ">=": v >= w}.get(op, True)
 
 
+T, F, U = True, False, None          # 3-valued: true / false / unknown
+
+
+_INV = {"==": "!=", "!=": "==", "<": ">=", ">": "<=", "<=": ">", ">=": "<"}
+
+
+def _and3(vals):
+    if any(v is F for v in vals):
+        return F
+    return U if any(v is U for v in vals) else T
+
+
+def _or3(vals):
+    if any(v is T for v in vals):
+        return T
+    return U if any(v is U for v in vals) else F
+
+
+def _atom3(p, items, flags, neg):
+    """SATISFIABILITY of an atom: can the player arrange for it to hold?
+
+    Note this is NOT truth at a fixed instant. `flags` holds the SET of values a
+    global can ever take, so `(== gCurrentStatus 0)` asks "can it be 0?", not "is
+    it 0 now?". That is why negation must be pushed into the leaf (== -> !=)
+    rather than applied to the answer: negating "0 is achievable" would give
+    "cannot be non-zero", which is nonsense for a mode register that takes 37
+    values -- and it blocked half of LSL2 when I tried it.
+    """
+    if p.kind == "OWN":
+        want = p.want != neg
+        if not want:
+            return U              # "must NOT hold x": monotonic items can't model dropping
+        return T if p.var in items else F
+    if p.kind == "FLAG":
+        want = p.want != neg
+        vals = flags.get(p.var)
+        if not vals:
+            return U
+        t = _truthy(vals)
+        if want:
+            return T if t else F
+        return T if any(v == 0 for v in vals) or any(v is ANY for v in vals) else F
+    if p.kind == "CMP":
+        vals = flags.get(p.var)
+        if not vals:
+            return U
+        if any(v is ANY for v in vals):
+            return U
+        op = _INV.get(p.op, p.op) if neg else p.op
+        return T if any(_cmp_ok(v, op, p.value) for v in vals) else F
+    return U                      # SAID / POS / OPAQUE -> unknown
+
+
+def eval3(node, items, flags, neg=False):
+    """3-valued (Kleene) evaluation of a guard TREE, with negation pushed to the
+    leaves via De Morgan. UNKNOWN is load-bearing: anything we cannot interpret
+    stays U rather than becoming T, so we only ever refuse an edge on a PROVABLY
+    false guard -- miss a stranding rather than invent one."""
+    from model import GAnd, GOr, GNot, Pred
+    if isinstance(node, GAnd):
+        vals = [eval3(k, items, flags, neg) for k in node.kids]
+        return _or3(vals) if neg else _and3(vals)       # ¬(a∧b) = ¬a ∨ ¬b
+    if isinstance(node, GOr):
+        vals = [eval3(k, items, flags, neg) for k in node.kids]
+        return _and3(vals) if neg else _or3(vals)       # ¬(a∨b) = ¬a ∧ ¬b
+    if isinstance(node, GNot):
+        return eval3(node.kid, items, flags, not neg)
+    if isinstance(node, Pred):
+        return _atom3(node, items, flags, neg)
+    return U
+
+
+def holds_tree(tree, items, flags):
+    """Block only on a provably-false guard. A missing tree = unguarded = free."""
+    if tree is None:
+        return True
+    return eval3(tree, items, flags) is not F
+
+
+def own_atoms(node, out=None):
+    """Positive OWN items mentioned anywhere in a guard tree (reporting only --
+    a mention is not a requirement, since it may sit under an `or` or a `not`)."""
+    from model import GAnd, GOr, GNot, Pred
+    out = set() if out is None else out
+    if isinstance(node, (GAnd, GOr)):
+        for k in node.kids:
+            own_atoms(k, out)
+    elif isinstance(node, GNot):
+        own_atoms(node.kid, out)
+    elif isinstance(node, Pred) and node.kind == "OWN" and node.want:
+        out.add(node.var)
+    return out
+
+
 def holds(preds, items, flags):
     """Do these guards hold under (items, flags)? Deliberately PERMISSIVE about
     anything we cannot evaluate -- an unknown guard is assumed satisfiable. That
@@ -166,7 +260,7 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
         # 1. walk anywhere whose edge preconditions hold
         for a in list(rooms):
             for b in m.edges.get(a, ()):
-                if b not in rooms and holds(m.edge_reqs.get((a, b), ()), items, fl):
+                if b not in rooms and holds_tree(m.edge_reqs.get((a, b)), items, fl):
                     rooms.add(b)
                     changed = True
         # 2. pick up anything acquirable in reach (and not consumed away)
@@ -174,7 +268,7 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
             if it in items or it in exhausted:
                 continue
             for room, guards in sites:
-                if (room is None or room in rooms) and holds(guards, items, fl):
+                if (room is None or room in rooms) and holds_tree(guards, items, fl):
                     items.add(it)
                     changed = True
                     break
@@ -182,7 +276,7 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
         for g, sites in m.sets.items():
             for room, val, guards in sites:
                 if (room is None or room in rooms) and val not in fl.get(g, ()) \
-                        and holds(guards, items, fl):
+                        and holds_tree(guards, items, fl):
                     fl.setdefault(g, set()).add(val)
                     changed = True
     return Reach(rooms, items, fl)
@@ -238,8 +332,7 @@ def strandings(m: FixModel, start=None, goals=None):
                 continue          # absorbing sink (a death room): you lose there
                                   # holding EVERYTHING, so it strands nothing --
                                   # it just says "dying loses", which is not news.
-            already = {p.var for p in m.edge_reqs.get((a, b), ())
-                       if p.kind == "OWN" and p.want}
+            already = own_atoms(m.edge_reqs.get((a, b)))
             for x in cand:
                 if x in already:
                     continue          # the game already refuses to let you cross
