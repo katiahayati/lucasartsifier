@@ -65,7 +65,7 @@
   {
    "script": 114,
    "name": "rm114",
-   "context": "rm114Script:changeState",
+   "context": "rm114Script:changeState:11",
    "instance": "rm114Script",
    "trigger": "POSITIONAL",
    "protection": "ITEM",
@@ -98,7 +98,7 @@
   {
    "script": 138,
    "name": "rm138",
-   "context": "rm138Script:changeState",
+   "context": "rm138Script:changeState:26",
    "instance": "rm138Script",
    "trigger": "SCRIPTED",
    "protection": "ITEM",
@@ -116,7 +116,7 @@
   {
    "script": 152,
    "name": "rm152",
-   "context": "rm152Script:changeState",
+   "context": "rm152Script:changeState:1",
    "instance": "rm152Script",
    "trigger": "SCRIPTED",
    "protection": "GLOBAL",
@@ -131,7 +131,7 @@
   {
    "script": 152,
    "name": "rm152",
-   "context": "rm152Script:changeState",
+   "context": "rm152Script:changeState:1",
    "instance": "rm152Script",
    "trigger": "SCRIPTED",
    "protection": "GLOBAL",
@@ -147,7 +147,7 @@
   {
    "script": 152,
    "name": "rm152",
-   "context": "rm152Script:changeState",
+   "context": "rm152Script:changeState:1",
    "instance": "rm152Script",
    "trigger": "SCRIPTED",
    "protection": "GLOBAL",
@@ -164,7 +164,7 @@
   {
    "script": 152,
    "name": "rm152",
-   "context": "rm152Script:changeState",
+   "context": "rm152Script:changeState:1",
    "instance": "rm152Script",
    "trigger": "SCRIPTED",
    "protection": "GLOBAL",
@@ -182,7 +182,7 @@
   {
    "script": 152,
    "name": "rm152",
-   "context": "rm152Script:changeState",
+   "context": "rm152Script:changeState:1",
    "instance": "rm152Script",
    "trigger": "SCRIPTED",
    "protection": "GLOBAL",
@@ -200,7 +200,7 @@
   {
    "script": 181,
    "name": "rm181",
-   "context": "rm181Script:changeState",
+   "context": "rm181Script:changeState:2",
    "instance": "rm181Script",
    "trigger": "POSITIONAL",
    "protection": "GLOBAL",
@@ -267,7 +267,7 @@
   {
    "script": 32,
    "name": "rm32",
-   "context": "rm32Script:changeState",
+   "context": "rm32Script:changeState:22",
    "instance": "rm32Script",
    "trigger": "TIMED",
    "protection": "ITEM",
@@ -285,7 +285,7 @@
   {
    "script": 33,
    "name": "rm33",
-   "context": "rm33Script:changeState",
+   "context": "rm33Script:changeState:13",
    "instance": "rm33Script",
    "trigger": "SAID",
    "protection": "GLOBAL",
@@ -299,7 +299,7 @@
   {
    "script": 34,
    "name": "rm34",
-   "context": "rm34Script:changeState",
+   "context": "rm34Script:changeState:3",
    "instance": "rm34Script",
    "trigger": "POSITIONAL",
    "protection": "GLOBAL",
@@ -317,7 +317,7 @@
   {
    "script": 34,
    "name": "rm34",
-   "context": "rm34Script:changeState",
+   "context": "rm34Script:changeState:14",
    "instance": "rm34Script",
    "trigger": "POSITIONAL",
    "protection": "GLOBAL",
@@ -335,7 +335,7 @@
   {
    "script": 36,
    "name": "rm36",
-   "context": "rm36Script:changeState",
+   "context": "rm36Script:changeState:8",
    "instance": "rm36Script",
    "trigger": "SAID",
    "protection": "GLOBAL",
@@ -348,7 +348,7 @@
   {
    "script": 36,
    "name": "rm36",
-   "context": "rm36Script:changeState",
+   "context": "rm36Script:changeState:10",
    "instance": "rm36Script",
    "trigger": "SAID",
    "protection": "GLOBAL",
@@ -397,7 +397,7 @@
   {
    "script": 43,
    "name": "rm43",
-   "context": "rm43Script:changeState",
+   "context": "rm43Script:changeState:123",
    "instance": "rm43Script",
    "trigger": "SAID",
    "protection": "GLOBAL",
@@ -413,7 +413,7 @@
   {
    "script": 44,
    "name": "rm44",
-   "context": "rm44Script:changeState",
+   "context": "rm44Script:changeState:21",
    "instance": "rm44Script",
    "trigger": "SAID",
    "protection": "ITEM",
@@ -431,7 +431,7 @@
   {
    "script": 50,
    "name": "rm50",
-   "context": "copScript:changeState",
+   "context": "copScript:changeState:2",
    "instance": "copScript",
    "trigger": "SAID",
    "protection": "GLOBAL",
@@ -466,7 +466,7 @@
   {
    "script": 55,
    "name": "rm55",
-   "context": "rm55Script:changeState",
+   "context": "rm55Script:changeState:16",
    "instance": "rm55Script",
    "trigger": "SAID",
    "protection": "GLOBAL",
@@ -501,7 +501,7 @@
   {
    "script": 61,
    "name": "rm61",
-   "context": "rm61Script:changeState",
+   "context": "rm61Script:changeState:18",
    "instance": "rm61Script",
    "trigger": "SAID",
    "protection": "GLOBAL",
@@ -515,7 +515,7 @@
   {
    "script": 62,
    "name": "rm62",
-   "context": "boreScript:changeState",
+   "context": "boreScript:changeState:8",
    "instance": "boreScript",
    "trigger": "TIMED",
    "protection": "ITEM",
@@ -531,7 +531,7 @@
   {
    "script": 65,
    "name": "rm65",
-   "context": "rm65Script:changeState",
+   "context": "rm65Script:changeState:3",
    "instance": "rm65Script",
    "trigger": "SAID",
    "protection": "GLOBAL",
@@ -545,7 +545,7 @@
   {
    "script": 70,
    "name": "rm70",
-   "context": "rm70Script:changeState",
+   "context": "rm70Script:changeState:2",
    "instance": "rm70Script",
    "trigger": "SCRIPTED",
    "protection": "ITEM",
@@ -558,7 +558,7 @@
   {
    "script": 71,
    "name": "rm71",
-   "context": "rm71Script:changeState",
+   "context": "rm71Script:changeState:15",
    "instance": "rm71Script",
    "trigger": "SAID",
    "protection": "GLOBAL",
@@ -572,7 +572,7 @@
   {
    "script": 72,
    "name": "rm72",
-   "context": "rm72Script:changeState",
+   "context": "rm72Script:changeState:11",
    "instance": "rm72Script",
    "trigger": "POSITIONAL",
    "protection": "GLOBAL",
@@ -586,7 +586,7 @@
   {
    "script": 73,
    "name": "rm73",
-   "context": "rm73Script:changeState",
+   "context": "rm73Script:changeState:5",
    "instance": "rm73Script",
    "trigger": "POSITIONAL",
    "protection": "GLOBAL",
@@ -600,7 +600,7 @@
   {
    "script": 74,
    "name": "rm74",
-   "context": "rm74Script:changeState",
+   "context": "rm74Script:changeState:9",
    "instance": "rm74Script",
    "trigger": "SAID",
    "protection": "GLOBAL",
@@ -614,7 +614,7 @@
   {
    "script": 78,
    "name": "rm78",
-   "context": "rm78Script:changeState",
+   "context": "rm78Script:changeState:48",
    "instance": "rm78Script",
    "trigger": "POSITIONAL",
    "protection": "GLOBAL",
@@ -629,7 +629,7 @@
   {
    "script": 79,
    "name": "rm79",
-   "context": "rm79Script:changeState",
+   "context": "rm79Script:changeState:20",
    "instance": "rm79Script",
    "trigger": "SAID",
    "protection": "ITEM",
@@ -646,7 +646,7 @@
   {
    "script": 82,
    "name": "rm82",
-   "context": "rm82Script:changeState",
+   "context": "rm82Script:changeState:5",
    "instance": "rm82Script",
    "trigger": "SAID",
    "protection": "ITEM",
@@ -664,7 +664,7 @@
   {
    "script": 82,
    "name": "rm82",
-   "context": "rm82Script:changeState",
+   "context": "rm82Script:changeState:7",
    "instance": "rm82Script",
    "trigger": "SAID",
    "protection": "ITEM",
@@ -684,7 +684,7 @@
   {
    "script": 82,
    "name": "rm82",
-   "context": "rm82Script:changeState",
+   "context": "rm82Script:changeState:9",
    "instance": "rm82Script",
    "trigger": "SAID",
    "protection": "ITEM",
@@ -704,7 +704,7 @@
   {
    "script": 82,
    "name": "rm82",
-   "context": "rm82Script:changeState",
+   "context": "rm82Script:changeState:23",
    "instance": "rm82Script",
    "trigger": "SAID",
    "protection": "ITEM",
@@ -722,7 +722,7 @@
   {
    "script": 95,
    "name": "rm95",
-   "context": "rm95Script:changeState",
+   "context": "rm95Script:changeState:28",
    "instance": "rm95Script",
    "trigger": "SCRIPTED",
    "protection": "GLOBAL",
@@ -735,7 +735,7 @@
   {
    "script": 96,
    "name": "rm96",
-   "context": "rm96Script:changeState",
+   "context": "rm96Script:changeState:3",
    "instance": "rm96Script",
    "trigger": "SCRIPTED",
    "protection": "NONE",

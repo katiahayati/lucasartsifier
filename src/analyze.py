@@ -132,6 +132,79 @@ def movement_graph(game: Game):
     return edges, edge_kind
 
 
+def edge_requirements(game: Game):
+    """Guards that must hold to TRAVERSE each movement edge a->b -> `[Pred]`.
+
+    Movement edges are NOT free. That single omission is the bug behind the
+    parachute, the sand/ashes argument, the rm55->56 false positive and the whale:
+    the room graph dropped edge guards and we re-approximated them with `_sealed`
+    ever since.
+
+    The guard is rarely on the `newRoom` itself. Inside the whale (rm44) the
+    `newRoom: 31` sits in `tickle:changeState` with NO guard at all, while the
+    feather check that lets you start the tickle is over in `Room44:handleEvent`.
+    So an edge's precondition is its GOTO transition's own guards PLUS those of
+    whatever ACTIVATES the instance owning that GOTO -- either `(tickle
+    changeState: 1)` from another instance, or `(self changeState: K)` issued from
+    a handleEvent/doit, which is the controllable trigger of its own machine.
+
+    Preconditions can be FLAGS as well as items: the parachute jump rm63->64 is
+    traversable without the chute (you just die at rm64) -- what actually gates the
+    survival edge rm64->65 is `wearingParachute`. So keep every evaluable Pred
+    (OWN/FLAG/CMP) and let the fixpoint decide, rather than only collecting items.
+
+    Multiple activators are ALTERNATIVE ways to trigger the same sequence, so their
+    guards form a disjunction. We intersect them (what EVERY route requires), which
+    under-approximates the precondition -- conservative: it can only ever miss a
+    requirement, never invent one.
+    """
+    def _evaluable(preds):
+        return [p for p in preds if p.kind in ("OWN", "FLAG", "CMP")]
+
+    def _key(p):
+        return (p.kind, p.var, p.op, str(p.value), p.want)
+
+    reqs = {}
+    for num, s in game.scripts.items():
+        acts = defaultdict(list)                # instance -> [(target_state, transition)]
+        for t in s.transitions:
+            ctx = t.context or ""
+            inst, meth = _instance_of(ctx), _method_of(ctx)
+            for e in t.effects:
+                if e.kind != "STATE" or not isinstance(e.arg, int):
+                    continue
+                if e.receiver and e.receiver != "self":
+                    acts[e.receiver].append((e.arg, t))   # started from another instance
+                elif meth != "changeState":
+                    # `(self changeState: K)` from handleEvent/doit is the controllable
+                    # trigger that STARTS this machine (vs. a state advancing itself).
+                    acts[inst].append((e.arg, t))
+        for t in s.transitions:
+            ctx = t.context or ""
+            inst, st = _instance_of(ctx), _state_of(ctx)
+            for e in t.effects:
+                if e.kind != "GOTO" or not isinstance(e.arg, int):
+                    continue
+                ps = {_key(p): p for p in _evaluable(t.guards)}
+                # Which trigger leads HERE? A machine has many entry points (rm57Script
+                # is entered at 1, 4, ...); the one that reaches state `st` is the
+                # nearest with target K <= st. Same heuristic trigger.py already proves.
+                cands = [(k, at) for (k, at) in acts.get(inst, ())
+                         if st is None or k <= st]
+                if cands:
+                    kmax = max(k for k, _ in cands)
+                    sets = [{_key(p): p for p in _evaluable(at.guards)}
+                            for k, at in cands if k == kmax]
+                    common = set(sets[0])
+                    for d in sets[1:]:
+                        common &= set(d)        # several routes to K -> intersect
+                    for key in common:
+                        ps.setdefault(key, sets[0][key])
+                if ps:
+                    reqs.setdefault((num, e.arg), {}).update(ps)
+    return {k: list(v.values()) for k, v in reqs.items()}
+
+
 def reachable(edges, start_set):
     seen = set(start_set)
     q = deque(start_set)
@@ -184,9 +257,27 @@ PROT_POSITIONAL = "POSITIONAL"   # only geometry avoids it ("don't walk on green
 PROT_NONE = "NONE"               # unavoidable / narrative
 
 
+# Context is `instance:method[:state]`, e.g. `deadTimer:changeState:22`.
 def _instance_of(context):
-    """`deadTimer:changeState` -> `deadTimer`. The Script instance owning a death."""
-    return (context or "").split(":", 1)[0]
+    """`deadTimer:changeState:22` -> `deadTimer`. The Script instance that owns it."""
+    return (context or "").split(":")[0]
+
+
+def _method_of(context):
+    """`deadTimer:changeState:22` -> `changeState`."""
+    parts = (context or "").split(":")
+    return parts[1] if len(parts) > 1 else ""
+
+
+def _state_of(context):
+    """`deadTimer:changeState:22` -> 22; None if not inside a switch case."""
+    parts = (context or "").split(":")
+    if len(parts) > 2:
+        try:
+            return int(parts[2])
+        except ValueError:
+            return None
+    return None
 
 
 def death_sites(game: Game):

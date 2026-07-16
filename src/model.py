@@ -385,10 +385,23 @@ class _Walker:
                 self._walk(b, guards + [form[1]], context)
             return
         if is_sym(head, "switch") or is_sym(head, "switchto"):
+            # Record the case value in the context -> `rm57Script:changeState:7`.
+            # A Script's states ARE its state machine, and we need to know which
+            # state a GOTO lives in to tell which trigger leads to it (rm57Script
+            # has many `(self changeState: K)` triggers; only one reaches state 7).
+            seq = 0
             for clause in form[2:]:
                 if isinstance(clause, list) and clause:
+                    if isinstance(clause[0], int):
+                        st = clause[0]
+                    elif is_sym(clause[0], "else"):
+                        st = None
+                    else:
+                        st = seq              # switchto: implicit sequential cases
+                    seq += 1
+                    ctx = context if st is None else f"{context}:{st}"
                     for b in clause[1:]:
-                        self._walk(b, guards, context)
+                        self._walk(b, guards, ctx)
             return
 
         # message send?
