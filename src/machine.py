@@ -116,22 +116,36 @@ class Machine:
 
 
 # --------------------------------------------------------------------------
-# Leaf-path enumeration: (path condition, ordered actions)
+# Leaf-path enumeration -> ordered OP SEQUENCES
+#
+# A path is a list of ops IN SOURCE ORDER, where `("TEST", expr)` sits exactly where
+# the test happens. It used to be a (path-condition, actions) PAIR, with the whole
+# condition evaluated once against the state's ENTRY counter store -- so a counter
+# write earlier on the same path was invisible to a test after it. KQ4 rm78 `jump`
+# state 1 is exactly that shape:
+#
+#     (-- jumpNum)  (if (== jumpNum -1) (curRoom newRoom: 77))
+#
+# The model demanded jumpNum == -1 at ENTRY, where the game demands 0 at entry and
+# decrements first. jumpNum can never be -1 on entry, so the branch was pruned as
+# provably false and the exit was swallowed. (`_find_counters`' comment credits the
+# lo-clamp fix with rescuing this exit. It did not -- this was why.)
 # --------------------------------------------------------------------------
-def _leaf_paths(forms, pc):
-    res = [(pc, [])]
+def _leaf_paths(forms, pc=None):
+    """Compose forms in sequence: every path through `forms`, ops in source order."""
+    res = [list(pc) if pc else []]
     for f in forms:
         nxt = []
-        for (p, acts) in res:
-            for (p2, a2) in _paths_of(f, p):
-                nxt.append((p2, acts + a2))
+        for prefix in res:
+            for suffix in _paths_of(f):
+                nxt.append(prefix + suffix)
         res = nxt
     return res
 
 
-def _paths_of(f, pc):
+def _paths_of(f):
     if not isinstance(f, list) or not f:
-        return [(pc, [])]
+        return [[]]
     h = f[0]
 
     if is_sym(h, "if") and len(f) >= 2:
@@ -142,8 +156,8 @@ def _paths_of(f, pc):
                 seen = True
                 continue
             (else_b if seen else then_b).append(b)
-        return (_leaf_paths(then_b, pc + [test]) +
-                _leaf_paths(else_b, pc + [[Sym("not"), test]]))
+        return ([[("TEST", test)] + p for p in _leaf_paths(then_b)] +
+                [[("TEST", [Sym("not"), test])] + p for p in _leaf_paths(else_b)])
 
     if is_sym(h, "cond"):
         out, prior = [], []
@@ -151,8 +165,9 @@ def _paths_of(f, pc):
             if not (isinstance(cl, list) and cl):
                 continue
             t = cl[0]
-            g = pc + prior if is_sym(t, "else") else pc + prior + [t]
-            out += _leaf_paths(cl[1:], g)
+            tests = list(prior) if is_sym(t, "else") else list(prior) + [t]
+            for p in _leaf_paths(cl[1:]):
+                out.append([("TEST", x) for x in tests] + p)
             if not is_sym(t, "else"):
                 prior = prior + [[Sym("not"), t]]
         return out
@@ -185,14 +200,14 @@ def _paths_of(f, pc):
                 acts.append(("ADVANCE", None))
         if not acts and has_self_arg:
             acts.append(("ADVANCE", None))          # a plain cue callback
-        return [(pc, acts)]
+        return [acts]
 
     # ---- assignments: control flow, counters, death ----
     if isinstance(h, Sym) and h.name in ("=", "+=", "-=", "++", "--") \
             and len(f) >= 2 and isinstance(f[1], Sym):
         v, op = f[1].name, h.name
         if v in ("seconds", "cycles"):
-            return [(pc, [("ADVANCE", None)])]
+            return [[("ADVANCE", None)]]
         if v == "state":
             # `state` is the program counter, never data. `(= state 24)` jumps;
             # `(-- state)` with the following cue re-runs THIS state (SCI's loop
@@ -200,21 +215,48 @@ def _paths_of(f, pc):
             # Treating `(-- state)` as a counter step -- which is what a naive
             # ++/-- rule does -- silently turns a loop into a fall-through.
             if op == "=" and len(f) >= 3 and isinstance(f[2], int):
-                return [(pc, [("SETSTATE", f[2])])]
+                return [[("SETSTATE", f[2])]]
             if op in ("++", "--"):
-                return [(pc, [("STATEREL", 1 if op == "++" else -1)])]
-            return [(pc, [])]                       # computed state: leave control alone
+                return [[("STATEREL", 1 if op == "++" else -1)]]
+            return [[]]                              # computed state: leave control alone
         if op in ("++", "--"):
-            return [(pc, [("STEP", (v, 1 if op == "++" else -1))])]
+            return [[("STEP", (v, 1 if op == "++" else -1))]]
         if op == "=" and len(f) >= 3 and isinstance(f[2], int):
-            return [(pc, [("SETVAR", (v, f[2]))])]
-        return [(pc, [("SETVAR", (v, None))])]      # non-literal -> unmodellable
+            return [[("SETVAR", (v, f[2]))]]
+        return [[("SETVAR", (v, None))]]         # non-literal -> unmodellable
 
-    out = []
-    for sub in f:
-        if isinstance(sub, list):
-            out += _paths_of(sub, pc)
-    return out or [(pc, [])]
+    # A nested `switch` / `switchto` inside a case body. Recurse properly rather than
+    # letting the generic fallback shred it: each case is an ALTERNATIVE (and we cannot
+    # evaluate the discriminant, so all of them stay open), while the statements WITHIN
+    # a case compose in sequence.
+    if is_sym(h, "switch") or is_sym(h, "switchto"):
+        out = []
+        for cl in f[2:]:
+            if isinstance(cl, list) and cl:
+                out += _leaf_paths(cl[1:] if (isinstance(cl[0], int) or is_sym(cl[0], "else"))
+                                   else cl)
+        return out or [[]]
+
+    # `while` / `repeat` / `for` bodies: the body may run or not, so both are paths.
+    if is_sym(h, "while") and len(f) >= 2:
+        return ([[("TEST", f[1])] + p for p in _leaf_paths(f[2:])] +
+                [[("TEST", [Sym("not"), f[1]])]])
+    if is_sym(h, "repeat"):
+        return _leaf_paths(f[1:]) + [[]]
+    if is_sym(h, "for") and len(f) >= 4:
+        return ([[("TEST", f[2])] + p for p in _leaf_paths(list(f[4:]) + [f[3]])] + [[]])
+
+    # Generic fallback: an unrecognised form. Its list children are SEQUENTIAL
+    # statements, so COMPOSE them (_leaf_paths) -- do not union them.
+    #
+    # This used `out += _paths_of(sub, pc)`, which is the alternative-branch operator.
+    # It split a case body into one path per statement: `(1 (= state 5) (= seconds 2))`
+    # became `[SETSTATE 5]` (arms no cue -> PARKS, so the jump is lost) and `[ADVANCE]`
+    # (-> st+1, a transition the engine never makes) -- never the real
+    # `[SETSTATE 5, ADVANCE]` -> state 6. It hit 26 nested control forms in LSL2 and 68
+    # in KQ4, every one walked with its actions on the wrong branches.
+    subs = [sub for sub in f if isinstance(sub, list)]
+    return _leaf_paths(subs) if subs else [[]]
 
 
 # --------------------------------------------------------------------------
@@ -239,15 +281,15 @@ def _find_counters(states, locals_, game):
     assignment or a ++/-- step (otherwise we cannot track it, and guessing would
     invent constraints). Domain bound = the largest literal it meets, + 2.
     """
-    cmp_lits, writes_ok = {}, {}
+    cmp_lits, writes_ok, assign_lits = {}, {}, {}
     for _k, paths in states.items():
-        for (pc, acts) in paths:
-            for e in pc:
-                for (var, lit) in _cmp_literals(e):
-                    if var in locals_ and var not in CONTROL_LOCALS:
-                        cmp_lits.setdefault(var, set()).add(lit)
-            for (kind, arg) in acts:
-                if kind == "STEP":
+        for path in paths:
+            for (kind, arg) in path:
+                if kind == "TEST":
+                    for (var, lit) in _cmp_literals(arg):
+                        if var in locals_ and var not in CONTROL_LOCALS:
+                            cmp_lits.setdefault(var, set()).add(lit)
+                elif kind == "STEP":
                     writes_ok.setdefault(arg[0], True)
                 elif kind == "SETVAR":
                     var, val = arg
@@ -255,6 +297,7 @@ def _find_counters(states, locals_, game):
                         writes_ok[var] = False          # non-literal write: give up
                     else:
                         writes_ok.setdefault(var, True)
+                        assign_lits.setdefault(var, set()).add(val)
     out = {}
     for var, lits in cmp_lits.items():
         if writes_ok.get(var) is False:
@@ -270,6 +313,21 @@ def _find_counters(states, locals_, game):
         if hi - lo > COUNTER_CAP:
             continue                                    # too wide to enumerate; leave it UNKNOWN
         out[var] = (lo, hi)
+    return out
+
+
+def _compile_path(path, game, counters):
+    """Compile TEST exprs to guard trees, and death writes to DEATH, in place.
+
+    Ops stay in SOURCE ORDER: `run()` applies counter writes and evaluates tests as
+    it walks, so a test sees the writes that precede it on its own path.
+    """
+    out = []
+    for (kind, arg) in path:
+        if kind == "TEST":
+            out.append(("TEST", norm_tree(arg, game, locals_=counters)))
+        else:
+            out.append(_as_death((kind, arg), game))
     return out
 
 
@@ -365,16 +423,14 @@ def machines_of(game, num):
             # Compile path conditions to guard TREES now that we know the counters,
             # so `(== day 3)` becomes a LOCAL pred instead of an OPAQUE one.
             for st, paths in raw.items():
-                m.states[st] = [
-                    (norm_tree([Sym("and")] + pc, game, locals_=m.counters) if pc else None,
-                     [_as_death(a, game) for a in acts])
-                    for (pc, acts) in paths
-                ]
+                m.states[st] = [_compile_path(p, game, m.counters) for p in paths]
             m.entries = _entries_of(game, num, inst, forms)
             items, glbs = set(), set()
-            for brs in m.states.values():
-                for (gd, _acts) in brs:
-                    _refs(gd, items, glbs)
+            for paths in m.states.values():
+                for path in paths:
+                    for (kind, arg) in path:
+                        if kind == "TEST":
+                            _refs(arg, items, glbs)
             for (_st, gd) in m.entries:
                 _refs(gd, items, glbs)
             m.item_refs, m.flag_refs = frozenset(items), frozenset(glbs)
@@ -482,11 +538,13 @@ def run(m: Machine, items, flags, eval_fn):
                     seen.add(n)
                     work.append(n)
             continue
-        for (guard, acts) in branches:
-            if guard is not None and eval_fn(guard, items, flags, locs) is False:
-                continue                     # provably-false branch: not taken
-            # Run the WHOLE body, then decide. A state's statements all execute, so
-            # precedence is about WHEN each takes effect, not source order:
+        for path in branches:
+            # Walk the ops IN SOURCE ORDER, so a TEST sees the counter writes that
+            # precede it on this path (KQ4 rm78: `(-- jumpNum)` then
+            # `(if (== jumpNum -1) ...)` -- the test must see the decrement).
+            #
+            # Run the WHOLE body before deciding where we go. A state's statements all
+            # execute, so precedence is about WHEN each takes effect, not source order:
             #   newRoom / death / changeState act NOW;
             #   `(= seconds N)` / `(= cycles N)` / a `self` cue only ARM a callback.
             # So an immediate transfer preempts an armed cue. rm48 state 14 is exactly
@@ -494,9 +552,13 @@ def run(m: Machine, items, flags, eval_fn):
             # the first action swallowed the exit.
             nxt, nloc = st, dict(locs)
             exit_to = jump_to = None
-            died = armed = False
-            for (kind, arg) in acts:
-                if kind == "STEP":
+            died = armed = pruned = False
+            for (kind, arg) in path:
+                if kind == "TEST":
+                    if eval_fn(arg, items, flags, nloc) is False:
+                        pruned = True        # provably-false: this path is not taken
+                        break
+                elif kind == "STEP":
                     var, d = arg
                     if var in m.counters:
                         lo, hi = m.counters[var]
@@ -518,6 +580,8 @@ def run(m: Machine, items, flags, eval_fn):
                     exit_to = arg
                 elif kind == "DEATH":
                     died = True
+            if pruned:
+                continue
             if exit_to is not None:
                 exits.add(exit_to)
                 continue                     # the room changed; nothing else matters

@@ -167,11 +167,30 @@ def main():
     print("\nKQ4")
     g2, m2, r2, goals2, total2, strands2 = run(config.KQ4)
     check("SANITY: shipped game is winnable", bool(r2.rooms & goals2), True)
-    check("rooms reached", len(r2.rooms), 88)
+    # 89, not 88. It was 88 because the machine cache keyed on the instance NAME, and
+    # KQ4 reuses names across rooms: `doDoor` exists in rm80 (exits to 92) and rm87
+    # (exits to 84). They shared a key, rm80 was closed first, rm87 read back rm80's
+    # answer, and rm84 was DELETED from the game -- a fabricated dead end. This
+    # assertion pinned the bug in as ground truth, so the correct fix turned the suite
+    # red. A test that encodes the bug is worse than no test.
+    check("rooms reached", len(r2.rooms), 89)
+    check("rm84 is reachable (the doDoor cache collision)", 84 in r2.rooms, True)
+    # Structural: no two machines may share a cache key, in EITHER game. This is the
+    # invariant, not the symptom -- it fails on any future name reuse rather than
+    # waiting for a room to quietly disappear.
+    for lbl, mm in (("LSL2", m), ("KQ4", m2)):
+        keys = [(mach.script, mach.inst) for ms in mm.machines.values() for mach in ms.values()]
+        check(f"{lbl}: machine cache keys are unique", len(keys), len(set(keys)))
     # `(ego setScript: tickle)` sits INSIDE `(if (ego has: iFeather) ...)`, so the
     # feather gates the machine's ENTRY. Scanning for the setScript symbol without
     # its guard hands you the whale's exit for free.
     check_in("derives the whale (rm31->44 iFeather)", (31, 44, "iFeather"), strands2)
+    # rm78's `jump` is `(-- jumpNum)` then `(if (== jumpNum -1) (newRoom: 77))`. When
+    # path conditions were evaluated against the state's ENTRY counter store, the test
+    # demanded jumpNum==-1 on entry, which is unreachable -- so the machine delivered
+    # NO exit and (78,77) fell back. Ops now carry TESTs in source order.
+    check("rm78->rm77 is trusted (the test sees the decrement before it)",
+          (78, 77) in m2.machine_edges, True)
 
     print()
     if FAILS:

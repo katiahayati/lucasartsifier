@@ -406,7 +406,14 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
                                # looks at, so they collapse onto the same key).
 
     def _exits(inst, mach):
-        key = (inst, mach.project(items, fl))
+        # Key on the MACHINE, not its instance NAME. Script instance names are only
+        # unique within a script, and rooms reuse them: KQ4 has `doDoor` in both rm80
+        # and rm87, `doorOpen` in rm49/51, `egoActions` in rm690/693, `henchChase` in
+        # rm86/87/91. rm80's doDoor exits to 92 and rm87's to 84; they projected to the
+        # identical key, rm80 was closed first, and rm87 read back rm80's answer -- so
+        # rm84 was DELETED from the game. A fabricated dead end, the one error this
+        # tool must never make, from a cache key.
+        key = (mach.script, mach.inst, mach.project(items, fl))
         ex = cache.get(key)
         if ex is None:
             ex, _deaths = machine_run(mach, items, fl,
@@ -421,7 +428,30 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
         for a in list(rooms):
             for b in m.edges.get(a, ()):
                 if (a, b) in m.machine_edges:
-                    continue          # owned by a state machine -> step 1b decides
+                    # Owned by a state machine -> step 1b decides, and the flat edge
+                    # stays out of it.
+                    #
+                    # REVIEW REJECTED A CHANGE HERE, with evidence. The proposal was:
+                    # when a trusted machine declines an exit, fall back to
+                    # `holds_tree(edge_reqs)` rather than treat machine silence as
+                    # proof of a gate. Sound-looking, and it deletes FOUR of six
+                    # findings -- Sunscreen, Grotesque_Gulp, Wig, Fruit-OR-Sewing_Kit
+                    # all vanish. The reason is the raft itself: `edge_reqs[(138,42)]`
+                    # is `opaque((>= day 9))`, which is UNKNOWN, which is permissive.
+                    # The flat guard has NOTHING to say about any edge a machine owns
+                    # -- that is precisely why the machine had to own it. Falling back
+                    # to it is falling back to "no gate".
+                    #
+                    # The live bug the reviewer traced (KQ4 rm84 deleted) was the cache
+                    # key above, now fixed. The residual concern is real and stands
+                    # unfixed: `control_exits` runs once with everything granted and
+                    # only asks "does this exit exist at all", so it cannot catch
+                    # mis-modelling that is item/flag-DEPENDENT rather than total (an
+                    # exit reachable permissively via an item-guarded branch, while the
+                    # genuinely free branch stalls on a cue idiom we misread). There is
+                    # no cheap detector for that, and the offered cure costs the
+                    # feature. Documented rather than papered over.
+                    continue
                 if b not in rooms and holds_tree(m.edge_reqs.get((a, b)), items, fl):
                     rooms.add(b)
                     changed = True
