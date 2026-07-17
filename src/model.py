@@ -57,6 +57,26 @@ STATE_SEL = "changeState"
 # whale's exit free.
 SCRIPT_SEL = "setScript"
 ROOM_SELS = {"newRoom", "startRoom"}
+# Possession has TWO spellings and they are the same thing. `Actor::has` is defined
+# (Actor.sc:608 / KQ4 Actor.sc:1092) as `((gInventory at: X) ownedBy: self)`, and
+# `Inventory.sc:28` defines `(method (ownedBy id) (return (== owner id)))`. So:
+#
+#     (ego has: X)  ==  ((gInventory at: X) ownedBy: ego)  ==  (X.owner == ego)
+#
+# We recognised only the first spelling and rendered the second OPAQUE, which is why
+# a census went looking for `ownedBy` as if it were a separate "possession channel".
+# It is the definition. KQ4 rm18 writes possession the second way; LSL2 rm32's Fruit
+# check is `((gInventory at: 11) ownedBy: gCurRoomNum)` -- "is it still lying here?".
+OWNED_BY_SEL = "ownedBy"
+EGO_NAMES = {"ego", "gEgo", "self"}
+
+
+def _inv_item(expr, game):
+    """`(gInventory at: X)` / `(Inventory at: iX)` -> item id, else None."""
+    if not (isinstance(expr, list) and len(expr) >= 3 and isinstance(expr[1], Sym)
+            and expr[1].sel == "at"):
+        return None
+    return game.resolve_item(expr[2])
 # receivers / calls that are positional or parser gating -> lifted away
 POSITIONAL_SELS = {"inRect", "onControl", "observeControl", "ignoreControl",
                    "distanceTo", "obstacles", "edgeHit", "at", "cantBeHere"}
@@ -594,6 +614,14 @@ def norm_tree(expr, game, locals_=()):
             iid = game.resolve_item(a0)
             if iid is not None:
                 return Pred("OWN", var=iid, want=True)
+        if sel == OWNED_BY_SEL:
+            # `((gInventory at: X) ownedBy: ego)` -- possession, the other spelling.
+            iid = _inv_item(expr[0], game)
+            if iid is not None and is_sym(a0) and a0.name in EGO_NAMES:
+                return Pred("OWN", var=iid, want=True)
+            # `ownedBy: <somewhere else>` asks where the item IS, not whether you hold
+            # it -- that needs the per-item `owner` register (PLAN-v2 phase 4), so stay
+            # honest and leave it unread rather than pretend it is a possession test.
         if sel in POSITIONAL_SELS:
             return Pred("POS", text=sel)
         return Pred("OPAQUE", text=f"{_short(expr[0])}.{sel}")
