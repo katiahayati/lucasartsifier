@@ -281,39 +281,42 @@ class FixModel:
             chosen = [gn for gn in candidates if gn in override]
         self.promoted = frozenset(chosen)
         self.reg_dom = {gn: frozenset(_dom(gn)) for gn in self.promoted}
-        self._build_edge_reg_effect()
+        self._build_reg_writes()
 
     def promote(self, regs):
         """Turn promotion on for a chosen register set (for investigation / tests).
 
-        Rebuilds `promoted`, `reg_dom`, and the edge register-effects. Kept off the
+        Rebuilds `promoted`, `reg_dom`, and the room register-writes. Kept off the
         default path because promotion makes `requirements()` ~200x slower per closure
         -- see the note by the selection above."""
         self.promoted = frozenset(r for r in regs if r in self.candidate_registers)
         self.reg_dom = {r: self.reg_dom_all[r] for r in self.promoted}
-        self._build_edge_reg_effect()
+        self._build_reg_writes()
         return self
 
-    def _build_edge_reg_effect(self):
-        # EDGE REGISTER EFFECTS. A cutscene room writes a promoted register and then
-        # moves you, and the two are the same trigger: rm77 does
-        # `(if (== gIslandStatus 1) (= gIslandStatus 2) ... -> newRoom: 76)`, so the
-        # edge (77,76) is guarded by `== 1` and rm77 writes `:= 2` under that same
-        # condition. Split apart, promotion self-defeats: you traverse the edge at
-        # value 1, arrive holding value 1, and the NEXT gate (`rm76 -> rm79` needs 2)
-        # never binds -- rm79 goes unreachable. So an edge whose guard IMPLIES a
-        # same-room write's guard carries that write as a DESTINATION effect: the guard
-        # is checked on the source value, the new value is delivered to the target.
-        self.edge_reg_effect = {}          # (a,b) -> {reg: abs-value}
-        for (a, b) in set(self.edge_reqs) | self.machine_edges:
-            guard = self.machine_guards.get((a, b), self.edge_reqs.get((a, b)))
-            for reg in self.promoted:
-                dom = self.reg_dom[reg]
-                for room, val, wguard in self.sets.get(reg, ()):
-                    if room != a:
-                        continue
-                    if _edge_implies_write(guard, wguard, reg, dom):
-                        self.edge_reg_effect.setdefault((a, b), {})[reg] = _abs_val(val)
+    def _build_reg_writes(self):
+        # ROOM REGISTER WRITES: room -> [(reg, abs-value, guard)] for promoted
+        # registers, in source order. The closure applies these when you LEAVE a room,
+        # each gated on its own guard against the SOURCE state -- which is the only
+        # correct place for them, and it took two bugs to see why:
+        #
+        #  * A register write is NOT an add-only self-transition. Modelled that way, the
+        #    stale PRE-write value survives in parallel: rm64 sets gCurrentStatus:=12 on
+        #    entry, but (rm64, 0) stayed reachable too and leaked value 0 into rm65,
+        #    which survives on `!= 12`. Applying the writes ON THE WAY OUT overwrites the
+        #    stale value, so every exit from rm64 delivers 12 (or 10 with the chute).
+        #  * The gating register and the WRITTEN register can differ. rm64's
+        #    gCurrentStatus:=10 is gated on `gWearingParachute==1` -- a DIFFERENT
+        #    register. So there is no "edge implies same-register write" shortcut; a
+        #    write just carries its own guard, evaluated against the live state.
+        #
+        # rm79 still works: leaving rm77 at gIslandStatus=1, the edge (77,76) guard
+        # `==1` holds on the source, and rm77's `:=2` write (guard `==1`, also true on
+        # the source) is applied -> arrive rm76 at 2.
+        self.room_reg_writes = defaultdict(list)
+        for reg in self.promoted:
+            for room, val, guard in self.sets.get(reg, ()):
+                self.room_reg_writes[room].append((reg, _abs_val(val), guard))
 
     def _rooms_of(self, num):
         """Where do this script's effects happen?
@@ -682,40 +685,27 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
         for (a, rv) in reach:
             by_room[a].add(rv)
 
-        # 1. movement -- registers ride along unchanged. A machine-owned edge has a
-        #    COMPILED guard; there is no machine at runtime any more.
+        # 1. movement. The edge guard is checked on the SOURCE valuation; then the room
+        #    you are LEAVING applies its promoted-register writes (each gated on its own
+        #    guard vs the live valuation, progressively) to produce the valuation you
+        #    carry into b. This is what makes a mode-register gate bind AND overwrites
+        #    stale values -- see `_build_reg_writes`.
         idx = {reg: i for i, reg in enumerate(order)}
         for (a, rv) in list(reach):
             ov = _overlay(rv)
+            # valuation delivered when leaving `a`: apply a's writes (and any global-code
+            # writes, room None) to rv, in order, each conditional on its guard.
+            nrv = list(rv)
+            for reg, av, wguard in (m.room_reg_writes.get(a, []) + m.room_reg_writes.get(None, [])):
+                if holds_tree(wguard, items, _overlay(tuple(nrv))):
+                    nrv[idx[reg]] = av
+            nrv = tuple(nrv)
             for b in m.edges.get(a, ()):
                 guard = (m.machine_guards.get((a, b)) if (a, b) in m.machine_edges
                          else m.edge_reqs.get((a, b)))
-                if not holds_tree(guard, items, ov):
-                    continue
-                # guard checked on the SOURCE value; any co-triggered register write
-                # is delivered to the DESTINATION (see edge_reg_effect).
-                nrv = rv
-                eff = m.edge_reg_effect.get((a, b))
-                if eff:
-                    lst = list(rv)
-                    for reg, v in eff.items():
-                        lst[idx[reg]] = v
-                    nrv = tuple(lst)
-                if (b, nrv) not in reach:
+                if holds_tree(guard, items, ov) and (b, nrv) not in reach:
                     reach.add((b, nrv))
                     changed = True
-        # 1b. promoted-register WRITES -- the only thing that changes rv, and the
-        #     reason the gate can bind: you reach (rm65, status=10) only by setting it.
-        for i, reg in enumerate(order):
-            for room, val, guards in m.sets.get(reg, ()):
-                av = _abs(val)
-                for (a, rv) in list(reach):
-                    if rv[i] == av or not (room is None or room == a):
-                        continue
-                    nxt = (a, rv[:i] + (av,) + rv[i + 1:])
-                    if nxt not in reach and holds_tree(guards, items, _overlay(rv)):
-                        reach.add(nxt)          # membership check BEFORE `changed`:
-                        changed = True          # re-deriving a present state is not a change
 
         # 2. pick up anything acquirable at SOME reachable (room, rv)
         for it, sites in m.acq.items():
