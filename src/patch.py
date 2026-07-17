@@ -141,8 +141,23 @@ def main(force=False):
 
     path = os.path.join(os.path.dirname(__file__), "..", "reports", "patch_specs.json")
     with open(path, "w") as f:
-        json.dump(specs, f, indent=1)
-    print(f"\nwrote {os.path.normpath(path)}")
+        # The DO-NOT-SHIP banner must be REPRODUCIBLE, not hand-added to the artifact.
+        # This used to `json.dump(specs, ...)` -- a bare list -- while the committed
+        # file was a dict wrapping the specs in `_DISABLED`/`_why`. So the one
+        # documented way to regenerate it (`patch.py --force`) silently stripped the
+        # warning and left the fatal rm38->rm131 guard behind, reading exactly like the
+        # version that was believed shippable. The whole safety story for this file is
+        # "retained only as a record of what went wrong"; a story that lives only in an
+        # artifact nothing can reproduce is not a safety story.
+        json.dump({
+            "_DISABLED": "KNOWN-WRONG OUTPUT -- DO NOT COMPILE OR SHIP.",
+            "_why": DISABLED_WHY.strip(),
+            "_superseded_by": ("closure.requirements() -- CNF from minimal blocking "
+                               "sets, which excludes the fatal Spinach_Dip by "
+                               "construction and gets Fruit-OR-Sewing_Kit right"),
+            "specs": specs,
+        }, f, indent=1)
+    print(f"\nwrote {os.path.normpath(path)} (with the DO-NOT-SHIP banner)")
     return specs
 
 

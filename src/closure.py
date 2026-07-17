@@ -530,6 +530,24 @@ def requirements(m: FixModel, start=None, goals=None, log=None):
 
     wmemo, lmemo = {}, {}
 
+    # Flags RESET to init here, and that is deliberate -- `closure` re-derives them
+    # from the items you actually hold. It is the same premise as `imax`: "standing
+    # here with this inventory, what can you still achieve?"
+    #
+    # A review finding proposed passing `base.flags` instead, on the grounds that the
+    # reset forgets flags the player provably set on the way. Tried it: it DELETES the
+    # Sunscreen and the Wig. Those are exactly the item -> flag -> survival chains the
+    # core exists to find -- `gWearingSunscreen` is only settable while HOLDING the
+    # Sunscreen, so handing in "{1,2,3} is achievable" while removing the item asserts
+    # the conclusion the query is asking about. Flags must stay coupled to items or the
+    # question is meaningless.
+    #
+    # The finding's real observation stands and is handled below: the sink test drops
+    # edges silently, and its comment claimed they were death rooms. They are not; they
+    # are rooms you genuinely cannot win from with the inventory re-derived, which for
+    # rm138 (the raft) is simply TRUE -- board it without having worn sunscreen on the
+    # ship and you are dead, and no cargo changes that. So the skip is right; the
+    # silence was not.
     def W(room, lacking):
         k = (room, frozenset(lacking))
         if k not in wmemo:
@@ -544,15 +562,25 @@ def requirements(m: FixModel, start=None, goals=None, log=None):
             lmemo[b] = frozenset(cand_all - closure(m, b, imax - cand_all).items)
         return lmemo[b]
 
-    out = []
+    out, sinks = [], []
     for a in sorted(base.rooms):
         for b in sorted(m.edges.get(a, ())):
             if b not in base.rooms:
                 continue
             if not W(b, ()):
-                continue          # absorbing sink (a death room): you lose there
-                                  # holding EVERYTHING, so it strands nothing --
-                                  # it just says "dying loses", which is not news.
+                # Unwinnable even holding EVERYTHING, so nothing about WHAT you carry
+                # can change the outcome and there is no requirement to report.
+                #
+                # The comment here used to say "absorbing sink (a death room)", which
+                # was a guess dressed as a fact: the test fires for any room the goal
+                # cannot be re-closed from, and rm138 (the raft) and rm152 are not death
+                # rooms. Most of that was the flag reset above, now fixed. Whatever is
+                # left is a genuine "you cannot win from here at all" -- but say so out
+                # loud, because a dropped edge is a finding we will never make.
+                # MAX_CLAUSES_PER_EDGE gets a `truncated` flag precisely so a cap is
+                # never silent; this drop is bigger and was completely silent.
+                sinks.append((a, b))
+                continue
             # Items the game ALREADY refuses to let you cross without -- no point
             # reporting a requirement the edge itself enforces.
             #
@@ -588,6 +616,11 @@ def requirements(m: FixModel, start=None, goals=None, log=None):
                 if truncated and log is not None:
                     log.append(f"rm{a}->rm{b}: stopped at {MAX_CLAUSES_PER_EDGE} "
                                f"clauses; more may exist")
+    if sinks and log is not None:
+        log.append(f"{len(sinks)} edge(s) skipped as unwinnable-even-holding-everything "
+                   f"(no requirement can be reported for them): "
+                   + ", ".join(f"rm{a}->rm{b}" for a, b in sinks[:8])
+                   + (" ..." if len(sinks) > 8 else ""))
     return out
 
 
