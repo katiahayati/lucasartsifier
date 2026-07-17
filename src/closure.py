@@ -69,6 +69,13 @@ Reach = namedtuple("Reach", "rooms items flags")
 
 ANY = object()      # a global written with a non-literal -> any value is possible
 
+# Cap on the worst-case promoted state multiplier (product of register domains).
+# Promotion is a product over independent registers; this bounds it. LSL2's full set
+# is 35x9x8x3x3 ~ 22.7k and blows past a minute; a ~1k budget keeps the endgame-local
+# registers and drops the promiscuous gCurrentStatus. Tunable; a per-game
+# config.promote_registers overrides selection entirely.
+MAX_PROMOTED_PRODUCT = 1200
+
 
 class FixModel:
     """Everything the fixpoint needs, extracted from the IR once.
@@ -192,6 +199,111 @@ class FixModel:
                              for t in s.transitions for p in t.guards
                              if p.kind == "OWN" and p.want}
 
+        # --- MODE REGISTERS (phase 4) -----------------------------------------
+        # A global tracked as "the set of values it can EVER take" answers `== 12`
+        # with "is 12 in the set?" -- always yes for a register, so its gate never
+        # binds. gCurrentStatus (splat vs chute), gIslandStatus (the endgame chain),
+        # and the Cupid bow's arrow count all die this way. Fix: PROMOTE such a
+        # register into the location, so reachability is over (room, value) and
+        # `== 12` means "is it 12 HERE", not "could it ever be".
+        #
+        # Chosen mechanically -- a register is a global compared `==` against >=3
+        # distinct literals and assigned only literals (no `++`, already excluded
+        # above). PREDICATE-ABSTRACTED to the values actually tested: a room that
+        # never reads R does not split on it, and gCurrentStatus's 35 values touch
+        # ~99 (room,value) nodes, not 85x35. That is the difference between a 2x
+        # state space and a 300x one.
+        self.reg_tested = defaultdict(set)      # reg -> {int literals it is compared to}
+        assigned = defaultdict(set)             # reg -> {int literals assigned to it}
+        for s in game.scripts.values():
+            for t in s.transitions:
+                _collect_cmp(t.guard_tree, self.reg_tested)
+        for gt in self.machine_guards.values():
+            _collect_cmp(gt, self.reg_tested)
+        for gn, sites in self.sets.items():
+            for _r, v, _g in sites:
+                if isinstance(v, int):
+                    assigned[gn].add(v)
+        candidates = [
+            gn for gn, lits in self.reg_tested.items()
+            if gn in game.globals and gn not in CFG.debug_globals
+            and gn not in CFG.timer_globals             # a clock is not a mode register
+            and len({v for v in lits if isinstance(v, int)}) >= 3
+            and assigned.get(gn) and all(isinstance(v, int) for v in assigned[gn])]
+
+        def _dom(gn):
+            return ({v for v in self.reg_tested[gn] if isinstance(v, int)}
+                    | assigned.get(gn, set())
+                    | {_lit(next(iter(self.init_flags.get(gn, {0}))))})
+
+        # Promotion multiplies the location space, and the registers are (largely)
+        # INDEPENDENT, so promoting all of them is a product -- LSL2's
+        # 35x9x8x3x3 blows past a minute. Promote a bounded subset instead: smallest
+        # domains first, while the worst-case product stays under budget. This is a
+        # conservative proxy (the *reachable* product is smaller), deterministic, and
+        # generalises -- KQ4's registers fit comfortably; LSL2 keeps the cheap,
+        # endgame-local ones and drops gCurrentStatus, which is written in 62 rooms and
+        # gates nothing cleanly anyway. Per-game override via config.promote_registers.
+        # OFF BY DEFAULT, and this is a MEASURED decision, not caution. Promotion is
+        # correct (it fixes the mode-register gates), but it makes a single closure
+        # ~200x slower, and `requirements()` runs ~373 closures -- so promotion-on takes
+        # `requirements()` from 3s to ~12 MINUTES. That is Phase 5's job (make the query
+        # incremental); until then, turning promotion on is not affordable for the
+        # frontier scan. And on LSL2 it buys no finding anyway: the two gates it would
+        # help (bomb, parachute) are gated OUTSIDE the register logic.
+        #
+        # So: `promoted` is empty unless a game's config opts in via
+        # `promote_registers` (a set of names, or "auto" for the budget heuristic).
+        # `candidate_registers`/`reg_dom_all` stay populated for reporting and for the
+        # targeted rm79 test, which exercises the mechanism with one register in one
+        # cheap closure.
+        self.candidate_registers = frozenset(candidates)
+        self.reg_dom_all = {gn: frozenset(_dom(gn)) for gn in candidates}
+        override = getattr(CFG, "promote_registers", frozenset())
+        if override == "auto":
+            chosen, product = [], 1
+            for gn in sorted(candidates, key=lambda g: len(_dom(g))):
+                if product * len(_dom(gn)) <= MAX_PROMOTED_PRODUCT:
+                    chosen.append(gn)
+                    product *= len(_dom(gn))
+        else:
+            chosen = [gn for gn in candidates if gn in override]
+        self.promoted = frozenset(chosen)
+        self.reg_dom = {gn: frozenset(_dom(gn)) for gn in self.promoted}
+        self._build_edge_reg_effect()
+
+    def promote(self, regs):
+        """Turn promotion on for a chosen register set (for investigation / tests).
+
+        Rebuilds `promoted`, `reg_dom`, and the edge register-effects. Kept off the
+        default path because promotion makes `requirements()` ~200x slower per closure
+        -- see the note by the selection above."""
+        self.promoted = frozenset(r for r in regs if r in self.candidate_registers)
+        self.reg_dom = {r: self.reg_dom_all[r] for r in self.promoted}
+        self._build_edge_reg_effect()
+        return self
+
+    def _build_edge_reg_effect(self):
+        # EDGE REGISTER EFFECTS. A cutscene room writes a promoted register and then
+        # moves you, and the two are the same trigger: rm77 does
+        # `(if (== gIslandStatus 1) (= gIslandStatus 2) ... -> newRoom: 76)`, so the
+        # edge (77,76) is guarded by `== 1` and rm77 writes `:= 2` under that same
+        # condition. Split apart, promotion self-defeats: you traverse the edge at
+        # value 1, arrive holding value 1, and the NEXT gate (`rm76 -> rm79` needs 2)
+        # never binds -- rm79 goes unreachable. So an edge whose guard IMPLIES a
+        # same-room write's guard carries that write as a DESTINATION effect: the guard
+        # is checked on the source value, the new value is delivered to the target.
+        self.edge_reg_effect = {}          # (a,b) -> {reg: abs-value}
+        for (a, b) in set(self.edge_reqs) | self.machine_edges:
+            guard = self.machine_guards.get((a, b), self.edge_reqs.get((a, b)))
+            for reg in self.promoted:
+                dom = self.reg_dom[reg]
+                for room, val, wguard in self.sets.get(reg, ()):
+                    if room != a:
+                        continue
+                    if _edge_implies_write(guard, wguard, reg, dom):
+                        self.edge_reg_effect.setdefault((a, b), {})[reg] = _abs_val(val)
+
     def _rooms_of(self, num):
         """Where do this script's effects happen?
 
@@ -208,6 +320,46 @@ class FixModel:
         if not is_room(self.g, num):
             return [None]
         return [num]
+
+
+OTHER = object()      # a promoted register holds a value we do not distinguish
+
+
+def _abs_val(v):
+    return v if isinstance(v, int) else OTHER
+
+
+def _edge_implies_write(eguard, wguard, reg, dom):
+    """Does taking this edge GUARANTEE the co-located register write also fired?
+
+    True iff, over every value `reg` could hold, wherever the edge guard can be true
+    the write guard is also true -- i.e. the edge and the write share the trigger.
+    Evaluated with only `reg` bound (all other atoms UNKNOWN), so this is a statement
+    about the register condition alone, which is what couples them. Requires the edge
+    to actually CONSTRAIN reg (else every edge would inherit every same-room write).
+    """
+    if eguard is None:
+        return False
+    constrains = any(eval3(eguard, frozenset(), {reg: {k}}) is F for k in dom)
+    if not constrains:
+        return False
+    for k in dom:
+        if eval3(eguard, frozenset(), {reg: {k}}) is not F \
+                and eval3(wguard, frozenset(), {reg: {k}}) is F:
+            return False
+    return True
+
+
+def _collect_cmp(node, out):
+    """reg -> set of literals it is `==`/`!=`/... compared against, over a guard tree."""
+    from model import GAnd, GOr, GNot, Pred
+    if isinstance(node, (GAnd, GOr)):
+        for k in node.kids:
+            _collect_cmp(k, out)
+    elif isinstance(node, GNot):
+        _collect_cmp(node.kid, out)
+    elif isinstance(node, Pred) and node.kind == "CMP":
+        out[node.var].add(_lit(node.value))
 
 
 def _lit(v):
@@ -429,20 +581,17 @@ def holds(preds, items, flags):
     return True
 
 
-def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
-    """Least fixpoint from a state: everything you could EVER reach/obtain."""
-    rooms = {start_room}
-    items = set(held)
-    fl = {k: set(v) for k, v in (flags if flags is not None else m.init_flags).items()}
-    exhausted = set(exhausted)
+def _closure_flat(m, start_room, items, fl, exhausted):
+    """The no-promotion fixpoint: rooms are a plain set, no register valuations.
 
+    Kept as a separate fast path so the default (promotion OFF) pays nothing for the
+    (room, register-value) machinery. Promotion makes a closure ~200x slower; this is
+    what every non-promoted caller -- including `requirements()`' ~373 closures --
+    runs, and it must stay as cheap as before phase 4."""
+    rooms = {start_room}
     changed = True
     while changed:
         changed = False
-        # 1. walk anywhere whose precondition holds. A machine-owned edge simply has a
-        #    COMPILED guard (machine.compile_exits) instead of the flat one -- there is
-        #    no machine here any more, and so no cache, no projection, and no key to get
-        #    wrong. Step "1b" is gone with it.
         for a in list(rooms):
             for b in m.edges.get(a, ()):
                 if b in rooms:
@@ -452,7 +601,6 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
                 if holds_tree(guard, items, fl):
                     rooms.add(b)
                     changed = True
-        # 2. pick up anything acquirable in reach (and not consumed away)
         for it, sites in m.acq.items():
             if it in items or it in exhausted:
                 continue
@@ -461,7 +609,6 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
                     items.add(it)
                     changed = True
                     break
-        # 3. set any flag we can reach the setter of (room None == global code)
         for g, sites in m.sets.items():
             for room, val, guards in sites:
                 if (room is None or room in rooms) and val not in fl.get(g, ()) \
@@ -469,6 +616,128 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
                     fl.setdefault(g, set()).add(val)
                     changed = True
     return Reach(rooms, items, fl)
+
+
+class _Overlay:
+    """`fl` with a promoted register's ONE current value spliced over its set.
+
+    `_atom3`'s CMP branch already decides a SINGLETON flag set precisely:
+    `flags[reg] == {12}` makes `== 12` true and `!= 12` false. So promotion needs no
+    change to the evaluator -- carry each register as one value per state and hand
+    that value through as a singleton. OTHER -> ANY (undecidable), the safe direction.
+    """
+    __slots__ = ("base", "over")
+
+    def __init__(self, base, over):
+        self.base, self.over = base, over
+
+    def get(self, k, d=None):
+        v = self.over.get(k)
+        return v if v is not None else self.base.get(k, d)
+
+
+def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
+    """Least fixpoint from a state: everything you could EVER reach/obtain.
+
+    Reachability is over (room, register-valuation) for the PROMOTED registers
+    (phase 4) -- items and non-promoted globals stay monotone. So `gCurrentStatus
+    == 12` is decided against the value you actually hold HERE, not against the set
+    of values it could ever take, and a mode-register gate finally binds.
+    """
+    items = set(held)
+    fl = {k: set(v) for k, v in (flags if flags is not None else m.init_flags).items()}
+    exhausted = set(exhausted)
+
+    order = sorted(m.promoted)
+    if not order:
+        return _closure_flat(m, start_room, items, fl, exhausted)   # no promotion: fast path
+
+    def _abs(v):
+        return v if isinstance(v, int) else OTHER
+
+    def _overlay(rv):
+        if not order:
+            return fl
+        return _Overlay(fl, {order[i]: ({rv[i]} if rv[i] is not OTHER else {ANY})
+                             for i in range(len(order))})
+
+    init_rv = tuple(_abs(next(iter(fl.get(r) or {0}))) for r in order)
+    reach = {(start_room, init_rv)}                # (room, register-valuation)
+
+    changed = True
+    while changed:
+        changed = False
+        by_room = defaultdict(set)
+        for (a, rv) in reach:
+            by_room[a].add(rv)
+
+        # 1. movement -- registers ride along unchanged. A machine-owned edge has a
+        #    COMPILED guard; there is no machine at runtime any more.
+        idx = {reg: i for i, reg in enumerate(order)}
+        for (a, rv) in list(reach):
+            ov = _overlay(rv)
+            for b in m.edges.get(a, ()):
+                guard = (m.machine_guards.get((a, b)) if (a, b) in m.machine_edges
+                         else m.edge_reqs.get((a, b)))
+                if not holds_tree(guard, items, ov):
+                    continue
+                # guard checked on the SOURCE value; any co-triggered register write
+                # is delivered to the DESTINATION (see edge_reg_effect).
+                nrv = rv
+                eff = m.edge_reg_effect.get((a, b))
+                if eff:
+                    lst = list(rv)
+                    for reg, v in eff.items():
+                        lst[idx[reg]] = v
+                    nrv = tuple(lst)
+                if (b, nrv) not in reach:
+                    reach.add((b, nrv))
+                    changed = True
+        # 1b. promoted-register WRITES -- the only thing that changes rv, and the
+        #     reason the gate can bind: you reach (rm65, status=10) only by setting it.
+        for i, reg in enumerate(order):
+            for room, val, guards in m.sets.get(reg, ()):
+                av = _abs(val)
+                for (a, rv) in list(reach):
+                    if rv[i] == av or not (room is None or room == a):
+                        continue
+                    nxt = (a, rv[:i] + (av,) + rv[i + 1:])
+                    if nxt not in reach and holds_tree(guards, items, _overlay(rv)):
+                        reach.add(nxt)          # membership check BEFORE `changed`:
+                        changed = True          # re-deriving a present state is not a change
+
+        # 2. pick up anything acquirable at SOME reachable (room, rv)
+        for it, sites in m.acq.items():
+            if it in items or it in exhausted:
+                continue
+            if any((room is None or room in by_room)
+                   and _reachable_guard(guards, items, room, by_room, reach, fl, _overlay)
+                   for room, guards in sites):
+                items.add(it)
+                changed = True
+        # 3. set any NON-promoted flag whose setter is reachable
+        for g, sites in m.sets.items():
+            if g in m.promoted:
+                continue
+            for room, val, guards in sites:
+                if val in fl.get(g, ()):
+                    continue
+                if _reachable_guard(guards, items, room, by_room, reach, fl, _overlay):
+                    fl.setdefault(g, set()).add(val)
+                    changed = True
+
+    rooms = {a for (a, _rv) in reach}
+    # mirror each promoted register's REACHABLE values back into fl, so .flags stays a
+    # meaningful "achievable set" for callers (reports, _check_core) that read it.
+    for i, reg in enumerate(order):
+        fl[reg] = {rv[i] for (_a, rv) in reach}
+    return Reach(rooms, items, fl)
+
+
+def _reachable_guard(guards, items, room, by_room, reach, fl, overlay):
+    """Does `guards` hold at some reachable state in `room` (None = anywhere)?"""
+    states = reach if room is None else ((room, rv) for rv in by_room.get(room, ()))
+    return any(holds_tree(guards, items, overlay(rv)) for (_a, rv) in states)
 
 
 def winnable(m: FixModel, start_room, held=(), flags=None, exhausted=(), goals=None):

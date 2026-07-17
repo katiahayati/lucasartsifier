@@ -180,6 +180,22 @@ def main():
                        for k in (t.kids if isinstance(t, GAnd) else [t]))
                    for t in terms)
     check("the compiled guard FORBIDS the fatal Spinach_Dip", _forbids(raft, 13), True)
+
+    # Phase 4 register promotion is OFF by default (it makes requirements() ~200x
+    # slower; Phase 5's job to afford it). But the MECHANISM is exercised here in one
+    # cheap closure, because it fixes a real bug: a register write and a same-room edge
+    # are one trigger, and splitting them made rm79 unreachable once gIslandStatus went
+    # concrete. `FixModel.promote()` turns it on for the test.
+    check("promotion is OFF by default", sorted(m.promoted), [])
+    mp = C.FixModel(g).promote(["gIslandStatus"])
+    rp = C.closure(mp, config.LSL2.start_room)
+    check("promote(gIslandStatus): all rooms still reachable (rm79 fix)",
+          len(rp.rooms), len(r.rooms))
+    check("promote(gIslandStatus): the register climbs past the endgame chain",
+          max(v for v in rp.flags.get("gIslandStatus", [0]) if isinstance(v, int)) >= 104,
+          True)
+    check("edge (77,76) carries the co-triggered gIslandStatus:=2 write",
+          mp.edge_reg_effect.get((77, 76)), {"gIslandStatus": 2})
     check("...and still REQUIRES the Grotesque_Gulp", 8 in C.own_atoms(raft), True)
 
     # Pin the headline metric. The README claimed "0 un-modelled machine exits, KQ4

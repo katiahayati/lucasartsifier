@@ -47,6 +47,11 @@ class GameConfig:
     # edit -- a different start anchor, or adding `^=` for completeness -- and the
     # analysis would silently degrade with no test failing. Declare them instead.
     debug_globals: frozenset = frozenset()
+    # Phase 4 mode-register promotion (closure.py). Empty = OFF (the default): a set
+    # of register names to promote into the location state, or "auto" for the
+    # product-budget heuristic. OFF because promotion makes requirements() ~200x
+    # slower until Phase 5 makes the query incremental. See closure.FixModel.
+    promote_registers: object = frozenset()
 
 
 LSL2 = GameConfig(
