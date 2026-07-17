@@ -19,6 +19,7 @@ they never terminate inside a {..} or '..' literal.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 
@@ -59,6 +60,7 @@ class SexprError(Exception):
 
 
 _DELIMS = "(){}';\""
+_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _WS = " \t\r\n\f"
 
 
@@ -111,6 +113,21 @@ class _Lexer:
                 continue
             raw = s[self.i:j]
             self.i = j
+            # `ownedBy:self` -- a selector and its argument with no space between.
+            # SCI's compiler does not care; our reader did, silently. Reading to the
+            # next whitespace made one Sym named "ownedBy:self", which `is_selector()`
+            # rejects (it does not END with ':'), so the message send simply was not
+            # there. 155 sites in KQ4, 12 in LSL2 -- including `Actor::has` itself:
+            #     (= theItem (inventory at:what))
+            #     (return (and theItem (theItem ownedBy:self)))
+            # i.e. the definition of possession, unreadable on a whitespace
+            # convention. Split it: the colon is the selector marker, not part of a
+            # name.
+            head, sep, rest = raw.partition(":")
+            if sep and rest and _IDENT.match(head):
+                yield ("atom", Sym(head + ":"))
+                yield ("atom", self._classify(rest))
+                continue
             yield ("atom", self._classify(raw))
 
     def _read_delimited(self, open_c: str, close_c: str, ctor):
