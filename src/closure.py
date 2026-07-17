@@ -59,11 +59,10 @@ import sys
 from collections import defaultdict, namedtuple
 
 sys.path.insert(0, os.path.dirname(__file__))
-from model import load_game, Game                                    # noqa: E402
+from model import load_game, Game, GOr                               # noqa: E402
 from analyze import (movement_graph, edge_requirements, region_maps,  # noqa: E402
                      is_room, _instance_of, _state_of)
-from machine import (machines_of, run as machine_run,                    # noqa: E402
-                     control_exits as machine_control_exits)
+from machine import machines_of, compile_exits as machine_compile   # noqa: E402
 from config import ACTIVE as CFG                                      # noqa: E402
 
 Reach = namedtuple("Reach", "rooms items flags")
@@ -110,23 +109,38 @@ class FixModel:
         # may sit deep inside a Script's changeState switch, behind a gauntlet the
         # room graph cannot see. Where a machine owns a GOTO we let the machine
         # decide whether you can reach it, instead of trusting the flat edge.
-        self.machines = {}
+        # A machine is an EXTRACTOR, not a runtime component: what it takes to get from
+        # rm138 to rm42 does not depend on when you ask. So COMPILE each machine to one
+        # guard per exit, once, here (machine.compile_exits) -- and hand the fixpoint a
+        # formula. Running machines inside the closure is what produced Machine.project,
+        # the _mcache, and the cache key that deleted KQ4's rm84 outright.
+        #
+        # It also buys the thing the monotone fixpoint cannot say. `_atom3` must answer
+        # UNKNOWN for `(not (ego has: X))` to stay monotone in items, so it can never
+        # express "you must NOT carry this". Enumeration has no such assumption: of the
+        # 18 assignments that get you off the raft, the Spinach_Dip is held in ZERO, so
+        # the compiled guard contains `¬own(13)`. That is the trap that made the shipped
+        # patch unwinnable.
+        self.machine_guards = {}              # (a,b) -> compiled guard tree (None=free)
         self.machine_edges = set()
         self.machine_untrusted = set()        # exits our machine model can't reproduce
-        _ev = lambda t, i, f, l: eval3(t, i, f, locs=l)          # noqa: E731
+        _local = lambda p, locs: _atom3(p, frozenset(), {}, False, locs)   # noqa: E731
         for num in game.scripts:
             if not is_room(game, num):
                 continue
             ms = machines_of(game, num)
             if not ms:
                 continue
-            self.machines[num] = ms
-            # What can each machine deliver when nothing is denied to it? An exit it
-            # cannot reach even then is a hole in OUR model of SCI's cue idioms, not
-            # a gate in the game -- so leave those edges to the flat movement graph.
-            deliverable = set()
+            # Several machines in a room may deliver the same exit: they are
+            # ALTERNATIVES, so OR their guards.
+            deliverable = {}
             for mach in ms.values():
-                deliverable |= machine_control_exits(mach, _ev)
+                for e, gt in machine_compile(mach, _local).items():
+                    if e in deliverable and not (deliverable[e] is None or gt is None):
+                        deliverable[e] = GOr([deliverable[e], gt])
+                    else:
+                        deliverable[e] = None if (e in deliverable and
+                                                  deliverable[e] is None) else gt
             for t in game.scripts[num].transitions:
                 inst, st = _instance_of(t.context), _state_of(t.context)
                 if st is None or inst not in ms:
@@ -136,19 +150,16 @@ class FixModel:
                         continue
                     if e.arg in deliverable:
                         self.machine_edges.add((num, e.arg))
+                        self.machine_guards[(num, e.arg)] = deliverable[e.arg]
                     else:
+                        # No assignment of its own atoms reaches this exit -- our model
+                        # of SCI's cue idioms has a hole, not the game. Fall back to the
+                        # flat edge rather than invent a dead end. (Same contract
+                        # `control_exits` had; the compile subsumes it.)
                         self.machine_untrusted.add((num, e.arg))
 
-        # Only machines that actually OWN a trusted exit can change an answer; the
-        # rest are pure cost (80 machines -> the handful that gate movement). Prune
-        # so the fixpoint doesn't re-run cutscene machinery on every sweep.
-        owned = {a for (a, _b) in self.machine_edges}
-        self.machines = {a: {i: mm for i, mm in ms.items()
-                             if any((a, b) in self.machine_edges
-                                    for b in machine_control_exits(mm, _ev))}
-                         for a, ms in self.machines.items() if a in owned}
-        self.machines = {a: ms for a, ms in self.machines.items() if ms}
-        self._mcache = {}                 # (inst id, projected world) -> exits
+        # No pruning, no cache, no per-closure re-interpretation: the machines are gone
+        # from the runtime entirely, replaced by `machine_guards`.
 
         # SCI0 ZERO-INITIALIZES script 0's locals, so a global nobody assigns is 0 --
         # not "unknown". Seeding every global (not just the ones with an explicit `=`
@@ -425,70 +436,22 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
     fl = {k: set(v) for k, v in (flags if flags is not None else m.init_flags).items()}
     exhausted = set(exhausted)
 
-    cache = m._mcache          # lives on the model: shared across every closure,
-                               # which is what makes strandings' ~1400 re-closures
-                               # affordable (they mostly perturb items no machine
-                               # looks at, so they collapse onto the same key).
-
-    def _exits(inst, mach):
-        # Key on the MACHINE, not its instance NAME. Script instance names are only
-        # unique within a script, and rooms reuse them: KQ4 has `doDoor` in both rm80
-        # and rm87, `doorOpen` in rm49/51, `egoActions` in rm690/693, `henchChase` in
-        # rm86/87/91. rm80's doDoor exits to 92 and rm87's to 84; they projected to the
-        # identical key, rm80 was closed first, and rm87 read back rm80's answer -- so
-        # rm84 was DELETED from the game. A fabricated dead end, the one error this
-        # tool must never make, from a cache key.
-        key = (mach.script, mach.inst, mach.project(items, fl))
-        ex = cache.get(key)
-        if ex is None:
-            ex, _deaths = machine_run(mach, items, fl,
-                                      lambda t, i, f, l: eval3(t, i, f, locs=l))
-            cache[key] = ex
-        return ex
-
     changed = True
     while changed:
         changed = False
-        # 1. walk anywhere whose edge preconditions hold
+        # 1. walk anywhere whose precondition holds. A machine-owned edge simply has a
+        #    COMPILED guard (machine.compile_exits) instead of the flat one -- there is
+        #    no machine here any more, and so no cache, no projection, and no key to get
+        #    wrong. Step "1b" is gone with it.
         for a in list(rooms):
             for b in m.edges.get(a, ()):
-                if (a, b) in m.machine_edges:
-                    # Owned by a state machine -> step 1b decides, and the flat edge
-                    # stays out of it.
-                    #
-                    # REVIEW REJECTED A CHANGE HERE, with evidence. The proposal was:
-                    # when a trusted machine declines an exit, fall back to
-                    # `holds_tree(edge_reqs)` rather than treat machine silence as
-                    # proof of a gate. Sound-looking, and it deletes FOUR of six
-                    # findings -- Sunscreen, Grotesque_Gulp, Wig, Fruit-OR-Sewing_Kit
-                    # all vanish. The reason is the raft itself: `edge_reqs[(138,42)]`
-                    # is `opaque((>= day 9))`, which is UNKNOWN, which is permissive.
-                    # The flat guard has NOTHING to say about any edge a machine owns
-                    # -- that is precisely why the machine had to own it. Falling back
-                    # to it is falling back to "no gate".
-                    #
-                    # The live bug the reviewer traced (KQ4 rm84 deleted) was the cache
-                    # key above, now fixed. The residual concern is real and stands
-                    # unfixed: `control_exits` runs once with everything granted and
-                    # only asks "does this exit exist at all", so it cannot catch
-                    # mis-modelling that is item/flag-DEPENDENT rather than total (an
-                    # exit reachable permissively via an item-guarded branch, while the
-                    # genuinely free branch stalls on a cue idiom we misread). There is
-                    # no cheap detector for that, and the offered cure costs the
-                    # feature. Documented rather than papered over.
+                if b in rooms:
                     continue
-                if b not in rooms and holds_tree(m.edge_reqs.get((a, b)), items, fl):
+                guard = (m.machine_guards.get((a, b)) if (a, b) in m.machine_edges
+                         else m.edge_reqs.get((a, b)))
+                if holds_tree(guard, items, fl):
                     rooms.add(b)
                     changed = True
-        # 1b. a room's own state machines: an exit buried in a changeState switch is
-        #     reachable only along a path THROUGH the machine, and that path may run
-        #     a gauntlet (LSL2's raft: survive days 3-6 or the exit never comes).
-        for a in list(rooms):
-            for inst, mach in m.machines.get(a, {}).items():
-                for b in _exits(inst, mach):
-                    if b != a and b not in rooms and (a, b) in m.machine_edges:
-                        rooms.add(b)
-                        changed = True
         # 2. pick up anything acquirable in reach (and not consumed away)
         for it, sites in m.acq.items():
             if it in items or it in exhausted:

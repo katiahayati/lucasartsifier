@@ -161,15 +161,39 @@ def main():
 
     # The raft machine must be lifted and trusted, else none of the above is real.
     check("raft exit rm138->rm42 is machine-owned", (138, 42) in m.machine_edges, True)
+    from machine import machines_of                              # noqa: PLC0415
     check("raft models `day` as a bounded counter",
-          m.machines[138]["rm138Script"].counters, {"day": (-1, 10)})
+          machines_of(g, 138)["rm138Script"].counters, {"day": (-1, 10)})
+    # Phase 3: the raft's guard is COMPILED, once, not re-run per closure. And it says
+    # the thing the monotone fixpoint cannot: of the 18 assignments that get you off the
+    # raft, the Spinach_Dip is held in ZERO, so `¬own(13)` is IN the guard. `_atom3`
+    # answers UNKNOWN for `(not (ego has: X))` by design, so `requirements()` can never
+    # state a trap item -- only the compiled guard can.
+    raft = m.machine_guards.get((138, 42))
+    check("the raft's guard is compiled, not run", raft is not None, True)
+    from model import GOr, GAnd, GNot, Pred                      # noqa: PLC0415
+    def _forbids(tree, item):
+        """EVERY way off the raft must forbid `item` -- structural, not a string match."""
+        terms = tree.kids if isinstance(tree, GOr) else [tree]
+        return all(any(isinstance(k, GNot) and isinstance(k.kid, Pred)
+                       and k.kid.kind == "OWN" and k.kid.var == item
+                       for k in (t.kids if isinstance(t, GAnd) else [t]))
+                   for t in terms)
+    check("the compiled guard FORBIDS the fatal Spinach_Dip", _forbids(raft, 13), True)
+    check("...and still REQUIRES the Grotesque_Gulp", 8 in C.own_atoms(raft), True)
 
     # Pin the headline metric. The README claimed "0 un-modelled machine exits, KQ4
     # has 1" for three commits after the strict walk made it 10 and 5, because nothing
     # asserted it and only run.py printed the truth. A number in prose that no test
     # holds is a number that drifts.
+    # Phase 3 moved these from (33, 10). The fallbacks went UP because the trust gate
+    # got HONEST: `control_exits` used to run every atom as UNKNOWN, which lets the walk
+    # take both branches of one condition at once -- an inconsistent world. Enumeration
+    # asks "is there a CONSISTENT assignment that delivers this exit?", and for 10 of
+    # them there is not. They were trusted on a fiction; they now fall back to the flat
+    # edge, which is the safe direction.
     check("LSL2 machine exits: trusted / fallback",
-          (len(m.machine_edges), len(m.machine_untrusted)), (33, 10))
+          (len(m.machine_edges), len(m.machine_untrusted)), (23, 20))
 
     print("\nKQ4")
     g2, m2, r2, goals2, total2, strands2 = run(config.KQ4)
@@ -182,12 +206,13 @@ def main():
     # red. A test that encodes the bug is worse than no test.
     check("rooms reached", len(r2.rooms), 89)
     check("rm84 is reachable (the doDoor cache collision)", 84 in r2.rooms, True)
-    # Structural: no two machines may share a cache key, in EITHER game. This is the
-    # invariant, not the symptom -- it fails on any future name reuse rather than
-    # waiting for a room to quietly disappear.
+    # The cache-key collision that deleted rm84 is now IMPOSSIBLE rather than fixed:
+    # Phase 3 compiled the machines out of the runtime, so there is no cache to key and
+    # no per-closure re-interpretation to key it for. Assert the absence, because that
+    # is the actual guarantee -- a whole bug class, not one bug.
     for lbl, mm in (("LSL2", m), ("KQ4", m2)):
-        keys = [(mach.script, mach.inst) for ms in mm.machines.values() for mach in ms.values()]
-        check(f"{lbl}: machine cache keys are unique", len(keys), len(set(keys)))
+        check(f"{lbl}: no machine cache exists to collide", hasattr(mm, "_mcache"), False)
+        check(f"{lbl}: no machines in the runtime model", hasattr(mm, "machines"), False)
     # `(ego setScript: tickle)` sits INSIDE `(if (ego has: iFeather) ...)`, so the
     # feather gates the machine's ENTRY. Scanning for the setScript symbol without
     # its guard hands you the whale's exit for free.
@@ -199,7 +224,7 @@ def main():
     check("rm78->rm77 is trusted (the test sees the decrement before it)",
           (78, 77) in m2.machine_edges, True)
     check("KQ4 machine exits: trusted / fallback",
-          (len(m2.machine_edges), len(m2.machine_untrusted)), (40, 4))
+          (len(m2.machine_edges), len(m2.machine_untrusted)), (37, 7))
     # KQ4's death write is `(= dead TRUE)` -- a Sym, not an int. Requiring an int
     # literal meant machine.py produced 0 DEATH sinks for KQ4 against LSL2's 41, so
     # KQ4 machines walked straight THROUGH their death states and handed out every

@@ -703,3 +703,133 @@ def all_machines(game):
     """script num -> {instance: Machine}, for every script that has one."""
     return {num: ms for num in game.scripts
             if (ms := machines_of(game, num))}
+
+
+# --------------------------------------------------------------------------
+# Phase 3 -- COMPILE a machine to one guard formula per exit.
+#
+# A machine is an EXTRACTOR, not a runtime component. It answers "what does it take to
+# get from rm138 to rm42?", and that answer does not depend on when you ask -- so ask
+# once, here, and hand the fixpoint a formula. Running the machine inside the closure is
+# what produced `Machine.project`, the `_mcache`, and the cache key that deleted KQ4's
+# rm84 outright.
+#
+# The method is a TRUTH TABLE over the machine's own atoms, not a weakest precondition.
+# WP over a loop is a loop-invariant problem, and the raft IS a loop (3->4->5->6->7->4,
+# exit at day>=9). But the counters are bounded and internal, so we can simply enumerate
+# the atoms the machine's guards mention and run it per assignment. Measured: rm138 is 8
+# atoms -> 256 runs in 0.1s; rm34, the worst machine in either game, is 13 -> 8192 in
+# 0.4s. Once.
+#
+# WHY THIS IS WORTH MORE THAN THE ARCHITECTURE: a truth table assumes NOTHING about
+# monotonicity. `closure._atom3` must answer UNKNOWN for `(not (ego has: X))` to keep the
+# fixpoint monotone in items, so it can never express "you must NOT be carrying this".
+# Enumeration just asks whether an assignment reaches the exit -- and carrying the
+# Spinach_Dip is death, so those rows do not satisfy. Measured on rm138: of the 18
+# assignments that reach rm42, the dip is held in ZERO. The extracted guard REQUIRES not
+# holding it. That is the trap that made the shipped patch break the game, and this is
+# the only mechanism we have that can state it.
+# --------------------------------------------------------------------------
+ATOM_CAP = 16          # 2^16 = 65536 runs; nothing observed above 13
+
+
+def _guard_atoms(mach):
+    """Distinct decidable atoms in a machine's guards, in a stable order.
+
+    LOCAL preds are excluded on purpose: counters are the machine's OWN state, stay
+    concrete during the walk, and are not part of the world it is asking about.
+    """
+    from model import GAnd, GOr, GNot, Pred
+    out, seen = [], set()
+
+    def scan(n):
+        if isinstance(n, (GAnd, GOr)):
+            for k in n.kids:
+                scan(k)
+        elif isinstance(n, GNot):
+            scan(n.kid)
+        elif isinstance(n, Pred) and n.kind in ("OWN", "FLAG", "CMP"):
+            k = (n.kind, n.var, n.op, str(n.value))
+            if k not in seen:
+                seen.add(k)
+                out.append(n)
+
+    for paths in mach.states.values():
+        for path in paths:
+            for (kind, arg) in path:
+                if kind == "TEST":
+                    scan(arg)
+    for (_st, gd) in mach.entries:
+        scan(gd)
+    return out
+
+
+def _key(p):
+    return (p.kind, p.var, p.op, str(p.value))
+
+
+def compile_exits(mach, local_eval):
+    """exit room -> guard tree (or None = unguarded), by enumeration.
+
+    Returns {} if the machine has more atoms than we will enumerate; the caller then
+    treats every exit as un-modelled and falls back to the flat movement edge, which is
+    the same contract `control_exits` had.
+    """
+    import itertools
+    from model import GAnd, GOr, GNot, Pred
+
+    ats = _guard_atoms(mach)
+    if len(ats) > ATOM_CAP:
+        return {}
+    keys = [_key(p) for p in ats]
+
+    def ev_for(assign):
+        def ev(tree, _items, _flags, locs):
+            def go(n, neg=False):
+                if isinstance(n, GAnd):
+                    vs = [go(k, neg) for k in n.kids]
+                    return False if any(v is False for v in vs) else True
+                if isinstance(n, GOr):
+                    vs = [go(k, neg) for k in n.kids]
+                    return True if any(v is True for v in vs) else False
+                if isinstance(n, GNot):
+                    return False if go(n.kid, neg) is True else True
+                if isinstance(n, Pred):
+                    if n.kind == "LOCAL":
+                        return local_eval(n, locs)
+                    k = _key(n)
+                    if k in assign:
+                        return assign[k]
+                    return None          # SAID/POS/OPAQUE stay UNKNOWN -> permissive
+                return None
+            return go(tree)
+        return ev
+
+    sat = {}
+    for bits in itertools.product((False, True), repeat=len(ats)):
+        assign = dict(zip(keys, bits))
+        exits, _deaths = run(mach, frozenset(), {}, ev_for(assign))
+        for e in exits:
+            sat.setdefault(e, []).append(bits)
+
+    out = {}
+    for e, rows in sat.items():
+        if len(rows) == 2 ** len(ats):
+            out[e] = None                        # every assignment delivers it: free
+            continue
+        # Project onto the atoms that can actually change the answer. rm34 has 13 atoms
+        # of which only 4 are relevant -- without this the DNF is the blowup the plan
+        # feared, and with it the formula is the size of the real condition.
+        rowset = set(rows)
+        rel = [i for i in range(len(ats))
+               if any(r[:i] + (not r[i],) + r[i + 1:] not in rowset for r in rowset)]
+        terms, seen = [], set()
+        for r in rows:
+            proj = tuple(r[i] for i in rel)
+            if proj in seen:
+                continue
+            seen.add(proj)
+            lits = [ats[i] if r[i] else GNot(ats[i]) for i in rel]
+            terms.append(lits[0] if len(lits) == 1 else GAnd(lits))
+        out[e] = terms[0] if len(terms) == 1 else GOr(terms)
+    return out
