@@ -106,9 +106,11 @@ Adopt `sci-tools` (already a standing decision in the notes — never wired up) 
 property-vs-method heuristic in `coverage.py`, and the two-decompiler-dialect seam.
 Acceptance: both games load; findings unchanged.
 
-### Phase 3 — extraction: compile machines to guards
-> **⚠ MEASURED 2026-07-16, AFTER WRITING THIS: the premise below is wrong, and the
-> phase needs a decision before anyone implements it. See "Phase 3 reconsidered".**
+### Phase 3 — extraction: compile machines to guards  ✅ **GO — measured, and it is cheap**
+> The hedging below was wrong three times over; the measurement is in "Phase 3
+> reconsidered". Short version: **0.4 seconds for the worst machine in either game**,
+> the formula is small, and it captures the non-monotone trap that `requirements()`
+> structurally cannot. Do it.
 
 **A machine must not be a runtime component.** Compute the weakest precondition of each
 exit *once*, at extraction, and emit a formula:
@@ -155,16 +157,40 @@ invasive but self-contained: `rooms` becomes a set of `(room, regvals)`, the mac
 `run` takes the registers, and the cache key gains them. So the 3→4 ordering in this plan
 rests on an architectural preference, not a dependency.
 
-**The decision someone has to make (not code — a call):**
-- **(a)** Phase 3 as architecture: truth-table extraction, accept DNF, delete the runtime
-  machine. Cost is real; benefit is fewer places for the next `_mcache` bug to live.
-- **(b)** Skip to Phase 4 for the findings (arrows, parachute, endgame chain, maybe rm44),
-  lock them into the contract, and do Phase 3 afterwards against a stronger suite.
-- **(c)** Neither — keep `run()` as a cached pure function (which, since the review, it now
-  is) and accept the machine as a runtime component forever.
+#### Then it was actually measured, and the hedging above was wrong three times over
 
-I would take **(b)**, and I would weight that lightly: I wrote (a) into this plan and the
-measurement contradicted me within the hour.
+**1. The cost is nothing.** "8192 runs worst case" was presented as if it were a burden.
+It is **0.4 seconds**, once, for the worst machine in either game:
+```
+rm138.rm138Script:  8 atoms ->  256 runs in 0.1s
+rm34.rm34Script  : 13 atoms -> 8192 runs in 0.4s
+```
+
+**2. The DNF blowup does not happen**, because the *function* is small even when the atom
+count is not. Filtering to atoms whose value can actually change the answer:
+```
+rm34: only  4 of 13 atoms are RELEVANT
+rm138:      7 of 8, and they are precisely the raft gauntlet --
+            sunscreen==1, sunscreen==3, wig, own(8) gulp, own(13) dip,
+            own(12) kit, own(11) fruit
+```
+18 of 256 assignments reach rm42, which is exactly
+`(s1 ∨ s3) ∧ wig ∧ gulp ∧ ¬dip ∧ (fruit ∨ kit)` times the one irrelevant atom. The truth
+table recovers the gauntlet exactly.
+
+**3. IT SOLVES THE NON-MONOTONICITY PROBLEM — the one "open problem" below.** Of the 18
+assignments that reach rm42, the Spinach_Dip is held in **0**. The extracted guard
+*requires not holding it*. A truth table makes no monotonicity assumption: it asks "does
+this assignment reach the exit?", and carrying the dip is death, so those rows simply do
+not satisfy. `requirements()` can never say this — `_atom3` answers UNKNOWN for
+`(not (ego has: X))` precisely because the fixpoint is monotone in items.
+
+So Phase 3 is **not** "architecture with no findings payoff". It is cheap, it deletes the
+bug farm, **and it is the only mechanism we have that can express a trap item.**
+
+Lesson for whoever reads this: every number in the original hedge was invented. The user
+asked "so the worst complexity is 8192 runs?" and the whole objection collapsed in one
+measurement. Measure the plan, not just the code.
 
 Output is a flat transition system: `transition(from, to, guard, effects, controllable?)`.
 Movement, `get:`, and `put:` are all transitions — which folds `consumable_strandings()`
@@ -219,9 +245,11 @@ Blocked on 3, 4 and 6.
 
 ## Open problems (not scheduled — they need decisions, not code)
 
-- **Non-monotonicity.** The Spinach_Dip *kills you when carried*. Supervisory control over
-  a monotone plant assumes more is never worse; here the supervisor must **deny an
-  acquisition**. Promotion does not fix this (unlike arrows). No standard frame named yet.
+- ~~**Non-monotonicity.**~~ **LARGELY ANSWERED by Phase 3** (measured): truth-table
+  extraction assumes nothing about monotonicity, so `¬own(Spinach_Dip)` falls out of the
+  raft's guard by itself. What remains is a *synthesis* question, not an analysis one: the
+  supervisor must **deny an acquisition** ("do not pick that up"), and today's patch
+  vocabulary only knows how to forbid a MOVE. Same shape as the arrow-budget guard.
 - **Geometric gates.** rm82→rm83 is gated by a door Prop's collision against VIEW cel
   geometry. Not in the scripts at any effort. ScummVM-in-the-loop, or declare it.
 - **rm44 / rm45 have no entrance** in the decompiled source, so the Matches (the bomb's
