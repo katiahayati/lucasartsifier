@@ -56,7 +56,7 @@ from __future__ import annotations
 
 import os
 import sys
-from collections import defaultdict, namedtuple
+from collections import defaultdict, deque, namedtuple
 
 sys.path.insert(0, os.path.dirname(__file__))
 from model import load_game, Game, GOr, GAnd                         # noqa: E402
@@ -596,12 +596,13 @@ def holds(preds, items, flags):
 
 
 def _closure_flat(m, start_room, items, fl, exhausted):
-    """The no-promotion fixpoint: rooms are a plain set, no register valuations.
-
-    Kept as a separate fast path so the default (promotion OFF) pays nothing for the
-    (room, register-value) machinery. Promotion makes a closure ~200x slower; this is
-    what every non-promoted caller -- including `requirements()`' ~373 closures --
-    runs, and it must stay as cheap as before phase 4."""
+    """No-promotion fixpoint. Re-sweep, not worklist: I built the semi-naive worklist
+    version (PLAN-v2 phase 5's 'Datalog-shaped' idea), diff-tested it identical on 1280
+    configs across both games -- and it measured SLOWER (5.9M eval3 vs 4.0M). Flag values
+    are added one at a time, so a promiscuous flag like gCurrentStatus emits ~35 events,
+    and every watcher re-evaluates its whole guard per event; the batched sweep beats
+    that. Kept the simple version; the closure count in requirements() is the real
+    lever."""
     rooms = {start_room}
     changed = True
     while changed:
@@ -863,6 +864,12 @@ def requirements(m: FixModel, start=None, goals=None, log=None):
                     clauses.append(sorted(S))
                 pool -= S
             if clauses:
+                # Deterministic order: singletons (must-hold) before disjunctions,
+                # then lexicographic. The clauses are peeled off in whatever order the
+                # minimiser happens to hit them -- QuickXplain and linear deletion find
+                # the same SET but not the same sequence -- so sort for a stable
+                # guard_sexpr that does not depend on the search algorithm.
+                clauses.sort(key=lambda c: (len(c), c))
                 out.append({
                     "from_room": a, "to_room": b,
                     "clauses": [{"items": c,
@@ -883,18 +890,31 @@ def requirements(m: FixModel, start=None, goals=None, log=None):
 
 
 def _minimal_blocking(W, b, S):
-    """Shrink S to a MINIMAL set whose absence still blocks the goal at b.
+    """A MINIMAL subset of S whose absence still blocks the goal at b -- via
+    QuickXplain (Junker 2004), not linear deletion. Precondition: `not W(b, S)`.
 
-    Deletion-based: for each x, ask whether lacking S-{x} still loses. If it does,
-    x was carrying no weight and drops out. What survives is a set where every
-    member matters -- i.e. holding any ONE of them is enough. Precondition: `not
-    W(b, S)`.
+    The blocking set is almost always tiny (1-2 items: the Sunscreen, or the
+    Fruit/Sewing_Kit pair), while S -- the items unrecoverable past b -- can be ~20.
+    Deletion asks W() once per member of S (~20 closures); QuickXplain asks
+    O(|result| * log(|S|/|result|)) (~4-6). Across requirements() that is the
+    difference between 1129 W() calls and a few hundred, and it compounds on bigger
+    games. `W(b, X)` True == "lacking X you can still win" == consistent.
     """
-    B = set(S)
-    for x in sorted(S):
-        if len(B) > 1 and not W(b, B - {x}):
-            B.discard(x)
-    return frozenset(B)
+    def qx(bg, delta, cand):
+        # minimal subset of `cand` that, added to lacking-set `bg`, still blocks.
+        # Invariant: `bg | cand` blocks. `not W(b, X)` == "lacking X blocks".
+        if delta and not W(b, bg):
+            return frozenset()          # bg alone already blocks -> no candidate needed
+        cand = sorted(cand)
+        if len(cand) == 1:
+            return frozenset(cand)      # this one is load-bearing
+        mid = len(cand) // 2
+        c1, c2 = frozenset(cand[:mid]), frozenset(cand[mid:])
+        d2 = qx(bg | c1, c1, c2)
+        d1 = qx(bg | d2, d2, c1)
+        return d1 | d2
+
+    return qx(frozenset(), frozenset(), frozenset(S))
 
 
 def _cnf_sexpr(clauses):
