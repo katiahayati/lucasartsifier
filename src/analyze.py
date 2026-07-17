@@ -201,8 +201,18 @@ def edge_requirements(game: Game):
                 # Which trigger leads HERE? A machine has many entry points (rm57Script
                 # is entered at 1, 4, ...); the one that reaches state `st` is the
                 # nearest with target K <= st. Same heuristic trigger.py already proves.
-                cands = [(k, at) for (k, at) in acts.get(inst, ())
-                         if st is None or k <= st]
+                #
+                # `st is None` means this GOTO is NOT in a switch case -- it lives in
+                # doit/handleEvent, so it is a direct player action and the machine's
+                # entry conditions have nothing to do with it. It must take NO
+                # activator guard. The old code read `st is None` as "accept EVERY
+                # activator" and conjoined an unrelated trigger's guard onto a plain
+                # walk-out exit, inventing three strandings: rm101->rm11 (the exit is
+                # `(& (gEgo onControl:) $0008) -> (newRoom: 11)` in rm101Script:doit)
+                # picked up the Said-branch guard `(gEgo has: 2)` and "stranded" the
+                # Lottery_Ticket. Same for Dollar_Bill (rm114) and Wad_O_Dough (rm125).
+                cands = ([] if st is None else
+                         [(k, at) for (k, at) in acts.get(inst, ()) if k <= st])
                 if cands:
                     kmax = max(k for k, _ in cands)
                     routes = [at.guard_tree for k, at in cands
