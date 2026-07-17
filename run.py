@@ -73,10 +73,11 @@ def main():
         print(f"      guard: {e['guard_sexpr']}")
     for n in notes:
         print(f"  NOTE: {n}")
-    print(f"\nintra-room state machines gating movement: {len(m.machines)}")
-    print(f"  trusted machine exits : {len(m.machine_edges)}")
-    print(f"  exits we cannot model : {len(m.machine_untrusted)} "
-          f"(fell back to the flat edge rather than invent a dead end)")
+    print(f"\nintra-room state machines, COMPILED to edge guards (phase 3):")
+    print(f"  exits with a compiled guard : {len(m.machine_edges)}")
+    print(f"  exits we cannot model       : {len(m.machine_untrusted)} "
+          f"(no consistent assignment reaches them -> fell back to the flat edge "
+          f"rather than invent a dead end)")
 
     banner("Reports written")
     for f in ("lsl2_phaseA.md", "lsl2_phaseA.json", "lsl2_reachability.json"):

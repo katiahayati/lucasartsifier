@@ -102,17 +102,10 @@ class Machine:
         return (f"Machine({self.inst}@{self.script}: {len(self.states)} states, "
                 f"counters={self.counters}, entries={[e[0] for e in self.entries]})")
 
-    def project(self, items, flags):
-        """The ONLY part of the world this machine can see -- a cache key.
+    # `project()` lived here: a cache key for running this machine inside the
+    # fixpoint. Phase 3 compiles machines to guards at extraction, so there is no
+    # cache, no key, and no way to reprise the collision that deleted KQ4's rm84.
 
-        A machine's answer depends solely on the items/globals its own guards
-        mention, so `strandings` (which re-closes ~1400 times, mostly perturbing
-        items this machine never looks at) hits the same handful of keys over and
-        over. rm138's raft, for instance, sees only items {8,11,12,13} and globals
-        {gWearingSunscreen, gWearingWig}.
-        """
-        return (frozenset(i for i in self.item_refs if i in items),
-                tuple(sorted((g, frozenset(flags.get(g, ()))) for g in self.flag_refs)))
 
 
 # --------------------------------------------------------------------------
