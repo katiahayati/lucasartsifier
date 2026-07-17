@@ -215,6 +215,7 @@ class Game:
     name_by_num: dict                # script num -> name (from game.ini)
     item_ids: dict = field(default_factory=dict)   # item-constant name -> number
     death_signal: tuple = ()         # (global, value) whose write means death
+    proc_sets: dict = field(default_factory=dict)   # procedure name -> [(global, value)]
 
     def item_name(self, i):
         return self.items.get(i, f"item{i}")
@@ -429,6 +430,12 @@ class _Walker:
         if not isinstance(form, list) or not form:
             return
         head = form[0]
+        if is_sym(head, "procedure"):
+            # A procedure's body is INLINED at its call sites (proc_sets), so walking
+            # the definition too double-counts. Worse: the body's `(= gCurrentStatus 0)`
+            # would be emitted as a room-None (global-code) write, applied on EVERY room
+            # entry -- wiping the register everywhere. Skip the definition.
+            return
         if is_sym(head, "instance") or is_sym(head, "class"):
             name = form[1].name if len(form) > 1 and isinstance(form[1], Sym) else "?"
             for sub in form[2:]:
@@ -551,8 +558,48 @@ class _Walker:
                 self._walk(sub, guards, context)
             return
 
+        # procedure CALL -> inline its global SET effects. A procedure like
+        # `(procedure (NormalEgo theLoop) ... (= gCurrentStatus 0))` is called at 68
+        # sites to reset the ego to normal, and its `gCurrentStatus:=0` is the only
+        # thing that keeps that register from sticking at a cutscene value. Without
+        # inlining, the write is invisible: the walker sees `(NormalEgo)` as an opaque
+        # call, and promoting gCurrentStatus then over-restricts half the game.
+        if isinstance(head, Sym) and head.name in self.game.proc_sets:
+            for gname, val in self.game.proc_sets[head.name]:
+                self._emit(Effect("SET", arg=gname, value=val, receiver="="),
+                           guards, context)
+            # fall through to walk arguments (they may contain further effects)
+
         for sub in form:
             self._walk(sub, guards, context)
+
+
+def _parse_procedures(src_dir, is_global):
+    """proc name -> [(global, literal value)] for every `(procedure ...)` that writes
+    a global to a constant. Procedure bodies are otherwise invisible to the IR, so a
+    global set only inside a procedure (NormalEgo -> gCurrentStatus:=0) is lost."""
+    out = {}
+    for path in glob.glob(os.path.join(src_dir, "*.sc")):
+        for f in read_file(path):
+            if not (head_is(f, "procedure") and len(f) > 1 and isinstance(f[1], list)
+                    and f[1] and isinstance(f[1][0], Sym)):
+                continue
+            name = f[1][0].name
+            sets = []
+            _proc_global_sets(f[2:], is_global, sets)
+            if sets:
+                out[name] = sets
+    return out
+
+
+def _proc_global_sets(forms, is_global, out):
+    for f in forms:
+        if not isinstance(f, list) or not f:
+            continue
+        if is_sym(f[0], "=") and len(f) >= 3 and isinstance(f[1], Sym) \
+                and is_global(f[1].name) and isinstance(f[2], int):
+            out.append((f[1].name, f[2]))
+        _proc_global_sets(f, is_global, out)
 
 
 def _parse_script_consts(src_dir):
@@ -739,6 +786,9 @@ def load_game(src_dir=None):
     items = enum_items or _parse_items(main)            # else sluicebox Iitem instances (LSL2)
     name_by_num = _parse_game_ini(src_dir)
     game = Game(globals_, inits, items, {}, name_by_num, item_ids, cfg.death_signal)
+    # Procedures are otherwise invisible to the IR; extract their global writes BEFORE
+    # the walker runs, so a `(NormalEgo)` call inlines its `gCurrentStatus:=0`.
+    game.proc_sets = _parse_procedures(src_dir, game.is_global)
     consts = _parse_script_consts(src_dir)
     unresolved = -1          # unique synthetic keys, so unnumbered scripts (the SCI
                              # class library, whose constants live in SCICompanion's

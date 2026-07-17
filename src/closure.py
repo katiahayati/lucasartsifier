@@ -313,10 +313,25 @@ class FixModel:
         # rm79 still works: leaving rm77 at gIslandStatus=1, the edge (77,76) guard
         # `==1` holds on the source, and rm77's `:=2` write (guard `==1`, also true on
         # the source) is applied -> arrive rm76 at 2.
-        self.room_reg_writes = defaultdict(list)
+        # Split by WHEN the write takes effect, which is what the two bugs were really
+        # about:
+        #   ENTRY writes -- UNCONDITIONAL resets, e.g. NormalEgo's `gCurrentStatus:=0`
+        #     (68 call sites) and rm64's `gCurrentStatus:=12`. These run when you ENTER
+        #     the room and must be visible to the room's OWN out-edge guards: rm55->rm56
+        #     needs `gCurrentStatus==0`, and applying the reset on exit left rm55 holding
+        #     the stale incoming value -> the whole back half of LSL2 unreachable.
+        #   EXIT writes -- GUARDED, co-triggered with a specific move, e.g. rm64's
+        #     `:=10` behind `gWearingParachute==1` and rm77's `:=2` behind
+        #     `gIslandStatus==1`. These are the SURVIVE/advance branch and belong on the
+        #     edge, guard checked on the source value.
+        self.room_entry_writes = defaultdict(list)   # room -> [(reg, abs-value)]
+        self.room_exit_writes = defaultdict(list)    # room -> [(reg, abs-value, guard)]
         for reg in self.promoted:
             for room, val, guard in self.sets.get(reg, ()):
-                self.room_reg_writes[room].append((reg, _abs_val(val), guard))
+                if _has_atom(guard):
+                    self.room_exit_writes[room].append((reg, _abs_val(val), guard))
+                else:
+                    self.room_entry_writes[room].append((reg, _abs_val(val)))
 
     def _rooms_of(self, num):
         """Where do this script's effects happen?
@@ -341,6 +356,20 @@ OTHER = object()      # a promoted register holds a value we do not distinguish
 
 def _abs_val(v):
     return v if isinstance(v, int) else OTHER
+
+
+def _has_atom(guard):
+    """True if a guard has any evaluable OWN/FLAG/CMP atom -- i.e. it can be false.
+    A guard with none (None, or only empty conjunctions / opaque atoms) is an
+    UNCONDITIONAL reset that runs on room entry."""
+    from model import GAnd, GOr, GNot, Pred
+    if guard is None:
+        return False
+    if isinstance(guard, (GAnd, GOr)):
+        return any(_has_atom(k) for k in guard.kids)
+    if isinstance(guard, GNot):
+        return _has_atom(guard.kid)
+    return isinstance(guard, Pred) and guard.kind in ("OWN", "FLAG", "CMP")
 
 
 def _edge_implies_write(eguard, wguard, reg, dom):
@@ -676,7 +705,19 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
         return _Overlay(fl, {order[i]: ({rv[i]} if rv[i] is not OTHER else {ANY})
                              for i in range(len(order))})
 
-    init_rv = tuple(_abs(next(iter(fl.get(r) or {0}))) for r in order)
+    idx = {reg: i for i, reg in enumerate(order)}
+
+    def enter(room, rv):
+        # apply a room's UNCONDITIONAL entry writes (resets) to the arriving valuation
+        ew = m.room_entry_writes.get(room, []) + m.room_entry_writes.get(None, [])
+        if not ew:
+            return rv
+        lst = list(rv)
+        for reg, av in ew:
+            lst[idx[reg]] = av
+        return tuple(lst)
+
+    init_rv = enter(start_room, tuple(_abs(next(iter(fl.get(r) or {0}))) for r in order))
     reach = {(start_room, init_rv)}                # (room, register-valuation)
 
     changed = True
@@ -686,25 +727,25 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
         for (a, rv) in reach:
             by_room[a].add(rv)
 
-        # 1. movement. The edge guard is checked on the SOURCE valuation; then the room
-        #    you are LEAVING applies its promoted-register writes (each gated on its own
-        #    guard vs the live valuation, progressively) to produce the valuation you
-        #    carry into b. This is what makes a mode-register gate bind AND overwrites
-        #    stale values -- see `_build_reg_writes`.
-        idx = {reg: i for i, reg in enumerate(order)}
+        # 1. movement. Edge guard on the SOURCE valuation; then a's GUARDED exit writes
+        #    (co-triggered, guard on source) produce the valuation carried out; then b's
+        #    UNCONDITIONAL entry writes (resets) apply as you arrive. Entry-vs-exit is
+        #    the difference between rm55's `gCurrentStatus:=0` reset (must be visible to
+        #    rm55's own out-edge) and rm64's `:=10` survive branch (delivered to rm65).
         for (a, rv) in list(reach):
             ov = _overlay(rv)
-            # valuation delivered when leaving `a`: apply a's writes (and any global-code
-            # writes, room None) to rv, in order, each conditional on its guard.
-            nrv = list(rv)
-            for reg, av, wguard in (m.room_reg_writes.get(a, []) + m.room_reg_writes.get(None, [])):
-                if holds_tree(wguard, items, _overlay(tuple(nrv))):
-                    nrv[idx[reg]] = av
-            nrv = tuple(nrv)
+            drv = list(rv)
+            for reg, av, wguard in (m.room_exit_writes.get(a, []) + m.room_exit_writes.get(None, [])):
+                if holds_tree(wguard, items, _overlay(tuple(drv))):
+                    drv[idx[reg]] = av
+            drv = tuple(drv)
             for b in m.edges.get(a, ()):
                 guard = (m.machine_guards.get((a, b)) if (a, b) in m.machine_edges
                          else m.edge_reqs.get((a, b)))
-                if holds_tree(guard, items, ov) and (b, nrv) not in reach:
+                if not holds_tree(guard, items, ov):
+                    continue
+                nrv = enter(b, drv)
+                if (b, nrv) not in reach:
                     reach.add((b, nrv))
                     changed = True
 

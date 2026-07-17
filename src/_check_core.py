@@ -194,9 +194,9 @@ def main():
     check("promote(gIslandStatus): the register climbs past the endgame chain",
           max(v for v in rp.flags.get("gIslandStatus", [0]) if isinstance(v, int)) >= 104,
           True)
-    check("leaving rm77 applies the gIslandStatus:=2 write",
+    check("leaving rm77 applies the gIslandStatus:=2 write (guarded exit write)",
           any(reg == "gIslandStatus" and v == 2
-              for reg, v, _g in mp.room_reg_writes.get(77, [])), True)
+              for reg, v, _g in mp.room_exit_writes.get(77, [])), True)
 
     # SET effects inside a machine state inherit their TRIGGER guard, exactly as GOTOs
     # do. rm64's `(= gCurrentStatus 10)` -- the parachute survival write, in state 2
