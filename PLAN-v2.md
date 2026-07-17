@@ -207,10 +207,36 @@ abstraction for anything **counted** or **moded**.
 | `gIslandStatus` | set-of-values | the wedding gate is vacuous |
 | `gCurrentStatus` | set-of-values | the parachute is invisible |
 
-Promote them into the location state. Chosen **by `coverage.py`**, not by hand. Bounded
-and tiny (arrows 0..2, `gIslandStatus` ~8, `gCurrentStatus` ~37) — this is the SCI
-problem, not the Petri-net problem, and that is a property of the input we should exploit
-rather than generalize away. Sizing: ~89 rooms × a few registers ≈ 25k nodes.
+Promote them into the location state. Chosen **by `coverage.py`**, not by hand.
+
+The candidates fall out mechanically (compared with `==` against ≥3 distinct literals,
+and assigned ≥3 distinct literals):
+```
+LSL2   gCurrentStatus 35 · gCurrentEgoView 9 · gIslandStatus 8 · gWearingSunscreen 3 · gBombStatus 3
+KQ4    newRoomNum 13 · ghostRoomNum 8 · frogPrinceState 4 · ogreState 3
+```
+
+> **⚠ THE SIZING BELOW WAS WRONG — MEASURED 2026-07-17.** "~25k nodes" is per CLOSURE,
+> and it ignores that `requirements()` runs **~373 of them**. Measured on the current
+> code: one closure is **9 ms** over 85 rooms; `requirements()` is **3.4 s**. Promoting
+> `gIslandStatus`(8) × `gCurrentStatus`(35) makes the location space 85 → ~25k, i.e.
+> **~300× per closure**, i.e. ~2.6 s each, i.e. **~16 minutes** per `requirements()` run.
+> Add `gCurrentEgoView`(9) and it is hours. The Petri-net dismissal was right about the
+> *state space* and wrong about the *number of times we search it*.
+>
+> **Decision needed before implementing (do not let an agent pick this alone):**
+> - **(a) Promote only the small registers.** `gIslandStatus`(8) alone is 85 → 680 nodes,
+>   ~8×, ~27 s for `requirements()`. Feasible today, and it is the one that unlocks the
+>   endgame chain (rm84→100, rm92→103, rm75→104, the rm77→rm78 wedding gate).
+> - **(b) Make `requirements()` cheap enough to afford `gCurrentStatus`(35).** 373
+>   closures is the real cost driver, not the state space. That is a solver problem
+>   (incremental reachability, or reuse across the deletion-based MUS shrink), and it is
+>   Phase 5's territory — so **5 may need to come before the expensive half of 4.**
+> - **(c) Promote per-query.** A register only matters to the edges that test it; promote
+>   the ones a given frontier actually reads rather than globally.
+>
+> The parachute needs `gCurrentStatus`, so it is gated behind (b) or (c). The endgame
+> chain needs only `gIslandStatus`, so (a) buys it now.
 
 Note it *restores* monotonicity rather than breaking it: more arrows never hurts. We only
 lose the "collect everything, then decide" shortcut on the promoted dimensions.
