@@ -321,19 +321,52 @@ def holds_tree(tree, items, flags, locs=None):
     return eval3(tree, items, flags, locs=locs) is not F
 
 
-def own_atoms(node, out=None):
-    """Positive OWN items mentioned anywhere in a guard tree (reporting only --
-    a mention is not a requirement, since it may sit under an `or` or a `not`)."""
+def own_atoms(node, out=None, neg=False):
+    """OWN items a guard tree mentions at POSITIVE polarity.
+
+    This used to recurse through `GNot` without flipping, so `(not (ego has: X))`
+    reported X as mentioned-positively -- i.e. as the exact opposite of what the
+    guard says. Its own docstring warned that "a mention is not a requirement, since
+    it may sit under an `or` or a `not`", and then `requirements()` used it as a
+    semantic filter anyway. Polarity is now tracked; for "does this guard actually
+    REQUIRE x", use `guard_requires()`, which asks rather than scans.
+    """
     from model import GAnd, GOr, GNot, Pred
     out = set() if out is None else out
     if isinstance(node, (GAnd, GOr)):
         for k in node.kids:
-            own_atoms(k, out)
+            own_atoms(k, out, neg)
     elif isinstance(node, GNot):
-        own_atoms(node.kid, out)
-    elif isinstance(node, Pred) and node.kind == "OWN" and node.want:
+        own_atoms(node.kid, out, not neg)
+    elif isinstance(node, Pred) and node.kind == "OWN" and (node.want != neg):
         out.add(node.var)
     return out
+
+
+class _AllBut:
+    """Everything except the named items -- a maximal world with one hole."""
+
+    def __init__(self, missing):
+        self.missing = missing
+
+    def __contains__(self, x):
+        return x not in self.missing
+
+
+def guard_requires(tree, cands):
+    """Which of `cands` does this guard PROVABLY refuse to be crossed without?
+
+    Asks instead of scanning: hold everything but x, be maximally permissive about
+    every flag, and see whether the guard goes provably false. That is the only
+    reading of "the game already blocks you without x" that survives `or` and `not`
+    -- a syntactic atom scan gets `(or (has: A) (has: B))` wrong (neither is
+    required) and `(not (has: X))` exactly backwards (X is FORBIDDEN, not required).
+    """
+    if tree is None:
+        return set()
+    from machine import _AnyFlags
+    anyf = _AnyFlags()
+    return {x for x in cands if eval3(tree, _AllBut({x}), anyf) is F}
 
 
 def holds(preds, items, flags):
@@ -490,9 +523,16 @@ def requirements(m: FixModel, start=None, goals=None, log=None):
                 continue          # absorbing sink (a death room): you lose there
                                   # holding EVERYTHING, so it strands nothing --
                                   # it just says "dying loses", which is not news.
-            # items the game ALREADY refuses to let you cross without
-            already = own_atoms(m.edge_reqs.get((a, b)))
-            pool = set(lost(b)) - set(already)
+            # Items the game ALREADY refuses to let you cross without -- no point
+            # reporting a requirement the edge itself enforces.
+            #
+            # This used to be `own_atoms(...)`, a syntactic scan that collected OWN at
+            # ANY polarity. So `(not (ego has: X))` -- an edge that forbids X -- exempted
+            # X from ever being reported, and an `(or (has: A) (has: B))` exempted both
+            # when neither is required. On LSL2 that silenced 14 item/edge pairs,
+            # including every item on rm0->rm152. Ask the guard instead of reading it.
+            pool = set(lost(b))
+            pool -= guard_requires(m.edge_reqs.get((a, b)), pool)
             clauses, truncated = [], False
             while pool:
                 if W(b, pool):

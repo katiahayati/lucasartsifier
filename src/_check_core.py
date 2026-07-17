@@ -80,12 +80,24 @@ def main():
     # `(if gWearingWig ...)`, and without the item nothing can ever set that global.
     check_in("derives the Wig strand (rm38->131)", (38, 131, "Wig"), strands)
 
-    # The `st is None` activator bug conjured these out of walk-out-on-control exits
-    # that live in doit/handleEvent and have no activator at all.
-    for item in ("Lottery_Ticket", "Dollar_Bill", "Wad_O__Dough"):
-        check_not_in(f"no phantom {item} strand", (11, 101, item), strands)
-    check("no phantom strandings from doit-exits",
-          {s for s in strands if s[1] in (101, 114, 125)}, set())
+    # The `st is None` activator bug. Assert the INVARIANT, not a downstream symptom.
+    #
+    # The old assertions checked that no stranding was REPORTED on those edges, which
+    # cannot catch the regression: restore the bug and `strandings` returns nothing at
+    # all, because sanity collapses first and there is no reachable goal to strand you
+    # from. Four green ticks guarding the exact bug their commit existed to prevent.
+    #
+    # So test the thing itself: a GOTO in doit/handleEvent (`st is None`) is a direct
+    # player action, has no activator, and must carry NO `own(...)` from one. rm101's
+    # exit is `(& (gEgo onControl:) $0008) -> (newRoom: 11)` in rm101Script:doit; the
+    # bug welded a Said-branch's `(gEgo has: 2)` onto it and made rm101 a sink without
+    # the Lottery_Ticket. This fails the moment that returns.
+    from analyze import edge_requirements                       # noqa: PLC0415
+    ereq = edge_requirements(g)
+    for a, b, item in ((101, 11, "Lottery_Ticket"), (114, 14, "Dollar_Bill"),
+                       (125, 25, "Wad_O__Dough")):
+        check(f"rm{a}->rm{b} (a doit exit) carries no activator OWN guard",
+              sorted(C.own_atoms(ereq.get((a, b)))), [])
 
     # Fruit and Sewing_Kit are ALTERNATIVES on day 6 -- removing either alone must
     # NOT strand you. (The syntactic path ANDs them, which is how the shipped patch
@@ -130,8 +142,16 @@ def main():
     # the end state. If either ever goes live, every endgame finding silently dies.
     check("gDebugging pinned off", sorted(r.flags.get("gDebugging", [])), [0])
     check("gForceAtest pinned off", sorted(r.flags.get("gForceAtest", [])), [0])
+    # `m.acq` is a defaultdict(list): `m.acq[21]` on a missing key returns [] rather
+    # than raising, `any([])` is False, and this prints 'ok' while the model has lost
+    # every source of the Hair_Rejuvenator -- which would silently delete the finding
+    # the next assertion depends on. Pin the sites first, so the check can only pass
+    # for the reason it claims. (It also mutated the model by inserting the key.)
+    acq21 = dict(m.acq).get(21, [])
+    check("the Hair_Rejuvenator has its real source (rm151, the barber)",
+          sorted({rm for rm, _ in acq21}), [82, 151])
     check("the crater's debug hand-out of the bomb is dead",
-          any(rm == 82 and C.holds_tree(gd, r.items, r.flags) for rm, gd in m.acq[21]),
+          any(rm == 82 and C.holds_tree(gd, r.items, r.flags) for rm, gd in acq21),
           False)
     # The Hair_Rejuvenator's REAL source is rm151 (the barber's chair, off rm51), and it
     # is gone the moment you board the plane. That much the model gets right; what it

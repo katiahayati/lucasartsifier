@@ -477,7 +477,6 @@ def prereq_before_gate(game: Game, sources, required, edges):
 
 def main(src_dir=None):
     game = load_game(src_dir) if src_dir else load_game()
-    from model import SRC_DEFAULT
     sources, drops, required, global_sets = derived_maps(game)
     edges, edge_info = movement_graph(game)
     latches = irreversible_globals(game, global_sets)

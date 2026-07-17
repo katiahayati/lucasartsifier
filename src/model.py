@@ -22,9 +22,23 @@ import os
 from dataclasses import dataclass, field
 
 from sexpr import read_file, Sym, Str, Said
-from config import ACTIVE as CFG
+import config
 
-SRC_DEFAULT = CFG.src_dir
+# NOT `from config import ACTIVE as CFG`. That binds the game AT IMPORT, and callers
+# swap `config.ACTIVE` at runtime (config.py's own comment invites it: "Swap this (or
+# set it from run.py)"). The stale binding made _check_core's KQ4 leg build its Game
+# with LSL2's death_signal -- `game.is_death_write` could never fire, so KQ4 went from
+# 56 DEATH effects to 0 and the whole KQ4 half of the suite validated against the wrong
+# game's config while printing green. Read through to the live config instead, exactly
+# as analyze._LiveCfg already does.
+
+
+def _cfg():
+    return config.ACTIVE
+
+
+def SRC_DEFAULT():          # noqa: N802  (kept callable so it cannot go stale again)
+    return config.ACTIVE.src_dir
 
 # selectors we treat as effects / guards
 ACQUIRE_SEL, DROP_SEL, OWN_SEL, SCORE_SEL = "get", "put", "has", "changeScore"
@@ -687,13 +701,16 @@ def _extract_nav(forms, consts=None):
     return exits, doors, regions
 
 
-def load_game(src_dir=SRC_DEFAULT):
+def load_game(src_dir=None):
+    # resolve the game at CALL time, never at import -- see the note by `import config`
+    cfg = _cfg()
+    src_dir = cfg.src_dir if src_dir is None else src_dir
     main = read_file(os.path.join(src_dir, "Main.sc"))
     globals_, inits = _parse_globals(main)
     enum_items, item_ids = _parse_item_enum(src_dir)   # EricOakford game.sh enum (KQ4)
     items = enum_items or _parse_items(main)            # else sluicebox Iitem instances (LSL2)
     name_by_num = _parse_game_ini(src_dir)
-    game = Game(globals_, inits, items, {}, name_by_num, item_ids, CFG.death_signal)
+    game = Game(globals_, inits, items, {}, name_by_num, item_ids, cfg.death_signal)
     consts = _parse_script_consts(src_dir)
     unresolved = -1          # unique synthetic keys, so unnumbered scripts (the SCI
                              # class library, whose constants live in SCICompanion's
