@@ -112,6 +112,18 @@ def main():
         check("the guard is CNF, not a flat conjunction", lifeboat["guard_sexpr"],
               "(and (gEgo has: 14) (or (gEgo has: 11) (gEgo has: 12)))")
 
+    # The glacier: rm79->rm80 is a ONE-WAY vine swing across a chasm (rm79:178
+    # `((not (gEgo has: 29)) ; Vine`), and rm80 has no back-edge. Sand's source is
+    # rm75 and Ashes' is rm77 -- both on the NEAR side -- so you must carry one
+    # across to melt the ice. Needs BOTH the strict cue model (rm81's machine would
+    # otherwise walk from entry 0 straight to its exit, ignoring the sand guard) and
+    # no `++` poisoning. Invisible to a one-item-at-a-time query either way.
+    glacier = reqs.get((79, 80))
+    check("rm79->80 (the vine swing) is a frontier", glacier is not None, True)
+    if glacier:
+        check_in("crossing the chasm needs Sand OR Ashes", ("Ashes", "Sand"),
+                 {tuple(c["item_names"]) for c in glacier["clauses"]})
+
     # QA scaffolding must stay OFF. rm82 (the volcano crater) contains
     # `(if gDebugging (gEgo get: 27 get: 21 get: 19))` -- the whole bomb, handed to you
     # in the room you need it -- and rm75 has `(if gForceAtest (= gIslandStatus 105))`,

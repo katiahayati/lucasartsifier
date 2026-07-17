@@ -38,10 +38,26 @@ WHAT IS MODELLED
   * the death write (config.death_signal)        -> DEATH (an absorbing sink)
   * `(++ c)` / `(-- c)` / `(= c <literal>)`      -> bounded counter update
 
-DIRECTION OF ERROR. Unchanged from the rest of the core: we only ever refuse a
-branch on a PROVABLY false guard (3-valued, UNKNOWN stays UNKNOWN), and anything
-we cannot model -- an unmodellable local, a machine that never cues back -- stays
-permissive. We miss a stranding rather than invent one.
+DIRECTION OF ERROR. Same as the rest of the core: we refuse a branch only on a
+PROVABLY false guard (3-valued, UNKNOWN stays UNKNOWN), and we miss a stranding
+rather than invent one. But the thing that BUYS us that guarantee is
+`control_exits`, NOT permissiveness inside the walk -- and confusing the two cost
+us a real softlock.
+
+A Script's switch is NOT one chain. It is several SEGMENTS sharing a switch, one
+per entry, because each entry is a different player action. So a state that arms no
+cue PARKS; it does not fall into the next segment. Letting it fall through (which
+this module did at first, on the theory that stalling might invent a dead end) walks
+you around the very guard that gates the next segment. rm81, the glacier: six
+entries (0,1,2,7,8,20), and only entry 8 -- "throw sand at the ice" -- is guarded by
+`(or (has: Ashes) (has: Sand))`. The exit sits at state 19, downstream of 8. Falling
+through carried entry 0 from state 0 to state 19 and out, handing you the exit
+having thrown nothing, and overriding a flat edge guard that was already RIGHT.
+
+The guarantee never needed that. If we cannot walk a machine, `control_exits` sees
+it fail to deliver its exit even with everything granted, and closure falls back to
+the flat movement edge. The fake dead end is impossible either way. So: be strict in
+the walk, and let the trust gate handle what we do not understand.
 """
 
 from __future__ import annotations
@@ -454,11 +470,12 @@ def run(m: Machine, items, flags, eval_fn):
         locs = dict(ctr)
         branches = m.states.get(st)
         if branches is None:
-            # A state with NO case in the switch. This is not a dead end: it is SCI's
-            # placeholder for "wait for another cue". rm78 state 3 sends two actors
-            # with `self`, so two cues arrive -- the first lands on the empty state 4,
-            # the second moves on to 5. Falling through is the only reading that
-            # doesn't strand every multi-cue cutscene in the game.
+            # A state with NO case in the switch IS a pass-through, and this one is
+            # real rather than invented: rm78 state 3 sends two actors with `self`, so
+            # two cues arrive -- the first lands on the empty state 4, which does
+            # nothing, and the second carries on to 5. An absent state cannot park
+            # (there is no code to wait on), so falling through is the only reading.
+            # Contrast a PRESENT state that arms no cue: that one parks. See below.
             if st + 1 <= _last:
                 n = (st + 1, ctr)
                 if n not in seen:
@@ -477,7 +494,7 @@ def run(m: Machine, items, flags, eval_fn):
             # the first action swallowed the exit.
             nxt, nloc = st, dict(locs)
             exit_to = jump_to = None
-            died = False
+            died = armed = False
             for (kind, arg) in acts:
                 if kind == "STEP":
                     var, d = arg
@@ -495,6 +512,8 @@ def run(m: Machine, items, flags, eval_fn):
                     nxt = max(0, nxt + arg)
                 elif kind == "JUMP":
                     jump_to = arg
+                elif kind == "ADVANCE":
+                    armed = True
                 elif kind == "EXIT":
                     exit_to = arg
                 elif kind == "DEATH":
@@ -505,17 +524,31 @@ def run(m: Machine, items, flags, eval_fn):
             if died:
                 deaths.add((st, tuple(sorted(nloc.items()))))
                 continue                     # absorbing
-            # Anything else falls through to the next state -- whether we saw an
-            # ADVANCE, or nothing at all. "Nothing at all" is a PASS-THROUGH state (a
-            # state may arm several cues at once: rm93 state 0 does `setMotion: ...
-            # self` AND `(= cycles 10)`, so the state in between just does its bit
-            # while the second cue carries on) or a PARKED one (rm57 state 1's
-            # `observeControl:` waits for the player, and is re-entered via an
-            # activator, which we already model as an entry). Stalling instead would be
-            # the one error we refuse to make: an unparsed cue idiom would read as
-            # "you are stuck forever".
-            goto = jump_to if jump_to is not None else nxt + 1
-            if goto <= _last:
+            # A state moves on ONLY if it armed a cue. A state that armed nothing
+            # PARKS -- rm57 state 1's `observeControl:` is waiting for the player, and
+            # it is re-entered through an activator, which we already model as an entry.
+            #
+            # This used to fall through unconditionally, on the theory that stalling
+            # would invent a fake dead end if we misread a cue idiom. That was wrong
+            # twice over. `control_exits` ALREADY prevents the fake dead end: a machine
+            # we cannot walk simply fails to deliver its exit, and closure falls back to
+            # the flat movement edge. The two mechanisms were solving the same problem,
+            # and the trust gate does it properly -- so the fall-through bought nothing
+            # and cost real guards. A Script's switch is not one chain; it is several
+            # segments sharing a switch, one per entry, and walking off the end of one
+            # segment into the next INVENTS a transition the engine never makes.
+            #
+            # rm81 (the glacier) is what this destroyed. Six entries -- 0, 1, 2, 7, 8,
+            # 20 -- one per player action, and only entry 8 ("throw sand at the ice") is
+            # guarded by `(or (has: Ashes) (has: Sand))`. The exit to rm181 sits at
+            # state 19, downstream of 8. Falling through walked entry 0 straight from 0
+            # to 19 and out, so the machine handed you the exit having thrown nothing --
+            # overriding a flat edge guard that was already correct. Being strict here
+            # breaks the chain at state 7 (which arms nothing), the machine declines the
+            # exit, and the flat guard wins. That is `rm79->rm80 must hold >=1 of
+            # {Sand, Ashes}` -- a real, previously invisible softlock.
+            goto = jump_to if jump_to is not None else (nxt + 1 if armed else None)
+            if goto is not None and goto <= _last:
                 n = (goto, tuple(sorted(nloc.items())))
                 if n not in seen:
                     seen.add(n)

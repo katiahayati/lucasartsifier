@@ -99,6 +99,8 @@ class FixModel:
                         for r in self._rooms_of(num):
                             self.acq[e.arg].append((r, t.guard_tree))
                     elif e.kind == "SET":
+                        if e.receiver in ("++", "--", "+=", "-="):
+                            continue
                         if e.arg in CFG.debug_globals:
                             continue          # QA scaffolding stays 0; see config
                         for r in self._rooms_of(num):
