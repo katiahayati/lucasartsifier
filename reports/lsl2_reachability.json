@@ -8,7 +8,7 @@
   "of_globals": 480
  },
  "rooms": 100,
- "sccs": 30,
+ "sccs": 28,
  "acts_freely_explorable": [
   {
    "component": 4,
@@ -54,7 +54,7 @@
    ]
   },
   {
-   "component": 13,
+   "component": 12,
    "size": 25,
    "rooms": [
     11,
@@ -85,7 +85,7 @@
    ]
   },
   {
-   "component": 10,
+   "component": 9,
    "size": 9,
    "rooms": [
     31,
@@ -100,11 +100,13 @@
    ]
   },
   {
-   "component": 7,
-   "size": 3,
+   "component": 6,
+   "size": 5,
    "rooms": [
+    40,
     41,
     42,
+    43,
     47
    ]
   }
@@ -122,7 +124,7 @@
    "pattern": "missing-prereq-before-gate",
    "item": 5,
    "item_name": "Swimsuit",
-   "need_component_id": 10,
+   "need_component_id": 9,
    "need_room": 32,
    "need_region": [
     "300=cruise ship / voyage"
@@ -139,7 +141,7 @@
    "pattern": "missing-prereq-before-gate",
    "item": 8,
    "item_name": "Grotesque_Gulp",
-   "need_component_id": 8,
+   "need_component_id": 7,
    "need_room": 138,
    "need_region": [
     138
@@ -156,7 +158,7 @@
    "pattern": "missing-prereq-before-gate",
    "item": 9,
    "item_name": "Sunscreen",
-   "need_component_id": 10,
+   "need_component_id": 9,
    "need_room": 31,
    "need_region": [
     "300=cruise ship / voyage"
@@ -173,7 +175,7 @@
    "pattern": "missing-prereq-before-gate",
    "item": 9,
    "item_name": "Sunscreen",
-   "need_component_id": 9,
+   "need_component_id": 8,
    "need_room": 131,
    "need_region": [
     "300=cruise ship / voyage"
@@ -190,7 +192,7 @@
    "pattern": "missing-prereq-before-gate",
    "item": 11,
    "item_name": "Fruit",
-   "need_component_id": 9,
+   "need_component_id": 8,
    "need_room": 131,
    "need_region": [
     "300=cruise ship / voyage"
@@ -207,7 +209,7 @@
    "pattern": "missing-prereq-before-gate",
    "item": 11,
    "item_name": "Fruit",
-   "need_component_id": 8,
+   "need_component_id": 7,
    "need_room": 138,
    "need_region": [
     138
@@ -224,7 +226,7 @@
    "pattern": "missing-prereq-before-gate",
    "item": 12,
    "item_name": "Sewing_Kit",
-   "need_component_id": 8,
+   "need_component_id": 7,
    "need_room": 138,
    "need_region": [
     138
@@ -241,7 +243,7 @@
    "pattern": "missing-prereq-before-gate",
    "item": 13,
    "item_name": "Spinach_Dip",
-   "need_component_id": 9,
+   "need_component_id": 8,
    "need_room": 131,
    "need_region": [
     "300=cruise ship / voyage"
@@ -258,7 +260,7 @@
    "pattern": "missing-prereq-before-gate",
    "item": 13,
    "item_name": "Spinach_Dip",
-   "need_component_id": 8,
+   "need_component_id": 7,
    "need_room": 138,
    "need_region": [
     138
@@ -275,7 +277,7 @@
    "pattern": "missing-prereq-before-gate",
    "item": 14,
    "item_name": "Wig",
-   "need_component_id": 9,
+   "need_component_id": 8,
    "need_room": 131,
    "need_region": [
     "300=cruise ship / voyage"

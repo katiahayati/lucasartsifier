@@ -1,10 +1,21 @@
 """The fixpoint core: what can you reach and obtain from a given state?
 
-Adventure state is essentially MONOTONIC -- you gain items and set flags, you
-rarely un-gain. So we do not enumerate the product state space (21 items => 2^21
+Adventure state is MOSTLY monotonic -- you gain items and set flags, you rarely
+un-gain. So we do not enumerate the product state space (21 items => 2^21
 subsets, the explosion that made the old code project down to a bare room graph
 and throw the guards away). We compute a least fixpoint instead: exact,
 guard-respecting, and cheap.
+
+  ! MONOTONICITY IS AN APPROXIMATION, NOT A LAW, AND LSL2 BREAKS IT. Carrying the
+  ! Spinach_Dip onto the lifeboat KILLS you: rm138 state 6 day 6 tests it FIRST and
+  ! jumps to the death chain, so ACQUIRING an item can lose you the game. Two
+  ! consequences worth remembering before trusting a result here:
+  !   * `strandings` asks W(room, x) with `imax` = "hold everything". If holding
+  !     everything is itself fatal, that baseline is a false premise.
+  !   * `_atom3` answers UNKNOWN for `(not (ego has: X))` because it cannot model
+  !     "you must not hold X" -- which is exactly why the dip's trap is invisible
+  !     to us today. It is a MISS, which is the direction we accept, but it is not
+  !     a soundness proof.
 
     closure(m, start, held, flags, exhausted) -> Reach(rooms, items, flagvals)
     winnable(...)  ==  a goal room is in reach.rooms
@@ -14,17 +25,31 @@ That turns softlock detection into a QUERY rather than a feature:
     for each irreversible action, recompute the closure from its POST-state;
     if the goal no longer closes, that action is the cut.
 
-All four cases we kept re-discovering fall out of this one algorithm, with no
-special-casing: the whale (in rm44 without iFeather, the tickle guard fails so
-there is no exit), the magic fruit (consumed, its one-shot source exhausted, so
-rm694's ending is unreachable), the parachute (on the plane without it, the
-rm64->65 survival guard fails), and nightfall (isNightTime latched, so the
-day-only doors' guards fail and the fishing pole is gone).
+Cases that fall out of this one algorithm, with no special-casing: the whale (in
+rm44 without iFeather, `(ego setScript: tickle)` is gated on the feather so the
+machine never starts and there is no exit), the magic fruit (consumed, its
+one-shot source exhausted, so rm694's ending is unreachable), and -- since the
+state-machine lift (machine.py) -- the LSL2 lifeboat gauntlet: board the cruise
+without the Sunscreen or the Grotesque_Gulp and the raft's day loop can never
+reach its exit.
 
 Deaths need no special handling here: the fixpoint does not care WHY you cannot
 proceed. "Stuck" and "dead" are the same to it -- both are simply "the goal no
 longer closes". The death catalogue (analyze.death_sites) is for LABELLING a
-finding, which is a reporting concern.
+finding, which is a reporting concern. (That was only ever true of deaths that
+block a MOVEMENT edge; deaths inside a room's own state machine were invisible
+until machine.py made the machine part of the transition system.)
+
+KNOWN MISS -- the parachute. Jumping without it is fatal, but rm64 reaches rm65
+either way: the chute only decides `gCurrentStatus` (10 = descending vs 12 =
+plummeting), and rm65's entries branch on it into an exit or a death. We model a
+global as THE SET OF VALUES IT CAN EVER TAKE, so `(== gCurrentStatus 12)` asks
+"can it be 12?" -- yes -- and `(!= gCurrentStatus 12)` asks "can it be something
+else?" -- also yes. Both entries open, so the death never binds. Catching it needs
+per-instant tracking of a mode register, not this abstraction. It USED to be
+reported, but only via a bug: edge_requirements ANDs the guards of two ALTERNATIVE
+routes to the same room, which manufactured a parachute requirement on an
+unguarded edge. Right answer, wrong reason; the lift removed it.
 """
 
 from __future__ import annotations
@@ -36,7 +61,9 @@ from collections import defaultdict, namedtuple
 sys.path.insert(0, os.path.dirname(__file__))
 from model import load_game, Game                                    # noqa: E402
 from analyze import (movement_graph, edge_requirements, region_maps,  # noqa: E402
-                     is_room)
+                     is_room, _instance_of, _state_of)
+from machine import (machines_of, run as machine_run,                    # noqa: E402
+                     control_exits as machine_control_exits)
 from config import ACTIVE as CFG                                      # noqa: E402
 
 Reach = namedtuple("Reach", "rooms items flags")
@@ -75,7 +102,70 @@ class FixModel:
                         for r in self._rooms_of(num):
                             self.sets[e.arg].append((r, _lit(e.value), t.guard_tree))
 
-        self.init_flags = {k: {_lit(v)} for k, v in game.global_inits.items()}
+        # Intra-room state machines (machine.py). A room is not one node: its exit
+        # may sit deep inside a Script's changeState switch, behind a gauntlet the
+        # room graph cannot see. Where a machine owns a GOTO we let the machine
+        # decide whether you can reach it, instead of trusting the flat edge.
+        self.machines = {}
+        self.machine_edges = set()
+        self.machine_untrusted = set()        # exits our machine model can't reproduce
+        _ev = lambda t, i, f, l: eval3(t, i, f, locs=l)          # noqa: E731
+        for num in game.scripts:
+            if not is_room(game, num):
+                continue
+            ms = machines_of(game, num)
+            if not ms:
+                continue
+            self.machines[num] = ms
+            # What can each machine deliver when nothing is denied to it? An exit it
+            # cannot reach even then is a hole in OUR model of SCI's cue idioms, not
+            # a gate in the game -- so leave those edges to the flat movement graph.
+            deliverable = set()
+            for mach in ms.values():
+                deliverable |= machine_control_exits(mach, _ev)
+            for t in game.scripts[num].transitions:
+                inst, st = _instance_of(t.context), _state_of(t.context)
+                if st is None or inst not in ms:
+                    continue                  # doit/handleEvent GOTO: a direct action
+                for e in t.effects:
+                    if e.kind != "GOTO" or not isinstance(e.arg, int) or e.arg == num:
+                        continue
+                    if e.arg in deliverable:
+                        self.machine_edges.add((num, e.arg))
+                    else:
+                        self.machine_untrusted.add((num, e.arg))
+
+        # Only machines that actually OWN a trusted exit can change an answer; the
+        # rest are pure cost (80 machines -> the handful that gate movement). Prune
+        # so the fixpoint doesn't re-run cutscene machinery on every sweep.
+        owned = {a for (a, _b) in self.machine_edges}
+        self.machines = {a: {i: mm for i, mm in ms.items()
+                             if any((a, b) in self.machine_edges
+                                    for b in machine_control_exits(mm, _ev))}
+                         for a, ms in self.machines.items() if a in owned}
+        self.machines = {a: ms for a, ms in self.machines.items() if ms}
+        self._mcache = {}                 # (inst id, projected world) -> exits
+
+        # SCI0 ZERO-INITIALIZES script 0's locals, so a global nobody assigns is 0 --
+        # not "unknown". Seeding every global (not just the ones with an explicit `=`
+        # initializer) is what lets a guard on an UNSETTABLE global come out FALSE
+        # instead of UNKNOWN-and-therefore-permissive. That is the Wig: day 4 of the
+        # raft asks `(if gWearingWig ...)`, and without the Wig item nothing can ever
+        # set it, so the honest answer is "you die" rather than "maybe you're fine".
+        #
+        # This costs precision-for-completeness: every setter we FAIL to extract now
+        # reads as "this global can only be 0", which can manufacture a false dead end.
+        # It was blocked for exactly that reason until the state-machine lift landed --
+        # with globals zeroed, `gBombStatus` used to strand LSL2 at 50/100 rooms via a
+        # bootstrap cycle (rm52->rm53 wants gBombStatus==3; rm52 sets 3 only if it is
+        # already 2; rm152 sets 2 only if 1; rm54 sets 1 but sits behind rm53). The
+        # cycle was an artifact: rm54's real entrance is a machine exit the old flat
+        # edge was blocking. Both games now reach the same rooms zeroed as not, so this
+        # is pure gain -- but keep _check_core.py's sanity checks honest, because they
+        # are the only thing standing between this and a confident false positive.
+        self.init_flags = {gn: ({_lit(game.global_inits[gn])} if gn in game.global_inits
+                                else {0})
+                           for gn in game.globals}
 
         # Items that GATE something -- the only ones that can strand you. An item
         # nothing ever tests can't make the goal unreachable.
@@ -147,7 +237,7 @@ def _or3(vals):
     return U if any(v is U for v in vals) else F
 
 
-def _atom3(p, items, flags, neg):
+def _atom3(p, items, flags, neg, locs=None):
     """SATISFIABILITY of an atom: can the player arrange for it to hold?
 
     Note this is NOT truth at a fixed instant. `flags` holds the SET of values a
@@ -157,6 +247,17 @@ def _atom3(p, items, flags, neg):
     "cannot be non-zero", which is nonsense for a mode register that takes 37
     values -- and it blocked half of LSL2 when I tried it.
     """
+    if p.kind == "LOCAL":
+        # A machine's own bounded counter (machine.py). Unlike `flags`, this is a
+        # CONCRETE value at a concrete node of the state machine, not a set of
+        # ever-achievable values -- so it is ordinary two-valued arithmetic, and
+        # negation may be applied to the answer. This is what makes the LSL2 raft's
+        # `(== day 3)` select exactly the sunscreen branch instead of leaving every
+        # day's hazard simultaneously dodgeable via the cond's `else`.
+        if locs is None or p.var not in locs:
+            return U
+        r = _cmp_ok(locs[p.var], p.op, p.value)
+        return (F if r else T) if neg else (T if r else F)
     if p.kind == "OWN":
         want = p.want != neg
         if not want:
@@ -182,30 +283,34 @@ def _atom3(p, items, flags, neg):
     return U                      # SAID / POS / OPAQUE -> unknown
 
 
-def eval3(node, items, flags, neg=False):
+def eval3(node, items, flags, neg=False, locs=None):
     """3-valued (Kleene) evaluation of a guard TREE, with negation pushed to the
     leaves via De Morgan. UNKNOWN is load-bearing: anything we cannot interpret
     stays U rather than becoming T, so we only ever refuse an edge on a PROVABLY
-    false guard -- miss a stranding rather than invent one."""
+    false guard -- miss a stranding rather than invent one.
+
+    `locs` binds a state machine's bounded counters when evaluating inside one
+    (machine.py); it is None everywhere else.
+    """
     from model import GAnd, GOr, GNot, Pred
     if isinstance(node, GAnd):
-        vals = [eval3(k, items, flags, neg) for k in node.kids]
+        vals = [eval3(k, items, flags, neg, locs) for k in node.kids]
         return _or3(vals) if neg else _and3(vals)       # ¬(a∧b) = ¬a ∨ ¬b
     if isinstance(node, GOr):
-        vals = [eval3(k, items, flags, neg) for k in node.kids]
+        vals = [eval3(k, items, flags, neg, locs) for k in node.kids]
         return _and3(vals) if neg else _or3(vals)       # ¬(a∨b) = ¬a ∧ ¬b
     if isinstance(node, GNot):
-        return eval3(node.kid, items, flags, not neg)
+        return eval3(node.kid, items, flags, not neg, locs)
     if isinstance(node, Pred):
-        return _atom3(node, items, flags, neg)
+        return _atom3(node, items, flags, neg, locs)
     return U
 
 
-def holds_tree(tree, items, flags):
+def holds_tree(tree, items, flags, locs=None):
     """Block only on a provably-false guard. A missing tree = unguarded = free."""
     if tree is None:
         return True
-    return eval3(tree, items, flags) is not F
+    return eval3(tree, items, flags, locs=locs) is not F
 
 
 def own_atoms(node, out=None):
@@ -254,15 +359,40 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
     fl = {k: set(v) for k, v in (flags if flags is not None else m.init_flags).items()}
     exhausted = set(exhausted)
 
+    cache = m._mcache          # lives on the model: shared across every closure,
+                               # which is what makes strandings' ~1400 re-closures
+                               # affordable (they mostly perturb items no machine
+                               # looks at, so they collapse onto the same key).
+
+    def _exits(inst, mach):
+        key = (inst, mach.project(items, fl))
+        ex = cache.get(key)
+        if ex is None:
+            ex, _deaths = machine_run(mach, items, fl,
+                                      lambda t, i, f, l: eval3(t, i, f, locs=l))
+            cache[key] = ex
+        return ex
+
     changed = True
     while changed:
         changed = False
         # 1. walk anywhere whose edge preconditions hold
         for a in list(rooms):
             for b in m.edges.get(a, ()):
+                if (a, b) in m.machine_edges:
+                    continue          # owned by a state machine -> step 1b decides
                 if b not in rooms and holds_tree(m.edge_reqs.get((a, b)), items, fl):
                     rooms.add(b)
                     changed = True
+        # 1b. a room's own state machines: an exit buried in a changeState switch is
+        #     reachable only along a path THROUGH the machine, and that path may run
+        #     a gauntlet (LSL2's raft: survive days 3-6 or the exit never comes).
+        for a in list(rooms):
+            for inst, mach in m.machines.get(a, {}).items():
+                for b in _exits(inst, mach):
+                    if b != a and b not in rooms and (a, b) in m.machine_edges:
+                        rooms.add(b)
+                        changed = True
         # 2. pick up anything acquirable in reach (and not consumed away)
         for it, sites in m.acq.items():
             if it in items or it in exhausted:

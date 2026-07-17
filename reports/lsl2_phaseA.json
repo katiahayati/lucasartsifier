@@ -22,6 +22,7 @@
     "Airsick_Bag"
    ],
    "protective_flags": [
+    "gCurrentStatus",
     "gOldTime"
    ],
    "own_guards": [
@@ -53,6 +54,7 @@
     "Airsick_Bag"
    ],
    "protective_flags": [
+    "gCurrentStatus",
     "gOldTime"
    ],
    "own_guards": [
@@ -1337,35 +1339,6 @@
  "softlock_candidates": [
   {
    "pattern": "missing-prereq-before-gate",
-   "item": 16,
-   "item_name": "Bikini_Bottom",
-   "needed_at_script": 44,
-   "needed_where": "rm44",
-   "need_region": [
-    "400=Nontoonyt Island"
-   ],
-   "source_rooms": [
-    "rm41"
-   ],
-   "source_region": [
-    "8=interior/overlay",
-    "401=island"
-   ],
-   "frontier_edges": [
-    "rm10->rm90",
-    "rm22->rm96",
-    "rm34->rm95",
-    "rm35->rm95",
-    "rm35->rm96",
-    "rm41->rm95",
-    "rm42->rm40",
-    "rm47->rm48"
-   ],
-   "confidence": "high",
-   "note": "no source reachable once the need-location is reached (point of no return)"
-  },
-  {
-   "pattern": "missing-prereq-before-gate",
    "item": 15,
    "item_name": "Bikini_Top",
    "needed_at_script": 44,
@@ -1522,7 +1495,14 @@
    ],
    "source_region": [],
    "frontier_edges": [
-    "rm43->rm40"
+    "rm10->rm90",
+    "rm22->rm96",
+    "rm34->rm95",
+    "rm35->rm95",
+    "rm35->rm96",
+    "rm41->rm95",
+    "rm47->rm48",
+    "rm47->rm96"
    ],
    "confidence": "medium",
    "note": "no source reachable once the need-location is reached (point of no return)"
@@ -1605,5 +1585,5 @@
   }
  ],
  "movement_rooms": 100,
- "movement_edges": 171
+ "movement_edges": 173
 }

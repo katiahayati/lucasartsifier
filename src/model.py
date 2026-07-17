@@ -34,6 +34,14 @@ ACQUIRE_SEL, DROP_SEL, OWN_SEL, SCORE_SEL = "get", "put", "has", "changeScore"
 # `((ego has: iScarab) (self changeState: 4))`). Without it the guard evaporates and
 # every KQ4 death looks unprotected.
 STATE_SEL = "changeState"
+# `(X setScript: aScript)` STARTS that Script at state 0 -- it is `(aScript
+# changeState: 0)` by another name, and it is guarded exactly like one. KQ4's whale:
+#     ((Said 'tickle') (if (ego has: iFeather) (ego setScript: tickle) ...))
+# so the feather gates the machine's ENTRY, not any of its states. Emitting it as a
+# STATE(0) effect keeps the path condition (which _emit snapshots); scanning for the
+# symbol instead -- as machine.py first did -- silently drops the guard and makes the
+# whale's exit free.
+SCRIPT_SEL = "setScript"
 ROOM_SELS = {"newRoom", "startRoom"}
 # receivers / calls that are positional or parser gating -> lifted away
 POSITIONAL_SELS = {"inRect", "onControl", "observeControl", "ignoreControl",
@@ -67,11 +75,18 @@ class Pred:
             return f"{'' if self.want else '¬'}flag({self.var})"
         if self.kind == "CMP":
             return f"{self.var}{self.op}{self.value}"
+        if self.kind == "LOCAL":
+            return f"local:{self.var}{self.op}{self.value}"
         if self.kind == "SAID":
             return "Said"
         if self.kind == "POS":
             return f"pos({self.text})"
-        return f"opaque({self.text})"
+        if self.kind == "OPAQUE":
+            return f"opaque({self.text})"
+        return f"{self.kind}({self.var}{self.op}{self.value})"   # never lie about a kind
+        # ^ this used to fall through to `opaque(...)` for ANY unrecognized kind, so a
+        #   LOCAL pred printed as `opaque()` -- i.e. as the one thing it is NOT. Cost an
+        #   hour of chasing a "guard that evaluates False but reads as unknown".
 
 
 # --------------------------------------------------------------------------
@@ -147,6 +162,14 @@ class Script:
     exits: dict = field(default_factory=dict)     # direction -> dest room (Rm edge props)
     doors: list = field(default_factory=list)      # entranceTo: dest rooms (Door edges)
     regions: set = field(default_factory=set)      # setRegions: N this room attaches to
+    forms: list = field(default_factory=list)      # the parsed s-exprs, retained for
+                                                   # machine.py: the transition list is a
+                                                   # flat set of (guards -> one effect) and
+                                                   # cannot express a state machine's
+                                                   # control flow (the ORDER of actions on
+                                                   # a path, and the `= seconds` cue that
+                                                   # advances it). Intra-room progression
+                                                   # needs the tree, so keep it.
 
 
 @dataclass
@@ -457,6 +480,9 @@ class _Walker:
                     self._emit(Effect("DROP", arg=iid, receiver=recv), guards, context)
                 elif sel == STATE_SEL and isinstance(a0, int):
                     self._emit(Effect("STATE", arg=a0, receiver=recv), guards, context)
+                elif sel == SCRIPT_SEL and isinstance(a0, Sym):
+                    # start that machine at state 0, carrying this path condition
+                    self._emit(Effect("STATE", arg=0, receiver=a0.name), guards, context)
                 elif sel == SCORE_SEL and isinstance(a0, int):
                     self._emit(Effect("SCORE", arg=a0, receiver=recv), guards, context)
                 elif sel in ROOM_SELS and isinstance(a0, int):
@@ -511,13 +537,22 @@ def _parse_script_consts(src_dir):
     return consts
 
 
-def norm_tree(expr, game):
+def norm_tree(expr, game, locals_=()):
     """Normalize a guard expression into a TREE (GAnd/GOr/GNot/Pred), preserving
     the boolean structure that `_norm_guard` flattens away. Atoms it cannot
     interpret become Pred("OPAQUE"/"SAID"/"POS"), which `closure.eval3` reads as
     UNKNOWN rather than True -- so a negated unknown stays unknown instead of
-    flipping to a false 'this is blocked'."""
+    flipping to a false 'this is blocked'.
+
+    `locals_` names the script-locals that machine.py models as bounded counters.
+    Inside a state machine those are real state -- `(== day 3)` in the LSL2 raft is
+    the whole reason the sunscreen matters -- so they become LOCAL preds that
+    `closure.eval3` evaluates concretely instead of OPAQUE ones it must treat as
+    UNKNOWN. Outside a machine `locals_` is empty and nothing changes.
+    """
     if isinstance(expr, Sym):
+        if expr.name in locals_:
+            return Pred("LOCAL", var=expr.name, op="!=", value=0)
         if game.is_global(expr.name):
             return Pred("FLAG", var=expr.name, want=True)
         return Pred("OPAQUE", text=expr.name)
@@ -530,11 +565,11 @@ def norm_tree(expr, game):
     head = expr[0]
 
     if is_sym(head, "not") and len(expr) == 2:
-        return GNot(norm_tree(expr[1], game))
+        return GNot(norm_tree(expr[1], game, locals_))
     if is_sym(head, "and"):
-        return GAnd([norm_tree(s, game) for s in expr[1:]])
+        return GAnd([norm_tree(s, game, locals_) for s in expr[1:]])
     if is_sym(head, "or"):
-        return GOr([norm_tree(s, game) for s in expr[1:]])
+        return GOr([norm_tree(s, game, locals_) for s in expr[1:]])
     if is_sym(head, "Said"):
         return Pred("SAID")
 
@@ -550,6 +585,9 @@ def norm_tree(expr, game):
         return Pred("OPAQUE", text=f"{_short(expr[0])}.{sel}")
 
     if isinstance(head, Sym) and head.name in ("==", "!=", "<", ">", "<=", ">=", "u<", "u>"):
+        if len(expr) >= 3 and isinstance(expr[1], Sym) and isinstance(expr[2], int) \
+                and expr[1].name in locals_:
+            return Pred("LOCAL", var=expr[1].name, op=head.name, value=expr[2])
         if len(expr) >= 3 and isinstance(expr[1], Sym) and game.is_global(expr[1].name):
             return Pred("CMP", var=expr[1].name, op=head.name, value=_short(expr[2]))
     if is_sym(head, "&") or is_sym(head, "bit-and"):
@@ -670,6 +708,7 @@ def load_game(src_dir=SRC_DEFAULT):
         sc = Script(num, name_by_num.get(num, base))
         sc.transitions = _Walker(game, num).run(forms)
         sc.exits, sc.doors, sc.regions = _extract_nav(forms, consts)
+        sc.forms = forms
         game.scripts[num] = sc
     return game
 

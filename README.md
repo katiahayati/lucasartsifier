@@ -33,11 +33,22 @@ No dependencies beyond Python 3. Output is deterministic. Reports land in
 | stage | file | what it does |
 |---|---|---|
 | 1 | `src/sexpr.py` | Reads decompiled Sierra Script (`.sc`) into S-expressions. |
-| 2 | `src/model.py` | Builds the transition-system IR: resolves item/global **names**, extracts **guarded effects** (`get/put`→item ownership, `newRoom`→move, `= gFlag`→state), and the **movement graph** (`Rm` north/south/east/west edge props, `Door entranceTo:`, `setRegions:`). Parser `Said` strings and positional guards are lifted away — winnability is gated on items + flags. |
-| 3 | `src/analyze.py` | Derived maps (item sources / requirements), irreversible latches, timed-gate detection, and per-item point-of-no-return candidates. |
-| 4 | `src/slice.py` | **Cone-of-influence slice** — backward slice from goal/death/latches to the winnability-relevant state (LSL2: 480 globals → 43, 32 items → 21). |
-| 5 | `src/search.py` | **SCC-condensation reachability** — collapses freely-explorable room sets into a DAG of "acts" whose one-way edges are the true points of no return; goal-aware frontier detection. (Naive product-state BFS is intractable — 2²¹ item subsets — so we use this instead.) |
+| 2 | `src/model.py` | Builds the transition-system IR: resolves item/global **names**, extracts **guarded effects** (`get/put`→item ownership, `newRoom`→move, `= gFlag`→state, `setScript:`→machine entry), **guard trees** (`and`/`or`/`not`, not a flattened conjunction), and the **movement graph**. Parser `Said` strings and positional guards are lifted away. |
+| 3 | `src/analyze.py` | Derived maps (item sources / requirements), irreversible latches, timed-gate detection, edge preconditions. |
+| 4 | `src/machine.py` | **Lifts each room's Script state machines** into the transition system: `changeState` switches → states, if/cond → path conditions, `= seconds`/`self`-cue → advance, plus **bounded script-local counters**. A room is not one node — LSL2's lifeboat gauntlet lives entirely inside `rm138Script`'s `(state, day)` loop. |
+| 5 | `src/closure.py` | **The semantic core.** A least fixpoint over (rooms, items, flag-values) that honours every guard in 3-valued logic. Softlock detection is a *query* over it — "from this edge's post-state, does the goal still close?" — not a feature. |
+| — | `src/slice.py`, `src/search.py` | **Legacy syntactic path**, pending deletion — see below. |
 | — | `run.py` | Chains all of the above end-to-end. |
+| — | `src/_check_core.py` | Cross-game regression check for the semantic core. |
+
+### Why two paths, and which to trust
+`search.py` decides "you need item x here" from the *syntax* — an `OWN(x)` guard is
+mentioned in room R. That cannot distinguish an item that **saves** you from one that
+**kills** you, and LSL2 has both: the Spinach_Dip is tested first on the raft's day 6
+and jumps straight to the death chain. `closure.py` derives the same facts from
+winnability instead, so it gets the polarity right. The syntactic path is kept only as
+a cross-check for the handful of cases the fixpoint cannot yet derive (see Status);
+**do not synthesize patches from it.**
 
 ## Engine-general core vs. per-game config
 
@@ -75,26 +86,60 @@ python3 src/discover.py
 Validation: `discover.py` checks its output against the hand-set `config.LSL2` and
 reproduces it (start ✓, every real timer ✓, goal cluster surfaced ✓).
 
-## Phase B — neutralizing softlocks (the LucasArts invariant)
+## Phase B — neutralizing softlocks — **DISABLED, the patch broke the game**
 
-```bash
-python3 src/patch.py           # synthesize remedies from the frontier analysis
-python3 src/patch_sci0.py      # realize them as source edits -> out/patched_src/
-python3 src/validate_patch.py  # guard-aware regression: softlock-free & still winnable?
+The idea was the **maximally-permissive supervisor of the winnability game**: you can't
+cross an irreversible edge until you hold everything you'll need past it. The idea is
+sound. The implementation synthesized its guards from the *syntactic* path, and shipped
+this:
+
+```
+rm38 -> rm131 : (and (gEgo has: 11) (gEgo has: 12) (gEgo has: 13) (gEgo has: 14))
+                                              ^^^^^^^^^^^^^^^^ Spinach_Dip
 ```
 
-Fixes every detected softlock with one method: the **maximally-permissive supervisor of the
-winnability game** — *you can't cross an irreversible edge until you hold everything you'll
-need past it* (and forcing timers are deleted). Two auto-synthesized act-boundary guards
-neutralize all 10 LSL2 softlocks; `validate_patch.py` proves the patched game is
-softlock-free and still winnable. Details in `reports/lsl2_phaseB.md`.
+The Spinach_Dip is **fatal** — rm138 state 6 day 6 tests it first and jumps to the death
+chain ("the mayonnaise has spoiled"). Day 6 actually needs Sewing_Kit **or** Fruit. So
+the guard forces the one item that kills you and **makes LSL2 unwinnable**; it is wrong on
+3 of its 4 items. `validate_patch.py` blessed it because it imports the same `SccReach`
+core — detector, synthesizer and validator shared one blind spot, so the "proof" proved
+nothing. `src/patch.py` now refuses to run (`DISABLED_WHY`); re-enable it only once guards
+come from `closure.py`.
 
 ## Status
-- **Phase A** (static detection) — complete, reproducible, self-configuring.
-- **Phase B** (neutralization) — complete and validated *in-model*; shippable drop-in
-  binary (compile → loose `script.NNN`) is the remaining last-mile (SCI-compiler-on-Linux
-  spike).
-- **Not engine-verified** yet (ScummVM-in-the-loop is a deferred future phase). See `PLAN.md`.
+- **Phase A** (static detection) — reproducible and self-configuring.
+- **The semantic core** (`closure.py` + `machine.py`) — derives the LSL2 lifeboat gauntlet
+  (Sunscreen, Grotesque_Gulp, Wig) and the KQ4 whale with no special-casing; both games
+  sanity-PASS; LSL2 has **0** un-modelled machine exits, KQ4 has 1.
+  `python3 src/_check_core.py`.
+- **Phase B** (neutralization) — **withdrawn**, see above.
+- **Phase A** / the syntactic path — 11 findings the semantic core does not report:
+  | syntactic-only finding | verdict |
+  |---|---|
+  | Swimsuit (rm26→27) | **false positive** — its `has: 5` guards are a `(Load rsVIEW 132)` preload and a "you don't have it" message, not a gate |
+  | Spinach_Dip (rm38→131) | **false positive** — it is *fatal*, not required |
+  | Fruit + Sewing_Kit (rm38→131), Sand + Ashes (rm79→80) | **real, but disjunctive** — see gap ① |
+  | Parachute, Bobby_Pin, Hair_Rejuvenator (rm57→58, rm82→83) | **real, and we miss them** — see gap ② |
+  | Airline_Ticket (rm55→56) | the *item* is real (rm57's gate opens the jetway); whether that *edge* is a point of no return is unverified |
+
+  **Beware the decoys when judging these.** Al Lowe planted losing uses of the real
+  items, each scoring −5: pouring the Hair_Rejuvenator on the plane's padlock ("it makes
+  the lock look really new!") or on the glacier ("Nothing happens."), jimmying the lock
+  with the Knife ("for naught"). Those are the *first* hits when you grep, and reading
+  only them makes a load-bearing item look like a red herring. The Bobby_Pin really does
+  unlock the plane's emergency exit (`= gAirplaneDoorStatus 1`), and the Hair_Rejuvenator
+  really is the endgame bomb — with the Airsick_Bag stuffed in its neck as a wick.
+- Remaining gaps:
+  - ① **disjunctive requirements.** `strandings` removes one item at a time, so it can
+    never see "you need Fruit **or** Sewing_Kit and have neither" — each alone is
+    covered by the other. Needs a *minimal sufficient kit* query, not single removals.
+  - ② **the endgame chain is ungated in the model.** Plane door → parachute → bomb are
+    all missed, and it is one cluster, not three items: the model reaches the wedding
+    without ever needing them. Partly mode registers (we model a global as the set of
+    values it can *ever* take, so `(== gCurrentStatus 12)` asks "can it be 12?", not "is
+    it 12 now?"), but not only — `W(rm83, Hair_Rejuvenator)` is True, so something on
+    rm83→84→…→rm75-78 that should require the bomb does not. Not yet diagnosed.
+- **Not engine-verified** (ScummVM-in-the-loop is deferred). See `PLAN.md`.
 
 ## Input note
 The analyzer reads a **decompilation** (vendored from

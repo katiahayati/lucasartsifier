@@ -1,0 +1,120 @@
+"""Regression check for the semantic core, across BOTH games.
+
+Every assertion here is something we got wrong at least once. The two that matter
+most are the sanity checks: a shipped game is winnable, so if the model says
+otherwise the model is wrong -- and every attempt to make the core more precise
+has failed here first (the state-machine lift dropped LSL2 to 28/100 rooms before
+the trust gate went in).
+
+    python3 src/_check_core.py
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+import config                                              # noqa: E402
+import closure as C                                        # noqa: E402
+from model import load_game                                # noqa: E402
+from analyze import is_room                                # noqa: E402
+
+FAILS = []
+
+
+def check(name, got, want):
+    ok = got == want
+    print(f"  {'ok  ' if ok else 'FAIL'}  {name}: {got!r}" +
+          ("" if ok else f"   (expected {want!r})"))
+    if not ok:
+        FAILS.append(name)
+
+
+def check_in(name, needle, hay):
+    ok = needle in hay
+    print(f"  {'ok  ' if ok else 'FAIL'}  {name}" + ("" if ok else f"   (missing from {hay!r})"))
+    if not ok:
+        FAILS.append(name)
+
+
+def check_not_in(name, needle, hay):
+    ok = needle not in hay
+    print(f"  {'ok  ' if ok else 'FAIL'}  {name}" + ("" if ok else f"   (unexpectedly present)"))
+    if not ok:
+        FAILS.append(name)
+
+
+def run(cfg):
+    config.ACTIVE = cfg
+    # analyze reads through to the live config, but closure bound CFG at import.
+    C.CFG = cfg
+    g = load_game(cfg.src_dir)
+    m = C.FixModel(g)
+    r = C.closure(m, cfg.start_room)
+    goals = set(cfg.goal_rooms)
+    total = len([n for n in g.scripts if is_room(g, n)])
+    strands = {(s["from_room"], s["to_room"], s["item_name"])
+               for s in C.strandings(m, cfg.start_room, goals)}
+    return g, m, r, goals, total, strands
+
+
+def main():
+    print("LSL2")
+    g, m, r, goals, total, strands = run(config.LSL2)
+    check("SANITY: shipped game is winnable", bool(r.rooms & goals), True)
+    # 85/100, and the 15 we don't reach are the RIGHT 15: rm200/300/400/401/500/600/700
+    # are region controllers (not walkable), rm5/7/8/9/10 are the pre-game and
+    # copy-protection screens, rm44/rm45 are orphans no `newRoom` targets at all, and
+    # rm99 is Main-only. This was 69 before the state-machine lift -- the old activator
+    # heuristic (conjoin the entry guard onto the GOTO) was OVER-constraining real edges.
+    check("rooms reached", len(r.rooms), 85)
+    check("rooms total", total, 100)
+
+    # The raft gauntlet, DERIVED -- this is the whole point of machine.py. Both are
+    # real LSL2 dead-ends: board the cruise without them and the lifeboat's day loop
+    # (rm138 states 3..7, exit at day>=9) can never reach its exit.
+    check_in("derives the Sunscreen strand (rm26->27)", (26, 27, "Sunscreen"), strands)
+    check_in("derives the Grotesque_Gulp strand (rm26->27)",
+             (26, 27, "Grotesque_Gulp"), strands)
+    # The Wig's frontier is rm38->rm131 (boarding the LIFEBOAT), not rm26->rm27
+    # (boarding the ship): the Wig is obtainable on the ship itself, so at rm27 you
+    # can still go get it. Needs zero-init to appear at all -- day 4 asks
+    # `(if gWearingWig ...)`, and without the item nothing can ever set that global.
+    check_in("derives the Wig strand (rm38->131)", (38, 131, "Wig"), strands)
+
+    # The `st is None` activator bug conjured these out of walk-out-on-control exits
+    # that live in doit/handleEvent and have no activator at all.
+    for item in ("Lottery_Ticket", "Dollar_Bill", "Wad_O__Dough"):
+        check_not_in(f"no phantom {item} strand", (11, 101, item), strands)
+    check("no phantom strandings from doit-exits",
+          {s for s in strands if s[1] in (101, 114, 125)}, set())
+
+    # Fruit and Sewing_Kit are ALTERNATIVES on day 6 -- removing either alone must
+    # NOT strand you. (The syntactic path ANDs them, which is how the shipped patch
+    # ended up demanding all four lifeboat items.)
+    check("Fruit alone does not strand", {s for s in strands if s[2] == "Fruit"}, set())
+    check("Sewing_Kit alone does not strand",
+          {s for s in strands if s[2] == "Sewing_Kit"}, set())
+
+    # The raft machine must be lifted and trusted, else none of the above is real.
+    check("raft exit rm138->rm42 is machine-owned", (138, 42) in m.machine_edges, True)
+    check("raft models `day` as a bounded counter",
+          m.machines[138]["rm138Script"].counters, {"day": (-1, 10)})
+
+    print("\nKQ4")
+    g2, m2, r2, goals2, total2, strands2 = run(config.KQ4)
+    check("SANITY: shipped game is winnable", bool(r2.rooms & goals2), True)
+    check("rooms reached", len(r2.rooms), 88)
+    # `(ego setScript: tickle)` sits INSIDE `(if (ego has: iFeather) ...)`, so the
+    # feather gates the machine's ENTRY. Scanning for the setScript symbol without
+    # its guard hands you the whale's exit for free.
+    check_in("derives the whale (rm31->44 iFeather)", (31, 44, "iFeather"), strands2)
+
+    print()
+    if FAILS:
+        print(f"FAILED ({len(FAILS)}): {', '.join(FAILS)}")
+        return 1
+    print("all checks passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

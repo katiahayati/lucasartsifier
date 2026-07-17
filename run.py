@@ -22,6 +22,7 @@ import config      # noqa: E402
 import model       # noqa: E402
 import analyze     # noqa: E402
 import search      # noqa: E402
+import closure     # noqa: E402
 
 
 def banner(title):
@@ -50,8 +51,24 @@ def main():
     banner("Stage 3  Derived maps + heuristic frontier  ->  Phase-A catalog")
     analyze.main(cfg.src_dir)
 
-    banner("Stage 4-5  COI slice + SCC-condensation reachability (goal-aware)")
+    banner("Stage 4-5  COI slice + SCC reachability  [LEGACY -- pending deletion]")
+    print("The syntactic path. Kept only as a cross-check while the semantic core\n"
+          "catches up: it is UNSOUND (it reads 'an OWN(x) guard exists in this room'\n"
+          "as 'you need x here', so it cannot tell a protective item from a fatal\n"
+          "one -- see src/patch.py DISABLED_WHY) but it still surfaces a few real\n"
+          "cases the fixpoint cannot yet derive. Do not synthesize patches from it.\n")
     search.main()
+
+    banner("Stage 6  Semantic core: guard-respecting fixpoint  [PRIMARY]")
+    m, _r = closure.main()
+    strands = closure.strandings(m)
+    print(f"\nstrandings (derived, no special-casing): {len(strands)}")
+    for s in strands:
+        print(f"  rm{s['from_room']} -> rm{s['to_room']} strands {s['item_name']}")
+    print(f"\nintra-room state machines gating movement: {len(m.machines)}")
+    print(f"  trusted machine exits : {len(m.machine_edges)}")
+    print(f"  exits we cannot model : {len(m.machine_untrusted)} "
+          f"(fell back to the flat edge rather than invent a dead end)")
 
     banner("Reports written")
     for f in ("lsl2_phaseA.md", "lsl2_phaseA.json", "lsl2_reachability.json"):
