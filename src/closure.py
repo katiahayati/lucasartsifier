@@ -59,9 +59,9 @@ import sys
 from collections import defaultdict, namedtuple
 
 sys.path.insert(0, os.path.dirname(__file__))
-from model import load_game, Game, GOr                               # noqa: E402
+from model import load_game, Game, GOr, GAnd                         # noqa: E402
 from analyze import (movement_graph, edge_requirements, region_maps,  # noqa: E402
-                     is_room, _instance_of, _state_of)
+                     is_room, _instance_of, _state_of, set_trigger_guards)
 from machine import machines_of, compile_exits as machine_compile   # noqa: E402
 from config import ACTIVE as CFG                                      # noqa: E402
 
@@ -98,8 +98,16 @@ class FixModel:
         self.acq = defaultdict(list)
         # global -> [(room, value, guards)]
         self.sets = defaultdict(list)
+        # A SET inside a machine state keeps only its LOCAL path condition; the guard
+        # that actually gates it is on the trigger that STARTED the machine. Dropping
+        # it made rm64's `(= gCurrentStatus 10)` -- the parachute survival write, in
+        # state 2 behind `gWearingParachute==1` -- look UNCONDITIONAL, so the model
+        # survived the plane jump without the chute. Fold the trigger guard in, exactly
+        # as edge_requirements already does for GOTOs.
+        trig = set_trigger_guards(game)
         for num, s in game.scripts.items():
             for t in s.transitions:
+                inst, st = _instance_of(t.context), _state_of(t.context)
                 for e in t.effects:
                     if e.kind == "ACQUIRE":
                         for r in self._rooms_of(num):
@@ -109,8 +117,11 @@ class FixModel:
                             continue
                         if e.arg in CFG.debug_globals:
                             continue          # QA scaffolding stays 0; see config
+                        tg = trig.get((num, inst, st))
+                        guard = (t.guard_tree if tg is None
+                                 else GAnd([g for g in (t.guard_tree, tg) if g is not None]))
                         for r in self._rooms_of(num):
-                            self.sets[e.arg].append((r, _lit(e.value), t.guard_tree))
+                            self.sets[e.arg].append((r, _lit(e.value), guard))
 
         # Intra-room state machines (machine.py). A room is not one node: its exit
         # may sit deep inside a Script's changeState switch, behind a gauntlet the

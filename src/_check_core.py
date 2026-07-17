@@ -196,6 +196,16 @@ def main():
           True)
     check("edge (77,76) carries the co-triggered gIslandStatus:=2 write",
           mp.edge_reg_effect.get((77, 76)), {"gIslandStatus": 2})
+
+    # SET effects inside a machine state inherit their TRIGGER guard, exactly as GOTOs
+    # do. rm64's `(= gCurrentStatus 10)` -- the parachute survival write, in state 2
+    # behind `gWearingParachute==1` -- was recorded UNCONDITIONAL, so the model
+    # survived the plane jump without the chute. (Necessary for the parachute, not yet
+    # sufficient: rm65 also writes its own survival value, and edge_reg_effect couples
+    # only same-register writes.)
+    p64 = [g for rm, v, g in m.sets["gCurrentStatus"] if rm == 64 and v == 10]
+    check("rm64's survival write carries its gWearingParachute trigger guard",
+          any("gWearingParachute" in str(g) for g in p64), True)
     check("...and still REQUIRES the Grotesque_Gulp", 8 in C.own_atoms(raft), True)
 
     # Pin the headline metric. The README claimed "0 un-modelled machine exits, KQ4

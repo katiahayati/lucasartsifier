@@ -174,58 +174,85 @@ def edge_requirements(game: Game):
     under-approximates the precondition -- conservative: it can only ever miss a
     requirement, never invent one.
     """
-    from model import GAnd, GOr
+    from model import GAnd
 
     reqs = defaultdict(list)
     for num, s in game.scripts.items():
-        acts = defaultdict(list)                # instance -> [(target_state, transition)]
+        acts = _activators(s)
         for t in s.transitions:
-            ctx = t.context or ""
-            inst, meth = _instance_of(ctx), _method_of(ctx)
-            for e in t.effects:
-                if e.kind != "STATE" or not isinstance(e.arg, int):
-                    continue
-                if e.receiver and e.receiver != "self":
-                    acts[e.receiver].append((e.arg, t))   # started from another instance
-                elif meth != "changeState":
-                    # `(self changeState: K)` from handleEvent/doit is the controllable
-                    # trigger that STARTS this machine (vs. a state advancing itself).
-                    acts[inst].append((e.arg, t))
-        for t in s.transitions:
-            ctx = t.context or ""
-            inst, st = _instance_of(ctx), _state_of(ctx)
+            inst, st = _instance_of(t.context), _state_of(t.context)
             for e in t.effects:
                 if e.kind != "GOTO" or not isinstance(e.arg, int):
                     continue
                 parts = [t.guard_tree] if t.guard_tree is not None else []
-                # Which trigger leads HERE? A machine has many entry points (rm57Script
-                # is entered at 1, 4, ...); the one that reaches state `st` is the
-                # nearest with target K <= st. Same heuristic trigger.py already proves.
-                #
-                # `st is None` means this GOTO is NOT in a switch case -- it lives in
-                # doit/handleEvent, so it is a direct player action and the machine's
-                # entry conditions have nothing to do with it. It must take NO
-                # activator guard. The old code read `st is None` as "accept EVERY
-                # activator" and conjoined an unrelated trigger's guard onto a plain
-                # walk-out exit, inventing three strandings: rm101->rm11 (the exit is
-                # `(& (gEgo onControl:) $0008) -> (newRoom: 11)` in rm101Script:doit)
-                # picked up the Said-branch guard `(gEgo has: 2)` and "stranded" the
-                # Lottery_Ticket. Same for Dollar_Bill (rm114) and Wad_O_Dough (rm125).
-                cands = ([] if st is None else
-                         [(k, at) for (k, at) in acts.get(inst, ()) if k <= st])
-                if cands:
-                    kmax = max(k for k, _ in cands)
-                    routes = [at.guard_tree for k, at in cands
-                              if k == kmax and at.guard_tree is not None]
-                    if routes:
-                        # several routes to the same K are ALTERNATIVES -> OR them,
-                        # which is now expressible. (The old code intersected flat
-                        # Pred sets, which silently wiped every precondition whenever
-                        # a machine had more than one entry point.)
-                        parts.append(routes[0] if len(routes) == 1 else GOr(routes))
+                tg = _trigger_guard(acts, inst, st)
+                if tg is not None:
+                    parts.append(tg)
                 if parts:
                     reqs[(num, e.arg)].extend(parts)
     return {k: GAnd(v) for k, v in reqs.items()}
+
+
+def _activators(script):
+    """instance -> [(target_state K, transition)] of the machine's ENTRY triggers.
+
+    A machine is STARTED by `(self changeState: K)` from a handleEvent/doit (the
+    controllable trigger), or `(inst changeState: K)` from another instance -- as
+    opposed to a state advancing itself, which is not an entry.
+    """
+    acts = defaultdict(list)
+    for t in script.transitions:
+        inst, meth = _instance_of(t.context), _method_of(t.context)
+        for e in t.effects:
+            if e.kind != "STATE" or not isinstance(e.arg, int):
+                continue
+            if e.receiver and e.receiver != "self":
+                acts[e.receiver].append((e.arg, t))
+            elif meth != "changeState":
+                acts[inst].append((e.arg, t))
+    return acts
+
+
+def _trigger_guard(acts, inst, st):
+    """The guard that must hold to reach state `st` of `inst` -- its activator's guard.
+
+    The condition that gates a GOTO or a SET is rarely ON that effect: it is on the
+    trigger that STARTED the machine. The whale's `newRoom` has no guard; the feather
+    check is on `(ego setScript: tickle)`. The parachute's `(= gCurrentStatus 10)` in
+    rm64 state 2 has no local guard; the `gWearingParachute==1` check is on the
+    `(self changeState: 2)` that reaches state 2 -- and dropping it made the model
+    think you survive the jump unconditionally.
+
+    `st is None` (a GOTO/SET in doit/handleEvent, not a switch case) is a DIRECT
+    action with no activator -- take no trigger guard. Reading it as "accept every
+    activator" invented the rm101->rm11 phantom strandings. A machine has many entry
+    points; the one reaching `st` is the nearest with K <= st. Several routes to the
+    same K are ALTERNATIVES -> OR them.
+    """
+    from model import GOr
+    if st is None:
+        return None
+    cands = [(k, at) for (k, at) in acts.get(inst, ()) if k <= st]
+    if not cands:
+        return None
+    kmax = max(k for k, _ in cands)
+    routes = [at.guard_tree for k, at in cands if k == kmax and at.guard_tree is not None]
+    if not routes:
+        return None
+    return routes[0] if len(routes) == 1 else GOr(routes)
+
+
+def set_trigger_guards(game):
+    """(script, inst, state) -> the activator guard, so SET effects in machine states
+    inherit their trigger guard exactly as GOTOs do (see _trigger_guard)."""
+    out = {}
+    for num, s in game.scripts.items():
+        acts = _activators(s)
+        for t in s.transitions:
+            inst, st = _instance_of(t.context), _state_of(t.context)
+            if (num, inst, st) not in out:
+                out[(num, inst, st)] = _trigger_guard(acts, inst, st)
+    return out
 
 
 def reachable(edges, start_set):
