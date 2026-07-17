@@ -106,7 +106,10 @@ Adopt `sci-tools` (already a standing decision in the notes — never wired up) 
 property-vs-method heuristic in `coverage.py`, and the two-decompiler-dialect seam.
 Acceptance: both games load; findings unchanged.
 
-### Phase 3 — extraction: compile machines to guards (weakest precondition)
+### Phase 3 — extraction: compile machines to guards
+> **⚠ MEASURED 2026-07-16, AFTER WRITING THIS: the premise below is wrong, and the
+> phase needs a decision before anyone implements it. See "Phase 3 reconsidered".**
+
 **A machine must not be a runtime component.** Compute the weakest precondition of each
 exit *once*, at extraction, and emit a formula:
 
@@ -118,6 +121,50 @@ This deletes `Machine.project`, the `_mcache` (and its room-deleting key bug), a
 per-closure re-interpretation that made `strandings` need 1400 closures to rediscover a
 formula the WP hands over symbolically. `control_exits` survives in spirit: a machine we
 cannot compile falls back to the flat edge rather than inventing a dead end.
+
+#### Phase 3 reconsidered — what the measurement says
+
+The sentence *"a formula the WP hands over symbolically"* was written confidently and is
+not true. **The raft is a loop** (`3→4→5→6→7→4`, exiting at `day ≥ 9`), and the weakest
+precondition of a loop is a loop-invariant problem. It is only tractable here because the
+counter is bounded — i.e. by **unrolling**, which is not "symbolic", it is enumeration
+wearing a hat.
+
+The tractable version is a **truth table over the machine's own atoms**: collect the
+distinct `OWN`/`FLAG`/`CMP` atoms a machine's guards mention, enumerate assignments, run
+the machine per assignment (counters stay concrete and internal), and record which exits
+are delivered. Measured atom counts, both games:
+
+```
+LSL2   29 gating machines, worst: rm34 (13 atoms), rm138 (8), rm82 (7)
+KQ4    43 gating machines, worst: rm79 (6), rm54 (6), rm91 (5)
+```
+
+So it is bounded — 2¹³ = 8192 runs worst case, once — but note what it yields: a **DNF of
+up to 2ⁿ terms**, not the tidy `sunscreen ∧ wig ∧ gulp ∧ (fruit ∨ kit)` above. Getting
+*that* needs simplification (Quine–McCluskey or similar).
+
+**And `requirements()` already produces the readable CNF, by search.** So the payoff the
+phase was sold on — "get the guard formula for free" — mostly does not exist. What Phase 3
+actually buys is narrower and still worth something: **machines stop being a runtime
+component**, which deletes the bug farm (`_mcache`, `project`, the room-deleting key) and
+makes Phase 4 a change to one flat loop instead of a change to an interpreter.
+
+**And Phase 4 does not depend on it.** Promoting registers into the current closure is
+invasive but self-contained: `rooms` becomes a set of `(room, regvals)`, the machine's
+`run` takes the registers, and the cache key gains them. So the 3→4 ordering in this plan
+rests on an architectural preference, not a dependency.
+
+**The decision someone has to make (not code — a call):**
+- **(a)** Phase 3 as architecture: truth-table extraction, accept DNF, delete the runtime
+  machine. Cost is real; benefit is fewer places for the next `_mcache` bug to live.
+- **(b)** Skip to Phase 4 for the findings (arrows, parachute, endgame chain, maybe rm44),
+  lock them into the contract, and do Phase 3 afterwards against a stronger suite.
+- **(c)** Neither — keep `run()` as a cached pure function (which, since the review, it now
+  is) and accept the machine as a runtime component forever.
+
+I would take **(b)**, and I would weight that lightly: I wrote (a) into this plan and the
+measurement contradicted me within the hour.
 
 Output is a flat transition system: `transition(from, to, guard, effects, controllable?)`.
 Movement, `get:`, and `put:` are all transitions — which folds `consumable_strandings()`
@@ -149,6 +196,12 @@ output — `(and (has: 14) (or (has: 11) (has: 12)))` — since it is the shape 
 needs.
 
 ### Phase 6 — synthesis: the supervisor, properly
+> **⚠ HARD BLOCKER — do not do this unsupervised.** This phase re-enables the code path
+> that shipped a patch making LSL2 unwinnable, and moves the validator onto the same
+> core. The failure it caused was invisible *precisely because* detector, synthesizer and
+> validator agreed with each other. Re-enabling it is a decision about shipping a
+> game-modifying artifact, and it needs a human who wants it re-enabled — not an agent
+> finishing a task list.
 - Winning region by **backward** fixpoint from the goal.
 - Disable **controllable** transitions that leave it (`trigger.py` already finds the
   controllable action — that is the controllability partition, hand-rediscovered).
