@@ -1,5 +1,9 @@
 """B1: LucasArts-invariant remedy synthesis (engine-agnostic).
 
+!! DISABLED -- THIS SYNTHESIS PATH EMITS A GAME-BREAKING PATCH. See DISABLED_WHY
+!! below and `main()`. It is kept only as the reference for the semantic
+!! replacement; it must not be run against a real game.
+
 Neutralize softlocks by implementing the maximally-permissive supervisor of the
 winnability reachability game: forbid the controllable moves that leave the
 winning region (the frontier edges), and delete the uncontrollable timers that
@@ -30,15 +34,53 @@ from model import load_game, Game                        # noqa: E402
 from search import SccReach                              # noqa: E402
 
 
+DISABLED_WHY = """\
+patch.py is DISABLED: its guards are synthesized from the SYNTACTIC core
+(search.SccReach), which is UNSOUND for synthesis. It cannot tell an item that
+SAVES you from one that KILLS you -- it only sees that some `OWN(x)` guard is
+mentioned in a room. It therefore emitted, and we shipped:
+
+    rm38 -> rm131 : (and (gEgo has: 11) (gEgo has: 12) (gEgo has: 13) (gEgo has: 14))
+                                                  ^^^^^^^^^^^^^^^^ Spinach_Dip
+
+The Spinach_Dip is FATAL. LSL2 rm138 (the raft) state 6, day 6 tests it FIRST and
+jumps to state 15 -> ... -> 26 -> `(= gCurrentStatus 1001)`:
+"Unfortunately for you, the mayonnaise has spoiled in the hot, tropical sun!"
+Day 6 actually needs Sewing_Kit OR Fruit, and holding the dip kills you even if
+you also hold them. So this guard FORCES the fatal item and makes LSL2
+unwinnable; it is wrong on 3 of its 4 items (two are OR-alternatives ANDed
+together, one is a death sentence).
+
+validate_patch.py did not catch it because it imports the SAME SccReach core --
+the detector, the synthesizer and the "proof" all share one blind spot: none of
+them models a room's Script state machine, where the whole raft gauntlet lives.
+
+Re-enable only when guards come from the semantic core (closure.py) with state
+machines lifted, so that "needed past this edge" is DERIVED from winnability
+rather than from an item being mentioned. Until then, running this would
+regenerate a patch that breaks the game.
+"""
+
+
 class Synth:
     def __init__(self, game: Game):
         self.g = game
         self.s = SccReach(game)
 
-    def patch_specs(self):
+    def patch_specs(self, force=False):
+        # The refusal lives HERE, not in main(): patch_trigger.py and
+        # patch_ericoakford.py import Synth and call this directly, so a check in
+        # main() would not stop them regenerating the broken guard.
+        if not force:
+            raise RuntimeError(DISABLED_WHY)
+
         # Detection and synthesis are the SAME object: guards come straight from the
         # shared gate-aware stranding core (SccReach.edge_strandings), the same
         # primitive the report (search.analyze) reads. One library, no drift.
+        #
+        # ^ That was the claim. It is exactly the defect: the ONE library is the
+        #   syntactic core, which cannot distinguish a protective item from a fatal
+        #   one, and the validator shares its blind spot. See DISABLED_WHY.
         out = []
         for es in self.s.edge_strandings():
             ra, rb = es["from_room"], es["to_room"]
@@ -75,10 +117,16 @@ class Synth:
         return out
 
 
-def main():
+def main(force=False):
+    if not force:
+        print(DISABLED_WHY)
+        print("Refusing to synthesize. (src/patch.py --force to run it anyway; the "
+              "output is known-wrong and must not be compiled into a game.)")
+        return 1
+
     game = load_game()
     synth = Synth(game)
-    specs = synth.patch_specs()
+    specs = synth.patch_specs(force=True)
     guards = [s for s in specs if s["op"] == "add_guard"]
     timers = [s for s in specs if s["op"] == "delete_timer"]
 
@@ -99,4 +147,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main(force="--force" in sys.argv) or 0)

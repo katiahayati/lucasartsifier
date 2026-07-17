@@ -1,118 +1,123 @@
-[
- {
-  "op": "add_guard",
-  "pattern": "irreversible-edge / LucasArts invariant",
-  "room": 26,
-  "newroom_target": 27,
-  "require_items": [
-   {
-    "id": 5,
-    "name": "Swimsuit"
-   },
-   {
-    "id": 8,
-    "name": "Grotesque_Gulp"
-   },
-   {
-    "id": 9,
-    "name": "Sunscreen"
-   }
-  ],
-  "guard_sexpr": "(and (gEgo has: 5) (gEgo has: 8) (gEgo has: 9))",
-  "rationale": "crossing rm26->rm27 strands Swimsuit, Grotesque_Gulp, Sunscreen (obtainable before, needed after, not gettable after)"
- },
- {
-  "op": "add_guard",
-  "pattern": "irreversible-edge / LucasArts invariant",
-  "room": 38,
-  "newroom_target": 131,
-  "require_items": [
-   {
-    "id": 11,
-    "name": "Fruit"
-   },
-   {
-    "id": 12,
-    "name": "Sewing_Kit"
-   },
-   {
-    "id": 13,
-    "name": "Spinach_Dip"
-   },
-   {
-    "id": 14,
-    "name": "Wig"
-   }
-  ],
-  "guard_sexpr": "(and (gEgo has: 11) (gEgo has: 12) (gEgo has: 13) (gEgo has: 14))",
-  "rationale": "crossing rm38->rm131 strands Fruit, Sewing_Kit, Spinach_Dip, Wig (obtainable before, needed after, not gettable after)"
- },
- {
-  "op": "add_guard",
-  "pattern": "irreversible-edge / LucasArts invariant",
-  "room": 55,
-  "newroom_target": 56,
-  "require_items": [
-   {
-    "id": 23,
-    "name": "Airline_Ticket"
-   }
-  ],
-  "guard_sexpr": "(and (gEgo has: 23))",
-  "rationale": "crossing rm55->rm56 strands Airline_Ticket (obtainable before, needed after, not gettable after)"
- },
- {
-  "op": "add_guard",
-  "pattern": "irreversible-edge / LucasArts invariant",
-  "room": 57,
-  "newroom_target": 58,
-  "require_items": [
-   {
-    "id": 21,
-    "name": "Hair_Rejuvenator"
-   },
-   {
-    "id": 24,
-    "name": "Parachute"
-   },
-   {
-    "id": 25,
-    "name": "Bobby_Pin"
-   }
-  ],
-  "guard_sexpr": "(and (gEgo has: 21) (gEgo has: 24) (gEgo has: 25))",
-  "rationale": "crossing rm57->rm58 strands Hair_Rejuvenator, Parachute, Bobby_Pin (obtainable before, needed after, not gettable after)"
- },
- {
-  "op": "add_guard",
-  "pattern": "irreversible-edge / LucasArts invariant",
-  "room": 79,
-  "newroom_target": 80,
-  "require_items": [
-   {
-    "id": 30,
-    "name": "Ashes"
-   },
-   {
-    "id": 31,
-    "name": "Sand"
-   }
-  ],
-  "guard_sexpr": "(and (gEgo has: 30) (gEgo has: 31))",
-  "rationale": "crossing rm79->rm80 strands Ashes, Sand (obtainable before, needed after, not gettable after)"
- },
- {
-  "op": "add_guard",
-  "pattern": "irreversible-edge / LucasArts invariant",
-  "room": 82,
-  "newroom_target": 83,
-  "require_items": [
-   {
-    "id": 21,
-    "name": "Hair_Rejuvenator"
-   }
-  ],
-  "guard_sexpr": "(and (gEgo has: 21))",
-  "rationale": "crossing rm82->rm83 strands Hair_Rejuvenator (obtainable before, needed after, not gettable after)"
- }
-]
+{
+ "_DISABLED": "KNOWN-WRONG OUTPUT -- DO NOT COMPILE OR SHIP.",
+ "_why": "Synthesized by the syntactic core (search.SccReach), which is unsound for synthesis. The rm38->rm131 guard forces (gEgo has: 13) = Spinach_Dip, which is FATAL: LSL2 rm138 state 6 day 6 tests it first and jumps to the death chain (\"the mayonnaise has spoiled\"). This patch makes LSL2 UNWINNABLE. Day 6 needs Sewing_Kit OR Fruit; the guard ANDs the alternatives and adds the trap. validate_patch.py blessed it because it shares the same blind spot (no model of a room's Script state machine). Retained only as the record of what went wrong.",
+ "_superseded_by": "closure.py (semantic core) once state machines are lifted",
+ "specs": [
+  {
+   "op": "add_guard",
+   "pattern": "irreversible-edge / LucasArts invariant",
+   "room": 26,
+   "newroom_target": 27,
+   "require_items": [
+    {
+     "id": 5,
+     "name": "Swimsuit"
+    },
+    {
+     "id": 8,
+     "name": "Grotesque_Gulp"
+    },
+    {
+     "id": 9,
+     "name": "Sunscreen"
+    }
+   ],
+   "guard_sexpr": "(and (gEgo has: 5) (gEgo has: 8) (gEgo has: 9))",
+   "rationale": "crossing rm26->rm27 strands Swimsuit, Grotesque_Gulp, Sunscreen (obtainable before, needed after, not gettable after)"
+  },
+  {
+   "op": "add_guard",
+   "pattern": "irreversible-edge / LucasArts invariant",
+   "room": 38,
+   "newroom_target": 131,
+   "require_items": [
+    {
+     "id": 11,
+     "name": "Fruit"
+    },
+    {
+     "id": 12,
+     "name": "Sewing_Kit"
+    },
+    {
+     "id": 13,
+     "name": "Spinach_Dip"
+    },
+    {
+     "id": 14,
+     "name": "Wig"
+    }
+   ],
+   "guard_sexpr": "(and (gEgo has: 11) (gEgo has: 12) (gEgo has: 13) (gEgo has: 14))",
+   "rationale": "crossing rm38->rm131 strands Fruit, Sewing_Kit, Spinach_Dip, Wig (obtainable before, needed after, not gettable after)"
+  },
+  {
+   "op": "add_guard",
+   "pattern": "irreversible-edge / LucasArts invariant",
+   "room": 55,
+   "newroom_target": 56,
+   "require_items": [
+    {
+     "id": 23,
+     "name": "Airline_Ticket"
+    }
+   ],
+   "guard_sexpr": "(and (gEgo has: 23))",
+   "rationale": "crossing rm55->rm56 strands Airline_Ticket (obtainable before, needed after, not gettable after)"
+  },
+  {
+   "op": "add_guard",
+   "pattern": "irreversible-edge / LucasArts invariant",
+   "room": 57,
+   "newroom_target": 58,
+   "require_items": [
+    {
+     "id": 21,
+     "name": "Hair_Rejuvenator"
+    },
+    {
+     "id": 24,
+     "name": "Parachute"
+    },
+    {
+     "id": 25,
+     "name": "Bobby_Pin"
+    }
+   ],
+   "guard_sexpr": "(and (gEgo has: 21) (gEgo has: 24) (gEgo has: 25))",
+   "rationale": "crossing rm57->rm58 strands Hair_Rejuvenator, Parachute, Bobby_Pin (obtainable before, needed after, not gettable after)"
+  },
+  {
+   "op": "add_guard",
+   "pattern": "irreversible-edge / LucasArts invariant",
+   "room": 79,
+   "newroom_target": 80,
+   "require_items": [
+    {
+     "id": 30,
+     "name": "Ashes"
+    },
+    {
+     "id": 31,
+     "name": "Sand"
+    }
+   ],
+   "guard_sexpr": "(and (gEgo has: 30) (gEgo has: 31))",
+   "rationale": "crossing rm79->rm80 strands Ashes, Sand (obtainable before, needed after, not gettable after)"
+  },
+  {
+   "op": "add_guard",
+   "pattern": "irreversible-edge / LucasArts invariant",
+   "room": 82,
+   "newroom_target": 83,
+   "require_items": [
+    {
+     "id": 21,
+     "name": "Hair_Rejuvenator"
+    }
+   ],
+   "guard_sexpr": "(and (gEgo has: 21))",
+   "rationale": "crossing rm82->rm83 strands Hair_Rejuvenator (obtainable before, needed after, not gettable after)"
+  }
+ ]
+}
