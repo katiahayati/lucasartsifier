@@ -164,6 +164,13 @@ def main():
     check("raft models `day` as a bounded counter",
           m.machines[138]["rm138Script"].counters, {"day": (-1, 10)})
 
+    # Pin the headline metric. The README claimed "0 un-modelled machine exits, KQ4
+    # has 1" for three commits after the strict walk made it 10 and 5, because nothing
+    # asserted it and only run.py printed the truth. A number in prose that no test
+    # holds is a number that drifts.
+    check("LSL2 machine exits: trusted / fallback",
+          (len(m.machine_edges), len(m.machine_untrusted)), (33, 10))
+
     print("\nKQ4")
     g2, m2, r2, goals2, total2, strands2 = run(config.KQ4)
     check("SANITY: shipped game is winnable", bool(r2.rooms & goals2), True)
@@ -191,6 +198,17 @@ def main():
     # NO exit and (78,77) fell back. Ops now carry TESTs in source order.
     check("rm78->rm77 is trusted (the test sees the decrement before it)",
           (78, 77) in m2.machine_edges, True)
+    check("KQ4 machine exits: trusted / fallback",
+          (len(m2.machine_edges), len(m2.machine_untrusted)), (40, 4))
+    # KQ4's death write is `(= dead TRUE)` -- a Sym, not an int. Requiring an int
+    # literal meant machine.py produced 0 DEATH sinks for KQ4 against LSL2's 41, so
+    # KQ4 machines walked straight THROUGH their death states and handed out every
+    # exit downstream as if you had survived.
+    from machine import all_machines                             # noqa: PLC0415
+    n_death = sum(1 for ms in all_machines(g2).values() for mm in ms.values()
+                  for ps in mm.states.values() for p in ps for k, _ in p if k == "DEATH")
+    check("KQ4 machines have DEATH sinks (the write is `dead TRUE`, a Sym)",
+          n_death > 0, True)
 
     print()
     if FAILS:

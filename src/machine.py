@@ -68,7 +68,7 @@ from dataclasses import dataclass, field
 
 sys.path.insert(0, os.path.dirname(__file__))
 from sexpr import Sym                                    # noqa: E402
-from model import norm_tree, is_sym, head_is            # noqa: E402
+from model import norm_tree, is_sym, head_is, GOr        # noqa: E402
 
 # Control locals: these ARE the machine's program counter / cue mechanism, not
 # data. Never treat them as bounded counters.
@@ -221,8 +221,18 @@ def _paths_of(f):
             return [[]]                              # computed state: leave control alone
         if op in ("++", "--"):
             return [[("STEP", (v, 1 if op == "++" else -1))]]
-        if op == "=" and len(f) >= 3 and isinstance(f[2], int):
-            return [[("SETVAR", (v, f[2]))]]
+        if op == "=" and len(f) >= 3:
+            # An int keeps its value (counters need it). A bare Sym is kept as its
+            # NAME so `_as_death` can still recognise `(= dead TRUE)` -- KQ4's death
+            # write. Requiring an int here meant KQ4 produced 0 DEATH actions against
+            # LSL2's 41: all 57 `dead` writes sat in the machines as inert SETVARs, so
+            # KQ4 machines walked straight THROUGH their death states and handed out
+            # every exit downstream as if you had survived. `machine_val` is None only
+            # for things we genuinely cannot read.
+            if isinstance(f[2], int):
+                return [[("SETVAR", (v, f[2]))]]
+            if isinstance(f[2], Sym):
+                return [[("SETVAR", (v, f[2].name))]]
         return [[("SETVAR", (v, None))]]         # non-literal -> unmodellable
 
     # A nested `switch` / `switchto` inside a case body. Recurse properly rather than
@@ -273,7 +283,7 @@ def _script_locals(forms):
     return out
 
 
-def _find_counters(states, locals_, game):
+def _find_counters(states, locals_, game, starts):
     """Locals that can be modelled as BOUNDED COUNTERS.
 
     A local qualifies iff it is compared against an integer literal somewhere in a
@@ -293,8 +303,12 @@ def _find_counters(states, locals_, game):
                     writes_ok.setdefault(arg[0], True)
                 elif kind == "SETVAR":
                     var, val = arg
-                    if val is None:
-                        writes_ok[var] = False          # non-literal write: give up
+                    if not isinstance(val, int):
+                        # Not a number we can track -- None (a computed value) or a
+                        # Sym (`(= dead TRUE)`, now carried this far so `_as_death`
+                        # can see it). Either way this variable is not a counter, and
+                        # guessing a value for it would invent constraints.
+                        writes_ok[var] = False
                     else:
                         writes_ok.setdefault(var, True)
                         assign_lits.setdefault(var, set()).add(val)
@@ -304,12 +318,21 @@ def _find_counters(states, locals_, game):
             continue
         if game.is_global(var):
             continue                                    # globals are the flags model's job
-        # Domain follows the literals it is actually compared against, INCLUDING
-        # negative ones. KQ4's rm78 tests `(== jumpNum -1)` as an off-the-end
-        # sentinel; assuming counters are non-negative makes that provably false and
-        # silently swallows the room's exit. One clamp at 0 = one lost exit.
-        lo = min(min(lits), 0) - 1
-        hi = max(max(lits), 0) + 1
+        # Domain must cover every literal the counter is COMPARED against AND every
+        # literal ASSIGNED to it, plus its starting values -- INCLUDING negative ones.
+        #
+        # Comparisons alone are not enough, and clamping into too small a domain is
+        # not harmless: a clamped value that is later STEPped re-enters the compared
+        # range at the WRONG number. KQ4 rm54 `cleanTable` starts `i` at 7 with a
+        # comparison-only domain of (-1,1), so `(-- i)` gave a model value of 1 where
+        # the game has 6 -- and any `(!= i 1)` on that path then reads provably-FALSE
+        # while the engine reads it true, pruning a branch the game really takes.
+        # (Measured elsewhere: rm134 `(= egoPissing 255)` into (-1,2); KQ4 rm43
+        # `(= local2 99)` into (-1,4).) This module already argues the mirror case
+        # against clamping at 0 -- "one clamp at 0 = one lost exit" -- and then
+        # committed the same error at the top of the range.
+        span = set(lits) | assign_lits.get(var, set()) | starts.get(var, {0}) | {0}
+        lo, hi = min(span) - 1, max(span) + 1
         if hi - lo > COUNTER_CAP:
             continue                                    # too wide to enumerate; leave it UNKNOWN
         out[var] = (lo, hi)
@@ -418,8 +441,11 @@ def machines_of(game, num):
             if not raw:
                 continue
             m = Machine(script=num, inst=inst)
-            m.counters = _find_counters(raw, locals_, game)
-            m.inits = _counter_inits(forms, m.counters, sw)
+            # Init values are needed to SIZE the domains, so scan them for every
+            # local first and narrow to the counters afterwards.
+            starts = _counter_inits(forms, locals_, sw)
+            m.counters = _find_counters(raw, locals_, game, starts)
+            m.inits = {c: starts.get(c, {0}) for c in m.counters}
             # Compile path conditions to guard TREES now that we know the counters,
             # so `(== day 3)` becomes a LOCAL pred instead of an OPAQUE one.
             for st, paths in raw.items():
@@ -445,6 +471,10 @@ def _as_death(act, game):
     `dead TRUE`); config.death_signal names it. In practice a death state also has
     no cue, so it would stall anyway -- but relying on that is relying on an
     accident. Say it.
+
+    Note the value may be a SYMBOL, not an int: KQ4's is literally `(= dead TRUE)`.
+    `Game.is_death_write` already compares rendered values so both work; the bug was
+    upstream, in refusing to carry a Sym this far.
     """
     if act[0] == "SETVAR" and act[1][1] is not None \
             and game.is_death_write(act[1][0], act[1][1]):
@@ -479,7 +509,7 @@ def _entries_of(game, num, inst, forms):
     We take the UNION of entries. That is the permissive direction: more ways in
     can only yield more exits, i.e. miss a stranding rather than invent one.
     """
-    ents, seen = [], set()
+    ents, byk = [], {}
     for t in game.scripts[num].transitions:
         from analyze import _instance_of, _method_of
         for e in t.effects:
@@ -490,9 +520,28 @@ def _entries_of(game, num, inst, forms):
                 continue
             if e.receiver == "self" and _method_of(t.context) == "changeState":
                 continue                     # a state advancing itself, not an entry
-            if e.arg not in seen:
-                seen.add(e.arg)
-                ents.append((e.arg, t.guard_tree))
+            # Several routes may kick the machine off at the SAME state; they are
+            # ALTERNATIVES, so OR their guards. Keeping only the first-seen guard --
+            # what `if e.arg not in seen` did -- is an over-restriction, and the exact
+            # opposite of the union this docstring promises. It is also invisible to
+            # `control_exits`, which grants every flag and so sees any entry guard as
+            # T or U. KQ4 rm79's `h2Actions` kept `Room79:init:1` (guarded by
+            # `flag(lolotteAlive)`) and threw away `Room79:init` -- which is
+            # UNGUARDED -- so one missed setter collapsing that flag to {0} would have
+            # refused both of rm79's trusted exits and invented a dead end on an entry
+            # the game does not gate at all. analyze.edge_requirements already gets
+            # this right ("several routes to the same K are ALTERNATIVES -> OR them").
+            byk.setdefault(e.arg, []).append(t.guard_tree)
+    for st in sorted(byk):
+        routes = byk[st]
+        # An unguarded route makes the whole entry unguarded -- no OR can be stricter
+        # than one of its disjuncts being free.
+        if any(g is None for g in routes):
+            ents.append((st, None))
+        elif len(routes) == 1:
+            ents.append((st, routes[0]))
+        else:
+            ents.append((st, GOr(routes)))
     return ents or [(0, None)]
 
 
@@ -565,7 +614,7 @@ def run(m: Machine, items, flags, eval_fn):
                         nloc[var] = max(lo, min(nloc.get(var, 0) + d, hi))
                 elif kind == "SETVAR":
                     var, val = arg
-                    if var in m.counters and val is not None:
+                    if var in m.counters and isinstance(val, int):
                         lo, hi = m.counters[var]
                         nloc[var] = max(lo, min(val, hi))
                 elif kind == "SETSTATE":

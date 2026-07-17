@@ -217,14 +217,29 @@ def _truthy(vals):
     return any(v is ANY or (isinstance(v, int) and v != 0) for v in vals)
 
 
+# The comparison operators we can actually decide. `norm_tree` also mints `u<`/`u>`
+# (unsigned), which are NOT here -- callers must treat a missing op as UNDECIDABLE,
+# not as true. Keeping the table separate from the permissive fallback is the point:
+# "cannot evaluate" and "evaluates true" must not be the same value.
+_CMP = {"==": lambda v, w: v == w, "!=": lambda v, w: v != w,
+        "<": lambda v, w: v < w, ">": lambda v, w: v > w,
+        "<=": lambda v, w: v <= w, ">=": lambda v, w: v >= w}
+
+
 def _cmp_ok(v, op, want):
+    """Satisfiability of a comparison against a SET member -- permissive by design.
+
+    Returns True for "cannot evaluate", so it is only safe where True means "do not
+    block". Never read its result as a definite truth; see _atom3's LOCAL branch,
+    which did exactly that.
+    """
     if v is ANY:
         return True
     w = _lit(want)
     if w is ANY or not isinstance(v, int) or not isinstance(w, int):
         return True                     # can't evaluate -> permissive
-    return {"==": v == w, "!=": v != w, "<": v < w, ">": v > w,
-            "<=": v <= w, ">=": v >= w}.get(op, True)
+    fn = _CMP.get(op)
+    return True if fn is None else fn(v, w)
 
 
 T, F, U = True, False, None          # 3-valued: true / false / unknown
@@ -264,7 +279,17 @@ def _atom3(p, items, flags, neg, locs=None):
         # day's hazard simultaneously dodgeable via the cond's `else`.
         if locs is None or p.var not in locs:
             return U
-        r = _cmp_ok(locs[p.var], p.op, p.value)
+        v, w = locs[p.var], _lit(p.value)
+        if not isinstance(v, int) or not isinstance(w, int) or p.op not in _CMP:
+            return U            # cannot decide -> UNKNOWN, never a verdict
+        # ^ this called `_cmp_ok`, whose `{...}.get(op, True)` returns True to mean
+        #   "cannot evaluate, be permissive" -- and then read that sentinel as a
+        #   DEFINITE truth, so an unimplemented operator became provably-true, and
+        #   provably-FALSE under negation, pruning a branch the game really takes.
+        #   `norm_tree` mints LOCAL preds for `u<`/`u>` too, which `_cmp_ok` does not
+        #   implement; both games ship them. A "be permissive" answer and a "this is
+        #   true" answer must never be the same value.
+        r = _CMP[p.op](v, w)
         return (F if r else T) if neg else (T if r else F)
     if p.kind == "OWN":
         want = p.want != neg

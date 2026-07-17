@@ -109,9 +109,12 @@ come from `closure.py`.
 ## Status
 - **Phase A** (static detection) — reproducible and self-configuring.
 - **The semantic core** (`closure.py` + `machine.py`) — derives the LSL2 lifeboat gauntlet
-  (Sunscreen, Grotesque_Gulp, Wig) and the KQ4 whale with no special-casing; both games
-  sanity-PASS; LSL2 has **0** un-modelled machine exits, KQ4 has 1.
-  `python3 src/_check_core.py`.
+  (Sunscreen, Grotesque_Gulp, Wig, Fruit-OR-Sewing_Kit), the glacier (Sand-OR-Ashes) and
+  the KQ4 whale, with no special-casing. Both games sanity-PASS: LSL2 85/100 rooms, KQ4
+  89/106. `python3 src/_check_core.py` — the numbers above are asserted there, so they
+  cannot drift; **do not hand-write counts into this file.** (They already did: this
+  section claimed "0 un-modelled machine exits, KQ4 has 1" long after the strict-walk
+  commit made it 10 and 5. `run.py` prints the real figure on every run.)
 - **Phase B** (neutralization) — **withdrawn**, see above.
 - **Phase A** / the syntactic path — 11 findings the semantic core does not report:
   | syntactic-only finding | verdict |
