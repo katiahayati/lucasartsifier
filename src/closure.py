@@ -423,58 +423,145 @@ def winnable(m: FixModel, start_room, held=(), flags=None, exhausted=(), goals=N
     return bool(closure(m, start_room, held, flags, exhausted).rooms & goals)
 
 
-def strandings(m: FixModel, start=None, goals=None):
-    """Softlock findings, as post-state queries over irreversible actions.
+MAX_CLAUSES_PER_EDGE = 6      # see the `truncated` flag -- never a silent cap
 
-    Not a feature -- a query. `W(room, x)` asks: standing in `room` holding
-    everything EXCEPT x, can you still win? (The closure re-acquires x for free if
-    a source is still reachable, so a "no" means genuinely unrecoverable.)
 
-    An edge a->b then strands x exactly when  W(a,x) and not W(b,x)  -- obtainable
-    before, unrecoverable after. That is the LucasArts invariant, derived rather
-    than guessed: no `_sealed`, no reciprocity heuristic, no SCC condensation.
+def requirements(m: FixModel, start=None, goals=None, log=None):
+    """What must you be carrying to cross each irreversible edge? -- as CNF.
 
-    Memoised on (room, x), not (a, b, x): winnability past an edge depends only on
-    where you land and what you lack.
+    Not a feature, a query. `W(room, S)` asks: standing in `room` holding
+    everything EXCEPT the set S, can you still win? (The closure re-acquires
+    anything in S whose source is still reachable, so a "no" means genuinely
+    unrecoverable.)
+
+    A MINIMAL BLOCKING SET for edge a->b is a minimal S with `not W(b, S)`:
+    lacking all of S loses, and dropping any one member makes it winnable again.
+    Read it as a clause -- **you must hold at least one of S** -- and the answer for
+    an edge is the AND of its clauses. That single shape covers both cases:
+
+        |S| == 1   "you must hold the Sunscreen"      (an ordinary stranding)
+        |S| >  1   "you must hold Fruit OR Sewing_Kit" (raft day 6 -- either feeds you)
+
+    THIS IS WHY THE SINGLE-ITEM QUERY WAS NOT ENOUGH. Asking W(b, {x}) one item at a
+    time can never see a disjunction: drop only the Fruit and the Sewing_Kit still
+    feeds you, so neither is ever "the" stranded item, and a real dead-end (carrying
+    neither) goes unreported. The old syntactic core "found" these by ANDing the
+    alternatives, which is the same rule that demanded the fatal Spinach_Dip -- right
+    row, wrong logic. Minimality is what separates them: the Spinach_Dip is in no
+    blocking set at all (lacking it does not lose -- holding it does), while
+    {Fruit, Sewing_Kit} is a blocking set and neither singleton is.
+
+    Method: per edge, take the items you can never get back past b, then peel off one
+    minimal blocking set at a time (deletion-based: try dropping each member; if it
+    still blocks, that member was not needed). Cost is O(|C|) closures per clause,
+    not the 2^|C| of trying every subset.
     """
     start = CFG.start_room if start is None else start
     goals = set(CFG.goal_rooms if goals is None else goals)
     base = closure(m, start)
     imax = frozenset(base.items)
-
     # only items that actually gate something can strand you
-    cand = sorted(x for x in m.gating_items if x in imax)
+    cand_all = frozenset(x for x in m.gating_items if x in imax)
 
-    memo = {}
+    wmemo, lmemo = {}, {}
 
-    def W(room, x):
-        k = (room, x)
-        if k not in memo:
-            memo[k] = bool(closure(m, room, imax - {x}).rooms & goals)
-        return memo[k]
+    def W(room, lacking):
+        k = (room, frozenset(lacking))
+        if k not in wmemo:
+            wmemo[k] = bool(closure(m, room, imax - k[1]).rooms & goals)
+        return wmemo[k]
 
-    def winnable_from(room):
-        k = (room, None)
-        if k not in memo:
-            memo[k] = bool(closure(m, room, imax).rooms & goals)
-        return memo[k]
+    def lost(b):
+        """Candidates you can NEVER re-acquire once you are at b. One closure, not
+        one per item: drop them all and see which the fixpoint hands back (it
+        re-acquires transitively, so a chain of sources resolves itself)."""
+        if b not in lmemo:
+            lmemo[b] = frozenset(cand_all - closure(m, b, imax - cand_all).items)
+        return lmemo[b]
 
     out = []
     for a in sorted(base.rooms):
         for b in sorted(m.edges.get(a, ())):
             if b not in base.rooms:
                 continue
-            if not winnable_from(b):
+            if not W(b, ()):
                 continue          # absorbing sink (a death room): you lose there
                                   # holding EVERYTHING, so it strands nothing --
                                   # it just says "dying loses", which is not news.
+            # items the game ALREADY refuses to let you cross without
             already = own_atoms(m.edge_reqs.get((a, b)))
-            for x in cand:
-                if x in already:
-                    continue          # the game already refuses to let you cross
-                if W(a, x) and not W(b, x):
-                    out.append({"from_room": a, "to_room": b, "item": x,
-                                "item_name": m.g.item_name(x)})
+            pool = set(lost(b)) - set(already)
+            clauses, truncated = [], False
+            while pool:
+                if W(b, pool):
+                    break         # lacking everything still in the pool is survivable
+                if len(clauses) >= MAX_CLAUSES_PER_EDGE:
+                    truncated = True
+                    break
+                S = _minimal_blocking(W, b, pool)
+                # It must also be RECOVERABLE on the near side, or the loss happened
+                # upstream and this edge is just where we noticed.
+                if W(a, S):
+                    clauses.append(sorted(S))
+                pool -= S
+            if clauses:
+                out.append({
+                    "from_room": a, "to_room": b,
+                    "clauses": [{"items": c,
+                                 "item_names": [m.g.item_name(i) for i in c]}
+                                for c in clauses],
+                    "guard_sexpr": _cnf_sexpr(clauses),
+                    "truncated": truncated,
+                })
+                if truncated and log is not None:
+                    log.append(f"rm{a}->rm{b}: stopped at {MAX_CLAUSES_PER_EDGE} "
+                               f"clauses; more may exist")
+    return out
+
+
+def _minimal_blocking(W, b, S):
+    """Shrink S to a MINIMAL set whose absence still blocks the goal at b.
+
+    Deletion-based: for each x, ask whether lacking S-{x} still loses. If it does,
+    x was carrying no weight and drops out. What survives is a set where every
+    member matters -- i.e. holding any ONE of them is enough. Precondition: `not
+    W(b, S)`.
+    """
+    B = set(S)
+    for x in sorted(S):
+        if len(B) > 1 and not W(b, B - {x}):
+            B.discard(x)
+    return frozenset(B)
+
+
+def _cnf_sexpr(clauses):
+    """The LucasArts guard for an edge: AND of clauses, each an OR of `has:`.
+
+    Note what this fixes. The old synthesizer emitted a flat conjunction of every
+    item it thought was needed, which is how the glacier came out as
+    `(and (gEgo has: 30) (gEgo has: 31))` -- Sand AND Ashes -- when either does.
+    """
+    def lit(i):
+        return f"(gEgo has: {i})"
+    parts = [lit(c[0]) if len(c) == 1 else "(or " + " ".join(lit(i) for i in c) + ")"
+             for c in clauses]
+    return parts[0] if len(parts) == 1 else "(and " + " ".join(parts) + ")"
+
+
+def strandings(m: FixModel, start=None, goals=None):
+    """The singleton view of `requirements`: edges that strand ONE named item.
+
+    Kept because it is the readable form of the common case, and because a
+    single-item answer is what the reports and _check_core.py speak. Disjunctive
+    requirements (|clause| > 1) are invisible here BY CONSTRUCTION -- ask
+    `requirements()` for those.
+    """
+    out = []
+    for e in requirements(m, start, goals):
+        for c in e["clauses"]:
+            if len(c["items"]) == 1:
+                out.append({"from_room": e["from_room"], "to_room": e["to_room"],
+                            "item": c["items"][0], "item_name": c["item_names"][0]})
     return out
 
 

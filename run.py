@@ -61,10 +61,18 @@ def main():
 
     banner("Stage 6  Semantic core: guard-respecting fixpoint  [PRIMARY]")
     m, _r = closure.main()
-    strands = closure.strandings(m)
-    print(f"\nstrandings (derived, no special-casing): {len(strands)}")
-    for s in strands:
-        print(f"  rm{s['from_room']} -> rm{s['to_room']} strands {s['item_name']}")
+    notes = []
+    reqs = closure.requirements(m, log=notes)
+    print(f"\nirreversible edges with requirements (derived, no special-casing): "
+          f"{len(reqs)}")
+    for e in reqs:
+        print(f"  rm{e['from_room']} -> rm{e['to_room']}")
+        for c in e["clauses"]:
+            kind = "must hold" if len(c["items"]) == 1 else "must hold >=1 of"
+            print(f"      {kind}: {', '.join(c['item_names'])}")
+        print(f"      guard: {e['guard_sexpr']}")
+    for n in notes:
+        print(f"  NOTE: {n}")
     print(f"\nintra-room state machines gating movement: {len(m.machines)}")
     print(f"  trusted machine exits : {len(m.machine_edges)}")
     print(f"  exits we cannot model : {len(m.machine_untrusted)} "

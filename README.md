@@ -118,9 +118,9 @@ come from `closure.py`.
   |---|---|
   | Swimsuit (rm26→27) | **false positive** — its `has: 5` guards are a `(Load rsVIEW 132)` preload and a "you don't have it" message, not a gate |
   | Spinach_Dip (rm38→131) | **false positive** — it is *fatal*, not required |
-  | Fruit + Sewing_Kit (rm38→131), Sand + Ashes (rm79→80) | **real, but disjunctive** — see gap ① |
-  | Parachute, Bobby_Pin, Hair_Rejuvenator (rm57→58, rm82→83) | **real, and we miss them** — see gap ② |
-  | Airline_Ticket (rm55→56) | the *item* is real (rm57's gate opens the jetway); whether that *edge* is a point of no return is unverified |
+  | Fruit + Sewing_Kit (rm38→131) | **now derived**, as a disjunction — `(or (has: 11) (has: 12))` |
+  | Airline_Ticket (rm55→56) | **false positive** — the ticket is re-acquirable from rm56 (rm55 is reachable again by another route), so crossing strands nothing |
+  | Sand + Ashes (rm79→80), Parachute, Bobby_Pin, Hair_Rejuvenator | **real, and we miss them** — see gap ② |
 
   **Beware the decoys when judging these.** Al Lowe planted losing uses of the real
   items, each scoring −5: pouring the Hair_Rejuvenator on the plane's padlock ("it makes
@@ -129,16 +129,31 @@ come from `closure.py`.
   only them makes a load-bearing item look like a red herring. The Bobby_Pin really does
   unlock the plane's emergency exit (`= gAirplaneDoorStatus 1`), and the Hair_Rejuvenator
   really is the endgame bomb — with the Airsick_Bag stuffed in its neck as a wick.
-- Remaining gaps:
-  - ① **disjunctive requirements.** `strandings` removes one item at a time, so it can
-    never see "you need Fruit **or** Sewing_Kit and have neither" — each alone is
-    covered by the other. Needs a *minimal sufficient kit* query, not single removals.
-  - ② **the endgame chain is ungated in the model.** Plane door → parachute → bomb are
-    all missed, and it is one cluster, not three items: the model reaches the wedding
-    without ever needing them. Partly mode registers (we model a global as the set of
-    values it can *ever* take, so `(== gCurrentStatus 12)` asks "can it be 12?", not "is
-    it 12 now?"), but not only — `W(rm83, Hair_Rejuvenator)` is True, so something on
-    rm83→84→…→rm75-78 that should require the bomb does not. Not yet diagnosed.
+- ① **disjunctive requirements — CLOSED.** `closure.requirements()` computes *minimal
+  blocking sets*: minimal `S` where lacking **all** of `S` loses but dropping any member
+  is survivable. Read as "hold ≥1 of S", so `|S| == 1` is an ordinary stranding and
+  `|S| > 1` is a disjunction — one shape, both cases. The edge's guard is the AND of its
+  clauses, i.e. proper CNF.
+- ② **the endgame chain is ungated in the model** (Sand/Ashes, Parachute, Bobby_Pin,
+  Hair_Rejuvenator). One cluster, two causes, both now identified:
+  - **`gIslandStatus` is poisoned to ANY** by a single `(++ gIslandStatus)` at rm79:226,
+    so the wedding gate `rm77→rm78 : gIslandStatus == 104` — and the real chain behind it
+    (rm84 sets 100 → rm92 sets 103 → rm75 sets 104 given 103) — is vacuously satisfiable.
+    Simply *not* letting a step poison the global makes it concrete and both games still
+    pass. (Modelling `++` as a relation over the value set does **not** work: it saturates
+    to `[0..106]` and costs 15×.)
+  - **the elevator (rm82→rm83) is gated geometrically**, by a door Prop's collision, and
+    nothing in the script says so. With both addressed — concrete `gIslandStatus` plus a
+    *declared* elevator gate — a new correct finding appears: `rm79→rm80 must hold
+    Hair_Rejuvenator`. The declaration is the open design question: it is a per-game fact
+    we cannot derive, of the same kind as `goal_rooms`.
+
+  Beware the model's escape hatch here: it will happily "walk back" for a missing item
+  **through the endgame** (`rm80 → rm81 → rm181 → rm82 → rm83 → rm84 → rm92 → rm75`),
+  which is really riding the elevator down, surviving the lair and the eruption, and
+  strolling out. That fake return path is why Sand/Ashes look recoverable. Any claim that
+  an item is "re-obtainable" past a frontier deserves a look at *which route* the closure
+  used.
 - **Not engine-verified** (ScummVM-in-the-loop is deferred). See `PLAN.md`.
 
 ## Input note

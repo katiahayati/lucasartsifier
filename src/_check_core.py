@@ -94,6 +94,24 @@ def main():
     check("Sewing_Kit alone does not strand",
           {s for s in strands if s[2] == "Sewing_Kit"}, set())
 
+    # ...but lacking BOTH is a real dead-end, and only the CNF query can say so. This
+    # is the whole point of minimal blocking sets: a disjunction is invisible to a
+    # one-item-at-a-time question.
+    reqs = {(e["from_room"], e["to_room"]): e for e in C.requirements(m)}
+    lifeboat = reqs.get((38, 131))
+    check("rm38->131 is a frontier", lifeboat is not None, True)
+    if lifeboat:
+        cl = {tuple(c["item_names"]) for c in lifeboat["clauses"]}
+        check_in("day 6 needs Fruit OR Sewing_Kit", ("Fruit", "Sewing_Kit"), cl)
+        check_in("day 4 needs the Wig outright", ("Wig",), cl)
+        # The Spinach_Dip is FATAL, so it belongs to NO blocking set: lacking it does
+        # not lose -- holding it does. The old syntactic guard demanded it and made
+        # the game unwinnable. This assertion is that bug's headstone.
+        check("the fatal Spinach_Dip is in no clause",
+              any("Spinach_Dip" in c["item_names"] for c in lifeboat["clauses"]), False)
+        check("the guard is CNF, not a flat conjunction", lifeboat["guard_sexpr"],
+              "(and (gEgo has: 14) (or (gEgo has: 11) (gEgo has: 12)))")
+
     # QA scaffolding must stay OFF. rm82 (the volcano crater) contains
     # `(if gDebugging (gEgo get: 27 get: 21 get: 19))` -- the whole bomb, handed to you
     # in the room you need it -- and rm75 has `(if gForceAtest (= gIslandStatus 105))`,
