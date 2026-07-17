@@ -99,6 +99,8 @@ class FixModel:
                         for r in self._rooms_of(num):
                             self.acq[e.arg].append((r, t.guard_tree))
                     elif e.kind == "SET":
+                        if e.arg in CFG.debug_globals:
+                            continue          # QA scaffolding stays 0; see config
                         for r in self._rooms_of(num):
                             self.sets[e.arg].append((r, _lit(e.value), t.guard_tree))
 
@@ -166,6 +168,10 @@ class FixModel:
         self.init_flags = {gn: ({_lit(game.global_inits[gn])} if gn in game.global_inits
                                 else {0})
                            for gn in game.globals}
+        # QA scaffolding is pinned OFF, by declaration rather than by luck. A debug
+        # branch that hands you the bomb in the room you need it is not a walkthrough.
+        for gn in CFG.debug_globals:
+            self.init_flags[gn] = {0}
 
         # Items that GATE something -- the only ones that can strand you. An item
         # nothing ever tests can't make the goal unreachable.

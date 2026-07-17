@@ -34,6 +34,19 @@ class GameConfig:
     #   LSL2: Main.sc:973 (if (== gCurrentStatus 1001) (gCurRoom setScript: dyingScript))
     #   KQ4 : Main.sc:722 (if dead ...restart modal...)
     death_signal: tuple = ()
+    # QA / debug scaffolding, pinned to 0. A shipped game's debug menu is not part of
+    # its winnability, and leaving these live is a LANDMINE: LSL2's rm82 (the volcano
+    # crater) contains `(if gDebugging (gEgo get: 27 get: 21 get: 19))` -- the
+    # Airsick_Bag, Hair_Rejuvenator and Matches, i.e. the entire bomb, handed to you in
+    # the very room you need it. rm75 has `(if gForceAtest (= gIslandStatus 105))`,
+    # which jumps straight to the end state and would make the whole endgame chain
+    # vacuous. Today they stay 0 only BY ACCIDENT, on two coincidences: the only
+    # `(= gDebugging 1)` lives in rm10 (the copy-protection screen, unreachable from
+    # start_room), and Main.sc's `(^= gDebugging $0001)` toggle uses an operator
+    # model.py does not parse. Either could change under a perfectly reasonable
+    # edit -- a different start anchor, or adding `^=` for completeness -- and the
+    # analysis would silently degrade with no test failing. Declare them instead.
+    debug_globals: frozenset = frozenset()
 
 
 LSL2 = GameConfig(
@@ -55,6 +68,7 @@ LSL2 = GameConfig(
         700: "volcano/jungle", 7: "interior/overlay", 8: "interior/overlay",
     },
     death_signal=("gCurrentStatus", 1001),
+    debug_globals=frozenset({"gDebugging", "gForceAtest"}),
 )
 
 KQ4 = GameConfig(
@@ -69,6 +83,8 @@ KQ4 = GameConfig(
     timer_globals=frozenset({"gameHours", "gameMinutes"}),   # the day/night deadline clock
     region_labels={},
     death_signal=("dead", "TRUE"),
+    # Main.sc:55 `debugOn ;generic debug flag -- set from debug menu`
+    debug_globals=frozenset({"debugOn", "debugging", "debugMenu"}),
 )
 
 # The config the pipeline runs against. Swap this (or set it from run.py) to target

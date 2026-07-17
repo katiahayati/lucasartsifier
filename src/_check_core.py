@@ -94,6 +94,21 @@ def main():
     check("Sewing_Kit alone does not strand",
           {s for s in strands if s[2] == "Sewing_Kit"}, set())
 
+    # QA scaffolding must stay OFF. rm82 (the volcano crater) contains
+    # `(if gDebugging (gEgo get: 27 get: 21 get: 19))` -- the whole bomb, handed to you
+    # in the room you need it -- and rm75 has `(if gForceAtest (= gIslandStatus 105))`,
+    # the end state. If either ever goes live, every endgame finding silently dies.
+    check("gDebugging pinned off", sorted(r.flags.get("gDebugging", [])), [0])
+    check("gForceAtest pinned off", sorted(r.flags.get("gForceAtest", [])), [0])
+    check("the crater's debug hand-out of the bomb is dead",
+          any(rm == 82 and C.holds_tree(gd, r.items, r.flags) for rm, gd in m.acq[21]),
+          False)
+    # The Hair_Rejuvenator's REAL source is rm151 (the barber's chair, off rm51), and it
+    # is gone the moment you board the plane. That much the model gets right; what it
+    # cannot see is that you NEED it -- see lsl2-bomb-has-no-script-level-gate.
+    check("rejuvenator unobtainable past the plane gate",
+          21 in C.closure(m, 58, frozenset(r.items) - {21}).items, False)
+
     # The raft machine must be lifted and trusted, else none of the above is real.
     check("raft exit rm138->rm42 is machine-owned", (138, 42) in m.machine_edges, True)
     check("raft models `day` as a bounded counter",
