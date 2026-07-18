@@ -6,3 +6,4 @@ ir/*.json
 scratch/
 out/
 tools/scicompile/build/
+.venv-bdd/
