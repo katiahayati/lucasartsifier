@@ -383,6 +383,94 @@ class FixModel:
                     self.room_exit_writes[room].append((reg, _abs_val(val), guard))
                 else:
                     self.room_entry_writes[room].append((reg, _abs_val(val)))
+        self._build_liveness()
+
+    def _build_liveness(self):
+        """SCOPING: for each promoted register, the set of rooms where its value must
+        be TRACKED. Promotion is otherwise a product in every room -- all 40 LSL2
+        registers at once times out past 30 min -- but a register only matters between
+        where it is written and where it is read. `gCurrentStatus` is reset to 0 by
+        NormalEgo in ~60 rooms, so its value never survives across them; tracked, it is
+        live only in the plane/pool clusters, not all 85 rooms.
+
+        Standard backward liveness on the room graph:
+          gen[a]  = the register is READ in a guard at a (edge / write-guard / acquire).
+          kill[a] = an UNCONDITIONAL entry write at a AND it is not also read there --
+                    the reset overwrites the arriving value, so nothing before a needs
+                    it. A guarded (conditional) write does NOT kill: the old value may
+                    survive the branch. When in doubt we keep it live -- over-tracking
+                    is slow, under-tracking is WRONG (a dropped value = a missed gate).
+          track[a] = gen[a] OR live-out[a]  (read here, or needed by a successor).
+        """
+        self.reg_track = {}
+        if not self.promoted:
+            return
+        succ = self.edges
+        rooms = set(succ) | {b for a in succ for b in succ[a]}
+
+        def regs_in(gd):
+            out = set()
+            def rec(n):
+                if n is None:
+                    return
+                if hasattr(n, "kids"):
+                    for k in n.kids:
+                        rec(k)
+                elif hasattr(n, "kid"):
+                    rec(n.kid)
+                elif getattr(n, "kind", None) in ("CMP", "FLAG") and n.var in self.promoted:
+                    out.add(n.var)
+            rec(gd)
+            return out
+
+        gen = defaultdict(set)          # room -> {regs read there}
+        for (a, b), gd in self.machine_guards.items():
+            for r in regs_in(gd):
+                gen[a].add(r)
+        for (a, b), gd in self.edge_reqs.items():
+            for r in regs_in(gd):
+                gen[a].add(r)
+        for bucket in (self.room_exit_writes, self.room_self_writes):
+            for room, ws in bucket.items():
+                if room is None:
+                    continue
+                for _reg, _av, gd in ws:
+                    for r in regs_in(gd):
+                        gen[room].add(r)
+        for it, sites in self.acq.items():
+            for room, gd in sites:
+                if room is not None:
+                    for r in regs_in(gd):
+                        gen[room].add(r)
+
+        entry_written = defaultdict(set)   # room -> {regs unconditionally reset on entry}
+        for room, ws in self.room_entry_writes.items():
+            if room is None:
+                continue
+            for reg, _av in ws:
+                entry_written[room].add(reg)
+
+        for reg in self.promoted:
+            gen_r = {a for a in rooms if reg in gen.get(a, ())}
+            kill_r = {a for a in rooms
+                      if reg in entry_written.get(a, ()) and a not in gen_r}
+            live = set(gen_r)             # live-IN per room (fixpoint)
+            changed = True
+            while changed:
+                changed = False
+                for a in rooms:
+                    if a in live:
+                        continue
+                    # a is live if a successor b is live-in and a does not kill on the
+                    # way in to that flow -- kill lives at b (b's entry reset), so a
+                    # propagates to b only if b does not overwrite reg on entry.
+                    if any(b in live and b not in kill_r for b in succ.get(a, ())):
+                        live.add(a)
+                        changed = True
+            # `live` already tracks read rooms, carrier rooms, AND a producing (entry-
+            # write) room that has a live non-killing successor -- it holds the value it
+            # produces. That is exactly the set that must stay unmasked.
+            self.reg_track[reg] = live
 
     def _rooms_of(self, num):
         """Where do this script's effects happen?
@@ -777,6 +865,23 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
 
     idx = {reg: i for i, reg in enumerate(order)}
 
+    # SCOPING: a register the current room does not need (m.reg_track, from liveness) is
+    # masked to OTHER, so two states that differ only in registers nobody reads here
+    # collapse into one. Turns "all 40 registers in every room" (a product that times
+    # out) into a handful of tiny independent splits. OTHER -> ANY in the overlay, so a
+    # masked position is undecidable -- and safe, because a register that is READ at a
+    # room is live there and never masked.
+    track = getattr(m, "reg_track", {})
+
+    def mask(room, rv):
+        if not track:
+            return rv
+        lst = list(rv)
+        for i, reg in enumerate(order):
+            if room not in track.get(reg, ()):
+                lst[i] = OTHER
+        return tuple(lst)
+
     def enter(room, rv):
         # apply a room's UNCONDITIONAL entry writes (resets) to the arriving valuation
         ew = m.room_entry_writes.get(room, []) + m.room_entry_writes.get(None, [])
@@ -787,7 +892,8 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
             lst[idx[reg]] = av
         return tuple(lst)
 
-    init_rv = enter(start_room, tuple(_abs(next(iter(fl.get(r) or {0}))) for r in order))
+    init_rv = mask(start_room, enter(start_room,
+                   tuple(_abs(next(iter(fl.get(r) or {0}))) for r in order)))
     reach = {(start_room, init_rv)}                # (room, register-valuation)
 
     changed = True
@@ -814,7 +920,7 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
                          else m.edge_reqs.get((a, b)))
                 if not holds_tree(guard, items, ov):
                     continue
-                nrv = enter(b, drv)
+                nrv = mask(b, enter(b, drv))
                 if (b, nrv) not in reach:
                     reach.add((b, nrv))
                     changed = True
@@ -829,8 +935,8 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
                 if rv[idx[reg]] == av:
                     continue
                 if holds_tree(wguard, items, _overlay(rv)):
-                    nrv = tuple(av if i == idx[reg] else rv[i] for i in range(len(rv)))
-                    if (a, nrv) not in reach:
+                    nrv = mask(a, tuple(av if i == idx[reg] else rv[i] for i in range(len(rv))))
+                    if nrv != rv and (a, nrv) not in reach:
                         reach.add((a, nrv))
                         changed = True
 
@@ -856,9 +962,11 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
 
     rooms = {a for (a, _rv) in reach}
     # mirror each promoted register's REACHABLE values back into fl, so .flags stays a
-    # meaningful "achievable set" for callers (reports, _check_core) that read it.
+    # meaningful "achievable set" for callers (reports, _check_core) that read it. Skip
+    # OTHER, which under scoping means "masked here" (nobody reads it), not a real value.
     for i, reg in enumerate(order):
-        fl[reg] = {rv[i] for (_a, rv) in reach}
+        vals = {rv[i] for (_a, rv) in reach if rv[i] is not OTHER}
+        fl[reg] = vals or {rv[i] for (_a, rv) in reach}
     return Reach(rooms, items, fl)
 
 
