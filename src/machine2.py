@@ -38,7 +38,8 @@ class Op:
 class Machine:
     script: int
     inst: str
-    states: dict = field(default_factory=dict)     # k -> [Op] in source order
+    states: dict = field(default_factory=dict)     # k -> [Op] in source order (debug view)
+    bodies: dict = field(default_factory=dict)     # k -> state body AST (for path compile)
     entries: list = field(default_factory=list)    # [(state, guard)] how it is entered
     start: int = 0
 
@@ -54,6 +55,9 @@ def _is_cue_send(recv, msgs):
             return True
         if sel in ("cue", "setCycle", "setMotion", "setScript") and params and \
                 any(p.get("t") == "Self" for p in params):
+            return True
+        # `(otherInstance changeState: K)` starts another script that cues back here
+        if sel == "changeState" and recv.get("t") != "Self":
             return True
     return False
 
@@ -81,6 +85,7 @@ class MachineBuilder:
                 if c["t"] == "Case":
                     k = I.as_int(c["kids"][0])
                     if k is not None:
+                        m.bodies[k] = c["kids"][1]
                         ops = []
                         self._ops(c["kids"][1], [], ops)
                         m.states[k] = ops

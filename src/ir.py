@@ -117,6 +117,10 @@ def is_global(n, index=None):
             and (index is None or n["index"] == index))
 
 
+def is_local_or_temp(n):
+    return n and n.get("t") == "Variable" and n.get("vtype") in ("Local", "Temp")
+
+
 def as_int(n):
     return n["value"] if n and n["t"] == "Number" else None
 
