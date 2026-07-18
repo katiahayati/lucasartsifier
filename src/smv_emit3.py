@@ -135,10 +135,30 @@ class OpEmitter:
             lo, hi = min(vs), max(vs)
             (self.loc_const if lo == hi else self.loc_dom)[k] = lo if lo == hi else (lo, hi)
 
+    def _inline_calls(self, node, script, seen, depth=0):
+        """Return a copy of the AST with PublicCall/LocalCall replaced by the callee's
+        body (across scripts), so effects in shared procedures (e.g. proc0_2's
+        gCurrentStatus:=0 reset at a changeState cutscene end) are captured in the
+        machine's control flow. Params are not substituted -- we capture concrete-valued
+        effects; param-valued writes drop out (conservative)."""
+        if node is None or depth > 6:
+            return node
+        if node["t"] in ("PublicCall", "LocalCall"):
+            tgt = node.get("script", script)
+            name = node.get("name")
+            body = self.procs_by.get((tgt, name))
+            if tgt != 255 and body is not None and name not in seen:
+                return self._inline_calls(body, tgt, seen | {name}, depth + 1)
+            return node
+        new = dict(node)
+        new["kids"] = [self._inline_calls(k, script, seen, depth) for k in node.get("kids", [])]
+        return new
+
     def _machine_info(self, room, m):
         states = {}
         has_effect = False
         for K, body in m.bodies.items():
+            body = self._inline_calls(body, m.script, set())
             paths = []
             for p in C._paths_of(body):
                 st = C._interp(p, self.is_death)
