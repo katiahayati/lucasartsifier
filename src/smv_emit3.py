@@ -69,6 +69,10 @@ class OpEmitter:
         self.loc_vals = {}          # (script, 'L'/'T', idx) -> set of int values
         self.init_writes = {}       # room -> {gi: val} forced on entry
         self.deaths = []            # (room, guard) flat/machine deaths
+        self.procs_by = {}          # (script, proc-name) -> body AST, for call-following
+        for rn, s in ir.scripts.items():
+            for name, body in s.procs.items():
+                self.procs_by[(rn, name)] = body
         for rn, s in ir.scripts.items():
             if rn not in self.ts.rooms:
                 continue
@@ -82,17 +86,28 @@ class OpEmitter:
         # when the player says "lower lifeboats"). Guard = the path condition (Said/opaque
         # permissive). Without these, promoted gates like `gLoweredLifeboats!=0` can never
         # open. Same shape as the disguise's gCurrentEgoView.
-        self.handler_writes = []     # (room, gi, val, guard)
-        self.handler_gets = []       # (room, item, guard)
+        self.handler_writes = []       # (room, gi, val, guard)
+        self.handler_gets = []         # (room, item, guard)
+        self.handler_locals = []       # (room, script, (vt,idx), val, guard)
         for rn, s in ir.scripts.items():
             if rn not in self.ts.rooms:
                 continue
             for o in s.objects:
-                for mn in ("handleEvent", "doit"):
-                    if mn in o.methods:
-                        self._hwalk(rn, o.methods[mn], [])
+                for mn, body in o.methods.items():
+                    # changeState -> machine (state-sequenced); init -> forced entry write.
+                    # EVERY other method's effects are captured here (globals + locals +
+                    # gets), FOLLOWING calls into other scripts, so nothing is absent.
+                    if mn in ("changeState", "init"):
+                        continue
+                    self._hwalk(rn, rn, body, [], set())
+            for pbody in s.procs.values():
+                self._hwalk(rn, rn, pbody, [], set())
         for room, gi, v, g in self.handler_writes:
             self.reg_vals.setdefault(gi, {0}).add(v)
+        for room, script, key, v, g in self.handler_locals:
+            self.loc_vals.setdefault((script,) + key, {0})
+            if isinstance(v, int):
+                self.loc_vals[(script,) + key].add(v)
         # domains: include compared values for globals/locals too (scan all machine guards)
         for info in self.machines:
             for K, paths in info["states"].items():
@@ -136,29 +151,42 @@ class OpEmitter:
         return {"room": room, "inst": m.inst, "script": m.script,
                 "states": states, "entries": m.entries, "start": m.start}
 
-    def _hwalk(self, room, node, pc):
-        """Path-condition walk of a handler; record global writes + item gets/puts."""
+    def _hwalk(self, room, script, node, pc, seen):
+        """Path-condition walk of a handler; record global + local writes + item gets,
+        FOLLOWING PublicCall/LocalCall into their procedures (across scripts)."""
         if node is None:
             return
         tp = node["t"]
         if tp == "If":
             ks = node["kids"]
             a = atom(ks[0])
-            self._hwalk(room, ks[1], pc + [a])
+            self._hwalk(room, script, ks[1], pc + [a], seen)
             if len(ks) > 2:
-                self._hwalk(room, ks[2], pc + [GNot(a) if a else None])
+                self._hwalk(room, script, ks[2], pc + [GNot(a) if a else None], seen)
             return
         if tp == "Cond":
             for c in node["kids"]:
                 if c["t"] == "Case":
-                    self._hwalk(room, c["kids"][1], pc + [atom(c["kids"][0])])
+                    self._hwalk(room, script, c["kids"][1], pc + [atom(c["kids"][0])], seen)
                 elif c["t"] == "Else":
-                    self._hwalk(room, c["kids"][0], pc)
+                    self._hwalk(room, script, c["kids"][0], pc, seen)
             return
-        if tp == "Assignment" and I.is_global(node["kids"][0]):
-            gi, v = node["kids"][0]["index"], _int(node["kids"][1].get("value"))
-            if v is not None and not self.is_death(gi, v):
-                self.handler_writes.append((room, gi, v, _conj_atoms(pc)))
+        if tp == "Assignment":
+            dst, src = node["kids"][0], node["kids"][1]
+            v = _int(src.get("value"))
+            if I.is_global(dst) and v is not None and not self.is_death(dst["index"], v):
+                self.handler_writes.append((room, dst["index"], v, _conj_atoms(pc)))
+            elif I.is_local_or_temp(dst):
+                self.handler_locals.append((room, script, (dst["vtype"][0], dst["index"]),
+                                            v, _conj_atoms(pc)))
+        elif tp == "Increment" and I.is_local_or_temp(node["kids"][0]):
+            d = node["kids"][0]
+            self.handler_locals.append((room, script, (d["vtype"][0], d["index"]),
+                                        ("inc",), _conj_atoms(pc)))
+        elif tp == "Decrement" and I.is_local_or_temp(node["kids"][0]):
+            d = node["kids"][0]
+            self.handler_locals.append((room, script, (d["vtype"][0], d["index"]),
+                                        ("dec",), _conj_atoms(pc)))
         elif tp == "Send":
             recv, msgs = I.send_pairs(node)
             for sel, params in msgs:
@@ -166,18 +194,45 @@ class OpEmitter:
                     it = _int(params[0].get("value"))
                     if it is not None:
                         self.handler_gets.append((room, it, _conj_atoms(pc)))
+        elif tp in ("PublicCall", "LocalCall"):
+            self._follow_call(room, script, node, pc, seen)
         for k in node.get("kids", ()):
-            self._hwalk(room, k, pc)
+            self._hwalk(room, script, k, pc, seen)
+
+    def _follow_call(self, room, script, node, pc, seen):
+        tgt_script = node.get("script", script)   # PublicCall carries its script; Local = same
+        if tgt_script == 255:                      # script 255 = Print/Dialog: text, no effect
+            return
+        name = node.get("name")
+        body = self.procs_by.get((tgt_script, name))
+        if body is None or name in seen:
+            return
+        self._hwalk(room, tgt_script, body, pc, seen | {name})
 
     def _init_writes(self, room, script):
         obj = script.by_name.get(f"rm{room}")
         if obj is None or "init" not in obj.methods:
             return
-        for n in I.walk(obj.methods["init"]):
-            if n["t"] == "Assignment" and I.is_global(n["kids"][0]):
-                gi, v = n["kids"][0]["index"], _int(n["kids"][1].get("value"))
-                if v is not None and not self.is_death(gi, v):
-                    self.init_writes.setdefault(room, {})[gi] = v
+        # forced-on-entry global writes, FOLLOWING calls (e.g. proc0_2 = the hands-on
+        # reset gCurrentStatus:=0, called from 66 room inits). Source order -> last wins.
+        self._init_walk(room, script.number, obj.methods["init"], set())
+
+    def _init_walk(self, room, script, node, seen):
+        if node is None:
+            return
+        tp = node["t"]
+        if tp == "Assignment" and I.is_global(node["kids"][0]):
+            gi, v = node["kids"][0]["index"], _int(node["kids"][1].get("value"))
+            if v is not None and not self.is_death(gi, v):
+                self.init_writes.setdefault(room, {})[gi] = v
+        elif tp in ("PublicCall", "LocalCall"):
+            tgt = node.get("script", script)
+            name = node.get("name")
+            body = self.procs_by.get((tgt, name))
+            if tgt != 255 and body is not None and name not in seen:
+                self._init_walk(room, tgt, body, seen | {name})
+        for k in node.get("kids", ()):
+            self._init_walk(room, script, k, seen)
 
     def _scan_domains(self, guard, script):
         for a in guard:
@@ -256,6 +311,16 @@ class OpEmitter:
     def _lv(self, key):
         return f"c_{key[0]}_{key[1]}_{key[2]}"
 
+    def _inc(self, key):
+        lo, hi = self.loc_dom[key]
+        lv = self._lv(key)
+        return f"({lv} >= {hi} ? {hi} : {lv} + 1)"    # saturate at hi (no SMV overflow)
+
+    def _dec(self, key):
+        lo, hi = self.loc_dom[key]
+        lv = self._lv(key)
+        return f"({lv} <= {lo} ? {lo} : {lv} - 1)"
+
     def _ms(self, info):
         safe = "".join(ch if ch.isalnum() else "_" for ch in info["inst"])
         return f"ms_{info['room']}_{safe}"
@@ -319,9 +384,9 @@ class OpEmitter:
                         if key in self.loc_dom:
                             lv = self._lv(key)
                             if kind == "inc":
-                                nxt[lv].append((base, f"{lv} + 1"))
+                                nxt[lv].append((base, self._inc(key)))
                             elif kind == "dec":
-                                nxt[lv].append((base, f"{lv} - 1"))
+                                nxt[lv].append((base, self._dec(key)))
                             elif kind == "set" and val is not None:
                                 nxt[lv].append((base, str(val)))
                     aid += 1
@@ -346,6 +411,27 @@ class OpEmitter:
             if ge == "FALSE":
                 continue
             nxt[f"item{it}"].append((cond(f"action = {aid} & room = {room}", ge), "TRUE"))
+            aid += 1
+        for room, script, name, v, g in self.handler_locals:
+            key = (script,) + name
+            if key not in self.loc_dom:
+                continue
+            ge = self.gexpr(g, script)
+            if ge == "FALSE":
+                continue
+            lv = self._lv(key)
+            if v == ("inc",):
+                val = self._inc(key)
+            elif v == ("dec",):
+                val = self._dec(key)
+            elif isinstance(v, int):
+                lo, hi = self.loc_dom[key]
+                if not (lo <= v <= hi):
+                    continue
+                val = str(v)
+            else:
+                continue
+            nxt[lv].append((cond(f"action = {aid} & room = {room}", ge), val))
             aid += 1
 
         # init writes forced on entering a room (bundle onto every room-changing action)
