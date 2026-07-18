@@ -910,20 +910,34 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
         #    rm55's own out-edge) and rm64's `:=10` survive branch (delivered to rm65).
         for (a, rv) in list(reach):
             ov = _overlay(rv)
-            drv = list(rv)
+            # A room's co-triggered exit writes (guard on the SOURCE) deliver values to
+            # the destination. We do NOT overwrite in place: two contradictory writes to
+            # one register -- rm63 "wear parachute" :=1 and "take off" :=0, both behind a
+            # permissive Said -- would apply in sequence and the last (take-off) would
+            # win, forcing the OPTIONAL undo to always happen and clobbering the value
+            # the jump needs. Instead each register DELIVERS its pre-value AND every
+            # firing write value (a small per-register branch), so rm64 receives both
+            # para=1 (kept it on -> survive) and para=0. The endgame climb still works:
+            # rm77's `:=2` behind `==1` fires on the source's `1` and delivers `2`
+            # alongside `1`, so the monotone advance carries.
+            cand = defaultdict(set)
             for reg, av, wguard in (m.room_exit_writes.get(a, []) + m.room_exit_writes.get(None, [])):
-                if holds_tree(wguard, items, _overlay(tuple(drv))):
-                    drv[idx[reg]] = av
-            drv = tuple(drv)
+                if holds_tree(wguard, items, ov):
+                    cand[idx[reg]].add(av)
+            drvs = [rv]
+            for i, avs in cand.items():
+                drvs = [tuple(v if k == i else d[k] for k in range(len(d)))
+                        for d in drvs for v in ({d[i]} | avs)]
             for b in m.edges.get(a, ()):
                 guard = (m.machine_guards.get((a, b)) if (a, b) in m.machine_edges
                          else m.edge_reqs.get((a, b)))
                 if not holds_tree(guard, items, ov):
                     continue
-                nrv = mask(b, enter(b, drv))
-                if (b, nrv) not in reach:
-                    reach.add((b, nrv))
-                    changed = True
+                for drv in drvs:
+                    nrv = mask(b, enter(b, drv))
+                    if (b, nrv) not in reach:
+                        reach.add((b, nrv))
+                        changed = True
 
         # 1b. in-room self-transitions: a changeState write (e.g. rm57's cutscene-end
         #     `NormalEgo -> :=0`) fires AFTER entry, so it ADDS a reachable valuation in
@@ -967,6 +981,7 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
     for i, reg in enumerate(order):
         vals = {rv[i] for (_a, rv) in reach if rv[i] is not OTHER}
         fl[reg] = vals or {rv[i] for (_a, rv) in reach}
+    m._last_reach, m._last_order = reach, order   # debugging aid; harmless
     return Reach(rooms, items, fl)
 
 
