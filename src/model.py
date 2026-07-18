@@ -216,12 +216,21 @@ class Game:
     item_ids: dict = field(default_factory=dict)   # item-constant name -> number
     death_signal: tuple = ()         # (global, value) whose write means death
     proc_sets: dict = field(default_factory=dict)   # procedure name -> [(global, value)]
+    state_locals: frozenset = frozenset()  # progress-gating room-locals (discover_machinery)
 
     def item_name(self, i):
         return self.items.get(i, f"item{i}")
 
     def is_global(self, name):
         return name in self.globals
+
+    def is_register(self, name):
+        """A name whose VALUE we track: a real global, OR a room-local that gates
+        movement/death (henchStatus, goto95, ...). The latter are declared per-instance
+        but read across sibling instances of the same script; discover_machinery finds
+        them so a flag/global analysis stops rendering them opaque and walking their
+        gates for free. See [[discover_machinery]]."""
+        return name in self.globals or name in self.state_locals
 
     def resolve_item(self, a0):
         """Item reference -> number. Accepts a raw int (sluicebox `has: 3`) or an
@@ -376,7 +385,7 @@ def _norm_guard(expr, game, want=True, out=None):
 
     # comparison: (== G v) (> G v) (< G v) (>= ..) (<= ..) (!= ..)
     if isinstance(head, Sym) and head.name in ("==", "!=", "<", ">", "<=", ">=", "u<", "u>"):
-        if len(expr) >= 3 and isinstance(expr[1], Sym) and game.is_global(expr[1].name):
+        if len(expr) >= 3 and isinstance(expr[1], Sym) and game.is_register(expr[1].name):
             op = head.name
             if not want:
                 op = {"==": "!=", "!=": "==", "<": ">=", ">": "<=", "<=": ">", ">=": "<"}.get(op, op)
@@ -544,7 +553,7 @@ class _Walker:
         # assignment to a global -> SET effect (locals dropped from IR)
         if isinstance(head, Sym) and head.name in ("=", "+=", "-=", "++", "--") and len(form) >= 2:
             tgt = form[1]
-            if isinstance(tgt, Sym) and self.game.is_global(tgt.name):
+            if isinstance(tgt, Sym) and self.game.is_register(tgt.name):
                 val = _short(form[2]) if len(form) >= 3 else head.name
                 self._emit(Effect("SET", arg=tgt.name, value=val, receiver=head.name), guards, context)
                 # Death is just a global write in both games (LSL2 gCurrentStatus=1001,
@@ -634,7 +643,7 @@ def norm_tree(expr, game, locals_=()):
     if isinstance(expr, Sym):
         if expr.name in locals_:
             return Pred("LOCAL", var=expr.name, op="!=", value=0)
-        if game.is_global(expr.name):
+        if game.is_register(expr.name):
             return Pred("FLAG", var=expr.name, want=True)
         return Pred("OPAQUE", text=expr.name)
     if isinstance(expr, Said):
@@ -677,7 +686,7 @@ def norm_tree(expr, game, locals_=()):
         if len(expr) >= 3 and isinstance(expr[1], Sym) and isinstance(expr[2], int) \
                 and expr[1].name in locals_:
             return Pred("LOCAL", var=expr[1].name, op=head.name, value=expr[2])
-        if len(expr) >= 3 and isinstance(expr[1], Sym) and game.is_global(expr[1].name):
+        if len(expr) >= 3 and isinstance(expr[1], Sym) and game.is_register(expr[1].name):
             return Pred("CMP", var=expr[1].name, op=head.name, value=_short(expr[2]))
     if is_sym(head, "&") or is_sym(head, "bit-and"):
         return Pred("POS", text="bittest")
@@ -786,6 +795,17 @@ def load_game(src_dir=None):
     items = enum_items or _parse_items(main)            # else sluicebox Iitem instances (LSL2)
     name_by_num = _parse_game_ini(src_dir)
     game = Game(globals_, inits, items, {}, name_by_num, item_ids, cfg.death_signal)
+    # Room-locals that gate a newRoom/death (henchStatus & co.) -- discovered, not
+    # hand-listed, so a new game is covered by re-running the sweep. Making them
+    # registers stops the walker rendering `(== henchStatus 8)` as opaque() and walking
+    # the KGB beach for free. See [[discover_machinery]].
+    try:
+        import discover_machinery
+        game.state_locals = frozenset(
+            discover_machinery.discover(src_dir, set(globals_),
+                                        cfg.death_signal or (None, None))["locals"])
+    except Exception:
+        game.state_locals = frozenset()
     # Procedures are otherwise invisible to the IR; extract their global writes BEFORE
     # the walker runs, so a `(NormalEgo)` call inlines its `gCurrentStatus:=0`.
     game.proc_sets = _parse_procedures(src_dir, game.is_global)

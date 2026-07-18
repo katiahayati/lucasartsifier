@@ -121,7 +121,7 @@ class FixModel:
                         guard = (t.guard_tree if tg is None
                                  else GAnd([g for g in (t.guard_tree, tg) if g is not None]))
                         for r in self._rooms_of(num):
-                            self.sets[e.arg].append((r, _lit(e.value), guard))
+                            self.sets[e.arg].append((r, _lit(e.value), guard, st))
 
         # Intra-room state machines (machine.py). A room is not one node: its exit
         # may sit deep inside a Script's changeState switch, behind a gauntlet the
@@ -232,20 +232,38 @@ class FixModel:
         for gt in self.machine_guards.values():
             _collect_cmp(gt, self.reg_tested)
         for gn, sites in self.sets.items():
-            for _r, v, _g in sites:
+            for _r, v, _g, _st in sites:
                 if isinstance(v, int):
                     assigned[gn].add(v)
+        # A register is anything whose VALUE we track and that is compared to an int:
+        # every global mode register AND every progress-gating room-local (henchStatus &
+        # co., via game.is_register / discover_machinery). We do NOT require >=3 tested
+        # values or that it be assigned in scripts -- a 2-value gate (gWearingParachute)
+        # or an engine-set one still gates progress, and under-including is the one
+        # failure this tool must avoid. Clocks and debug flags are the only exclusions.
         candidates = [
             gn for gn, lits in self.reg_tested.items()
-            if gn in game.globals and gn not in CFG.debug_globals
+            if game.is_register(gn) and gn not in CFG.debug_globals
             and gn not in CFG.timer_globals             # a clock is not a mode register
-            and len({v for v in lits if isinstance(v, int)}) >= 3
-            and assigned.get(gn) and all(isinstance(v, int) for v in assigned[gn])]
+            and any(isinstance(v, int) for v in lits)]
 
+        # The death signal (config.death_signal, e.g. gCurrentStatus==1001) is a
+        # TERMINAL write, not a live status: it hands the room to Main's dyingScript.
+        # It must never propagate as a playable value, or the death poisons live
+        # reachability -- a spurious `:=1001` chains through Main's `:=1002` and pins
+        # the arriving room to a dead status, blanking its `==0` out-edges. Excluding
+        # just the signal also kills the `:=1002` write for free (it is guarded on
+        # `==1001`, which can then never hold live). Do NOT exclude a whole numeric
+        # band: gCurrentStatus overloads 1000+ with LIVE special states too (1009 =
+        # belted into the airplane seat), and dropping those breaks real cutscene gates.
+        def _is_death(gn, v):
+            return game.is_death_write(gn, v)
         def _dom(gn):
-            return ({v for v in self.reg_tested[gn] if isinstance(v, int)}
+            return {v for v in ({v for v in self.reg_tested[gn] if isinstance(v, int)}
                     | assigned.get(gn, set())
                     | {_lit(next(iter(self.init_flags.get(gn, {0}))))})
+                    if not _is_death(gn, v)}
+        self._is_death_val = _is_death
 
         # Promotion multiplies the location space, and the registers are (largely)
         # INDEPENDENT, so promoting all of them is a product -- LSL2's
@@ -324,11 +342,44 @@ class FixModel:
         #     `:=10` behind `gWearingParachute==1` and rm77's `:=2` behind
         #     `gIslandStatus==1`. These are the SURVIVE/advance branch and belong on the
         #     edge, guard checked on the source value.
+        #   SELF writes -- UNCONDITIONAL writes that live inside a changeState (state is
+        #     not None), e.g. rm57Script state 1's `NormalEgo -> :=0`. These are not room
+        #     entry (they fire LATER, when a cutscene ends), so they must not compete
+        #     with the init reset in last-wins order. rm57's init sets `:=8` (HandsOff),
+        #     then the script resets `:=0`: BOTH values are reachable in the room, in
+        #     sequence. Model them as self-transitions that ADD a value without erasing
+        #     the entry value -- otherwise the later source write silently wins and the
+        #     room is pinned to one status (rm57 stuck at 8 -> `(57,58)`'s `==0` fails ->
+        #     the whole plane sequence goes dark under promotion).
         self.room_entry_writes = defaultdict(list)   # room -> [(reg, abs-value)]
         self.room_exit_writes = defaultdict(list)    # room -> [(reg, abs-value, guard)]
+        self.room_self_writes = defaultdict(list)    # room -> [(reg, abs-value, guard)]
         for reg in self.promoted:
-            for room, val, guard in self.sets.get(reg, ()):
-                if _has_atom(guard):
+            for room, val, guard, st in self.sets.get(reg, ()):
+                # A write INTO the dying band is a death, not a live carry: the machine
+                # already models it as a DEATH sink. Dropping it here keeps the terminal
+                # code from overwriting a room's live valuation on the way out.
+                if self._is_death_val(reg, val):
+                    continue
+                # Any GUARDED write is BOTH a self-transition and an exit write; only a
+                # truly-unconditional write is an entry reset.
+                #   SELF -- ADDS the value in the room (guard checked on the live state).
+                #     This is what makes a value available WHERE it is written: rm57's
+                #     cutscene `:=0` so its `==0` out-edge can open; knifeHere's init
+                #     `:=1` ("the knife is in the room") so the Knife's `knifeHere!=0`
+                #     acquisition, IN rm43, can fire. Real atoms in the guard still bind
+                #     (own/flag/cmp are decided precisely -> the requirement is kept);
+                #     only opaque triggers (Said/position) go permissive -- the player
+                #     can do them, so the value is achievable.
+                #   EXIT -- also delivers on a co-triggered move (the endgame climb
+                #     rm84->85->92 gIslandStatus:=100/102/103; rm64's survive `:=10` to
+                #     rm65; rm77's `:=2` behind `==1`). We cannot tell self from exit from
+                #     the write alone, so record both; over-recording a REACHABLE
+                #     valuation is the safe direction for a don't-get-stuck tool.
+                #   ENTRY -- an unconditional reset (NormalEgo `:=0`, rm64 `:=12`)
+                #     overwrites the arriving value.
+                if st is not None or _has_any_pred(guard):
+                    self.room_self_writes[room].append((reg, _abs_val(val), guard))
                     self.room_exit_writes[room].append((reg, _abs_val(val), guard))
                 else:
                     self.room_entry_writes[room].append((reg, _abs_val(val)))
@@ -359,9 +410,9 @@ def _abs_val(v):
 
 
 def _has_atom(guard):
-    """True if a guard has any evaluable OWN/FLAG/CMP atom -- i.e. it can be false.
-    A guard with none (None, or only empty conjunctions / opaque atoms) is an
-    UNCONDITIONAL reset that runs on room entry."""
+    """True if a guard has any evaluable OWN/FLAG/CMP atom -- i.e. one we can prove
+    false. Used to decide whether a write is CO-TRIGGERED with a decidable condition
+    (an exit write) vs part of an unconditional reset."""
     from model import GAnd, GOr, GNot, Pred
     if guard is None:
         return False
@@ -370,6 +421,25 @@ def _has_atom(guard):
     if isinstance(guard, GNot):
         return _has_atom(guard.kid)
     return isinstance(guard, Pred) and guard.kind in ("OWN", "FLAG", "CMP")
+
+
+def _has_any_pred(guard):
+    """True if the guard mentions ANY predicate at all -- including an OPAQUE / POS /
+    SAID one we cannot decide. Only a guard with NONE (empty conjunctions all the way
+    down) is genuinely unconditional. This is the line between an entry RESET and a
+    conditional write: `(= gCurrentStatus 23)` behind `(== 3 (gEgo edgeHit:))` reads as
+    unconditional to `_has_atom` (edgeHit is opaque), so it was applied as an entry
+    reset and PINNED rm34 to 23 -- the pool sequence (0 -> 1008 -> 1006 -> dive ->
+    rm134, the Bikini_Top) then never started. An opaque guard is a CONDITION we cannot
+    evaluate, not the absence of one."""
+    from model import GAnd, GOr, GNot, Pred
+    if guard is None:
+        return False
+    if isinstance(guard, (GAnd, GOr)):
+        return any(_has_any_pred(k) for k in guard.kids)
+    if isinstance(guard, GNot):
+        return _has_any_pred(guard.kid)
+    return isinstance(guard, Pred)
 
 
 def _edge_implies_write(eguard, wguard, reg, dom):
@@ -654,7 +724,7 @@ def _closure_flat(m, start_room, items, fl, exhausted):
                     changed = True
                     break
         for g, sites in m.sets.items():
-            for room, val, guards in sites:
+            for room, val, guards, _st in sites:
                 if (room is None or room in rooms) and val not in fl.get(g, ()) \
                         and holds_tree(guards, items, fl):
                     fl.setdefault(g, set()).add(val)
@@ -749,6 +819,21 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
                     reach.add((b, nrv))
                     changed = True
 
+        # 1b. in-room self-transitions: a changeState write (e.g. rm57's cutscene-end
+        #     `NormalEgo -> :=0`) fires AFTER entry, so it ADDS a reachable valuation in
+        #     the same room without erasing the entry value. Guard checked on the live
+        #     source valuation. This is what lets rm57 hold both 8 (HandsOff) and 0
+        #     (walking again), so its `==0` out-edge to the plane can open.
+        for (a, rv) in list(reach):
+            for reg, av, wguard in (m.room_self_writes.get(a, []) + m.room_self_writes.get(None, [])):
+                if rv[idx[reg]] == av:
+                    continue
+                if holds_tree(wguard, items, _overlay(rv)):
+                    nrv = tuple(av if i == idx[reg] else rv[i] for i in range(len(rv)))
+                    if (a, nrv) not in reach:
+                        reach.add((a, nrv))
+                        changed = True
+
         # 2. pick up anything acquirable at SOME reachable (room, rv)
         for it, sites in m.acq.items():
             if it in items or it in exhausted:
@@ -762,7 +847,7 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
         for g, sites in m.sets.items():
             if g in m.promoted:
                 continue
-            for room, val, guards in sites:
+            for room, val, guards, _st in sites:
                 if val in fl.get(g, ()):
                     continue
                 if _reachable_guard(guards, items, room, by_room, reach, fl, _overlay):

@@ -198,13 +198,37 @@ def main():
           any(reg == "gIslandStatus" and v == 2
               for reg, v, _g in mp.room_exit_writes.get(77, [])), True)
 
+    # THE PARACHUTE. Item 24 is worn in rm63, needed to survive the plane jump in
+    # rm64->65: rm65's survive exit is `gCurrentStatus != 12`, and the only way to
+    # arrive at != 12 is rm64's `:=10` behind `gWearingParachute==1` (<= item 24). The
+    # (room, single-value) abstraction could not see it -- gCurrentStatus's value SET at
+    # rm65 held both 12 and 10, so `!= 12` was trivially satisfiable. Promoting
+    # gCurrentStatus splits the states, and three fixes make it winnable rather than
+    # dark: (1) the death SIGNAL (1001) is excluded as a live value so it cannot poison
+    # normal rooms -- but ONLY the signal, since the register overloads 1000+ with live
+    # states too (1009 = belted in the seat); (2) a changeState write is a self-
+    # transition that ADDS a value (rm57's cutscene-end `:=0`, so its `==0` out-edge can
+    # open) AS WELL AS an exit write (the endgame climb); (3) provenance (init vs
+    # changeState) is read straight off the transition context. With it on, the game is
+    # winnable AND losing the chute closes the goal.
+    mpc = C.FixModel(g).promote(["gCurrentStatus"])
+    goals = set(config.LSL2.goal_rooms)
+    check("promote(gCurrentStatus): the game stays winnable",
+          bool(C.closure(mpc, config.LSL2.start_room).rooms & goals), True)
+    check("the Parachute (item 24) is REQUIRED: exhausting it closes the goal",
+          bool(C.closure(mpc, config.LSL2.start_room, exhausted={24}).rooms & goals),
+          False)
+    # requirements() reports it as the rm57->58 stranding (boarding the plane past the
+    # airport where the chute is picked up); left out of the suite because that full
+    # scan is ~70s under promotion. The exhausted check above is the fast equivalent.
+
     # SET effects inside a machine state inherit their TRIGGER guard, exactly as GOTOs
     # do. rm64's `(= gCurrentStatus 10)` -- the parachute survival write, in state 2
     # behind `gWearingParachute==1` -- was recorded UNCONDITIONAL, so the model
     # survived the plane jump without the chute. (Necessary for the parachute, not yet
     # sufficient: rm65 also writes its own survival value, and edge_reg_effect couples
     # only same-register writes.)
-    p64 = [g for rm, v, g in m.sets["gCurrentStatus"] if rm == 64 and v == 10]
+    p64 = [g for rm, v, g, _st in m.sets["gCurrentStatus"] if rm == 64 and v == 10]
     check("rm64's survival write carries its gWearingParachute trigger guard",
           any("gWearingParachute" in str(g) for g in p64), True)
     check("...and still REQUIRES the Grotesque_Gulp", 8 in C.own_atoms(raft), True)
