@@ -93,10 +93,13 @@ class MachineBuilder:
                         ops = []
                         self._ops(c["kids"][1], [], ops)
                         m.states[k] = ops
-        # entries: init -> changeState: start; and handleEvent/doit changeState: K (guarded)
-        for mn in ("init", "handleEvent", "doit"):
-            if mn in obj.methods:
-                self._entries(obj.methods[mn], [], m, script.number, set())
+        # entries: ANY object's init/handleEvent/doit that does `(<inst> changeState: K)`
+        # (guarded) -- the machine is often started/redirected by the ROOM object, not by
+        # itself (rm65.init -> rm65Script changeState: survive-or-die on gCurrentStatus).
+        for other in script.objects:
+            for mn in ("init", "handleEvent", "doit"):
+                if mn in other.methods:
+                    self._entries(other.methods[mn], [], m, script.number, set())
         return m
 
     def _top_switch(self, cs):
@@ -136,7 +139,12 @@ class MachineBuilder:
             return
         if tp == "Send":
             recv, msgs = I.send_pairs(node)
-            if recv.get("t") == "Self":
+            # `(self changeState:K)` OR `(theMachineInstance changeState:K)` from ANOTHER
+            # object -- rm65.init does `(rm65Script changeState: 4)` gated on gCurrentStatus
+            # to start the survive segment; matching only Self missed it.
+            targets_me = (recv.get("t") == "Self"
+                          or (recv.get("t") == "Object" and recv.get("name") == m.inst))
+            if targets_me:
                 for sel, params in msgs:
                     if sel == "changeState" and params:
                         k = I.as_int(params[0])
