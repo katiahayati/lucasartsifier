@@ -138,8 +138,10 @@ class Extractor:
         for n, s in room_scripts.items():
             self._nav_edges(n, s)
             for o in s.objects:
-                for meth_ast in o.methods.values():
-                    self._walk(n, meth_ast, [])
+                for mname, meth_ast in o.methods.items():
+                    # changeState newRoom exits belong to the MACHINE (gated); don't
+                    # duplicate them as free flat edges. Items still captured.
+                    self._walk(n, meth_ast, [], movement=(mname != "changeState"))
             for proc_ast in s.procs.values():
                 self._walk(n, proc_ast, [])
         # add any newRoom target we saw as a room
@@ -160,47 +162,49 @@ class Extractor:
             if et and et != 0xffff:
                 self.ts.edges.append(Edge(room_num, et))
 
-    def _walk(self, room, node, pc):
-        """Compose path conditions and record effects (newRoom, get:) at the leaves."""
+    def _walk(self, room, node, pc, movement=True):
+        """Compose path conditions and record effects (newRoom, get:) at the leaves.
+        `movement=False` when walking a changeState body: the MACHINE owns those newRoom
+        exits (gated by its entries/state sequence), so emitting them as free flat edges
+        too would be a permissive DUPLICATE that routes around the gate (the boarding
+        passport gate, the raft gauntlet). Items (get:) are still captured (a duplicate
+        acquisition is harmless -- monotone)."""
         if node is None:
             return
         tp = node["t"]
         if tp == "If":
             ks = node["kids"]
             test = atom(ks[0])
-            self._walk(room, ks[1], pc + [test])
+            self._walk(room, ks[1], pc + [test], movement)
             if len(ks) > 2:
-                self._walk(room, ks[2], pc + [GNot(test) if test is not None else None])
+                self._walk(room, ks[2], pc + [GNot(test) if test is not None else None], movement)
             return
         if tp == "Switch":
-            # kids = [head, Case*, Else]; head is `(= state param)` for changeState.
             for k in node["kids"][1:]:
                 if k["t"] == "Case":
-                    self._walk(room, k["kids"][1], pc)        # state-cond ignored (base)
+                    self._walk(room, k["kids"][1], pc, movement)
                 elif k["t"] == "Else":
-                    self._walk(room, k["kids"][0], pc)
+                    self._walk(room, k["kids"][0], pc, movement)
             return
         if tp == "Cond":
             for k in node["kids"]:
                 if k["t"] == "Case":
-                    self._walk(room, k["kids"][1], pc + [atom(k["kids"][0])])
+                    self._walk(room, k["kids"][1], pc + [atom(k["kids"][0])], movement)
                 elif k["t"] == "Else":
-                    self._walk(room, k["kids"][0], pc)
+                    self._walk(room, k["kids"][0], pc, movement)
             return
         if tp == "Loop":
-            self._walk(room, node["kids"][0], pc)
+            self._walk(room, node["kids"][0], pc, movement)
             return
         if tp == "Send":
-            self._send_effect(room, node, pc)
-        # recurse into all children (sequential composition; pc unchanged)
+            self._send_effect(room, node, pc, movement)
         for k in node.get("kids", ()):
-            self._walk(room, k, pc)
+            self._walk(room, k, pc, movement)
 
-    def _send_effect(self, room, node, pc):
+    def _send_effect(self, room, node, pc, movement=True):
         recv, msgs = I.send_pairs(node)
         for sel, params in msgs:
-            if sel in ("newRoom", "entranceTo") and params:
-                # newRoom: immediate transfer; entranceTo: a walkable feature -> room R
+            if movement and sel in ("newRoom", "entranceTo") and params:
                 dst = I.as_int(params[0])
                 if dst is not None:
                     self.ts.edges.append(Edge(room, dst, _conj(pc)))
