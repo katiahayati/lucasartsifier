@@ -910,24 +910,38 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
         #    rm55's own out-edge) and rm64's `:=10` survive branch (delivered to rm65).
         for (a, rv) in list(reach):
             ov = _overlay(rv)
-            # A room's co-triggered exit writes (guard on the SOURCE) deliver values to
-            # the destination. We do NOT overwrite in place: two contradictory writes to
-            # one register -- rm63 "wear parachute" :=1 and "take off" :=0, both behind a
-            # permissive Said -- would apply in sequence and the last (take-off) would
-            # win, forcing the OPTIONAL undo to always happen and clobbering the value
-            # the jump needs. Instead each register DELIVERS its pre-value AND every
-            # firing write value (a small per-register branch), so rm64 receives both
-            # para=1 (kept it on -> survive) and para=0. The endgame climb still works:
-            # rm77's `:=2` behind `==1` fires on the source's `1` and delivers `2`
-            # alongside `1`, so the monotone advance carries.
-            cand = defaultdict(set)
+            # Co-triggered exit writes, classified 3-valued on the SOURCE state:
+            #   DETERMINISTIC (eval3 == T: guard provably true, no opaque part) -> it
+            #     definitely happened, so OVERWRITE the base. rm64's survive `:=10`
+            #     (real-atom guard `para==1 & status==12`) and the endgame `:=2` behind
+            #     `==1` are deterministic and just apply.
+            #   OPTIONAL (eval3 == U: true only because an opaque Said/position is
+            #     permissive -- a player CHOICE, e.g. rm63 "take off parachute") -> BRANCH
+            #     that ONE register: deliver base AND the written value, so para=1 (didn't
+            #     take it off) survives alongside para=0.
+            #   (eval3 == F -> the write cannot fire; skip.)
+            # We branch each optional register INDEPENDENTLY off the base, never as a
+            # cross-product. rm33's drawer and closet are genuinely independent "open X"
+            # commands, so their joint {open,closed}^2 is REAL -- but goal-irrelevant, and
+            # materializing the product (then re-branching it at every downstream room)
+            # is what exploded the reach set into millions of states. Independent
+            # delivery is O(sum) not O(product); it under-approximates only the JOINT of
+            # two optional locals, which no goal gate depends on, while keeping every
+            # load-bearing correlation (parachute, endgame) exact.
+            base = list(rv)
+            optional = defaultdict(set)
             for reg, av, wguard in (m.room_exit_writes.get(a, []) + m.room_exit_writes.get(None, [])):
-                if holds_tree(wguard, items, ov):
-                    cand[idx[reg]].add(av)
-            drvs = [rv]
-            for i, avs in cand.items():
-                drvs = [tuple(v if k == i else d[k] for k in range(len(d)))
-                        for d in drvs for v in ({d[i]} | avs)]
+                v = eval3(wguard, items, ov)
+                if v is True:
+                    base[idx[reg]] = av
+                elif v is None:
+                    optional[idx[reg]].add(av)
+            base = tuple(base)
+            drvs = [base]
+            for i, avs in optional.items():
+                for av in avs:
+                    if base[i] != av:
+                        drvs.append(tuple(av if k == i else base[k] for k in range(len(base))))
             for b in m.edges.get(a, ()):
                 guard = (m.machine_guards.get((a, b)) if (a, b) in m.machine_edges
                          else m.edge_reqs.get((a, b)))
