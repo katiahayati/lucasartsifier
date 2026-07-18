@@ -107,6 +107,10 @@ class TS:
     edges: list = field(default_factory=list)
     acqs: list = field(default_factory=list)
     items: set = field(default_factory=set)
+    cs_edges: list = field(default_factory=list)   # changeState newRoom exits (room,dst,
+    #   guard). The MACHINE owns these; used as a GATED fallback only where the machine
+    #   walk can't deliver the exit (control_exits) -- avoids a false dead-end without
+    #   reintroducing a free bypass.
 
 
 def _conj(pc):
@@ -129,6 +133,10 @@ class Extractor:
     def __init__(self, ir):
         self.ir = ir
         self.ts = TS()
+        self.procs_by = {}
+        for rn, s in ir.scripts.items():
+            for name, body in s.procs.items():
+                self.procs_by[(rn, name)] = body
 
     def run(self):
         # room universe: any script that has an rm<N> Room instance
@@ -140,10 +148,10 @@ class Extractor:
             for o in s.objects:
                 for mname, meth_ast in o.methods.items():
                     # changeState newRoom exits belong to the MACHINE (gated); don't
-                    # duplicate them as free flat edges. Items still captured.
-                    self._walk(n, meth_ast, [], movement=(mname != "changeState"))
-            for proc_ast in s.procs.values():
-                self._walk(n, proc_ast, [])
+                    # duplicate them as free flat edges. Items still captured. Procedures
+                    # are FOLLOWED in-context (below), not walked standalone -- a proc
+                    # walked context-free would emit its newRoom as a free bypass.
+                    self._walk(n, meth_ast, [], n, set(), movement=(mname != "changeState"))
         # add any newRoom target we saw as a room
         for e in self.ts.edges:
             self.ts.rooms.add(e.dst)
@@ -162,52 +170,55 @@ class Extractor:
             if et and et != 0xffff:
                 self.ts.edges.append(Edge(room_num, et))
 
-    def _walk(self, room, node, pc, movement=True):
-        """Compose path conditions and record effects (newRoom, get:) at the leaves.
-        `movement=False` when walking a changeState body: the MACHINE owns those newRoom
-        exits (gated by its entries/state sequence), so emitting them as free flat edges
-        too would be a permissive DUPLICATE that routes around the gate (the boarding
-        passport gate, the raft gauntlet). Items (get:) are still captured (a duplicate
-        acquisition is harmless -- monotone)."""
+    def _walk(self, room, node, pc, script, seen, movement=True):
+        """Compose path conditions and record effects (newRoom, get:), FOLLOWING calls in
+        context. `movement=False` for a changeState body: the MACHINE owns those newRoom
+        exits, so a free flat duplicate would bypass the gate. Items (get:) always captured
+        (duplicate acquisition is monotone)."""
         if node is None:
             return
         tp = node["t"]
         if tp == "If":
             ks = node["kids"]
             test = atom(ks[0])
-            self._walk(room, ks[1], pc + [test], movement)
+            self._walk(room, ks[1], pc + [test], script, seen, movement)
             if len(ks) > 2:
-                self._walk(room, ks[2], pc + [GNot(test) if test is not None else None], movement)
+                self._walk(room, ks[2], pc + [GNot(test) if test is not None else None], script, seen, movement)
             return
         if tp == "Switch":
             for k in node["kids"][1:]:
-                if k["t"] == "Case":
-                    self._walk(room, k["kids"][1], pc, movement)
-                elif k["t"] == "Else":
-                    self._walk(room, k["kids"][0], pc, movement)
+                body = k["kids"][1] if k["t"] == "Case" else (k["kids"][0] if k["t"] == "Else" else None)
+                self._walk(room, body, pc, script, seen, movement)
             return
         if tp == "Cond":
             for k in node["kids"]:
                 if k["t"] == "Case":
-                    self._walk(room, k["kids"][1], pc + [atom(k["kids"][0])], movement)
+                    self._walk(room, k["kids"][1], pc + [atom(k["kids"][0])], script, seen, movement)
                 elif k["t"] == "Else":
-                    self._walk(room, k["kids"][0], pc, movement)
+                    self._walk(room, k["kids"][0], pc, script, seen, movement)
             return
         if tp == "Loop":
-            self._walk(room, node["kids"][0], pc, movement)
+            self._walk(room, node["kids"][0], pc, script, seen, movement)
             return
         if tp == "Send":
             self._send_effect(room, node, pc, movement)
+        elif tp in ("PublicCall", "LocalCall"):
+            tgt = node.get("script", script)
+            name = node.get("name")
+            body = self.procs_by.get((tgt, name))
+            if tgt != 255 and body is not None and name not in seen:
+                self._walk(room, body, pc, tgt, seen | {name}, movement)
         for k in node.get("kids", ()):
-            self._walk(room, k, pc, movement)
+            self._walk(room, k, pc, script, seen, movement)
 
     def _send_effect(self, room, node, pc, movement=True):
         recv, msgs = I.send_pairs(node)
         for sel, params in msgs:
-            if movement and sel in ("newRoom", "entranceTo") and params:
+            if sel in ("newRoom", "entranceTo") and params:
                 dst = I.as_int(params[0])
                 if dst is not None:
-                    self.ts.edges.append(Edge(room, dst, _conj(pc)))
+                    (self.ts.edges if movement else self.ts.cs_edges).append(
+                        Edge(room, dst, _conj(pc)))
             elif sel == "get" and I.is_global(recv, G_EGO) and params:
                 it = I.as_int(params[0])
                 if it is not None:

@@ -125,6 +125,13 @@ class OpEmitter:
         for room, wr in self.init_writes.items():
             for gi, v in wr.items():
                 self.reg_vals.setdefault(gi, {0}).add(v)
+        # exits the machines can deliver -> which changeState newRoom targets DON'T need a
+        # flat fallback (the rest do, gated by their extract2 path condition).
+        self.machine_delivered = set()
+        for info in self.machines:
+            for dst in info.get("delivered", ()):
+                self.machine_delivered.add((info["room"], dst))
+
         # finalize domains; single-value dims fold to constants (SMV rejects init on them)
         self.reg_dom, self.reg_const = {}, {}
         for gi, vs in self.reg_vals.items():
@@ -168,8 +175,16 @@ class OpEmitter:
             states[K] = paths
         if not has_effect:
             return None
-        return {"room": room, "inst": m.inst, "script": m.script,
-                "states": states, "entries": m.entries, "start": m.start}
+        # which exits this machine can actually DELIVER (control_exits): a changeState
+        # newRoom target the machine cannot walk to needs a flat fallback so the room
+        # isn't a false dead-end.
+        try:
+            exits, _d = C.compile_machine(m, self.is_death)
+            delivered = set(r for r, g, w in exits)
+        except Exception:
+            delivered = set()
+        return {"room": room, "inst": m.inst, "script": m.script, "states": states,
+                "entries": m.entries, "start": m.start, "delivered": delivered}
 
     def _hwalk(self, room, script, node, pc, seen):
         """Path-condition walk of a handler; record global + local writes + item gets,
@@ -364,6 +379,18 @@ class OpEmitter:
             nxt["room"].append((c, str(e.dst)))
             room_change.append((c, e.dst))
             aid += 1
+        # control_exits fallback: changeState exits the machine can't deliver, as GATED
+        # flat edges (keeps the gate, e.g. rm65->70 gCurrentStatus!=12, without a bypass).
+        for e in self.ts.cs_edges:
+            if (e.src, e.dst) in self.machine_delivered:
+                continue
+            g = self.gexpr(e.guard, None)
+            if g == "FALSE":
+                continue
+            c = cond(f"action = {aid} & room = {e.src}", g)
+            nxt["room"].append((c, str(e.dst)))
+            room_change.append((c, e.dst))
+            aid += 1
         # flat item acquisitions
         for a in self.ts.acqs:
             g = self.gexpr(a.guard, None)
@@ -416,6 +443,15 @@ class OpEmitter:
                     continue
                 nxt[ms].append((cond(f"action = {aid} & room = {R}", g), str(K)))
                 aid += 1
+            # ABSENT states fall through (advance to K+1) -- SCI's "wait for another cue"
+            # placeholder. Without this, ms advances INTO a gap state with no step and gets
+            # stuck (rm28Script: states 0,1,2,3,5 -- 4 absent -> 28->31 at s5 unreachable).
+            allst = set(info["states"])
+            if allst:
+                for K in range(min(allst | {info["start"]}), max(allst) + 1):
+                    if K not in allst:
+                        nxt[ms].append((f"action = {aid} & room = {R} & {ms} = {K}", str(K + 1)))
+                        aid += 1
 
         # player-action effects (handleEvent/doit register writes + item gets)
         for room, gi, v, g in self.handler_writes:
