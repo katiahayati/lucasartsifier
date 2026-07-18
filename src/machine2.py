@@ -66,6 +66,10 @@ class MachineBuilder:
     def __init__(self, ir, game_death):
         self.ir = ir
         self.is_death = game_death        # (glob_index, value) -> bool
+        self.procs_by = {}                # (script, proc-name) -> body, for call-following
+        for rn, s in ir.scripts.items():
+            for name, body in s.procs.items():
+                self.procs_by[(rn, name)] = body
 
     def machines(self, script):
         out = []
@@ -92,7 +96,7 @@ class MachineBuilder:
         # entries: init -> changeState: start; and handleEvent/doit changeState: K (guarded)
         for mn in ("init", "handleEvent", "doit"):
             if mn in obj.methods:
-                self._entries(obj.methods[mn], [], m)
+                self._entries(obj.methods[mn], [], m, script.number, set())
         return m
 
     def _top_switch(self, cs):
@@ -105,17 +109,30 @@ class MachineBuilder:
                         return n
         return None
 
-    def _entries(self, node, pc, m):
+    def _entries(self, node, pc, m, script, seen):
+        """Find player-triggered `(self changeState: K)` entries and the FULL path
+        condition that gates them -- handling If AND Cond, and FOLLOWING PublicCall/
+        LocalCall (the changeState often lives inside a proc, and the guard, e.g.
+        `has: Passport`, sits on a Cond case above the call)."""
         if node is None:
             return
+        from model import GNot
         tp = node["t"]
         if tp == "If":
             ks = node["kids"]
             a = atom(ks[0])
-            self._entries(ks[1], pc + [a], m)
+            self._entries(ks[1], pc + [a], m, script, seen)
             if len(ks) > 2:
-                from model import GNot
-                self._entries(ks[2], pc + [GNot(a) if a else None], m)
+                self._entries(ks[2], pc + [GNot(a) if a else None], m, script, seen)
+            return
+        if tp == "Cond":
+            priors = []
+            for c in node["kids"]:
+                if c["t"] == "Case":
+                    self._entries(c["kids"][1], pc + priors + [atom(c["kids"][0])], m, script, seen)
+                    priors = priors + [GNot(atom(c["kids"][0]))]
+                elif c["t"] == "Else":
+                    self._entries(c["kids"][0], pc + priors, m, script, seen)
             return
         if tp == "Send":
             recv, msgs = I.send_pairs(node)
@@ -125,8 +142,14 @@ class MachineBuilder:
                         k = I.as_int(params[0])
                         if k is not None:
                             m.entries.append((k, _conj(pc)))
+        elif tp in ("PublicCall", "LocalCall"):
+            tgt = node.get("script", script)
+            name = node.get("name")
+            body = self.procs_by.get((tgt, name))
+            if tgt != 255 and body is not None and name not in seen:
+                self._entries(body, pc, m, tgt, seen | {name})
         for k in node.get("kids", ()):
-            self._entries(k, pc, m)
+            self._entries(k, pc, m, script, seen)
 
     def _ops(self, node, pc, out):
         """Walk a state body, composing path conditions, appending guarded ops."""
