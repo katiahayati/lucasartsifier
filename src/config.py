@@ -89,7 +89,7 @@ KQ4 = GameConfig(
     region_labels={},
     death_signal=("dead", "TRUE"),
     # Main.sc:55 `debugOn ;generic debug flag -- set from debug menu`
-    debug_globals=frozenset({"debugOn", "debugging", "debugMenu"}),
+    debug_globals=frozenset({"debugOn", "debugMenu", "debugging"}),
 )
 
 # The config the pipeline runs against. Swap this (or set it from run.py) to target

@@ -235,6 +235,19 @@ class FixModel:
             for _r, v, _g, _st in sites:
                 if isinstance(v, int):
                     assigned[gn].add(v)
+        # PREDICATE ABSTRACTION: a promoted register only needs to distinguish the values
+        # it is ever COMPARED against. Everything else collapses to one NOTTRACKED bucket
+        # (known != every tracked literal). This is what keeps gPrevRoomNum -- assigned a
+        # room number on every move (~55 values) but only compared for 7 -- from blowing
+        # up the joint state space, WITHOUT dropping its gates: the 7 compared values stay
+        # exact. `_abs` maps a written value to its abstract form.
+        self._tested_int = {gn: frozenset(v for v in lits if isinstance(v, int))
+                            for gn, lits in self.reg_tested.items()}
+        def _abs(reg, v):
+            if not isinstance(v, int):
+                return OTHER            # a non-literal write: genuinely unknown -> masked
+            return v if v in self._tested_int.get(reg, ()) else NOTTRACKED
+        self._abs = _abs
         # A register is anything whose VALUE we track and that is compared to an int:
         # every global mode register AND every progress-gating room-local (henchStatus &
         # co., via game.is_register / discover_machinery). We do NOT require >=3 tested
@@ -259,9 +272,9 @@ class FixModel:
         def _is_death(gn, v):
             return game.is_death_write(gn, v)
         def _dom(gn):
-            return {v for v in ({v for v in self.reg_tested[gn] if isinstance(v, int)}
-                    | assigned.get(gn, set())
-                    | {_lit(next(iter(self.init_flags.get(gn, {0}))))})
+            # Only the COMPARED values -- everything else is the single NOTTRACKED bucket
+            # (predicate abstraction), so the domain is what actually splits the state.
+            return {v for v in self._tested_int.get(gn, ())
                     if not _is_death(gn, v)}
         self._is_death_val = _is_death
 
@@ -379,10 +392,10 @@ class FixModel:
                 #   ENTRY -- an unconditional reset (NormalEgo `:=0`, rm64 `:=12`)
                 #     overwrites the arriving value.
                 if st is not None or _has_any_pred(guard):
-                    self.room_self_writes[room].append((reg, _abs_val(val), guard))
-                    self.room_exit_writes[room].append((reg, _abs_val(val), guard))
+                    self.room_self_writes[room].append((reg, self._abs(reg, val), guard))
+                    self.room_exit_writes[room].append((reg, self._abs(reg, val), guard))
                 else:
-                    self.room_entry_writes[room].append((reg, _abs_val(val)))
+                    self.room_entry_writes[room].append((reg, self._abs(reg, val)))
         self._build_liveness()
 
     def _build_liveness(self):
@@ -490,7 +503,15 @@ class FixModel:
         return [num]
 
 
-OTHER = object()      # a promoted register holds a value we do not distinguish
+OTHER = object()      # a promoted register holds a value we do not distinguish (masked)
+# A promoted register holds an int that is NOT one of the values ever COMPARED against
+# for that register. Predicate abstraction collapses all such values to one bucket --
+# but unlike OTHER (masked, "could be anything" -> permissive), this bucket is KNOWN to
+# differ from every tracked literal, so `== <tracked literal>` is definitively FALSE and
+# `!=` is TRUE. That is what lets gPrevRoomNum (assigned ~55 room numbers, compared for 7)
+# shrink to 8 values while keeping `gPrevRoomNum==134` binding EXACTLY: arriving from 134
+# keeps the literal 134; arriving from any other room is NOTTRACKED, which is != 134.
+NOTTRACKED = object()
 
 
 def _abs_val(v):
@@ -599,6 +620,14 @@ def _cmp_ok(v, op, want):
     """
     if v is ANY:
         return True
+    if v is NOTTRACKED:
+        # KNOWN to differ from every tracked literal: `!=` holds, `==` fails, order is
+        # undecidable (permissive). Only ever compared against a tracked literal `want`.
+        if op == "!=":
+            return True
+        if op == "==":
+            return False
+        return True                     # <,>,<=,>= against an unknown value -> permissive
     w = _lit(want)
     if w is ANY or not isinstance(v, int) or not isinstance(w, int):
         return True                     # can't evaluate -> permissive
@@ -854,8 +883,6 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
     if not order:
         return _closure_flat(m, start_room, items, fl, exhausted)   # no promotion: fast path
 
-    def _abs(v):
-        return v if isinstance(v, int) else OTHER
 
     def _overlay(rv):
         if not order:
@@ -893,7 +920,7 @@ def closure(m: FixModel, start_room, held=(), flags=None, exhausted=()):
         return tuple(lst)
 
     init_rv = mask(start_room, enter(start_room,
-                   tuple(_abs(next(iter(fl.get(r) or {0}))) for r in order)))
+                   tuple(m._abs(r, next(iter(fl.get(r) or {0}))) for r in order)))
     reach = {(start_room, init_rv)}                # (room, register-valuation)
 
     changed = True
