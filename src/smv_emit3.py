@@ -73,6 +73,25 @@ class OpEmitter:
         for rn, s in ir.scripts.items():
             for name, body in s.procs.items():
                 self.procs_by[(rn, name)] = body
+        # REGIONS: a room's `(setRegions: R)` activates region script R while you are in
+        # that room. Region-script effects (e.g. rm300.handleEvent's gWearingSunscreen:=3
+        # on the ship voyage) apply in the rooms that set the region, NOT in an unreachable
+        # "room R". region_rooms: region-script -> {rooms that activate it}.
+        self.region_rooms = {}
+        for rn, s in ir.scripts.items():
+            room = s.by_name.get(f"rm{rn}")
+            if room is None:
+                continue
+            for _mn, a in room.methods.items():
+                for n in I.walk(a):
+                    if n["t"] == "Send":
+                        recv, msgs = I.send_pairs(n)
+                        for sel, params in msgs:
+                            if sel == "setRegions":
+                                for p in params:
+                                    v = _int(p.get("value"))
+                                    if v is not None:
+                                        self.region_rooms.setdefault(v, set()).add(rn)
         for rn, s in ir.scripts.items():
             if rn not in self.ts.rooms:
                 continue
@@ -90,18 +109,25 @@ class OpEmitter:
         self.handler_gets = []         # (room, item, guard)
         self.handler_locals = []       # (room, script, (vt,idx), val, guard)
         for rn, s in ir.scripts.items():
-            if rn not in self.ts.rooms:
+            # target rooms: a region script's effects apply in the rooms that activate it;
+            # a real room's in itself. (A region "room" R is never entered directly.)
+            if rn in self.region_rooms:
+                targets = self.region_rooms[rn]
+            elif rn in self.ts.rooms:
+                targets = {rn}
+            else:
                 continue
-            for o in s.objects:
-                for mn, body in o.methods.items():
-                    # changeState -> machine (state-sequenced); init -> forced entry write.
-                    # EVERY other method's effects are captured here (globals + locals +
-                    # gets), FOLLOWING calls into other scripts, so nothing is absent.
-                    if mn in ("changeState", "init"):
-                        continue
-                    self._hwalk(rn, rn, body, [], set())
-            for pbody in s.procs.values():
-                self._hwalk(rn, rn, pbody, [], set())
+            for room in targets:
+                for o in s.objects:
+                    for mn, body in o.methods.items():
+                        # changeState -> machine; init -> forced entry write. EVERY other
+                        # method's effects captured here (globals + locals + gets),
+                        # FOLLOWING calls into other scripts, so nothing is absent.
+                        if mn in ("changeState", "init"):
+                            continue
+                        self._hwalk(room, rn, body, [], set())
+                for pbody in s.procs.values():
+                    self._hwalk(room, rn, pbody, [], set())
         for room, gi, v, g in self.handler_writes:
             self.reg_vals.setdefault(gi, {0}).add(v)
         for room, script, key, v, g in self.handler_locals:
