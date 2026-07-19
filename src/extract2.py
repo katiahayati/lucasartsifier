@@ -54,22 +54,30 @@ def atom(n):
 
 _OPS = {"Eq": "==", "Ne": "!=", "Gt": ">", "Ge": ">=", "Lt": "<", "Le": "<=",
         "Ugt": ">", "Uge": ">=", "Ult": "<", "Ule": "<="}
+_REV = {"==": "==", "!=": "!=", ">": "<", ">=": "<=", "<": ">", "<=": ">="}
 
 
 def _cmp_atom(n, tp):
+    """A comparison test -> a guard. Global vs literal -> Pred CMP; LOCAL/Temp vs literal ->
+    a CTR tuple `("CTR", (vt_char, idx), op, val)` (same format compile2 uses for machine
+    bodies), so gexpr resolves it against the tracked local. `henchStatus==0` and the like
+    used to fall through to OPAQUE -- the 'everything means everything' local-guard hole."""
     ks = n["kids"]
     if len(ks) < 2:
         return Pred("OPAQUE")
     a, b = ks[0], ks[1]
-    # normalize (global CMP number)
-    gvar = a if I.is_global(a) else (b if I.is_global(b) else None)
-    num = I.as_int(b) if I.is_global(a) else (I.as_int(a) if I.is_global(b) else None)
-    if gvar is not None and num is not None:
-        op = _OPS[tp]
-        if gvar is not b and I.is_global(a):
-            pass  # a op b, global on left: op as-is
-        return Pred("CMP", var=gvar["index"], op=op, value=str(num))
-    # a has:? property compares / position -> opaque
+    op = _OPS[tp]
+    # GLOBAL vs literal (op reversed if the global is on the right, e.g. `(< 5 gX)` = gX>5)
+    if I.is_global(a) and I.as_int(b) is not None:
+        return Pred("CMP", var=a["index"], op=op, value=str(I.as_int(b)))
+    if I.is_global(b) and I.as_int(a) is not None:
+        return Pred("CMP", var=b["index"], op=_REV[op], value=str(I.as_int(a)))
+    # LOCAL/TEMP vs literal -> tracked-local CTR guard (the previously-dropped 196)
+    if I.is_local_or_temp(a) and I.as_int(b) is not None:
+        return ("CTR", (a["vtype"][0], a["index"]), op, I.as_int(b))
+    if I.is_local_or_temp(b) and I.as_int(a) is not None:
+        return ("CTR", (b["vtype"][0], b["index"]), _REV[op], I.as_int(a))
+    # property / position compares -> opaque (genuinely undecidable)
     return Pred("OPAQUE")
 
 

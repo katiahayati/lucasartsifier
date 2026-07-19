@@ -68,6 +68,20 @@ def _is_cue_send(recv, msgs):
     return False
 
 
+def _setscript_target(param):
+    """The Script instance/class name a `setScript:` param refers to: `henchScript` (an
+    Object ref) or `(henchScript new:)` (a Send whose receiver is the Object)."""
+    if not isinstance(param, dict):
+        return None
+    if param.get("t") == "Object":
+        return param.get("name")
+    if param.get("t") == "Send" and param.get("kids"):
+        recv = param["kids"][0]
+        if isinstance(recv, dict) and recv.get("t") == "Object":
+            return recv.get("name")
+    return None
+
+
 class MachineBuilder:
     def __init__(self, ir, game_death):
         self.ir = ir
@@ -110,7 +124,49 @@ class MachineBuilder:
                 if mn in other.methods:
                     self._entries(other.methods[mn], [], m, script.number, set(),
                                   source=mn, is_self_obj=is_self)
+        # setScript entries: `(actor setScript: <m or (m new:)>)` in ANY method (incl a
+        # changeState body -- hench1Script state1 -> henchScript). These START m at state 0.
+        # The extractor dropped them, so setScript-driven machines (the henchmen chasers, the
+        # bottle) never ran -- which is WHY the absent-start fall-through hack was needed.
+        for other in script.objects:
+            for mn, body in other.methods.items():
+                self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn))
         return m
+
+    def _scan_setscript(self, node, pc, m, source):
+        """Find `(x setScript: <ref>)` where <ref> is m, and record an entry to m at state 0
+        with the path condition. Handles If/Cond path conditions."""
+        if node is None:
+            return
+        from model import GNot
+        tp = node["t"]
+        if tp == "If":
+            ks = node["kids"]
+            a = atom(ks[0])
+            self._scan_setscript(ks[1], pc + [a], m, source)
+            if len(ks) > 2:
+                self._scan_setscript(ks[2], pc + [GNot(a) if a else None], m, source)
+            return
+        if tp == "Cond":
+            priors = []
+            for c in node["kids"]:
+                if c["t"] == "Case":
+                    a = atom(c["kids"][0])
+                    self._scan_setscript(c["kids"][1], pc + priors + [a], m, source)
+                    priors = priors + [GNot(a) if a else None]
+                elif c["t"] == "Else":
+                    self._scan_setscript(c["kids"][0], pc + priors, m, source)
+            return
+        if tp == "Send":
+            _recv, msgs = I.send_pairs(node)
+            for sel, params in msgs:
+                if sel == "setScript" and params and _setscript_target(params[0]) == m.inst:
+                    g = _conj(pc)
+                    m.entries.append((0, g))
+                    if source == "init":
+                        m.init_entries.append((0, g))
+        for k in node.get("kids", ()):
+            self._scan_setscript(k, pc, m, source)
 
     def _top_switch(self, cs):
         for n in I.walk(cs):

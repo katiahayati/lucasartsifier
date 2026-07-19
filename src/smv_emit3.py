@@ -110,8 +110,8 @@ class OpEmitter:
         # when the player says "lower lifeboats"). Guard = the path condition (Said/opaque
         # permissive). Without these, promoted gates like `gLoweredLifeboats!=0` can never
         # open. Same shape as the disguise's gCurrentEgoView.
-        self.handler_writes = []       # (room, gi, val, guard)
-        self.handler_gets = []         # (room, item, guard)
+        self.handler_writes = []       # (room, script, gi, val, guard)  -- script for CTR-local resolve
+        self.handler_gets = []         # (room, script, item, guard)
         self.handler_locals = []       # (room, script, (vt,idx), val, guard)
         for rn, s in ir.scripts.items():
             # target rooms: a region script's effects apply in the rooms that activate it;
@@ -133,12 +133,16 @@ class OpEmitter:
                         self._hwalk(room, rn, body, [], set())
                 for pbody in s.procs.values():
                     self._hwalk(room, rn, pbody, [], set())
-        for room, gi, v, g in self.handler_writes:
+        for room, script, gi, v, g in self.handler_writes:
             self.reg_vals.setdefault(gi, {0}).add(v)
+            self._scan_domains_guard(g, script)      # CTR-local values in the guard
         for room, script, key, v, g in self.handler_locals:
             self.loc_vals.setdefault((script,) + key, {0})
             if isinstance(v, int):
                 self.loc_vals[(script,) + key].add(v)
+            self._scan_domains_guard(g, script)
+        for room, script, it, g in self.handler_gets:
+            self._scan_domains_guard(g, script)
         # domains: include compared values for globals/locals too (scan all machine guards)
         for info in self.machines:
             for K, paths in info["states"].items():
@@ -246,7 +250,7 @@ class OpEmitter:
             dst, src = node["kids"][0], node["kids"][1]
             v = _int(src.get("value"))
             if I.is_global(dst) and v is not None and not self.is_death(dst["index"], v):
-                self.handler_writes.append((room, dst["index"], v, _conj_atoms(pc)))
+                self.handler_writes.append((room, script, dst["index"], v, _conj_atoms(pc)))
             elif I.is_local_or_temp(dst):
                 self.handler_locals.append((room, script, (dst["vtype"][0], dst["index"]),
                                             v, _conj_atoms(pc)))
@@ -264,7 +268,7 @@ class OpEmitter:
                 if sel == "get" and I.is_global(recv, 0) and params:
                     it = _int(params[0].get("value"))
                     if it is not None:
-                        self.handler_gets.append((room, it, _conj_atoms(pc)))
+                        self.handler_gets.append((room, script, it, _conj_atoms(pc)))
         elif tp in ("PublicCall", "LocalCall"):
             self._follow_call(room, script, node, pc, seen)
         for k in node.get("kids", ()):
@@ -340,7 +344,10 @@ class OpEmitter:
                 self._scan_domains_guard(a, script)
 
     def _scan_domains_guard(self, g, script):
-        if isinstance(g, Pred) and g.kind == "CMP":
+        if isinstance(g, tuple) and g and g[0] == "CTR":       # local-compare guard
+            if script is not None:
+                self.loc_vals.setdefault((script,) + g[1], {0}).add(g[3])
+        elif isinstance(g, Pred) and g.kind == "CMP":
             v = _int(g.value)
             if v is not None:
                 self.reg_vals.setdefault(g.var, {0}).add(v)
@@ -505,27 +512,32 @@ class OpEmitter:
                     continue
                 nxt[ms].append((cond(f"action = {aid} & room = {R}", g), str(K)))
                 aid += 1
-            # ABSENT states fall through (advance to K+1) -- SCI's "wait for another cue"
-            # placeholder. Without this, ms advances INTO a gap state with no step and gets
-            # stuck (rm28Script: states 0,1,2,3,5 -- 4 absent -> 28->31 at s5 unreachable).
+            # ABSENT MID-SEQUENCE states fall through (advance to K+1) -- a genuine gap
+            # between defined states (rm28Script: states 0,1,2,3,5 -- 4 absent; without this
+            # s5 is unreachable). But NOT the START state: an absent start (reset target) is
+            # left ONLY via the machine's gated ENTRIES (changeState or setScript). Falling
+            # through it (0->1 free) was a BYPASS that skipped the entry gate -- rm63 jumped
+            # the plane without opening the door (needs the Bobby_Pin), so items looked "not
+            # required". Now safe to remove: setScript capture gave every machine real entries.
             allst = set(info["states"])
             if allst:
                 for K in range(min(allst | {info["start"]}), max(allst) + 1):
-                    if K not in allst:
+                    if K not in allst and K != info["start"]:
                         nxt[ms].append((f"action = {aid} & room = {R} & {ms} = {K}", str(K + 1)))
                         aid += 1
 
-        # player-action effects (handleEvent/doit register writes + item gets)
-        for room, gi, v, g in self.handler_writes:
+        # player-action effects (handleEvent/doit register writes + item gets). gexpr with
+        # the effect's own SCRIPT so a CTR-local guard (e.g. henchStatus==0) resolves.
+        for room, script, gi, v, g in self.handler_writes:
             if gi not in self.reg_dom:
                 continue
-            ge = self.gexpr(g, None)
+            ge = self.gexpr(g, script)
             if ge == "FALSE":
                 continue
             nxt[self._gv(gi)].append((cond(f"action = {aid} & room = {room}", ge), str(v)))
             aid += 1
-        for room, it, g in self.handler_gets:
-            ge = self.gexpr(g, None)
+        for room, script, it, g in self.handler_gets:
+            ge = self.gexpr(g, script)
             if ge == "FALSE":
                 continue
             nxt[f"item{it}"].append((cond(f"action = {aid} & room = {room}", ge), "TRUE"))
