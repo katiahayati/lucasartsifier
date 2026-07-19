@@ -102,7 +102,7 @@ def _guard_ok(guard, ctr, regs, script, track):
     return True
 
 
-def op_reach(em, cfg, track=frozenset()):
+def op_reach(em, cfg, track=frozenset(), cap=400000):
     """Track the registers in `track` faithfully; all others permissive."""
     track = frozenset(track)
     mbyroom = defaultdict(list)
@@ -136,6 +136,8 @@ def op_reach(em, cfg, track=frozenset()):
     op_delivers = defaultdict(set)
 
     while frontier:
+        if len(seen) > cap:
+            raise RuntimeError('cap')
         room, ms, ctr, regs = frontier.pop()
         msd, ctrd, rd = dict(ms), dict(ctr), dict(regs)
         succ = []
