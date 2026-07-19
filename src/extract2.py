@@ -215,15 +215,54 @@ class Extractor:
         recv, msgs = I.send_pairs(node)
         for sel, params in msgs:
             if sel in ("newRoom", "entranceTo") and params:
-                dst = I.as_int(params[0])
-                if dst is not None:
-                    (self.ts.edges if movement else self.ts.cs_edges).append(
-                        Edge(room, dst, _conj(pc)))
+                dsts = [I.as_int(params[0])]
+                if dsts[0] is None and I.is_global(params[0]):
+                    # INDIRECT destination `newRoom: <global>` -- a routing room whose next
+                    # room is held in a global (rm40's revolving door: gRmAfter40 cycles
+                    # 42..45). Resolve to the room numbers that global can hold; dropping it
+                    # made rm43 (the Knife) and its cluster unreachable -> endgame sealed.
+                    dsts = self._global_room_values(room, params[0]["index"])
+                for dst in dsts:
+                    if dst is not None:
+                        (self.ts.edges if movement else self.ts.cs_edges).append(
+                            Edge(room, dst, _conj(pc)))
             elif sel == "get" and I.is_global(recv, G_EGO) and params:
                 it = I.as_int(params[0])
                 if it is not None:
                     self.ts.items.add(it)
                     self.ts.acqs.append(Acq(it, room, _conj(pc)))
+
+    def _global_room_values(self, room, gi):
+        """Room numbers a `newRoom:` global can hold, from switch-on-G case labels and
+        `(= G lit)` assignments anywhere in this room's script. Filtered to real rooms
+        (an rm<N> Room instance exists), so cycle counters like 0 are excluded."""
+        vals = set()
+        s = self.ir.scripts.get(room)
+        if s is None:
+            return vals
+
+        def is_room(v):
+            rs = self.ir.scripts.get(v)
+            return rs is not None and _room_object(rs) is not None
+
+        for o in s.objects:
+            for _mn, ast in o.methods.items():
+                for n in I.walk(ast):
+                    if n["t"] == "Switch":
+                        head = n["kids"][0]
+                        if head.get("t") == "Variable" and head.get("vtype") == "Global" \
+                                and head.get("index") == gi:
+                            for c in n["kids"][1:]:
+                                if c["t"] == "Case":
+                                    v = I.as_int(c["kids"][0])
+                                    if v is not None and is_room(v):
+                                        vals.add(v)
+                    elif n["t"] == "Assignment" and I.is_global(n["kids"][0]) \
+                            and n["kids"][0].get("index") == gi:
+                        v = I.as_int(n["kids"][1])
+                        if v is not None and is_room(v):
+                            vals.add(v)
+        return vals
 
 
 def extract(ir):

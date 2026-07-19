@@ -41,6 +41,12 @@ class Machine:
     states: dict = field(default_factory=dict)     # k -> [Op] in source order (debug view)
     bodies: dict = field(default_factory=dict)     # k -> state body AST (for path compile)
     entries: list = field(default_factory=list)    # [(state, guard)] how it is entered
+    init_entries: list = field(default_factory=list)  # entries from the room's INIT method only.
+    #   These run atomically with room init, so they must be bundled onto ROOM ARRIVAL and
+    #   evaluated on the pre-entry state -- else an init write to the guard register (rm79:
+    #   init sets gIslandStatus:=3, the `changeState 1` cutscene guard is gIslandStatus==2)
+    #   makes the standalone one-step-later entry never fire. Player-triggered entries
+    #   (handleEvent/doit) stay in `entries` (evaluated in-room, post-init).
     start: int = 0
 
     def __repr__(self):
@@ -97,9 +103,13 @@ class MachineBuilder:
         # (guarded) -- the machine is often started/redirected by the ROOM object, not by
         # itself (rm65.init -> rm65Script changeState: survive-or-die on gCurrentStatus).
         for other in script.objects:
+            is_self = (other.name == m.inst)   # `self` in other's method means `other`,
+            #   so a `(self changeState:K)` is an entry to THIS machine ONLY when other IS it.
+            #   Cross-object starts must name the instance: `(<m.inst> changeState:K)`.
             for mn in ("init", "handleEvent", "doit"):
                 if mn in other.methods:
-                    self._entries(other.methods[mn], [], m, script.number, set())
+                    self._entries(other.methods[mn], [], m, script.number, set(),
+                                  source=mn, is_self_obj=is_self)
         return m
 
     def _top_switch(self, cs):
@@ -112,7 +122,7 @@ class MachineBuilder:
                         return n
         return None
 
-    def _entries(self, node, pc, m, script, seen):
+    def _entries(self, node, pc, m, script, seen, source=None, is_self_obj=False):
         """Find player-triggered `(self changeState: K)` entries and the FULL path
         condition that gates them -- handling If AND Cond, and FOLLOWING PublicCall/
         LocalCall (the changeState often lives inside a proc, and the guard, e.g.
@@ -124,25 +134,27 @@ class MachineBuilder:
         if tp == "If":
             ks = node["kids"]
             a = atom(ks[0])
-            self._entries(ks[1], pc + [a], m, script, seen)
+            self._entries(ks[1], pc + [a], m, script, seen, source, is_self_obj)
             if len(ks) > 2:
-                self._entries(ks[2], pc + [GNot(a) if a else None], m, script, seen)
+                self._entries(ks[2], pc + [GNot(a) if a else None], m, script, seen, source, is_self_obj)
             return
         if tp == "Cond":
             priors = []
             for c in node["kids"]:
                 if c["t"] == "Case":
-                    self._entries(c["kids"][1], pc + priors + [atom(c["kids"][0])], m, script, seen)
+                    self._entries(c["kids"][1], pc + priors + [atom(c["kids"][0])], m, script, seen, source, is_self_obj)
                     priors = priors + [GNot(atom(c["kids"][0]))]
                 elif c["t"] == "Else":
-                    self._entries(c["kids"][0], pc + priors, m, script, seen)
+                    self._entries(c["kids"][0], pc + priors, m, script, seen, source, is_self_obj)
             return
         if tp == "Send":
             recv, msgs = I.send_pairs(node)
-            # `(self changeState:K)` OR `(theMachineInstance changeState:K)` from ANOTHER
-            # object -- rm65.init does `(rm65Script changeState: 4)` gated on gCurrentStatus
-            # to start the survive segment; matching only Self missed it.
-            targets_me = (recv.get("t") == "Self"
+            # `(self changeState:K)` only when scanning THIS machine's own object; OR
+            # `(theMachineInstance changeState:K)` from ANOTHER object -- rm65.init does
+            # `(rm65Script changeState: 4)` gated on gCurrentStatus to start the survive
+            # segment. Matching bare Self across objects mis-attributed rm34Script's
+            # `changeState: 9/15` to henchScript (the disguise), etc.
+            targets_me = ((recv.get("t") == "Self" and is_self_obj)
                           or (recv.get("t") == "Object" and recv.get("name") == m.inst))
             if targets_me:
                 for sel, params in msgs:
@@ -150,14 +162,16 @@ class MachineBuilder:
                         k = I.as_int(params[0])
                         if k is not None:
                             m.entries.append((k, _conj(pc)))
+                            if source == "init":
+                                m.init_entries.append((k, _conj(pc)))
         elif tp in ("PublicCall", "LocalCall"):
             tgt = node.get("script", script)
             name = node.get("name")
             body = self.procs_by.get((tgt, name))
             if tgt != 255 and body is not None and name not in seen:
-                self._entries(body, pc, m, tgt, seen | {name})
+                self._entries(body, pc, m, tgt, seen | {name}, source, is_self_obj)
         for k in node.get("kids", ()):
-            self._entries(k, pc, m, script, seen)
+            self._entries(k, pc, m, script, seen, source, is_self_obj)
 
     def _ops(self, node, pc, out):
         """Walk a state body, composing path conditions, appending guarded ops."""

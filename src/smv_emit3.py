@@ -67,7 +67,12 @@ class OpEmitter:
         self.machines = []          # list of dict
         self.reg_vals = {}          # global index -> set of int values (domain)
         self.loc_vals = {}          # (script, 'L'/'T', idx) -> set of int values
-        self.init_writes = {}       # room -> {gi: val} forced on entry
+        self.init_writes = {}       # room -> {gi: val} UNCONDITIONAL entry writes (initial value)
+        self.init_seq = {}          # room -> ordered [(gi, val, guard)] entry writes, source order.
+        #   Conditional init writes (inside if/cond) keep their guard instead of being FORCED --
+        #   the rm79 seal: `(NormalEgo)` g101:=0 unconditional, then `(= gCurrentStatus 11)` only
+        #   `if gIslandStatus==2`; flattening forced g101=11 always -> every win edge (needs
+        #   g101==0) sealed. Emitted as ordered guarded cases (last source wins where guard holds).
         self.deaths = []            # (room, guard) flat/machine deaths
         self.procs_by = {}          # (script, proc-name) -> body AST, for call-following
         for rn, s in ir.scripts.items():
@@ -148,9 +153,10 @@ class OpEmitter:
                     self._scan_domains(guard, info["script"])
             for K, eg in info["entries"]:
                 self._scan_domains_guard(eg, info["script"])
-        for room, wr in self.init_writes.items():
-            for gi, v in wr.items():
+        for room, seq in self.init_seq.items():
+            for gi, v, g in seq:
                 self.reg_vals.setdefault(gi, {0}).add(v)
+                self._scan_domains_guard(g, None)   # guard values (e.g. gIslandStatus==2)
         # exits the machines can deliver -> which changeState newRoom targets DON'T need a
         # flat fallback (the rest do, gated by their extract2 path condition).
         self.machine_delivered = set()
@@ -210,7 +216,8 @@ class OpEmitter:
         except Exception:
             delivered = set()
         return {"room": room, "inst": m.inst, "script": m.script, "states": states,
-                "entries": m.entries, "start": m.start, "delivered": delivered}
+                "entries": m.entries, "init_entries": m.init_entries,
+                "start": m.start, "delivered": delivered}
 
     def _hwalk(self, room, script, node, pc, seen):
         """Path-condition walk of a handler; record global + local writes + item gets,
@@ -274,26 +281,52 @@ class OpEmitter:
         obj = script.by_name.get(f"rm{room}")
         if obj is None or "init" not in obj.methods:
             return
-        # forced-on-entry global writes, FOLLOWING calls (e.g. proc0_2 = the hands-on
-        # reset gCurrentStatus:=0, called from 66 room inits). Source order -> last wins.
-        self._init_walk(room, script.number, obj.methods["init"], set())
+        # Entry global writes WITH their path condition, FOLLOWING calls (e.g. proc0_2 =
+        # the hands-on reset gCurrentStatus:=0, called from 66 room inits). Records the full
+        # ordered guarded sequence; UNCONDITIONAL writes ALSO feed init_writes (initial value).
+        self._init_walk(room, script.number, obj.methods["init"], [], set())
 
-    def _init_walk(self, room, script, node, seen):
+    def _init_walk(self, room, script, node, pc, seen):
         if node is None:
             return
         tp = node["t"]
+        if tp == "If":
+            ks = node["kids"]
+            a = atom(ks[0])
+            self._init_walk(room, script, ks[1], pc + [a], seen)
+            if len(ks) > 2:
+                self._init_walk(room, script, ks[2], pc + [GNot(a) if a else None], seen)
+            return
+        if tp == "Cond":
+            priors = []
+            for c in node["kids"]:
+                if c["t"] == "Case":
+                    a = atom(c["kids"][0])
+                    self._init_walk(room, script, c["kids"][1], pc + priors + [a], seen)
+                    priors = priors + [GNot(a) if a else None]
+                elif c["t"] == "Else":
+                    self._init_walk(room, script, c["kids"][0], pc + priors, seen)
+            return
+        if tp in ("Switch", "Loop"):
+            # a value we can't decide -> writes inside are CONDITIONAL (optional), never forced
+            for k in node.get("kids", ()):
+                self._init_walk(room, script, k, pc + [Pred("OPAQUE")], seen)
+            return
         if tp == "Assignment" and I.is_global(node["kids"][0]):
             gi, v = node["kids"][0]["index"], _int(node["kids"][1].get("value"))
             if v is not None and not self.is_death(gi, v):
-                self.init_writes.setdefault(room, {})[gi] = v
+                g = _conj_atoms(pc)
+                self.init_seq.setdefault(room, []).append((gi, v, g))
+                if g is None:                    # unconditional -> also the initial value
+                    self.init_writes.setdefault(room, {})[gi] = v
         elif tp in ("PublicCall", "LocalCall"):
             tgt = node.get("script", script)
             name = node.get("name")
             body = self.procs_by.get((tgt, name))
             if tgt != 255 and body is not None and name not in seen:
-                self._init_walk(room, tgt, body, seen | {name})
+                self._init_walk(room, tgt, body, pc, seen | {name})
         for k in node.get("kids", ()):
-            self._init_walk(room, script, k, seen)
+            self._init_walk(room, script, k, pc, seen)
 
     def _scan_domains(self, guard, script):
         for a in guard:
@@ -516,11 +549,34 @@ class OpEmitter:
             nxt[lv].append((cond(f"action = {aid} & room = {room}", ge), val))
             aid += 1
 
-        # init writes forced on entering a room (bundle onto every room-changing action)
+        # init writes bundled onto every room-changing action, WITH their entry guards.
+        # Source order + insert(0) => the last source write to a register sits FIRST (highest
+        # priority); first-match-wins then reproduces "later assignment wins where its guard
+        # holds" (rm79: g101:=11 if gIslandStatus==2, else the unconditional NormalEgo g101:=0).
+        machines_by_room = defaultdict(list)
+        for info in self.machines:
+            machines_by_room[info["room"]].append(info)
+        self._ms_arrival = defaultdict(list)     # ms -> [(arrival_cond, entry_state)]
         for c, target in room_change:
-            for gi, v in self.init_writes.get(target, {}).items():
-                if gi in self.reg_dom:
-                    nxt[self._gv(gi)].insert(0, (c, str(v)))   # entry write wins (first)
+            for gi, v, g in self.init_seq.get(target, []):
+                if gi not in self.reg_dom:
+                    continue
+                ge = self.gexpr(g, None)
+                if ge == "FALSE":
+                    continue
+                cc = c if ge == "TRUE" else f"({c}) & {ge}"
+                nxt[self._gv(gi)].insert(0, (cc, str(v)))
+            # INIT-sourced machine entries run atomically with init -> fire on ARRIVAL,
+            # entry guard evaluated on the PRE-entry (source-room) state (same state the init
+            # writes above read). Emitted ahead of the ms reset-to-start (see _emit_ms_next).
+            for info in machines_by_room.get(target, ()):
+                ms = self._ms(info)
+                for K, eg in info.get("init_entries", ()):
+                    ge = self.gexpr(eg, info["script"])
+                    if ge == "FALSE":
+                        continue
+                    cc = c if ge == "TRUE" else f"({c}) & {ge}"
+                    self._ms_arrival[ms].append((cc, str(K)))
 
         n_act = max(1, aid)
         return self._render(nxt, n_act)
@@ -615,6 +671,10 @@ class OpEmitter:
         ms = self._ms(info)
         R = info["room"]
         L.append(f"  next({ms}) := case")
+        # INIT entries fire on arrival (room is still the source here, != R) and must win over
+        # the reset-to-start below, so they come FIRST.
+        for c, v in getattr(self, "_ms_arrival", {}).get(ms, []):
+            L.append(f"    {c} : {v};")
         L.append(f"    room != {R} : {info['start']};")   # reset/park to start when away
         for c, v in nxt.get(ms, []):
             L.append(f"    {c} : {v};")
