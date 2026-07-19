@@ -191,11 +191,14 @@ class Extractor:
                 self._walk(room, body, pc, script, seen, movement)
             return
         if tp == "Cond":
+            priors = []   # a case (and the else) runs only if all PRIOR cases failed
             for k in node["kids"]:
                 if k["t"] == "Case":
-                    self._walk(room, k["kids"][1], pc + [atom(k["kids"][0])], script, seen, movement)
+                    a = atom(k["kids"][0])
+                    self._walk(room, k["kids"][1], pc + priors + [a], script, seen, movement)
+                    priors = priors + [GNot(a) if a is not None else None]
                 elif k["t"] == "Else":
-                    self._walk(room, k["kids"][0], pc, script, seen, movement)
+                    self._walk(room, k["kids"][0], pc + priors, script, seen, movement)
             return
         if tp == "Loop":
             self._walk(room, node["kids"][0], pc, script, seen, movement)

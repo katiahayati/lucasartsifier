@@ -233,11 +233,14 @@ class OpEmitter:
                 self._hwalk(room, script, ks[2], pc + [GNot(a) if a else None], seen)
             return
         if tp == "Cond":
+            priors = []   # a case (and the else) runs only if all PRIOR cases failed
             for c in node["kids"]:
                 if c["t"] == "Case":
-                    self._hwalk(room, script, c["kids"][1], pc + [atom(c["kids"][0])], seen)
+                    a = atom(c["kids"][0])
+                    self._hwalk(room, script, c["kids"][1], pc + priors + [a], seen)
+                    priors = priors + [GNot(a) if a is not None else None]
                 elif c["t"] == "Else":
-                    self._hwalk(room, script, c["kids"][0], pc, seen)
+                    self._hwalk(room, script, c["kids"][0], pc + priors, seen)
             return
         if tp == "Assignment":
             dst, src = node["kids"][0], node["kids"][1]

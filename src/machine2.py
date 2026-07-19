@@ -187,11 +187,15 @@ class MachineBuilder:
                 self._ops(ks[2], pc + [GNot(a) if a else None], out)
             return
         if tp == "Cond":
+            from model import GNot
+            priors = []   # a case (and the else) runs only if all PRIOR cases failed
             for c in node["kids"]:
                 if c["t"] == "Case":
-                    self._ops(c["kids"][1], pc + [atom(c["kids"][0])], out)
+                    a = atom(c["kids"][0])
+                    self._ops(c["kids"][1], pc + priors + [a], out)
+                    priors = priors + [GNot(a) if a is not None else None]
                 elif c["t"] == "Else":
-                    self._ops(c["kids"][0], pc, out)
+                    self._ops(c["kids"][0], pc + priors, out)
             return
         if tp == "Switch":
             for c in node["kids"][1:]:
