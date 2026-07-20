@@ -63,9 +63,15 @@ LSL2 = GameConfig(
     # (intro cutscenes, reused as island cutscenes) are tangled into the island SCC,
     # so we anchor at a core LA room whose component reaches every act.
     start_room=21,
-    # Victory = the Nontoonyt Island wedding endgame (rm78 ceremony -> rm178 ending).
-    goal_rooms=frozenset({75, 76, 77, 78, 178}),
-    goal_scripts=(75, 76, 77, 78, 178),
+    # Victory = the ENDING (rm178), reached only via the rm78 wedding ceremony (which needs
+    # gIslandStatus==105 <- 104 <- 103 <- rm92 <- the volcano <- the bomb). The approach rooms
+    # rm75/76/77 and rm78-the-room are walk-reachable BEFORE the wedding (rm74->75 is a free
+    # positional exit; rm77 has `east 78`), so counting them as victory lets the endgame be
+    # bypassed. Tightened 2026-07-20 to require the wedding. NOTE: the volcano is still
+    # bypassable via the rm90-93 intro-cutscene tangle (rm92 <- rm91 <- rm90) -- see
+    # docs/NOTES / the endgame-cluster memory; that untangling is separate open work.
+    goal_rooms=frozenset({178}),
+    goal_scripts=(78, 178),
     timer_globals=frozenset({
         "gRgTimer", "gGameSeconds", "gCurrentTimer", "gSeconds", "gMinutes", "gHours",
     }),

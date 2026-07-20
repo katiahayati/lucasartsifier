@@ -76,6 +76,25 @@ met by arming. `control_oracle._disguise_condition` derives it from the init wri
 green). Validation (op_disguise.py) running: base winnable + Bikini_Bottom(16)/Bikini_Top(15)
 REQUIRED.
 
+## Disguise VALIDATED (task #17, 2026-07-20)
+op_disguise.py (old goal): **Bikini_Bottom(16) REQUIRED=True, Bikini_Top(15) REQUIRED=True**
+(pin off -> unwinnable, ~440s each). The disguise-condition gate WORKS. Caveat: base-winnable
+timed out at 3200s (IC3 finds the UNSAT/unwinnable proofs fast but the deep winning path slow);
+op_final.py re-confirms base under a bigger timeout.
+
+## Endgame refactor (task #18, 2026-07-20) -- PARTIAL
+goal_rooms tightened {75,76,77,78,178} -> {178} (the ending; rm75/76/77/rm78-room are
+walk-reachable BEFORE the wedding). The gIslandStatus chain is actually CAPTURED and correct:
+103(rm92 volcano)->104(given 103)->105(given 104); rm78's wedding delivery ->178 IS gated on
+gIslandStatus==105 (entry (1, ==105); state 0 parks). BUT the volcano is still BYPASSABLE:
+**rm92 (which sets gIslandStatus:=103) is reachable via rm91<-rm90 (intro cutscenes), and
+rm92Script's free entry (0,None)/(1,not100&not102) advances to state 28 (:=103) without the
+volcano.** So gIslandStatus==103 doesn't require the bomb. This is the documented
+[[lsl2-bomb-has-no-script-level-gate]] "endgame cluster" (rm90-93 tangled into the island SCC)
+-- a separate untangling, larger than this session. The goal tightening is the right, necessary
+first step; the bomb won't be REQUIRED until the rm90-93 tangle is closed. (gForceAtest was a
+red herring -- init 0, never written, so pinned.)
+
 ## Remaining oracle-hardening TODOs (generality #2-#4, still single-example)
 - cel[0]=closed / cel[-1]=open (door could animate the other way).
 - `_gated_room` follows linear state->state+1 (ignores JUMP/SETSTATE).
