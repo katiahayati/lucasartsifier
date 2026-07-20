@@ -56,6 +56,28 @@ Goal: make deep, target-directed queries tractable so the missability sweep beco
 6. **Wire in** — make the slice automatic per query so `winnable()`, the requirements sweep,
    and the missability sweep all use it.
 
+## COI — empirical findings (2026-07-20)
+- **Compression (depth lever) WORKS.** rm84's 81-state cutscene → ~4 hops; the UNSAT/
+  requirement direction went 34s → **5s (~7×)** and stayed sound (bomb still REQUIRED). This
+  is the direction the missability sweep lives in, so it's the win that matters.
+- **Room-corridor slicing (width lever) is INEFFECTIVE on LSL2.** The map is one big SCC:
+  the sound (guard-ignoring) start→target corridor keeps **83 of 101 rooms** for the volcano
+  (84 for rm178). It drops almost nothing, so the ~1522 opaque free inputs + position IVARs
+  (the real width) stay. Classic COI can't unblock the positive SAT direction here.
+- **Consequence:** the deep POSITIVE direction (base reaches the volcano; base winnable to
+  178) stays intractable. But it is NOT on the critical path — the missability sweep uses
+  fast UNSAT/requirement queries (compression-accelerated), and non-vacuity holds structurally.
+- **Opaque ELIMINATION (the real width lever, exact) DONE.** The ~1522 opaques are INDEPENDENT
+  fresh free inputs, so a guard `real & f(opaques)` is enabled exactly when `real` holds (f is
+  always satisfiable). Existentially projecting them out (`_permissive` -> OPAQUE sentinel;
+  `_gx` drops it in AND, absorbs OR to TRUE, keeps it under NOT via De Morgan; public `gexpr`
+  maps a surviving OPAQUE to TRUE) gives a model reachability-IDENTICAL to the free-input
+  encoding but with **0 free booleans** (was ~1522). Real guards (disguise g_131 & g_102==151,
+  the bomb latch, rects) untouched. Tests 32+25 green. Room-independent, so it dodges the
+  dense-SCC problem that killed the room slice.
+- **Still open (smaller):** position abstraction (posx/posy 0..319/0..189 -> band booleans) --
+  only ~17 input bits vs the 1522 opaque bits just removed, so likely second-order.
+
 ## After COI
 The missability sweep (turn "required" into "actually a softlock"), then re-enable a *safe*
 patcher (never force a fatal item — the Spinach_Dip trap). Auto-discovery of start/goal is a

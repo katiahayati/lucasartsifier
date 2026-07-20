@@ -443,9 +443,14 @@ class OpEmitter:
 
     # ---- guard -> SMV ------------------------------------------------
     def _permissive(self):
-        k = self.n_opaque
-        self.n_opaque += 1
-        return f"opq{k}"
+        # An opaque (unresolvable) guard atom. Opaques are INDEPENDENT fresh free choices, so a
+        # guard `real & f(opaques)` is enabled exactly when `real` holds -- f is always
+        # satisfiable by some opaque assignment. We therefore EXISTENTIALLY PROJECT the opaques
+        # out: `_gx` propagates this OPAQUE sentinel (dropped in AND, absorbs OR to TRUE, stays
+        # OPAQUE under NOT) and the public `gexpr` maps a surviving OPAQUE to TRUE. The result is
+        # reachability-IDENTICAL to a free-input encoding but emits ZERO free booleans -- the
+        # dominant width reduction for nuXmv (was ~1500 opaque IVARs on LSL2).
+        return "OPAQUE"
 
     def _posexpr(self, g):
         """A POS guard -> SMV over the ego's free (x,y) (posx/posy IVARs). ONE consistent
@@ -465,7 +470,13 @@ class OpEmitter:
         return self._permissive()
 
     def gexpr(self, g, script):
-        """External guard tree -> SMV; script gives the counter namespace for CTR."""
+        """External guard tree -> SMV; script gives the counter namespace for CTR. Opaques are
+        existentially projected out (see _permissive): `_gx` may return the OPAQUE sentinel,
+        which at the top level means the guard is freely satisfiable -> TRUE."""
+        r = self._gx(g, script)
+        return "TRUE" if r == "OPAQUE" else r
+
+    def _gx(self, g, script):
         if g is None:
             return "TRUE"
         if isinstance(g, tuple) and g and g[0] == "CTR":
@@ -479,19 +490,30 @@ class OpEmitter:
         if isinstance(g, tuple) and g and g[0] == "POS":
             return self._posexpr(g)
         if isinstance(g, GAnd):
-            ks = [self.gexpr(k, script) for k in g.kids]
+            ks = [self._gx(k, script) for k in g.kids]
             if "FALSE" in ks:
                 return "FALSE"
-            ks = [k for k in ks if k != "TRUE"]
+            ks = [k for k in ks if k not in ("TRUE", "OPAQUE")]   # opaques projected out of AND
             return "(" + " & ".join(ks) + ")" if ks else "TRUE"
         if isinstance(g, GOr):
-            ks = [self.gexpr(k, script) for k in g.kids]
-            if "TRUE" in ks:
+            ks = [self._gx(k, script) for k in g.kids]
+            if "TRUE" in ks or "OPAQUE" in ks:   # an opaque disjunct is satisfiable -> TRUE
                 return "TRUE"
             ks = [k for k in ks if k != "FALSE"]
             return "(" + " | ".join(ks) + ")" if ks else "FALSE"
         if isinstance(g, GNot):
-            inner = self.gexpr(g.kid, script)
+            k = g.kid
+            # push negation to leaves (NNF/De Morgan) so an opaque literal stays a leaf and its
+            # OPAQUE sentinel is projected out correctly (¬opaque is also freely satisfiable).
+            if isinstance(k, GAnd):
+                return self._gx(GOr([GNot(x) for x in k.kids]), script)
+            if isinstance(k, GOr):
+                return self._gx(GAnd([GNot(x) for x in k.kids]), script)
+            if isinstance(k, GNot):
+                return self._gx(k.kid, script)
+            inner = self._gx(k, script)
+            if inner == "OPAQUE":
+                return "OPAQUE"
             if inner == "TRUE":
                 return "FALSE"
             if inner == "FALSE":
