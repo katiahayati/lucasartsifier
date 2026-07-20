@@ -277,7 +277,11 @@ class OpEmitter:
                 if dst is None:
                     continue
                 self.loc_vals.setdefault((room, vt, idx), {0}).add(bad)
-                safe = GNot(("CTR", (vt, idx), "==", bad))
+                # Prefer the derived DISGUISE CONDITION (persistent globals, e.g. gBodyWaxed &
+                # egoView==151) -- it makes the disguise ITEMS required (egoView is item-gated)
+                # and can't be satisfied by ARMING the henchmen (henchStatus==1). Fall back to
+                # the local's safe value only if the init disguise-write wasn't found.
+                safe = gate.get("safe_guard") or GNot(("CTR", (vt, idx), "==", bad))
                 for e in self.ts.edges:
                     if e.src == room and e.dst == dst:
                         e.guard = safe if e.guard is None else GAnd([e.guard, safe])

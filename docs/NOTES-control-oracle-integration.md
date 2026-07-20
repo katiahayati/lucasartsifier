@@ -46,6 +46,41 @@ tracked domain. Confirmed in the emitted SMV:
 3. #15 remove cruft: delete `_doit_death_gates`; branch off the legacy engine.
 4. #16 long nuXmv run: base stays winnable + bomb (19,21) & disguise items REQUIRED.
 
+## Status at commit a03cafe (2026-07-19)
+- #13 rm82 gate tests: DONE (test_control_oracle.py, 31 pass).
+- #14 rm47 crossing-gate: DONE. `crossing_forces_rect` proves east forces the rect, west
+  does not; gate keyed on henchStatus (L2)!=0; only 47->48 gated, 47->42 FREE.
+- #15 cruft removal: DONE. `_doit_death_gates` (+ _scan_doit_hazard/_cs_effects/_find_ctr_eq)
+  DELETED (user: not the right thing, over-gates, doesn't work). Legacy engine moved to
+  branch `legacy-engine` and removed from here (closure/machine/smv_emit/smv_emit2/
+  nuxmv_engine/examples/_check_core/coverage). JSON-IR chain self-contained; test_everything
+  disguise check repointed onto the oracle (25 pass).
+  - KNOWN REGRESSION (red/TODO): rm50 airport metal detector (non-positional doit-reactive
+    death) is now ungated. Disguise still REQUIRED via rm47, so the item conclusion holds;
+    a general non-positional reactive-death detector is future work.
+- #16 long operational nuXmv validation: RUNNING (op_val.py: base winnable + Matches(19)/
+  Hair_Rejuvenator(21)/Bikini_Bottom(16) REQUIRED). ~15min+/query; result pending.
+
+## Disguise requirement fix (task #17, 2026-07-20)
+The rm47 crossing-gate was PLACED right (47->48 is on the critical path) but the gate was
+WRONG: `henchStatus != 0` is also satisfied by the ARMED value henchStatus==1, and the death
+from arming isn't forced -> the model could arm-and-cross without the disguise. Worse, the
+`henchStatus:=8` (disguised) init write is DROPPED by extraction, so henchStatus can never be
+8 -> gating on `==8` would break base. FIX: gate 47->48 on the DISGUISE CONDITION itself --
+the guard of the init write `(if (and gBodyWaxed (== egoView 151)) (= henchStatus 8))`, i.e.
+`GAnd([gBodyWaxed!=0, egoView==151])`. This is over persistent GLOBALS; `egoView==151` is
+item-gated via the captured bikini chain (`egoView:=150` requires own(15)&own(16);
+`egoView:=151` requires egoView==150), so it makes the bikini items required, and it can't be
+met by arming. `control_oracle._disguise_condition` derives it from the init write;
+`_apply_control_gates` prefers gate['safe_guard'] over the old `!= bad`. Tests updated (32+25
+green). Validation (op_disguise.py) running: base winnable + Bikini_Bottom(16)/Bikini_Top(15)
+REQUIRED.
+
+## Remaining oracle-hardening TODOs (generality #2-#4, still single-example)
+- cel[0]=closed / cel[-1]=open (door could animate the other way).
+- `_gated_room` follows linear state->state+1 (ignores JUMP/SETSTATE).
+- latch must be a co-located persistent write in the opener state.
+
 ## Open validation
 The 900s-timeout run gave no verdict (base winnability alone > 900s, and the *before*-gate
 baseline also didn't finish in ~15-20 min -> it's the engine's inherent cost, not the gate).

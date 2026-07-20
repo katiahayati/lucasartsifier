@@ -172,18 +172,16 @@ def test_crossing_gate():
     check("full sweep = rm47 crossing + rm82 prop",
           ("crossing", 47, 48) in kinds and ("prop", 82, 83) in kinds, str(kinds))
     # emitter: 47->48 carries the safe guard, and henchStatus can be != 0 (satisfiable -> winnable)
+    # the gate is the derived DISGUISE CONDITION (gBodyWaxed & egoView==151), not henchStatus,
+    # so it makes the bikini items required (egoView==151 is item-gated) and can't be met by arming
+    east = [g for g in cg if g["gated_room"] == 48]
+    check("crossing gate carries a disguise condition (safe_guard)", east and east[0].get("safe_guard") is not None)
+    check("... safe_value is the disguise value 8", east and east[0].get("safe_value") == 8)
     import smv_emit3 as E
-    from model import GNot
     em = E.OpEmitter(ir, config.LSL2, lambda gi, v: gi == 101 and v == 1001)
     e48 = [e for e in em.ts.edges if e.src == 47 and e.dst == 48]
-    def has_safe(g):
-        from model import GAnd, GOr
-        if isinstance(g, GNot) and g.kid == ("CTR", ("L", 2), "==", 0): return True
-        if isinstance(g, (GAnd, GOr)): return any(has_safe(k) for k in g.kids)
-        return False
-    check("emitter gates 47->48 on NOT(henchStatus==0)", e48 and has_safe(e48[0].guard))
-    lo, hi = em.loc_dom.get((47, "L", 2), (0, 0))
-    check("henchStatus domain admits a value != 0 (disguise satisfiable)", hi > 0, f"[{lo},{hi}]")
+    g48 = repr(e48[0].guard).replace(" ", "") if e48 else ""
+    check("emitter gates 47->48 on the disguise condition (egoView==151)", "102==151" in g48, g48)
 
 
 def run():

@@ -142,8 +142,10 @@ def test_disguise():
     e48 = [e for e in em.ts.edges if e.src == 47 and e.dst == 48]
     check("rm47->48 exit is gated (not free)", e48 and e48[0].guard is not None)
     if e48 and e48[0].guard is not None:
-        vs = set(); _ctr_vars(e48[0].guard, vs)
-        check("rm47->48 gate references henchStatus local (L,2)", ("L", 2) in vs, str(vs))
+        # the gate is now the derived disguise condition (gBodyWaxed & egoView==151), which
+        # makes the bikini items required -- egoView==151 is item-gated via the bikini chain
+        g48 = repr(e48[0].guard).replace(" ", "")
+        check("rm47->48 gate is the disguise condition (egoView==151)", "102==151" in g48, g48)
     e42 = [e for e in em.ts.edges if e.src == 47 and e.dst == 42]
     check("rm47->42 retreat is NOT over-gated (free, unlike old _doit_death_gates)",
           e42 and e42[0].guard is None, repr(e42[0].guard) if e42 else "no edge")

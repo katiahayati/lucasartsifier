@@ -26,6 +26,8 @@ import ir as I
 from sci_resource import Sci0Game
 import sci_gfx
 from sci_gfx import W, H
+from model import GAnd, GOr, GNot
+from extract2 import atom
 
 # control bit N ($ mask 1<<N) blocks the ego iff N is in its illegalBits.
 # Actor default illegalBits = $8000 (control color 15). Rooms may add more via
@@ -400,6 +402,44 @@ def _has_setscript(node):
             return True
     return False
 
+def _cond_to_guard(node):
+    """Build a guard tree from a condition AST (And/Or/Not over atoms), reusing the
+    extractor's atom() so item/global/position atoms come out the same as everywhere else."""
+    t = I.t(node)
+    if t == "And":
+        return GAnd([_cond_to_guard(k) for k in I.kids(node)])
+    if t == "Or":
+        return GOr([_cond_to_guard(k) for k in I.kids(node)])
+    if t == "Not":
+        return GNot(_cond_to_guard(I.kids(node)[0]))
+    return atom(node)
+
+def _disguise_condition(script, local, bad):
+    """The persistent condition that makes the room SAFE, read from the init write that sets
+    the arm-local to a non-bad ('disguised') value: rm47 `(if (and gBodyWaxed (== egoView 151))
+    (= henchStatus 8))`. Returns (guard_tree, safe_value). Gating the forced exit on this guard
+    -- rather than on henchStatus!=bad -- is what makes the disguise ITEMS required (egoView==151
+    is item-gated via the bikini chain), and it can't be satisfied by ARMING (henchStatus==1)."""
+    rm = _room_object(script)
+    init = rm.methods.get("init") if rm else None
+    if init is None:
+        return None, None
+    for n in I.walk(init):
+        if I.t(n) != "If":
+            continue
+        ks = I.kids(n)
+        if len(ks) < 2:
+            continue
+        cond, then = ks[0], ks[1]
+        for a in I.walk(then):
+            if I.t(a) == "Assignment":
+                dest, src = I.kids(a)[0], I.kids(a)[1]
+                if I.is_local_or_temp(dest) and (dest["vtype"][0], dest["index"]) == local:
+                    v = I.as_int(src)
+                    if v is not None and v != bad:
+                        return _cond_to_guard(cond), v
+    return None, None
+
 def crossing_gates(cfg, ir, room):
     """rm47-style crossing gate. A doit branch that (a) tests `(gEgo inRect: rect)`, (b) is
     guarded by a local `L==bad`, and (c) arms a reactive machine (`setScript`) is a positional
@@ -433,9 +473,11 @@ def crossing_gates(cfg, ir, room):
                     continue
                 if crossing_forces_rect(cfg, ir, room, rect, d):
                     seen.add((d, dst))
+                    safe_guard, safe_val = _disguise_condition(script, (loc[0], loc[1]), loc[2])
                     gates.append({
                         "kind": "crossing", "room": room, "exit_dir": d, "gated_room": dst,
                         "rect": rect, "safe_local": (loc[0], loc[1]), "bad_value": loc[2],
+                        "safe_guard": safe_guard, "safe_value": safe_val,
                     })
     return gates
 
