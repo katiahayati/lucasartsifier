@@ -1,0 +1,17 @@
+Currently the full state verification is slow, but not proven intractable (no sign of ballooning resources). It should be verified in regions first
+(declared in the region global variable), then if that passes the whole reachability should be allowed to run even if it takes hours.
+
+Right now Claude has been making individual queries about "is X required?". Need to make sure the tool can surface everything that's required. Is
+that a longer query than reachability? Is it gated on artifacts from reachability that can be generated once and cached?
+
+Need to make sure it's not just items. For example, wearing the disguise in an action, not an item. Also need to figure out how to gate. Disguise is
+going to be one of the hard ones again. The "right" answer is probably not letting the character get inRect, because that's what starts the whole
+unwinnable sequence if you are not ready. Something to think about for later is that the deaths carry hints. In that particular screen, the henchmen
+tell you what's missing when they catch you.
+
+Let's also not forget item properties, which are not needed in LSL2 but will come into play in KQ4. Also timers. If the cruise ship or the plane timers 
+go off it's death.
+
+Should consider doing a review path to find obvious inefficiencies. One possibility is that modeling position is done in too fine grained detail.
+
+Should also consider what hardware improvements would make this go faster and consider getting an EC2 instance.
