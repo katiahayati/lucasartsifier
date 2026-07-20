@@ -67,6 +67,8 @@ class OpEmitter:
         self.machines = []          # list of dict
         self.reg_vals = {}          # global index -> set of int values (domain)
         self.loc_vals = {}          # (script, 'L'/'T', idx) -> set of int values
+        self._loc_inc = set()       # counter keys with an inc op (need +1 saturation headroom)
+        self._loc_dec = set()       # counter keys with a dec op (need -1 headroom)
         self.init_writes = {}       # room -> {gi: val} UNCONDITIONAL entry writes (initial value)
         self.init_seq = {}          # room -> ordered [(gi, val, guard)] entry writes, source order.
         #   Conditional init writes (inside if/cond) keep their guard instead of being FORCED --
@@ -137,9 +139,14 @@ class OpEmitter:
             self.reg_vals.setdefault(gi, {0}).add(v)
             self._scan_domains_guard(g, script)      # CTR-local values in the guard
         for room, script, key, v, g in self.handler_locals:
-            self.loc_vals.setdefault((script,) + key, {0})
+            k = (script,) + key
+            self.loc_vals.setdefault(k, {0})
             if isinstance(v, int):
-                self.loc_vals[(script,) + key].add(v)
+                self.loc_vals[k].add(v)
+            elif v == ("inc",):
+                self._loc_inc.add(k)
+            elif v == ("dec",):
+                self._loc_dec.add(k)
             self._scan_domains_guard(g, script)
         for room, script, it, g in self.handler_gets:
             self._scan_domains_guard(g, script)
@@ -154,6 +161,10 @@ class OpEmitter:
                         self.loc_vals.setdefault(key, {0})
                         if val is not None:
                             self.loc_vals[key].add(val)
+                        if kind == "inc":
+                            self._loc_inc.add(key)
+                        elif kind == "dec":
+                            self._loc_dec.add(key)
                     self._scan_domains(guard, info["script"])
             for K, eg in info["entries"]:
                 self._scan_domains_guard(eg, info["script"])
@@ -183,6 +194,11 @@ class OpEmitter:
         self.loc_dom, self.loc_const = {}, {}
         for k, vs in self.loc_vals.items():
             lo, hi = min(vs), max(vs)
+            # saturation headroom: a saturating inc emits `lv+1` (static range up to hi+1) that
+            # the `>= hi ? hi` ternary clamps at runtime -- declare hi+1 (unreachable sentinel)
+            # so nuXmv's static range check doesn't false-warn "cannot assign hi+1". Ditto dec.
+            hi += 1 if k in self._loc_inc else 0
+            lo -= 1 if k in self._loc_dec else 0
             (self.loc_const if lo == hi else self.loc_dom)[k] = lo if lo == hi else (lo, hi)
 
     def _inline_calls(self, node, script, seen, depth=0):
@@ -212,6 +228,8 @@ class OpEmitter:
             body = self._inline_calls(body, m.script, set())
             steps_by_state[K] = [C._interp(p, self.is_death) for p in C._paths_of(body)]
         C.carry_cues(steps_by_state, m.start)   # SCI cross-state cue carry (PARK -> ADVANCE)
+        entry_states = {k for k, _ in m.entries} | {k for k, _ in m.init_entries}
+        C.compress_chains(steps_by_state, entry_states, m.start)   # collapse effect-free ADVANCE runs
         for K, steps in steps_by_state.items():
             paths = []
             for st in steps:

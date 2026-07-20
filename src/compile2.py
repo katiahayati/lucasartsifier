@@ -190,6 +190,51 @@ def carry_cues(steps_by_state, start):
         surplus = min(max(0, surplus + st.cues - 1) for st in flow)   # least carry (conservative)
 
 
+def compress_chains(steps_by_state, entry_states, start):
+    """Collapse maximal runs of effect-free unconditional ADVANCE states into a single hop.
+
+    A cutscene like rm84Script marches through ~80 states that only burn animation cycles
+    (each an unconditional ADVANCE with no writes/gets/counters/exit) -- ~80 steps of pure
+    depth a nuXmv witness must unroll, for zero observable change. A `transparent` state is
+    unobservable: single path, empty guard, ADVANCE, no effects, not an entry target, not the
+    start. Redirect every transition that would land on such a state PAST the transparent run
+    to the first non-transparent state (an ADVANCE becomes a JUMP to that state). Sound: the
+    skipped states change nothing but the (unobserved) ms value; observationally identical, and
+    the witness depth drops from ~80 to a handful. NOTE: keep the state VALUES (domain unchanged)
+    -- only the transitions are rewritten, so guards/gates that name a surviving state still hold."""
+    def transparent(J):
+        sts = steps_by_state.get(J)
+        if not sts or len(sts) != 1:
+            return False
+        st = sts[0]
+        return (st.trans == ("ADVANCE",) and not st.guard and not st.writes
+                and not st.gets and not st.counters
+                and J not in entry_states and J != start)
+
+    def skip(J):
+        seen = set()
+        while transparent(J) and J not in seen:
+            seen.add(J)
+            J += 1
+        return J
+
+    for K, sts in steps_by_state.items():
+        for st in sts:
+            t = st.trans
+            if t[0] == "ADVANCE":
+                tgt = skip(K + 1)
+                if tgt != K + 1:
+                    st.trans = ("JUMP", tgt)
+            elif t[0] == "JUMP":
+                tgt = skip(t[1])
+                if tgt != t[1]:
+                    st.trans = ("JUMP", tgt)
+            elif t[0] == "SETSTATE":
+                tgt = skip(t[1] + 1)          # SETSTATE k lands on k+1 (a cue advances)
+                if tgt != t[1] + 1:
+                    st.trans = ("JUMP", tgt)
+
+
 def _apply_counters(counters, updates):
     c = dict(counters)
     for (name, kind, val) in updates:
@@ -215,6 +260,8 @@ def compile_machine(machine, is_death):
     steps = {k: [_interp(p, is_death) for p in _paths_of(body)]
              for k, body in machine.bodies.items()}
     carry_cues(steps, machine.start)      # SCI cross-state cue carry: PARK -> ADVANCE where covered
+    _entry_states = {k for k, _ in machine.entries} | {k for k, _ in machine.init_entries}
+    compress_chains(steps, _entry_states, machine.start)   # collapse effect-free ADVANCE runs
     exits, deaths = [], []
     budget = [PATH_CAP]
 
