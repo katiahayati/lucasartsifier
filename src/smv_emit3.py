@@ -702,9 +702,18 @@ class OpEmitter:
         for key, (lo, hi) in self.loc_dom.items():
             L.append(f"  {self._lv(key)} : {lo} .. {hi};")
         for info in self.machines:
-            ks = sorted(info["states"])
-            lo, hi = min(ks + [info["start"]]), max(ks + [info["start"]])
-            L.append(f"  {self._ms(info)} : {lo} .. {hi};")
+            ms = self._ms(info)
+            cand = list(info["states"]) + [info["start"]]
+            # Include every state value this machine can actually be ASSIGNED (an ADVANCE off
+            # the top state -> K_max+1, or a JUMP/SETSTATE target), so nuXmv never silently
+            # DROPS an out-of-range next() write. Such a target has no handler, so it is an
+            # absorbing no-op state -- faithful, and it removes the "cannot assign value"
+            # warnings that otherwise mask a dropped assignment.
+            for c, v in nxt.get(ms, []) + getattr(self, "_ms_arrival", {}).get(ms, []):
+                if isinstance(v, str) and v.lstrip("-").isdigit():
+                    cand.append(int(v))
+            lo, hi = min(cand), max(cand)
+            L.append(f"  {ms} : {lo} .. {hi};")
 
         L.append("ASSIGN")
         start = self.cfg.start_room

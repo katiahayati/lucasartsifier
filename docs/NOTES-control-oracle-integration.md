@@ -82,18 +82,22 @@ op_disguise.py (old goal): **Bikini_Bottom(16) REQUIRED=True, Bikini_Top(15) REQ
 timed out at 3200s (IC3 finds the UNSAT/unwinnable proofs fast but the deep winning path slow);
 op_final.py re-confirms base under a bigger timeout.
 
-## Endgame refactor (task #18, 2026-07-20) -- PARTIAL
+## Endgame refactor (task #18, 2026-07-20)
 goal_rooms tightened {75,76,77,78,178} -> {178} (the ending; rm75/76/77/rm78-room are
-walk-reachable BEFORE the wedding). The gIslandStatus chain is actually CAPTURED and correct:
-103(rm92 volcano)->104(given 103)->105(given 104); rm78's wedding delivery ->178 IS gated on
-gIslandStatus==105 (entry (1, ==105); state 0 parks). BUT the volcano is still BYPASSABLE:
-**rm92 (which sets gIslandStatus:=103) is reachable via rm91<-rm90 (intro cutscenes), and
-rm92Script's free entry (0,None)/(1,not100&not102) advances to state 28 (:=103) without the
-volcano.** So gIslandStatus==103 doesn't require the bomb. This is the documented
-[[lsl2-bomb-has-no-script-level-gate]] "endgame cluster" (rm90-93 tangled into the island SCC)
--- a separate untangling, larger than this session. The goal tightening is the right, necessary
-first step; the bomb won't be REQUIRED until the rm90-93 tangle is closed. (gForceAtest was a
-red herring -- init 0, never written, so pinned.)
+walk-reachable BEFORE the wedding). The gIslandStatus chain is CAPTURED and correct:
+100(rm84 volcano) -> 102(rm85) -> 103(rm92) -> 104(rm75) -> 105(rm77/78) -> wedding -> 178;
+rm78's ->178 delivery is gated on gIslandStatus==105 (machine entry (1,==105); state 0 parks).
+
+CORRECTION: I first called the volcano "bypassable via the rm90-93 tangle" -- WRONG, from
+over-trusting guard-IGNORING graph reachability. The model preserves the chain: rm92Script
+state 15 = EXIT 93 (intro) and state 22 = EXIT 85 (volcano), so state 28 (gIslandStatus:=103)
+is reachable ONLY via state 23 (the ==102 entry) <- rm85 <- rm92 state 16 <- gIslandStatus==100
+<- rm84 <- rm82->83 (the bomb prop-gate). So the whole chain GENUINELY requires the volcano,
+and the goal tightening should be SUFFICIENT to make the bomb REQUIRED. (gForceAtest was a red
+herring -- init 0, never written, so pinned.) op_bomb.py confirms Matches/Hair_Rejuvenator
+REQUIRED under the tightened goal. Lesson (again): guard-ignoring reachability is misleading;
+the gIslandStatus gates are what make the volcano necessary, and they're invisible to a plain
+edge BFS.
 
 ## Remaining oracle-hardening TODOs (generality #2-#4, still single-example)
 - cel[0]=closed / cel[-1]=open (door could animate the other way).
@@ -104,3 +108,41 @@ red herring -- init 0, never written, so pinned.)
 The 900s-timeout run gave no verdict (base winnability alone > 900s, and the *before*-gate
 baseline also didn't finish in ~15-20 min -> it's the engine's inherent cost, not the gate).
 op_base.py (base-only, timeout 2400s) is staged; the full run is task #16 (after the above).
+
+## Validation under the tightened goal: INTRACTABLE (2026-07-20, op_bomb.py)
+Result of the full requirement/base run under goal={178}, timeout=6000s each:
+- Matches(19) REQUIRED: **timed out at 6000s (no verdict)**.
+- Hair_Rejuvenator(21) REQUIRED: **timed out at 6000s (no verdict)**.
+- BASE winnable: **no verdict** -- `check_invar_ic3` reached BMC bound 109 in 5662s without a
+  proof or a counterexample.
+So the goal-tightening is NOT yet validated. Under the *old, looser* goal the disguise items
+proved REQUIRED in ~440s because those were fast UNSAT proofs; tightening to {178} pushed the
+winning path to 110+ transitions, and nuXmv can neither find that deep counterexample nor close
+the inductive invariant. Consequence: base-winnability under {178} is currently UNPROVEN, which
+makes any "REQUIRED under {178}" result vacuous until base is re-established. This is a
+tractability wall, not (as far as we know) a modeling break.
+
+### Path forward -- decompose the bomb proof at the volcano waypoint
+Don't prove "reach rm178 without the bomb" (deep, intractable). The bomb's necessity is LOCAL:
+Matches+Hair_Rejuvenator -> causedEruption (L3) -> gates rm82->83 -> rm84 sets gIslandStatus:=100.
+Structurally (already verified) rm178 is reachable only through gIslandStatus 100->102->103->
+104->105 (rm92 states 15/22 are EXITs, so state 28 is only via the ==102 entry). So prove the
+SHALLOW waypoints instead:
+1. base: `room=84` (or gIslandStatus==100) is reachable  -- shallow, should be fast.
+2. bomb pinned off: `room=84` / gIslandStatus==100 is UNREACHABLE  -- shallow UNSAT => bomb
+   required to reach the volcano, hence required for {178} by the forced gIslandStatus chain.
+This sidesteps the 110-step unroll entirely. Same trick applies to re-confirming base: prove the
+volcano waypoint reachable shallowly, then argue the 84->178 tail as the forced linear chain
+(or per-gIslandStatus-step shallow queries) rather than one deep EF.
+
+## ms-domain silent-drop fix (2026-07-20)
+op_bomb.py's log carried `Warning: cannot assign value K to variable ms_<r>_<script>` for 6
+machines (rm101/151/152/15/54 + boreScript rm62). Cause: each machine's TOP state does an
+ADVANCE, targeting K_max+1, one past the declared range `min(states) .. max(states)`; nuXmv
+silently DROPS the out-of-range next() write. Characterized with tools/.../probe_dom.py:
+all 6 are ADVANCE-off-the-end to a handler-less state (no delivery/write/get there), and NONE
+are on the endgame path (82/83/84/85/92/78/77/75 clean) -- so the bomb/disguise/endgame
+conclusions are unaffected. Still fixed on principle (never drop a write silently): `_render`
+now widens each ms domain to cover every value the machine can be ASSIGNED (ADVANCE/JUMP/
+SETSTATE/arrival targets), making the off-the-end target an explicit absorbing no-op state.
+0 out-of-range assignments after the fix; test_control_oracle (32) + test_everything (25) green.
