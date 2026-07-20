@@ -23,6 +23,7 @@ _ROOT = os.path.dirname(_HERE)
 class GameConfig:
     name: str
     src_dir: str                    # directory of decompiled .sc scripts
+    resource_dir: str               # dir with RESOURCE.MAP + RESOURCE.00x (PIC/VIEW control-map oracle)
     start_room: int                 # free-roam entry point for reachability
     goal_rooms: frozenset           # winning-terminal rooms (victory)
     goal_scripts: tuple             # scripts whose guards seed the COI goal cone
@@ -57,6 +58,7 @@ class GameConfig:
 LSL2 = GameConfig(
     name="Leisure Suit Larry 2: Goes Looking for Love (v1.002.000, SCI0, DOS/English)",
     src_dir=os.path.join(_ROOT, "vendor", "sci-scripts", "lsl2-dos-1.002.000", "src"),
+    resource_dir=os.path.join(_ROOT, "out", "lsl2_playable"),
     # Free-roam begins in the Los Angeles act. rm10 (copy-protection) and rm90-93
     # (intro cutscenes, reused as island cutscenes) are tangled into the island SCC,
     # so we anchor at a core LA room whose component reaches every act.
@@ -79,6 +81,7 @@ LSL2 = GameConfig(
 KQ4 = GameConfig(
     name="King's Quest IV: The Perils of Rosella (v1.006.004, SCI0, DOS/English)",
     src_dir=os.path.join(_ROOT, "vendor", "sci-decomp-archive", "kq4", "SRC"),
+    resource_dir="",   # KQ4 resource volumes not present; control-map oracle is skipped when empty
     # discover.py proposed start=23; goal confirmed as the Daventry ending where
     # Rosella cures King Graham (rm694, grahamFace; reached rm693->694, after
     # gamePhase=endGame(99) is set in rm92 when Lolotte dies).

@@ -122,12 +122,58 @@ def test_no_fallthrough_bypass():
     bad = re.findall(r"action = \d+ & room = 63 & ms_63_rm63Script = 0 : 1;", smv)
     check("no free start fall-through for rm63 jump machine", not bad, str(bad[:2]))
 
+# ---- Part 5: disguise gate (now the control-map oracle, not the old doit-death heuristic) --
+def _ctr_vars(g, out):
+    if isinstance(g, tuple) and g and g[0] == "CTR": out.add(g[1])
+    elif isinstance(g, (GAnd, GOr)):
+        for k in g.kids: _ctr_vars(k, out)
+    elif isinstance(g, GNot): _ctr_vars(g.kid, out)
+
+def test_disguise():
+    print("Part 5: disguise gate via the control-map oracle (rm47 crossing)")
+    em = real_em()
+    if em is None:
+        print("  [SKIP] LSL2 IR not present"); return
+    # the disguise gate now comes from the oracle's PROVEN crossing-gate (control_oracle),
+    # replacing the removed _doit_death_gates heuristic. See test_control_oracle.py for depth.
+    xr = {g["room"] for g in em.control_gates if g.get("kind") == "crossing"}
+    check("rm47 has an oracle crossing-gate", 47 in xr, str(sorted(xr)))
+    # only the win-ward exit (->48) is gated, on henchStatus (L2); the retreat (->42) is FREE
+    e48 = [e for e in em.ts.edges if e.src == 47 and e.dst == 48]
+    check("rm47->48 exit is gated (not free)", e48 and e48[0].guard is not None)
+    if e48 and e48[0].guard is not None:
+        vs = set(); _ctr_vars(e48[0].guard, vs)
+        check("rm47->48 gate references henchStatus local (L,2)", ("L", 2) in vs, str(vs))
+    e42 = [e for e in em.ts.edges if e.src == 47 and e.dst == 42]
+    check("rm47->42 retreat is NOT over-gated (free, unlike old _doit_death_gates)",
+          e42 and e42[0].guard is None, repr(e42[0].guard) if e42 else "no edge")
+
+# ---- Part 6: consistent positional model --------------------------------
+def test_positions():
+    print("Part 6: consistent position (x,y) instead of independent opaques")
+    from extract2 import atom
+    r = atom(SEND(V("Global", 0), MSG("inRect", N(86), N(2), N(333), N(140))))
+    check("atom(inRect a b c d) -> POS rect", r == ("POS", "rect", (86, 2, 333, 140)), repr(r))
+    e = atom(CMP("Eq", N(2), SEND(V("Global", 0), MSG("edgeHit"))))
+    check("atom(edgeHit==2) -> POS edge", e == ("POS", "edge", 2), repr(e))
+    em = real_em()
+    if em is None:
+        print("  [SKIP] LSL2 IR not present"); return
+    smv, _ = em.emit()
+    check("posx/posy declared as IVARs", "posx : 0 .. 319;" in smv and "posy : 0 .. 189;" in smv)
+    check("positional guards render (posx/posy used)", smv.count("posx") + smv.count("posy") > 20)
+    # consistency: east-edge crossing (posx>=316) and the rect [86,333] share posx, so a
+    # crossing can't dodge the rect -- verify both render over the SAME posx.
+    check("edge-east renders as posx>=316", "posx >= 316" in smv)
+
 def run():
     print("=== test_everything ===")
     test_local_compare()
     test_local_compare_real()
     test_setscript()
     test_no_fallthrough_bypass()
+    test_disguise()
+    test_positions()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 

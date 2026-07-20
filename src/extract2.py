@@ -77,8 +77,22 @@ def _cmp_atom(n, tp):
         return ("CTR", (a["vtype"][0], a["index"]), op, I.as_int(b))
     if I.is_local_or_temp(b) and I.as_int(a) is not None:
         return ("CTR", (b["vtype"][0], b["index"]), _REV[op], I.as_int(a))
-    # property / position compares -> opaque (genuinely undecidable)
+    # `(edgeHit) == N` -> the ego is at screen edge N (a POSITION guard over (x,y)).
+    if _is_ego_edgehit(a) and I.as_int(b) is not None and op == "==":
+        return ("POS", "edge", I.as_int(b))
+    if _is_ego_edgehit(b) and I.as_int(a) is not None and op == "==":
+        return ("POS", "edge", I.as_int(a))
+    # property / onControl / distance compares -> opaque (control-map / undecidable)
     return Pred("OPAQUE")
+
+
+def _is_ego_edgehit(n):
+    """`(gEgo edgeHit:)` -- returns which screen edge the ego is at."""
+    if isinstance(n, dict) and n.get("t") == "Send":
+        recv, msgs = I.send_pairs(n)
+        if I.is_global(recv, G_EGO):
+            return any(sel == "edgeHit" for sel, _ in msgs)
+    return False
 
 
 def _send_atom(n):
@@ -90,7 +104,14 @@ def _send_atom(n):
                 return Pred("OWN", var=it)
         if sel in ("said",):
             return Pred("SAID")
-    # position tests (posn, inRect, distanceTo, onControl...) and other sends -> opaque
+        # `(gEgo inRect: a b c d)` -> a POSITION guard over the ego's (x,y). Coordinates are
+        # in the AST, so this is derivable; ONE consistent (x,y) is what makes "cross east =>
+        # inRect" unavoidable (see docs/DESIGN-positional-model.md).
+        if sel == "inRect" and I.is_global(recv, G_EGO) and len(params) >= 4:
+            cs = [I.as_int(p) for p in params[:4]]
+            if all(c is not None for c in cs):
+                return ("POS", "rect", tuple(cs))
+    # onControl (PIC control-map), distanceTo, posn-relative, other sends -> opaque residue
     return Pred("OPAQUE")
 
 

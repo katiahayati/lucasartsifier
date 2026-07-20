@@ -168,6 +168,13 @@ class OpEmitter:
             for dst in info.get("delivered", ()):
                 self.machine_delivered.add((info["room"], dst))
 
+        # Control-map oracle FIRST (reads the PIC control plane + VIEW cels, not declared):
+        #  - prop-gate  (rm82): machine EXIT->83 requires causedEruption (the aDoor Prop covers
+        #    the onControl-$0004 floor until the bomb opens it);
+        #  - crossing-gate (rm47): the win-ward exit that PROVABLY forces the doit death-rect
+        #    inherits the disguise requirement, per-exit (does not over-gate the retreat).
+        self._apply_control_gates()
+
         # finalize domains; single-value dims fold to constants (SMV rejects init on them)
         self.reg_dom, self.reg_const = {}, {}
         for gi, vs in self.reg_vals.items():
@@ -222,6 +229,58 @@ class OpEmitter:
         return {"room": room, "inst": m.inst, "script": m.script, "states": states,
                 "entries": m.entries, "init_entries": m.init_entries,
                 "start": m.start, "delivered": delivered}
+
+    def _apply_control_gates(self):
+        """Consume control_oracle.find_gates: for each prop-gate, AND the derived door-open
+        latch onto the machine EXIT that the gated onControl trigger delivers. Everything is
+        read (PIC control plane, VIEW cel footprints, the opener state's own write), nothing
+        declared; the latch is the persistent write the opener state makes (rm82: causedEruption
+        L3:=1 in state 16). This is the general Sierra door/gate/movable-block mechanism."""
+        self.control_gates = []
+        if not getattr(self.cfg, "resource_dir", ""):
+            return
+        try:
+            import control_oracle as CO
+            gates = CO.find_gates(self.cfg, self.ir)
+        except Exception:
+            return
+        self.control_gates = gates
+        for gate in gates:
+            room = gate["room"]
+            if gate.get("kind") == "prop":
+                # prop-gate (rm82 door): gate the machine EXIT->gated_room on the opener latch.
+                latch = gate.get("opener_latch")
+                gr = gate.get("gated_room")
+                if not latch or gr is None:
+                    continue
+                vt, idx, val = latch
+                self.loc_vals.setdefault((room, vt, idx), {0}).add(val)   # give the latch a domain
+                guard = ("CTR", (vt, idx), "==", val)
+                for info in self.machines:
+                    if info["room"] != room:
+                        continue
+                    for K, paths in list(info["states"].items()):
+                        newp = []
+                        for path in paths:
+                            g, rest, trans = path[0], path[1:], path[4]
+                            if trans[0] == "EXIT" and trans[1] == gr:
+                                g = list(g) + [guard]
+                            newp.append((g,) + rest)
+                        info["states"][K] = newp
+            elif gate.get("kind") == "crossing":
+                # crossing-gate (rm47 disguise): the win-ward flat exit (proven to force the
+                # doit rect) requires the safe local value, i.e. NOT(L==bad). Only this exit is
+                # gated -- only this proven-forced exit; the retreat exit is left free.
+                dst = gate.get("gated_room")
+                vt, idx = gate["safe_local"]
+                bad = gate["bad_value"]
+                if dst is None:
+                    continue
+                self.loc_vals.setdefault((room, vt, idx), {0}).add(bad)
+                safe = GNot(("CTR", (vt, idx), "==", bad))
+                for e in self.ts.edges:
+                    if e.src == room and e.dst == dst:
+                        e.guard = safe if e.guard is None else GAnd([e.guard, safe])
 
     def _hwalk(self, room, script, node, pc, seen):
         """Path-condition walk of a handler; record global + local writes + item gets,
@@ -363,6 +422,23 @@ class OpEmitter:
         self.n_opaque += 1
         return f"opq{k}"
 
+    def _posexpr(self, g):
+        """A POS guard -> SMV over the ego's free (x,y) (posx/posy IVARs). ONE consistent
+        free choice per step, so `edge east (posx>=316)` implies `inRect [86..333]`
+        unavoidably. onControl stays opaque (control-map, not a function of (x,y))."""
+        if g[1] == "rect":
+            a, b, c, d = g[2]
+            parts = []
+            if a > 0: parts.append(f"posx >= {a}")
+            if c < 319: parts.append(f"posx <= {c}")
+            if b > 0: parts.append(f"posy >= {b}")
+            if d < 189: parts.append(f"posy <= {d}")
+            return "(" + " & ".join(parts) + ")" if parts else "TRUE"
+        if g[1] == "edge":   # SCI edgeHit: 1=top, 2=right, 3=bottom, 4=left
+            return {1: "posy <= 4", 2: "posx >= 316", 3: "posy >= 186",
+                    4: "posx <= 4"}.get(g[2], self._permissive())
+        return self._permissive()
+
     def gexpr(self, g, script):
         """External guard tree -> SMV; script gives the counter namespace for CTR."""
         if g is None:
@@ -375,6 +451,8 @@ class OpEmitter:
             if key in self.loc_const:
                 return "TRUE" if _cmp_const(self.loc_const[key], g[2], g[3]) else "FALSE"
             return self._permissive()
+        if isinstance(g, tuple) and g and g[0] == "POS":
+            return self._posexpr(g)
         if isinstance(g, GAnd):
             ks = [self.gexpr(k, script) for k in g.kids]
             if "FALSE" in ks:
@@ -439,9 +517,10 @@ class OpEmitter:
         def cond(base, guard):
             return base + (" & " + guard if guard not in ("TRUE", "") else "")
 
-        # flat movement edges
+        # flat movement edges. gexpr with the SOURCE room's script so a CTR-local guard on
+        # the edge resolves (the room's own locals -- e.g. the disguise henchStatus gate).
         for e in self.ts.edges:
-            g = self.gexpr(e.guard, None)
+            g = self.gexpr(e.guard, e.src)
             if g == "FALSE":
                 continue
             c = cond(f"action = {aid} & room = {e.src}", g)
@@ -453,7 +532,7 @@ class OpEmitter:
         for e in self.ts.cs_edges:
             if (e.src, e.dst) in self.machine_delivered:
                 continue
-            g = self.gexpr(e.guard, None)
+            g = self.gexpr(e.guard, e.src)
             if g == "FALSE":
                 continue
             c = cond(f"action = {aid} & room = {e.src}", g)
@@ -605,6 +684,8 @@ class OpEmitter:
 
     def _render(self, nxt, n_act):
         L = ["MODULE main", "IVAR", f"  action : 0 .. {n_act - 1};"]
+        L.append("  posx : 0 .. 319;")   # ego's free-but-consistent position (a player choice)
+        L.append("  posy : 0 .. 189;")
         for k in range(self.n_opaque):
             L.append(f"  opq{k} : boolean;")
         L.append("VAR")

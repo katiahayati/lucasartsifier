@@ -110,9 +110,61 @@ class Sci0Game:
 
 def _decompress(method, body, decomp_size):
     """SCI0: method 0 = none, 1 = LZW, 2 = Huffman."""
+    if method == 0:
+        return body[:decomp_size] if decomp_size else body
     if method == 1:
         return _decompress_lzw(body, decomp_size)
+    if method == 2:
+        return _decompress_huffman(body, decomp_size)
     raise NotImplementedError(f"SCI0 compression method {method} not implemented")
+
+
+def _decompress_huffman(src, out_len):
+    """SCI0 Huffman (comp method 2, used by PICs). Faithful port of SCICompanion
+    Src/Util/Codec.cpp getc2/decompressHuffman. A prefix tree of `numnodes` 2-byte
+    nodes (value, branch); a '1' bit follows the low nibble, '0' the high nibble; a
+    zero branch is a leaf (or an escaped raw byte). Terminator = escaped `term`."""
+    src = bytes(src)
+    complength = len(src)
+    numnodes, terminator = src[0], src[1]
+    nodes_base = 2
+    bytectr = 2 + (numnodes << 1)
+    bitctr = 0
+    out = bytearray()
+
+    def getc2():
+        nonlocal bytectr, bitctr
+        node = nodes_base
+        while src[node + 1] != 0:
+            value = (src[bytectr] << bitctr) & 0xFFFF
+            bitctr += 1
+            if bitctr == 8:
+                bitctr = 0
+                bytectr += 1
+            if value & 0x80:
+                nxt = src[node + 1] & 0x0F
+                if nxt == 0:
+                    result = (src[bytectr] << bitctr) & 0xFFFF
+                    bytectr += 1
+                    if bytectr > complength:
+                        return -1
+                    elif bytectr < complength:
+                        result |= src[bytectr] >> (8 - bitctr)
+                    return (result & 0xFF) | 0x100
+            else:
+                nxt = src[node + 1] >> 4
+            node += nxt << 1
+        return src[node]
+
+    stop = 0x100 | terminator
+    while True:
+        c = getc2()
+        if c == stop or c < 0:
+            break
+        out.append(c & 0xFF)
+        if len(out) > out_len + 8:
+            break
+    return bytes(out)
 
 
 def _decompress_lzw(src, out_len):
