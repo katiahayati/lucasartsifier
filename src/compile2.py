@@ -74,7 +74,7 @@ def _seq(forms):
 
 # ---- interpret a path into (guard, writes, gets, counters, transition) ---
 class Step:
-    __slots__ = ("guard", "writes", "gets", "counters", "trans")
+    __slots__ = ("guard", "writes", "gets", "counters", "trans", "cues")
 
     def __init__(self):
         self.guard = []            # atoms (external) or ("CTR", (vt,idx), op, val)
@@ -82,6 +82,21 @@ class Step:
         self.gets = []
         self.counters = []         # ((vt,idx), kind, val)
         self.trans = ("PARK",)     # first immediate transition wins; else ADVANCE/PARK
+        self.cues = 0              # # of cues this path ARMS (each fires one `self cue:`)
+
+
+def _count_cues_send(recv, msgs):
+    """How many cues a single send ARMS (mirrors machine2._is_cue_send, but counts each
+    cue-arming message rather than OR-ing them). Each armed cue completes later and drives
+    one `(self cue:)` -> one changeState:+1."""
+    n = 0
+    for sel, params in msgs:
+        if (params and params[-1].get("t") == "Self") or \
+           (sel in ("cue", "setCycle", "setMotion", "setScript") and params
+                and any(p.get("t") == "Self" for p in params)) or \
+           (sel == "changeState" and recv.get("t") != "Self"):
+            n += 1
+    return n
 
 
 def _interp(path, is_death):
@@ -111,7 +126,9 @@ def _interp(path, is_death):
                     k = I.as_int(params[0])
                     if k is not None:
                         st.trans = ("JUMP", k); fixed = True
-            if M._is_cue_send(recv, msgs):
+            c = _count_cues_send(recv, msgs)
+            if c:
+                st.cues += c
                 armed = True
         elif tp == "Assignment":
             dst, src = node["kids"][0], node["kids"][1]
@@ -124,6 +141,7 @@ def _interp(path, is_death):
                         st.writes.append((dst["index"], v))
             elif dst.get("t") == "Property" and dst.get("name") in ("seconds", "cycles"):
                 armed = True
+                st.cues += 1
             elif dst.get("t") == "Property" and dst.get("name") == "state" and not fixed:
                 k = I.as_int(src)
                 if k is not None:
@@ -139,6 +157,37 @@ def _interp(path, is_death):
     if not fixed and armed:
         st.trans = ("ADVANCE",)
     return st
+
+
+def carry_cues(steps_by_state, start):
+    """Reclassify PARK -> ADVANCE where a prior state's SURPLUS cues carry through it.
+
+    A state arming C cues emits C `(self cue:)`s: the first advances into the next state, the
+    remaining C-1 are still pending and fire later, advancing subsequent no-delay states.
+    `Script::doit` only cues on cycles/seconds, so a Print-only state (arms nothing) would
+    PARK -- but a motion armed two states back with `... self` still completes and cues it
+    onward (rm84 s78 arms `MoveTo 333 214 self` + `= cycles 12`; the timer cues s78->s79, the
+    motion cue then carries s79->s80 past the Print-only s79 to s81's `= gIslandStatus 100`).
+    Linear forward pass over the ADVANCE spine; conservative -- a PARK flips only when an
+    incoming carried cue actually reaches it (a lone single-cue ADVANCE leaves 0 surplus, so
+    normal chains never flip a downstream park)."""
+    if not steps_by_state:
+        return
+    ks = sorted(steps_by_state)
+    surplus = 0
+    for K in range(min(ks[0], start), ks[-1] + 1):
+        paths = steps_by_state.get(K)
+        if paths is None:
+            continue                       # absent state: SCI falls through, no cue consumed
+        flow = [st for st in paths if st.trans[0] in ("PARK", "ADVANCE")]
+        if not flow:
+            surplus = 0                    # only immediate transitions here -> spine ends
+            continue
+        if surplus >= 1:                   # a carried cue reaches this state
+            for st in flow:
+                if st.trans[0] == "PARK":
+                    st.trans = ("ADVANCE",)
+        surplus = min(max(0, surplus + st.cues - 1) for st in flow)   # least carry (conservative)
 
 
 def _apply_counters(counters, updates):
@@ -165,6 +214,7 @@ def compile_machine(machine, is_death):
     [guard_tree]. Guards are over EXTERNAL atoms only (counters resolved concretely)."""
     steps = {k: [_interp(p, is_death) for p in _paths_of(body)]
              for k, body in machine.bodies.items()}
+    carry_cues(steps, machine.start)      # SCI cross-state cue carry: PARK -> ADVANCE where covered
     exits, deaths = [], []
     budget = [PATH_CAP]
 

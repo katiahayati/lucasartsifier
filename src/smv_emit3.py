@@ -207,11 +207,14 @@ class OpEmitter:
     def _machine_info(self, room, m):
         states = {}
         has_effect = False
+        steps_by_state = {}
         for K, body in m.bodies.items():
             body = self._inline_calls(body, m.script, set())
+            steps_by_state[K] = [C._interp(p, self.is_death) for p in C._paths_of(body)]
+        C.carry_cues(steps_by_state, m.start)   # SCI cross-state cue carry (PARK -> ADVANCE)
+        for K, steps in steps_by_state.items():
             paths = []
-            for p in C._paths_of(body):
-                st = C._interp(p, self.is_death)
+            for st in steps:
                 if st.writes or st.gets or st.trans[0] in ("EXIT", "DEATH"):
                     has_effect = True
                 paths.append((st.guard, st.writes, st.gets, st.counters, st.trans))

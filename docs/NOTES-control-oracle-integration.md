@@ -135,6 +135,35 @@ This sidesteps the 110-step unroll entirely. Same trick applies to re-confirming
 volcano waypoint reachable shallowly, then argue the 84->178 tail as the forced linear chain
 (or per-gIslandStatus-step shallow queries) rather than one deep EF.
 
+## The endgame was DEAD in the model: rm84Script s79 PARK (carried-cue lift bug, 2026-07-20)
+The waypoint decomposition (op_waypoint.py) proved `g_148==100` (the volcano firing)
+UNREACHABLE in BASE in 2s (fast local UNSAT) -- so the whole winning track 100->102->103->
+104->105->178 is dead in the model, and the loose goal had hidden it (rm75/76/77 were
+walk-reachable without ever firing the volcano). This is a real soundness gap, not a
+tractability wall.
+
+ROOT CAUSE (traced via probe_break/probe_volcano + rm84.sc): `g_148:=100` has exactly one
+setter -- rm84Script state 81 (which also does `newRoom: 92`). rm84Script is an 82-state
+all-ADVANCE arrival cutscene, but **state 79 was classified PARK** and the machine only
+enters at s0, so s81 was stranded. Source: s79 is Print-only (arms no cycles/seconds/motion),
+and `Script::doit` (System.sc:299) cues ONLY on cycles/seconds -- so in isolation s79 parks.
+But s78 arms TWO cues: `(gEgo setMotion: MoveTo 333 214 self)` AND `(= cycles 12)`. The timer
+cues s78->s79; the gEgo motion then completes and cues s79->s80. The lift asked only "does
+THIS state arm a cue" (machine2._is_cue_send, a bool) and missed the carried cue.
+
+FIX (carried-cue model, user-chosen "precise" option): `compile2._interp` now COUNTS cues per
+path (`Step.cues`, via `_count_cues_send` = per-message version of `_is_cue_send`, plus +1 for
+each seconds/cycles arm). New `compile2.carry_cues(steps, start)` does a linear forward pass
+over the ADVANCE spine tracking a cue SURPLUS: a state arming C cues leaves C-1 surplus, which
+flips a following PARK to ADVANCE (the carried cue reaches it). Conservative: a lone single-cue
+ADVANCE leaves 0 surplus, so normal chains never flip a downstream park; a PARK flips only when
+an incoming carried cue actually reaches it. Called in both `compile_machine` (walk) and
+`smv_emit3._machine_info` (the operational model). No new SMV variables (matters given the
+tractability wall). rm84Script s79/s80 now ADVANCE; s81's `g_148:=100`+`newRoom 92` reachable.
+Endgame-path scan after the fix: no other s79-style PARK dead-ends (rm74 s2, rm82 s3/s18 remain
+PARK but each has a player-action re-entry to a later state -- genuine waits, correctly parked).
+Unit tests 32+25 green. Validation op_val2.py running (bomb OFF -> g_148==100 UNSAT => REQUIRED).
+
 ## ms-domain silent-drop fix (2026-07-20)
 op_bomb.py's log carried `Warning: cannot assign value K to variable ms_<r>_<script>` for 6
 machines (rm101/151/152/15/54 + boreScript rm62). Cause: each machine's TOP state does an
