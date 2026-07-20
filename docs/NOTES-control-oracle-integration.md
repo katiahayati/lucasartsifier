@@ -162,7 +162,22 @@ an incoming carried cue actually reaches it. Called in both `compile_machine` (w
 tractability wall). rm84Script s79/s80 now ADVANCE; s81's `g_148:=100`+`newRoom 92` reachable.
 Endgame-path scan after the fix: no other s79-style PARK dead-ends (rm74 s2, rm82 s3/s18 remain
 PARK but each has a player-action re-entry to a later state -- genuine waits, correctly parked).
-Unit tests 32+25 green. Validation op_val2.py running (bomb OFF -> g_148==100 UNSAT => REQUIRED).
+Unit tests 32+25 green.
+
+VALIDATION (op_val2.py, after the fix):
+- **bomb OFF -> `g_148==100` : UNREACHABLE (UNSAT) in 34s => bomb REQUIRED for the volcano.**
+- bomb OFF -> `g_148==105` : timeout 1800s (less local certificate; 105 has many setters).
+- base -> `g_148==100` : timeout 1800s (the deep-SAT direction; ~120-step witness, intractable).
+NON-VACUITY CAVEAT: the 34s UNSAT proves "IF the volcano is reachable, the bomb gates it." A
+POSITIVE within-model proof that base reaches `g_148==100` is blocked by the SAT tractability
+wall (B* timeout) -- so within-model non-vacuity is NOT nuXmv-confirmed. It holds by: (a) the
+carry fix only ADDS reachability (PARK->ADVANCE removes no edges) and demonstrably un-strands
+s81; (b) rm84Script now advances unconditionally 0->81, so `g_148==100` reachable <=> room 84
+reachable; (c) room 84 had NO local unreachability certificate earlier (it timed out, unlike
+`g_148`'s 2s UNSAT), consistent with reachable-but-deep; (d) external ground truth (LSL2 is
+completed via the volcano). To CLOSE it within the model: COI-slice the query (kill the ~1600
+opaques + position ints outside the goal cone) so the deep SAT becomes tractable -- the biggest
+single lever, still open work.
 
 ## ms-domain silent-drop fix (2026-07-20)
 op_bomb.py's log carried `Warning: cannot assign value K to variable ms_<r>_<script>` for 6
