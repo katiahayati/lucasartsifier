@@ -290,6 +290,8 @@ class Extractor:
             return
         if tp == "Send":
             self._send_effect(room, node, pc, movement)
+        elif tp == "Assignment" and movement:
+            self._nav_assignment(room, node, pc)
         elif tp in ("PublicCall", "LocalCall"):
             tgt = node.get("script", script)
             name = node.get("name")
@@ -298,6 +300,30 @@ class Extractor:
                 self._walk(room, body, pc, tgt, seen | {name}, movement)
         for k in node.get("kids", ()):
             self._walk(room, k, pc, script, seen, movement)
+
+    def _nav_assignment(self, room, node, pc):
+        """`(= north 5)` -- a walk-off exit set by ASSIGNING the room's own property.
+
+        The other idiom, declaring it in the properties block, is handled by `_nav_edges`. Both
+        mean the same thing and games pick one: LSL2 uses the properties block 98 times and the
+        assignment form NEVER; KQ4 uses the assignment form 162 times. Supporting only the first
+        left 35 KQ4 rooms with no extractable exit at all and shattered its map into 64 components,
+        so the analysis was reasoning about a game it could not walk across.
+
+        Captured here rather than in `_nav_edges` so the path condition applies: an exit opened
+        only under some condition becomes a GUARDED edge, and `(= east 0)` (closing an exit) is
+        correctly not an edge at all."""
+        kids = node.get("kids") or []
+        if len(kids) < 2:
+            return
+        dest, src = kids[0], kids[1]
+        if not (isinstance(dest, dict) and dest.get("t") == "Property"
+                and dest.get("name") in NAV_SELECTORS):
+            return
+        dst = I.as_int(src)
+        if not dst or dst == 0xffff:
+            return                      # 0 CLOSES the exit; it does not open one
+        self.ts.edges.append(Edge(room, dst, _conj(pc)))
 
     def _send_effect(self, room, node, pc, movement=True):
         recv, msgs = I.send_pairs(node)
