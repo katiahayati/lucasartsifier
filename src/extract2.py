@@ -173,8 +173,40 @@ def _conj(pc):
     return pc[0] if len(pc) == 1 else GAnd(list(pc))
 
 
-def _room_object(script):
-    """The Room instance of a room script (superclass Rm, or named rm<N>)."""
+_ROOM_SPECIES = {}          # ir id -> species number of the Rm/Room base class
+
+
+def _room_species(ir):
+    """Species of the game's Room base class, found by NAME in the class table.
+
+    Room detection used to be `name == f"rm{script.number}"`, which is a decompiler NAMING
+    CONVENTION, not a fact about the game. sci-tools emits `rm47` for LSL2 but `Room63` for KQ4,
+    so every KQ4 room failed the test and the extractor saw 4 rooms out of 159 scripts -- silently
+    analysing almost nothing. Inheritance is the real signal, and it is what the docstring always
+    claimed. The name check stays as a fallback."""
+    key = id(ir)
+    if key in _ROOM_SPECIES:
+        return _ROOM_SPECIES[key]
+    species = None
+    for s in ir.scripts.values():
+        for o in s.objects:
+            if o.is_class and o.name in ("Rm", "Room"):
+                species = o.species
+                break
+        if species is not None:
+            break
+    _ROOM_SPECIES[key] = species
+    return species
+
+
+def _room_object(script, ir=None):
+    """The Room instance of a room script: an instance of the Rm/Room class, else named rm<N>."""
+    if ir is not None:
+        sp = _room_species(ir)
+        if sp is not None:
+            for o in script.objects:
+                if not o.is_class and o.super == sp:
+                    return o
     want = f"rm{script.number}"
     for o in script.objects:
         if o.name == want and not o.is_class:
@@ -193,7 +225,7 @@ class Extractor:
 
     def run(self):
         # room universe: any script that has an rm<N> Room instance
-        room_scripts = {n: s for n, s in self.ir.scripts.items() if _room_object(s)}
+        room_scripts = {n: s for n, s in self.ir.scripts.items() if _room_object(s, self.ir)}
         for n in room_scripts:
             self.ts.rooms.add(n)
         for n, s in room_scripts.items():
@@ -211,7 +243,7 @@ class Extractor:
         return self.ts
 
     def _nav_edges(self, room_num, script):
-        obj = _room_object(script)
+        obj = _room_object(script, self.ir)
         if obj is not None:
             for sel in NAV_SELECTORS:
                 dst = obj.props.get(sel)

@@ -29,15 +29,18 @@ class GameConfig:
     # kept because they are hand-verified; the derived pair reproduces them exactly.
     start_room: int                 # free-roam entry point for reachability
     goal_rooms: frozenset           # winning-terminal rooms (victory)
-    goal_scripts: tuple             # scripts whose guards seed the COI goal cone
-    timer_globals: frozenset        # per-cycle game-clock globals (timed gates)
     ir_path: str = ""               # JSON IR our sci-tools fork emits alongside src_dir
-    region_labels: dict = field(default_factory=dict)   # region# -> label (report only)
     # (global, value) whose assignment IS death. Both games raise death from Main's
     # doit via a plain global write, so the IR already carries these as SET effects
     # with their path condition -- we only need to recognize them.
     #   LSL2: Main.sc:973 (if (== gCurrentStatus 1001) (gCurRoom setScript: dyingScript))
     #   KQ4 : Main.sc:722 (if dead ...restart modal...)
+    # (global INDEX, value) whose assignment IS death; value None means "any non-zero".
+    # By INDEX, not name: the JSON IR identifies globals positionally and carries no symbol
+    # table, so a name here could never be resolved -- which is exactly how the previous
+    # by-name version came to be dead code with the real value hardcoded in missability.py.
+    # NOT derivable from one shape: LSL2 raises death as `gCurrentStatus == 1001` (a magic
+    # constant) while KQ4 uses `global127` as a plain boolean set in 37 different death rooms.
     death_signal: tuple = ()
     # QA / debug scaffolding, pinned to 0. A shipped game's debug menu is not part of
     # its winnability, and leaving these live is a LANDMINE: LSL2's rm82 (the volcano
@@ -51,6 +54,9 @@ class GameConfig:
     # model.py does not parse. Either could change under a perfectly reasonable
     # edit -- a different start anchor, or adding `^=` for completeness -- and the
     # analysis would silently degrade with no test failing. Declare them instead.
+    # QA scaffolding to pin off, by global INDEX. Also not universal: LSL2 gates its debug
+    # item hand-outs on globals 100/111, whereas KQ4 has no debug global at all -- it calls the
+    # SetDebug kernel. An empty set is therefore a legitimate answer, not a missing value.
     debug_globals: frozenset = frozenset()
     # Phase 4 mode-register promotion (closure.py). Empty = OFF (the default): a set
     # of register names to promote into the location state, or "auto" for the
@@ -82,35 +88,26 @@ LSL2 = GameConfig(
     # bypassable via the rm90-93 intro-cutscene tangle (rm92 <- rm91 <- rm90) -- see
     # docs/NOTES / the endgame-cluster memory; that untangling is separate open work.
     goal_rooms=frozenset({178}),
-    goal_scripts=(78, 178),
-    timer_globals=frozenset({
-        "gRgTimer", "gGameSeconds", "gCurrentTimer", "gSeconds", "gMinutes", "gHours",
-    }),
-    region_labels={
-        200: "Los Angeles", 300: "cruise ship / voyage", 400: "Nontoonyt Island",
-        401: "island", 500: "island interior", 600: "airport/plane",
-        700: "volcano/jungle", 7: "interior/overlay", 8: "interior/overlay",
-    },
-    death_signal=("gCurrentStatus", 1001),
-    debug_globals=frozenset({"gDebugging", "gForceAtest"}),
+    death_signal=(101, 1001),
+    debug_globals=frozenset({100, 111}),          # gDebugging, gForceAtest
 )
 
 KQ4 = GameConfig(
     name="King's Quest IV: The Perils of Rosella (v1.006.004, SCI0, DOS/English)",
-    src_dir="",   # KQ4 needs a sluicebox decompilation + its own JSON IR; the old
-    #   EricOakford archive this pointed at has been removed.
-    resource_dir="",   # KQ4 resource volumes not present; control-map oracle is skipped when empty
+    src_dir=os.path.join(_ROOT, "build", "kq4", "src"),
+    ir_path=os.path.join(_ROOT, "build", "kq4", "kq4.ir.json"),
+    resource_dir="/mnt/i/sierra/kq4",
     # discover.py proposed start=23; goal confirmed as the Daventry ending where
     # Rosella cures King Graham (rm694, grahamFace; reached rm693->694, after
     # gamePhase=endGame(99) is set in rm92 when Lolotte dies).
-    start_room=23,
-    goal_rooms=frozenset({693, 694}),
-    goal_scripts=(693, 694),
-    timer_globals=frozenset({"gameHours", "gameMinutes"}),   # the day/night deadline clock
-    region_labels={},
-    death_signal=("dead", "TRUE"),
+    # Both discovered by anchors.py. Discovery independently picks start=rm23, the value an
+    # earlier hand analysis had also proposed. It picks victory rm29/rm72 rather than the
+    # hand-read Daventry ending (rm693/694) -- UNVERIFIED, and KQ4 has never been play-tested.
+    start_room=0,
+    goal_rooms=frozenset(),
+    death_signal=(127, None),
     # Main.sc:55 `debugOn ;generic debug flag -- set from debug menu`
-    debug_globals=frozenset({"debugOn", "debugMenu", "debugging"}),
+    debug_globals=frozenset(),                     # KQ4 uses the SetDebug kernel, not a global
 )
 
 # The config the pipeline runs against. Swap this (or set it from run.py) to target

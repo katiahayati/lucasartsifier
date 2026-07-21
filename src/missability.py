@@ -110,16 +110,15 @@ def goal_reaching_rooms(edges, goal_rooms):
     return reachable(rev, set(goal_rooms))
 
 
-_DEBUG_IDX = frozenset({100, 111})   # gDebugging, gForceAtest
-
-
-def _debug_gated_guard(guard):
+def _debug_gated_guard(guard, debug_idx=frozenset()):
+    """Does this guard depend on QA scaffolding? Those branches are not real availability --
+    LSL2's rm82 hands you the entire bomb under `if gDebugging`."""
     refs = []
     def w(g):
         if isinstance(g, list):
             for x in g: w(x)
         elif isinstance(g, Pred):
-            if g.var in _DEBUG_IDX: refs.append(g.var)
+            if g.var in debug_idx: refs.append(g.var)
         elif isinstance(g, (GAnd, GOr)):
             for k in g.kids: w(k)
         elif isinstance(g, GNot):
@@ -152,7 +151,7 @@ def build_maps(em):
     # fold `gDebugging != 0` to FALSE -- and the IR json carries no global names, so we can't
     # resolve config.debug_globals to indices from it. TODO(generalize): pin debug globals in
     # the emitter / carry a name->index map. For now use the known LSL2 debug indices.
-    DEBUG_IDX = frozenset({100, 111})   # gDebugging, gForceAtest
+    DEBUG_IDX = frozenset(em.cfg.debug_globals)
     def _debug_gated(guard):
         refs = set()
         def w(g):
@@ -682,7 +681,7 @@ class IrSccReach(SccReach):
         it, so it is deliberately scoped to DESTRUCTION and leaves the stranding sweep alone."""
         guards = [a.guard for a in self.em.ts.acqs if a.item == item]
         guards += [g for room, script, it, g in self.em.handler_gets if it == item]
-        guards = [g for g in guards if not _debug_gated_guard(g)]
+        guards = [g for g in guards if not _debug_gated_guard(g, frozenset(self.em.cfg.debug_globals))]
         return bool(guards) and all(self._loc_required(g, item) for g in guards)
 
     def _groups(self):
@@ -785,7 +784,15 @@ def load(cfg=None, ir_path=None):
     cfg = cfg or config.ACTIVE
     ir_path = ir_path or cfg.ir_path
     ir = I.load_ir(ir_path)
-    em = E.OpEmitter(ir, cfg, lambda gi, v: gi == 101 and v == 1001)
+    sig = tuple(cfg.death_signal) if cfg.death_signal else ()
+    if not sig:
+        raise SystemExit("config.death_signal is unset: declare (global_index, value) -- value "
+                         "None means any non-zero write. It cannot be derived; LSL2 and KQ4 "
+                         "disagree on both index and shape.")
+    d_gi, d_val = sig[0], (sig[1] if len(sig) > 1 else None)
+    is_death = (lambda gi, v: gi == d_gi and v == d_val) if d_val is not None else \
+               (lambda gi, v: gi == d_gi and bool(v))
+    em = E.OpEmitter(ir, cfg, is_death)
     if not cfg.start_room or not cfg.goal_rooms:
         # Derive the reachability anchors from the game rather than declaring them. See anchors.py:
         # start = first room the player can act in, widest forward reach; goal = terminal,
