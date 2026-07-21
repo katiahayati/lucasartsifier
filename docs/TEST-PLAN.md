@@ -67,3 +67,32 @@ Boot, load a save, walk around, save/restore. Any script error on entering
 Not yet executed by anyone. Structural verification so far: 117/118 scripts compile, patch headers
 `82 00`, each sink exactly −12 bytes vs an unpatched control build, and the analysis says these
 guards close every detected softlock while creating none.
+
+## Getting around: the game's OWN debug mode (no external debugger needed)
+
+Type `praise lord` in the parser -- `Main.sc:1000` XOR-toggles `global100` and every `newRoom`
+then enables locale 5 (`rm5.sc`), the debug console:
+
+| command | effect |
+|---|---|
+| `tp` | "Teleport to:" prompt, any room number |
+| `get <noun>` | `moveTo: ego` -- gives the item |
+| `pitch <noun>` | `moveTo: -1` -- DESTROYS it (use this to test a refusal) |
+
+`pitch`'s `moveTo: -1` is the same permanent destruction the `ownedBy` analysis flagged, which is
+exactly why barfing into the Airsick_Bag was a softlock.
+
+**Making the cruise ship appear at rm26.** `rm26.init` draws pic 126 (ship) only when ego holds
+BOTH item 3 (Cruise_Ticket) and item 10 (Onklunk); otherwise pic 26, an empty dock. It is checked
+at ROOM INIT, so acquire both BEFORE entering:
+
+    praise lord
+    get onklunk
+    get ticket
+    tp        -> 26
+
+### TRAP: turn debug OFF before testing rm82
+`rm82.sc:83` is `(if global100 (global0 get: 27 get: 21 get: 19))` -- debug mode hands you the
+Airsick_Bag, Hair_Rejuvenator and Matches for free, silently masking whether the sink fixes
+worked. Toggle it off (`praise lord` again) before any volcano test. This global is also why the
+analyser filters debug-gated acquisitions; otherwise it would conclude the bomb needs nothing.
