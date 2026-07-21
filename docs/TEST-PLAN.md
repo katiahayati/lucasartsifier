@@ -1,7 +1,7 @@
 # LSL2 softlock patch — test plan
 
 **Install:** `cp build/patch/script.* <copy-of-game>/`  ·  **Revert:** delete those files.
-8 files: `script.026 038 047 057 063 079 081 600`.  Regenerate: `python -m patcher`.
+9 files: `script.000 026 038 047 057 063 079 081 600`.  Regenerate: `python -m patcher`.
 
 ## Item numbers
 
@@ -72,9 +72,17 @@ Each prints its original message, then **"Just kidding! You hold on to it becaus
 
 | # | room(s) | type this | item | status |
 |---|---|---|---|---|
-| B1 | rm63 | `pour rejuvenator on bolt` | **21** | ⬜ re-test (wording fixed) |
-| B2 | rm81 | `drop rejuvenator` | **21** | ⬜ re-test (wording fixed) |
-| B3 | rm61 / 62 / 63 | `barf` (or `use bag`) | **27** | ⬜ re-test (wording fixed) |
+| B1 | rm63 | `pour rejuvenator on bolt` | **21** | ⬜ |
+| B2 | rm81 | `drop rejuvenator` | **21** | ⬜ |
+| B3 | rm61 / 62 / 63 | `barf` (or `use bag`) | **27** | ⬜ |
+| **B4** | **ANY room** | `pour rejuvenator` / `drop rejuvenator` | **21** | ⬜ **new** |
+| **B5** | **ANY room** | the generic verb that destroys the **Matches** | **19** | ⬜ **new** |
+| **B6** | **ANY room** | `open parachute` (outside the plane) | **24** | ⬜ **new** |
+
+B4-B6 live in **`Main.sc`**, whose `handleEvent` runs on EVERY screen -- which is why they were
+invisible to a detector keyed on rooms (Main is pseudo-room 0, and nothing is "downstream" of it,
+so the still-needed-later test could never fire). Found by the user PLAYING: the rejuvenator could
+be poured out anywhere. Test each in an arbitrary room, well away from its real use.
 
 Check inventory after each. **The score penalty is also removed** (−5 / −5 / −2): it was the price
 of destroying the item, and the destruction is gone. Charging for something that did not happen

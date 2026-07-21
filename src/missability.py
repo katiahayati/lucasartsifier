@@ -618,6 +618,15 @@ class IrSccReach(SccReach):
         gate = set(self.regs)
         out = []
         for room, script, it, g in self.em.handler_drops:
+            if script in self.GLOBAL_SCRIPTS:
+                # Clause identity is (room, positive-owns), which pins a clause inside a small
+                # room but COLLIDES badly in Main -- one giant script where unrelated clauses
+                # share an own-set, so a real use elsewhere in Main masks a sink here. We cannot
+                # attribute reliably, so assume the worst and let the danger test decide. That is
+                # the over-require direction, and it is how "open parachute" (Main destroys the
+                # chute needed for the rm63 jump) surfaced at all.
+                out.append({"room": room, "script": script, "item": it})
+                continue
             k = self._clause_key(room, g)
             if k in armed or any(gi in gate for gi in wrote.get(k, ())):
                 continue                          # the clause DOES something -> a real use
@@ -625,12 +634,23 @@ class IrSccReach(SccReach):
         return out
 
     def real_uses(self):
-        """item -> rooms where holding it ARMS something: the uses that are not sinks."""
+        """item -> rooms where holding it ARMS something: the uses that are not sinks.
+
+        Both halves of what `pure_sinks` calls "doing something" must count here, or the two
+        disagree: a use that writes a GATING REGISTER from a handler was treated as real by
+        pure_sinks but invisible to the danger test. Wearing the parachute at rm63 is exactly
+        that -- it sets global142 from a handler, arming no machine state -- so destroying the
+        chute elsewhere looked harmless."""
         out = defaultdict(set)
         for info in self.em.machines:
             for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
                 for it in _own_positive(eg):
                     out[it].add(info["room"])
+        gate = set(self.regs)
+        for room, script, gi, v, g in self.em.handler_writes:
+            if gi in gate:
+                for it in _own_positive(g):
+                    out[it].add(room)
         return out
 
     def _loc_required(self, guard, item):
@@ -668,6 +688,20 @@ class IrSccReach(SccReach):
     def _groups(self):
         return {frozenset(g) for gs in self.disjunctive_groups().values() for g in gs}
 
+    GLOBAL_SCRIPTS = frozenset({0})   # Main: its handleEvent runs in EVERY room
+
+    def _sink_rooms(self, sk):
+        """Rooms a consumption can actually happen in.
+
+        Normally the room it was found in. But Main (script 0) handles events in every room, so a
+        `put: X -1` there is reachable from anywhere -- and being attributed to pseudo-room 0, which
+        has no outgoing edges, it could never satisfy the "still needed downstream" test and was
+        silently skipped. That is how four generic destroy-the-item verbs in Main went unnoticed
+        until someone played the game and poured the rejuvenator out on an arbitrary screen."""
+        if sk["script"] in self.GLOBAL_SCRIPTS:
+            return sorted(r for r in self.reach_rooms if r in self.rooms and r != 0)
+        return [sk["room"]]
+
     def dangerous_sinks(self):
         """Pure sinks that COST you the game: the item is still needed somewhere you can still
         reach, and once wasted it cannot be re-obtained. The action-shaped sibling of a room-gate
@@ -678,19 +712,21 @@ class IrSccReach(SccReach):
         uses = self.real_uses()
         out = []
         for sk in self.pure_sinks():
-            it, room = sk["item"], sk["room"]
-            ahead = (uses.get(it, set()) - {room}) & self.rooms_after(room)
-            if not ahead:
-                continue
-            # a one-time pickup destroyed here is gone regardless of which rooms stay walkable
-            if not self.destroyed_is_permanent(it) and room in self.reobtainable_rooms(it):
-                continue
-            # ...but a DISJUNCTIVE alternative rescues you: throwing the Ashes away is survivable
-            # while the Sand is still gettable, since rm81 accepts either.
-            if any(it in G and any(room in self.reobtainable_rooms(o) for o in G - {it})
-                   for G in self._groups()):
-                continue
-            out.append({**sk, "still_needed_at": sorted(ahead)})
+            it = sk["item"]
+            for room in self._sink_rooms(sk):
+                ahead = (uses.get(it, set()) - {room}) & self.rooms_after(room)
+                if not ahead:
+                    continue
+                # a one-time pickup destroyed here is gone regardless of which rooms stay walkable
+                if not self.destroyed_is_permanent(it) and room in self.reobtainable_rooms(it):
+                    continue
+                # ...but a DISJUNCTIVE alternative rescues you: throwing the Ashes away is
+                # survivable while the Sand is still gettable, since rm81 accepts either.
+                if any(it in G and any(room in self.reobtainable_rooms(o) for o in G - {it})
+                       for G in self._groups()):
+                    continue
+                out.append({**sk, "at_room": room, "still_needed_at": sorted(ahead)})
+                break          # one witness room is enough to condemn the site
         return out
 
     def requirement_units(self):
