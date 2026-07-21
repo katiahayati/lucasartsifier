@@ -162,6 +162,16 @@ def build_maps(em):
                 for it in gg:
                     sources[it].add(info["room"])
 
+    # DROP sites -- where an item can LEAVE your inventory. Declared since the first version but
+    # never populated. Needed to place NEGATIVE guard literals: `!own(Spinach_Dip)` may only be
+    # demanded where the dip can still be got rid of (rm131, `throw bread overboard`, +2 score).
+    # Guarding it later would convert a death into a permanent wall.
+    for room, script, it, g in getattr(em, "handler_drops", ()):
+        drops[it].add(room)
+    for info in em.machines:
+        for it in info.get("drops", ()):
+            drops[it].add(info["room"])
+
     # required: rooms whose guard tests own(item)==True (across every guard-bearing structure).
     # PASS 1 -- TRAP items: an item whose own()-guarded branch walks into a DEATH is a trap, not
     # a requirement (Spinach_Dip: eat it -> "the mayonnaise has spoiled" -> death). Mark them

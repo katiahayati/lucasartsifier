@@ -158,6 +158,59 @@ game turns up that gates movement relationally.
 
 Sweep unchanged at 16/16 zero FP. Tests 20+32+25+35.
 
+## GUARD SYNTHESIS (the 'prevent' half) — STARTED 2026-07-21, `src/guards.py`
+
+The patch condition is derived from the WINNING REGION, never from "this item is mentioned
+nearby" — that distinction is the entire reason `patch.py` is disabled.
+
+    guard(gate) = OR over the HOPEFUL paths of that gate, of their path condition,
+                  keeping item literals, positive AND negative
+
+`hopeful` is the same goal-reachability predicate the TRAP rule uses, so a branch that kills you
+or strands you contributes nothing, while a surviving branch contributes exactly its own()s.
+
+**Acid test — rm138, the edge whose patch broke LSL2.** The lift carries the full ordered `cond`
+including negations, so the derived guard is:
+
+    (and (gEgo has: 8) (not (gEgo has: 13)) (or (gEgo has: 11) (gEgo has: 12)))
+
+i.e. need the Grotesque_Gulp, take Sewing_Kit OR Fruit, and **must NOT carry the Spinach_Dip**.
+The shipped guard was `(and has:11 has:12 has:13 has:14)`. The derived guard FORBIDS the very item
+the old one REQUIRED — same edge, opposite conclusion, because the rule is now semantic. All three
+defects in `DISABLED_WHY` (fatal item forced, OR-alternatives ANDed, validator sharing the core)
+are addressed by one mechanism plus an independent oracle.
+
+`absorb_ordering` removes the negations an ordered `cond` leaves behind (`(A & !B) | B == A | B`,
+dropping a negative only when that item is positive in a sibling HOPEFUL alternative) — so
+"tested later" collapses while "carrying this loses" survives.
+
+Four survival gates on LSL2: rm70 (Knife), rm82 s7 (Airsick_Bag), rm82 s9 (Matches), rm138 (above).
+
+**PLACEMENT: each literal is enforced at the last edge where it is still SATISFIABLE**, not at the
+gate. A positive literal needs the item still obtainable; a NEGATIVE literal needs it still
+droppable — guarding `!own(dip)` at the raft would convert a death into a permanent wall, since
+disposal is ship-only. Derived frontier for the dip: **rm131 -> rm138** (boarding the raft from the
+deck where "throw bread overboard" works, +2 score), which is exactly where the user said it
+belongs. `drops` — declared since the first version but never populated — is now filled from
+handler and machine drops, which is what makes this computable.
+
+### Guard synthesis — next
+1. **Filter death-room frontiers.** rm10->rm90, rm35->rm95/96 surfaced as frontiers but are deaths,
+   not commits; screen them with `goal_reaching_rooms`.
+2. **Emit specs per literal at its own frontier** (JSON), with the two safety preconditions as hard
+   refusals: positive literal must be obtainable before the edge, negative must be droppable before
+   it. A guard that cannot be satisfied is strictly worse than the softlock.
+3. **Validate with a DIFFERENT engine than the detector** — the exact lesson of `DISABLED_WHY`.
+   Ladder: structural self-check -> re-run the sweep on the guarded model (softlock gone, no NEW
+   strandings) -> nuXmv winnability -> boot in ScummVM.
+4. **Then** source emission via the existing `trigger.py` controllable-trigger placement (guard the
+   handler that STARTS the cutscene, never the `newRoom` at its tail — guarding the tail crashes
+   the game).
+
+**Seam to verify before touching game files:** analysis runs on the sci-tools JSON IR, while
+`trigger.py`/`patch_trigger.py` rewrite the EricOakford source tree — two different decompilations.
+Item/room numbering probably corresponds; "probably" is how the last patch shipped.
+
 ### Still open
 - **Validate the discovery on KQ4** — this is the first piece built to be cross-game by
   construction, and it has still only ever run on LSL2.
