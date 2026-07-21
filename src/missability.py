@@ -173,6 +173,38 @@ def build_maps(em):
         # all -- the Flower handed to the KGBishnas (rm50) exists only as `gEgo put: 20 -1`.
         for it in info.get("drops", ()):
             required[it].add(info["room"])
+
+    # SPLICE pass-through CUTSCENE rooms out of the room graph. A cutscene has no player input,
+    # so it is a corridor, not a decision point -- and leaving it in MASKS reciprocity: rm55 ->
+    # rm56(cutscene) -> rm57 made rm57->55 look one-way (rm55 never goes DIRECTLY to rm57), so
+    # _sealed over-sealed rm57 and false-flagged the Airline_Ticket. Splicing exposes the real
+    # rm55 <-> rm57 round trip (you can't return from mid-cutscene, but you CAN from rm57).
+    # Only splice cutscenes carrying no item effects, so no source/requirement is orphaned.
+    effectful = set()
+    for rooms in sources.values():
+        effectful |= rooms
+    for rooms in required.values():
+        effectful |= rooms
+    # ONLY splice a LINEAR corridor (exactly one predecessor and one successor). Splicing a
+    # multi-entry/multi-exit cutscene (rm92 enters at 16/23 by gIslandStatus) would wire every
+    # pred to every succ -- a bipartite blow-up that over-connects the graph and destroys the
+    # one-way structure the strandings depend on (it drops detection to 0/17).
+    keep = set(em.cfg.goal_rooms) | {em.cfg.start_room}   # rm178 (the ENDING) is itself a
+    #   cutscene -- splicing it removed the goal from the graph and zeroed every candidate.
+    for C in sorted(em._cutscene_room_set()):
+        if C in effectful or C in keep or C not in edges:
+            continue
+        preds = [a for a in edges if C in edges[a]]
+        succs = set(edges.get(C, ())) - {C}
+        if len(preds) != 1 or len(succs) != 1:
+            continue
+        a, b = preds[0], next(iter(succs))
+        if a == b:
+            continue
+        edges[a].discard(C)
+        edges[a].add(b)
+        edge_kind[(a, b)].add("goto")
+        edges.pop(C, None)
     return edges, edge_kind, sources, drops, required
 
 
