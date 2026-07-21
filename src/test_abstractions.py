@@ -10,7 +10,7 @@ divergence (the winnability run / the missability sweep). See docs/ROADMAP.md.
 import sys
 import compile2 as C
 import smv_emit3 as E
-from model import GAnd, GOr, GNot
+from guard_ast import GAnd, GOr, GNot
 
 PASS, FAIL = [], []
 def check(name, cond):

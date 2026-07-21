@@ -16,8 +16,8 @@ from collections import defaultdict, deque
 import ir as I
 import config
 import smv_emit3 as E
-from model import GAnd, GOr, GNot, Pred
-from search import tarjan_scc, reachable, SccReach
+from guard_ast import GAnd, GOr, GNot, Pred
+from scc_core import tarjan_scc, reachable, SccReach
 
 # item names are a reporting nicety; the IR JSON carries none, so keep a local map (LSL2). The
 # ANALYSIS is fully on JSON-IR -- only these labels are game-specific.

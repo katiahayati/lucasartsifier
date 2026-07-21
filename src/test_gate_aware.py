@@ -12,7 +12,7 @@ Ground-truth scoring stays end-to-end (`python -m missability`); see docs/ROADMA
 import sys
 
 import missability as M
-from model import GAnd, GOr, GNot, Pred
+from guard_ast import GAnd, GOr, GNot, Pred
 
 PASS, FAIL = [], []
 def check(name, cond):

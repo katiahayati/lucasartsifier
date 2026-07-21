@@ -54,7 +54,7 @@ def _apply_ctr(ctr, updates, script, loc_dom):
 def _eval3(node, regs, track):
     """3-valued: True/False if the tracked-register constraints decide it, else None
     (permissive: OWN/SAID/POS/opaque/untracked-CMP -- the player can satisfy them)."""
-    from model import GAnd, GOr, GNot, Pred
+    from guard_ast import GAnd, GOr, GNot, Pred
     if node is None:
         return True
     if isinstance(node, tuple):          # a CTR atom is handled separately; treat as None
@@ -237,7 +237,7 @@ if __name__ == "__main__":
     # REGISTER VALUE-FLOW: values each promoted register can be WRITTEN to in a reachable
     # room, vs the values gates REQUIRE. A `== v` gate whose register never reaches v is a
     # candidate block (over-approximate: write may be in an unreached state of a reached room).
-    from model import GAnd, GOr, GNot, Pred
+    from guard_ast import GAnd, GOr, GNot, Pred
     produced = defaultdict(set)
     for gi, (lo, hi) in em.reg_dom.items():
         produced[gi].add(em._reg_init(gi, lo, hi))

@@ -7,6 +7,37 @@ Two halves, generalizing beyond LSL2 to SCI games:
 2. **Prevent** them by auto-generating a verified patch to the game (re-grant the item,
    add a guard, block the fatal action).
 
+## ONE TREE ONLY (2026-07-21) — the EricOakford front-end is DELETED
+The project used to carry two decompilations and analysed one while patching the other. That seam
+bit us twice in an hour, so the legacy side is gone: `model.py`, `analyze.py`, `slice.py`,
+`search.py`, `discover*.py`, `dictionary.py`, `_check_parse.py`, `patch*.py`, `validate_patch.py`,
+`vendor/sci-decomp-archive`, and every EricOakford-derived build under `out/`.
+
+Two entanglements had to be cut first, both now clean modules with no source-tree dependency:
+- `guard_ast.py` -- Pred/GAnd/GOr/GNot, the only 4 names the IR pipeline ever needed from model.py.
+- `scc_core.py` -- tarjan_scc/reachable/SccReach, front-end agnostic. The legacy `__init__` (which
+  loaded .sc sources) and the dead `_sealed` heuristic went with it.
+
+**A trap worth remembering:** `machine2.py` had FUNCTION-LOCAL `from model import GNot` in four
+places. After the split those built a *different* GNot class than the `isinstance` checks compared
+against, so every negation silently read as unrecognised -- the Airline_Ticket FP came back and the
+Ashes/Sand group vanished. Module-level imports are greppable; function-local ones are not. When
+splitting a module, grep for indented imports too.
+
+**Also corrected:** `config.resource_dir` pointed at `out/lsl2_playable`, which the user identified
+as the output of the PREVIOUS (broken) patch attempt -- so the control-map oracle was reading
+resources of our own making. It now points at the pristine `/mnt/i/sierra/lsl2`.
+
+**Delivery mechanism, learned from that old build:** it shipped `script.026/038/057/079/082` as
+ScummVM LOOSE PATCH FILES in the game directory -- no resource.map surgery needed. Four of those
+five rooms are our own frontier-guard sites.
+
+**Still one seam left (NOT yet resolved):** there are two sluicebox trees --
+`vendor/sci-scripts/lsl2-dos-1.002.000/src` (named locals: `aWater1`, `restoreX`) and the job-dir
+decompilation the JSON IR was actually generated from (raw `local0/1/2`). All 118 files differ by
+naming. `cfg.src_dir` points at the vendor one while the IR came from the other. Pick one and
+regenerate the IR from it before emitting any patch.
+
 ## Pipeline
 `sci-tools` decompile → JSON IR → `extract2` (guards/effects/edges) → `machine2`/`compile2`
 (lift changeState scripts to state machines) → `smv_emit3` (operational SMV model) → **nuXmv**

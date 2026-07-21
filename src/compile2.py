@@ -12,7 +12,7 @@ the flat movement edge stands (control_exits, in spirit).
 from __future__ import annotations
 
 import ir as I
-from model import GAnd, GNot, Pred
+from guard_ast import GAnd, GNot, Pred
 from extract2 import atom, _conj, G_EGO
 import machine2 as M
 

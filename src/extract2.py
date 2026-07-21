@@ -18,7 +18,7 @@ import os
 from dataclasses import dataclass, field
 
 import ir as I
-from model import GAnd, GOr, GNot, Pred
+from guard_ast import GAnd, GOr, GNot, Pred
 
 G_EGO = 0        # gEgo   (get:/put:/has: receiver)  -- confirmed by IR survey
 G_CURROOM = 2    # gCurRoom (newRoom: receiver)

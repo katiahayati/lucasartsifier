@@ -138,7 +138,7 @@ class MachineBuilder:
         with the path condition. Handles If/Cond path conditions."""
         if node is None:
             return
-        from model import GNot
+        from guard_ast import GNot
         tp = node["t"]
         if tp == "If":
             ks = node["kids"]
@@ -185,7 +185,7 @@ class MachineBuilder:
         `has: Passport`, sits on a Cond case above the call)."""
         if node is None:
             return
-        from model import GNot
+        from guard_ast import GNot
         tp = node["t"]
         if tp == "If":
             ks = node["kids"]
@@ -239,11 +239,11 @@ class MachineBuilder:
             a = atom(ks[0])
             self._ops(ks[1], pc + [a], out)
             if len(ks) > 2:
-                from model import GNot
+                from guard_ast import GNot
                 self._ops(ks[2], pc + [GNot(a) if a else None], out)
             return
         if tp == "Cond":
-            from model import GNot
+            from guard_ast import GNot
             priors = []   # a case (and the else) runs only if all PRIOR cases failed
             for c in node["kids"]:
                 if c["t"] == "Case":

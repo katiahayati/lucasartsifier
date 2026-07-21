@@ -26,7 +26,7 @@ import ir as I
 from sci_resource import Sci0Game
 import sci_gfx
 from sci_gfx import W, H
-from model import GAnd, GOr, GNot
+from guard_ast import GAnd, GOr, GNot
 from extract2 import atom
 
 # control bit N ($ mask 1<<N) blocks the ego iff N is in its illegalBits.

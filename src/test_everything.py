@@ -11,7 +11,7 @@ Parts under test:
 import sys
 sys.path.insert(0, ".")
 import ir as I
-from model import Pred, GAnd, GOr, GNot
+from guard_ast import Pred, GAnd, GOr, GNot
 
 # ---- synthetic AST builders (match ir.py node shapes) --------------------
 def V(vtype, index): return {"t": "Variable", "vtype": vtype, "index": index}

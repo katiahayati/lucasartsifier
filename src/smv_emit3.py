@@ -25,7 +25,7 @@ import ir as I
 import machine2 as M
 import compile2 as C
 from extract2 import extract, atom
-from model import GAnd, GOr, GNot, Pred
+from guard_ast import GAnd, GOr, GNot, Pred
 
 
 def _int(x):

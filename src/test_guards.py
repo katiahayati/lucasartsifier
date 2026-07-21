@@ -10,7 +10,7 @@ End-to-end scoring stays in `python -m guards` / `python -m missability`; see do
 import sys
 
 import guards as G
-from model import GAnd, GNot, Pred
+from guard_ast import GAnd, GNot, Pred
 
 PASS, FAIL = [], []
 def check(name, cond):
