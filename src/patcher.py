@@ -1,0 +1,242 @@
+"""Emit a patched game from the guard specs -- the 'prevent' half, made real.
+
+Pipeline, all on ONE decompilation (ours):
+
+    build/ir/src/*.sc            our sluicebox decompilation (regenerate: tools/sci-tools-fork/build.sh)
+      -> assemble()              a compilable project: sources + game.ini + the game's resources
+      -> apply_*()               the edits guards.py derived
+      -> scicompile --sco/--all  interface files, then compile
+      -> emit_patches()          script.NNN loose patch files ScummVM reads in preference
+
+Nothing here decides WHAT to patch: `guards.py` owns that, and every edit carries the spec that
+justified it. This module only turns specs into bytes.
+
+The loose-patch format (SCI0), per SCICompanion's own writer and ScummVM's reader:
+
+    byte 0 : 0x80 | ResourceType   -> 0x80 | 2 (Script) = 0x82
+    byte 1 : 0x00                  -> SCI0 has no extra resource header
+    byte 2+: the raw compiled script
+
+Dropping `script.NNN` into the game folder overrides the mapped resource, so the original
+RESOURCE.MAP/volumes are never touched and the patch is trivially reversible: delete the files.
+"""
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+import config
+import guards as G
+import missability as M
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+SCICOMPILE = os.path.join(_ROOT, "tools", "scicompile", "build", "scicompile")
+RES_TYPE_SCRIPT = 2
+
+
+def _script_numbers(src_dir):
+    """title -> script number, read from each source's own `(script# N)` declaration."""
+    out = {}
+    for fn in sorted(os.listdir(src_dir)):
+        if not fn.endswith(".sc"):
+            continue
+        m = re.search(r"\(script#\s*(\d+)\)", open(os.path.join(src_dir, fn), errors="replace").read())
+        if m:
+            out[fn[:-3]] = int(m.group(1))
+    return out
+
+
+def assemble(dest, cfg=None):
+    """Build a compilable project directory from our decompilation + the pristine resources."""
+    cfg = cfg or config.ACTIVE
+    src = cfg.src_dir
+    if os.path.isdir(dest):
+        shutil.rmtree(dest)
+    os.makedirs(os.path.join(dest, "src"))
+    for fn in os.listdir(src):
+        if fn.endswith(".sc"):
+            shutil.copy(os.path.join(src, fn), os.path.join(dest, "src", fn))
+    # the compiler reads vocab.997/996/000 out of the game's own volumes
+    for fn in os.listdir(cfg.resource_dir):
+        if fn.lower().startswith("resource."):
+            shutil.copy(os.path.join(cfg.resource_dir, fn), os.path.join(dest, fn))
+
+    nums = _script_numbers(os.path.join(dest, "src"))
+    with open(os.path.join(dest, "game.ini"), "w") as f:
+        f.write("[Game]\nLanguage=sci\nName=%s\n[Script]\n" % cfg.name)
+        for title, n in sorted(nums.items(), key=lambda kv: kv[1]):
+            f.write("n%03d=%s\n" % (n, title))
+    _declare_missing_globals(os.path.join(dest, "src"))
+    return nums
+
+
+def _declare_missing_globals(src_dir):
+    """Extend script 0's local block to cover every global the game actually reads.
+
+    Globals ARE script 0's locals. LSL2 reads `global480` while the block declares 0..479, so the
+    compiler rejects rm63 -- a patch site. The decompilation is faithful; the declaration is just
+    short. Compile-time only: a room compiles to an absolute global index that the interpreter
+    resolves against its own array, which the shipped game already indexes this far."""
+    main = os.path.join(src_dir, "Main.sc")
+    if not os.path.exists(main):
+        return 0
+    txt = open(main, errors="replace").read()
+    highest = max((int(m) for m in re.findall(r"\bglobal(\d+)\b", _all_sources(src_dir))), default=-1)
+    declared = set(int(m) for m in re.findall(r"^\s*global(\d+)\s*$", txt, re.M))
+    missing = [g for g in range(highest + 1) if g not in declared and g > max(declared or {0})]
+    if not missing:
+        return 0
+    lines = txt.splitlines(True)
+    start = next(i for i, l in enumerate(lines) if l.startswith("(local"))
+    depth = 0
+    end = start
+    for i in range(start, len(lines)):
+        depth += lines[i].count("(") - lines[i].count(")")
+        if depth == 0:
+            end = i
+            break
+    for g in reversed(missing):
+        lines.insert(end, "\tglobal%d\n" % g)
+    open(main, "w").write("".join(lines))
+    return len(missing)
+
+
+def _all_sources(src_dir):
+    parts = []
+    for fn in sorted(os.listdir(src_dir)):
+        if fn.endswith(".sc"):
+            parts.append(open(os.path.join(src_dir, fn), errors="replace").read())
+    return "\n".join(parts)
+
+
+def apply_sink_remedies(dest, sinks, titles_by_num):
+    """Delete the item consumption in each dangerous PURE SINK.
+
+    Safe by construction: a pure sink is a clause that does nothing EXCEPT destroy the item (it
+    arms no machine state and writes no register any guard reads), so removing its one effect
+    cannot perturb anything else. The joke and the score penalty stay; the player keeps the item."""
+    edits = []
+    seen = set()
+    for sk in sinks:
+        if sk["refused"]:
+            continue
+        # One CLAUSE can be reported at several rooms: the airsick-bag sink is script 600, a
+        # REGION covering rm61/62/63, so the same `put: 27 -1` shows up three times. Edit once.
+        key = (sk["script"], sk["item"])
+        if key in seen:
+            continue
+        seen.add(key)
+        title = titles_by_num.get(sk["script"])
+        if title is None:
+            continue
+        path = os.path.join(dest, "src", title + ".sc")
+        lines = open(path, errors="replace").read().splitlines(True)
+        pat = re.compile(r"^\s*\(global0\s+put:\s*%d\s+-1\)\s*$" % sk["item"])
+        hits = [i for i, l in enumerate(lines) if pat.match(l)]
+        if len(hits) != 1:
+            edits.append({**sk, "applied": False,
+                          "why": "expected exactly one `put: %d -1` in %s, found %d"
+                                 % (sk["item"], title, len(hits))})
+            continue
+        i = hits[0]
+        lines[i] = ("\t\t\t; [softlock-patch] consumption removed: %s\n" % sk["why"])
+        open(path, "w").write("".join(lines))
+        edits.append({**sk, "applied": True, "title": title, "line": i + 1})
+    return edits
+
+
+def run(args, cwd):
+    p = subprocess.run([SCICOMPILE] + args, cwd=cwd, capture_output=True, text=True, timeout=1800)
+    return p.returncode, p.stdout + p.stderr
+
+
+def compile_project(dest):
+    """--sco (interfaces from source + game) then --all (compile everything)."""
+    parent, name = os.path.dirname(dest) or ".", os.path.basename(dest)
+    rc, out = run(["--sco", name], parent)
+    sco = re.search(r"Generate SCO: (\d+) written", out)
+    rc2, out2 = run(["--all", name], parent)
+    allr = re.search(r"result: (\d+)/(\d+) scripts compiled", out2)
+    failed = re.findall(r"^  (\S+)\s+line \d+: Error: (.*)$", out2, re.M)
+    return {"sco_written": int(sco.group(1)) if sco else 0,
+            "compiled": int(allr.group(1)) if allr else 0,
+            "total": int(allr.group(2)) if allr else 0,
+            "failures": failed}
+
+
+def compile_one(dest, title, out_bin):
+    """Compile a single script to its raw resource bytes (--all only writes .sco)."""
+    parent, name = os.path.dirname(dest) or ".", os.path.basename(dest)
+    rc, out = run([name, os.path.join(name, "src", title + ".sc"), out_bin], parent)
+    return os.path.exists(out_bin), out
+
+
+def emit_patches(dest, titles, nums, out_dir):
+    """Compile each edited script and wrap it as a ScummVM loose patch `script.NNN`."""
+    os.makedirs(out_dir, exist_ok=True)
+    written = []
+    for title in sorted(titles):
+        num = nums[title]
+        raw = os.path.join(dest, "%s.bin" % title)
+        ok, log = compile_one(dest, title, raw)
+        if not ok:
+            written.append({"title": title, "script": num, "ok": False,
+                            "error": log.strip().splitlines()[-1] if log.strip() else "no output"})
+            continue
+        data = open(raw, "rb").read()
+        dst = os.path.join(out_dir, "script.%03d" % num)
+        with open(dst, "wb") as f:
+            f.write(bytes([0x80 | RES_TYPE_SCRIPT, 0x00]))
+            f.write(data)
+        written.append({"title": title, "script": num, "ok": True,
+                        "path": dst, "bytes": len(data) + 2})
+    return written
+
+
+def main():
+    dest = os.path.join(_ROOT, "build", "patch_project")
+    out_dir = os.path.join(_ROOT, "build", "patch")
+
+    print("loading analysis...")
+    s = M.load()
+    sinks = G.sink_remedies(s)
+
+    print("assembling project from %s" % config.ACTIVE.src_dir)
+    nums = assemble(dest)
+    titles_by_num = {n: t for t, n in nums.items()}
+
+    print("\napplying %d sink remedies:" % len(sinks))
+    edits = apply_sink_remedies(dest, sinks, titles_by_num)
+    for e in edits:
+        mark = "ok " if e["applied"] else "SKIP"
+        where = e.get("title", "script%s" % e["script"])
+        print("  [%s] %-10s %s" % (mark, where, e["why"]))
+    touched = sorted({e["title"] for e in edits if e["applied"]})
+
+    print("\ncompiling...")
+    r = compile_project(dest)
+    print("  .sco written: %d;  compiled: %d/%d" % (r["sco_written"], r["compiled"], r["total"]))
+    for t, err in r["failures"]:
+        print("  FAILED %-10s %s" % (t, err))
+    unpatchable = [t for t, _ in r["failures"] if t in touched]
+    if unpatchable:
+        print("\nREFUSING to emit: an edited script failed to compile: %s" % unpatchable)
+        return 1
+
+    print("\nemitting loose patch files for %d edited scripts:" % len(touched))
+    for w in emit_patches(dest, touched, nums, out_dir):
+        if w["ok"]:
+            print("  script.%03d  %-10s %d bytes" % (w["script"], w["title"], w["bytes"]))
+        else:
+            print("  FAILED script.%03d %s: %s" % (w["script"], w["title"], w["error"]))
+    print("\npatch files in: %s" % out_dir)
+    print("copy them into a COPY of the game folder; delete them to revert.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

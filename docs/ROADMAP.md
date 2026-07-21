@@ -51,6 +51,32 @@ job directory in six modules and two test files -- so the suite would have silen
 25->11 cases) or broken outright on any other machine. All config-driven now; the full suite passes
 with `CLAUDE_JOB_DIR=` empty.
 
+## THE PATCHER IS REAL (2026-07-21) — `src/patcher.py`
+`python -m patcher` runs the whole chain on ONE tree (ours) and emits a playable patch:
+
+    build/ir/src/*.sc  ->  assemble (game.ini + pristine resources)  ->  apply edits
+      ->  scicompile --sco (118/118 interfaces)  ->  --all (117/118)
+      ->  script.NNN loose patch files in build/patch/
+
+**Shipped today: the 3 dangerous pure sinks** -- rm63 and rm81 (`apply/drop rejuvenator`, which
+destroyed the bomb ingredient rm82 needs) and rm600 (`barf`, which destroyed the Airsick_Bag rm82
+kills you for lacking). One clause each; the airsick sink is reported at rm61/62/63 but is a single
+clause in REGION script 600, so it is deduped and edited once.
+
+**Verified against an unpatched control build: every patched script is exactly -12 bytes**, the
+same delta three times -- one `put: X -1` send removed and nothing else. Patch headers are `82 00`
+(`0x80|ResourceType`, SCI0 no-extra-header) as SCICompanion's writer and ScummVM's reader specify.
+
+Loose patches override the mapped resource, so RESOURCE.MAP and the volumes are never touched and
+the patch reverts by deleting files. `_declare_missing_globals` handles the `global480` gap
+automatically (compile-time only). The patcher REFUSES to emit if any script it edited failed to
+compile.
+
+**Not yet emitted: the 11 guard specs.** Those need placement at the CONTROLLABLE trigger (the
+handler that STARTS a cutscene, never the `newRoom:` at its tail -- guarding the tail hangs the
+game), which is what `trigger.py` implements. Sinks came first because they are pure deletions and
+provably side-effect-free.
+
 ## Pipeline
 `sci-tools` decompile → JSON IR → `extract2` (guards/effects/edges) → `machine2`/`compile2`
 (lift changeState scripts to state machines) → `smv_emit3` (operational SMV model) → **nuXmv**
