@@ -1,7 +1,7 @@
 """Unit tests for the GATE-AWARE movement model in missability.py, in ISOLATION:
   - entry_alts   (machine entry guards -> DNF alternatives per state)
   - blocked      (an edge is impassable only if EVERY alternative needs a banned item)
-  - _status_required / edge composition (register-gated movement)
+  - gating_registers / required_values (DISCOVERING which registers gate movement)
   - disjunctive_groups (sets that alternatively open one gate)
 
 These replaced two rules the user flagged as overfit: the `_sealed` one-way-edge heuristic and
@@ -79,17 +79,60 @@ def test_entry_alts():
           M.entry_alts(m3)[20] == () and not M.blocked(M.entry_alts(m3)[20], frozenset({30})))
 
 
-def test_status_required():
-    print("\n-- _status_required() --")
-    R = M._STATUS_REG
-    eq7 = Pred("CMP", R, "==", 7)
-    check("positive == extracts the required value", M._status_required(eq7) == {7})
-    check("no constraint -> None", M._status_required([]) is None)
-    check("AND keeps the constraint", M._status_required(GAnd([eq7, _own(3)])) == {7})
-    check("negated == is not a requirement", M._status_required(GNot(eq7)) is None)
-    check("a different register is ignored",
-          M._status_required(Pred("CMP", R + 1, "==", 7)) is None)
-    check("own() alone constrains no status", M._status_required(_own(3)) is None)
+class _Stub:
+    """Minimal OpEmitter stand-in for gating_registers()."""
+    class _TS:
+        def __init__(self, edges, cs_edges):
+            self.edges, self.cs_edges = edges, cs_edges
+    class _E:
+        def __init__(self, src, dst, guard):
+            self.src, self.dst, self.guard = src, dst, guard
+
+    def __init__(self, edges=(), machines=(), handler_writes=()):
+        self.ts = self._TS(list(edges), [])
+        self.machines = list(machines)
+        self.handler_writes = list(handler_writes)
+        self.machine_delivered = set()
+
+
+def test_required_values():
+    print("\n-- required_values() --")
+    eq7 = Pred("CMP", 101, "==", 7)
+    check("positive == extracts the required value", M.required_values(eq7, 101) == {7})
+    check("no constraint -> None", M.required_values([], 101) is None)
+    check("AND keeps the constraint", M.required_values(GAnd([eq7, _own(3)]), 101) == {7})
+    check("negated == is not a requirement", M.required_values(GNot(eq7), 101) is None)
+    check("a different register is ignored", M.required_values(eq7, 102) is None)
+    check("own() alone constrains no register", M.required_values(_own(3), 101) is None)
+    check("two values for one register are both allowed",
+          M.required_values(GOr([eq7, Pred("CMP", 101, "==", 9)]), 101) == {7, 9})
+
+
+def test_gating_registers():
+    """Discovery: a register earns promotion iff it is BOTH compared in a movement guard AND
+    written. Neither half alone can create an impossible composition."""
+    print("\n-- gating_registers() --")
+    E = _Stub._E
+    cmp5 = Pred("CMP", 5, "==", 1)      # compared AND written -> promote
+    cmp6 = Pred("CMP", 6, "==", 1)      # compared, never written -> cannot gate a composition
+    m = {"room": 1, "states": {0: [([], [(5, 1)], [], [], ("PARK",))]},
+         "entries": [], "init_entries": []}
+    em = _Stub(edges=[E(1, 2, GAnd([cmp5, cmp6]))], machines=[m])
+    regs = M.gating_registers(em)
+    check("compared AND written -> discovered", 5 in regs)
+    check("compared but never written -> skipped", 6 not in regs)
+
+    # written but never compared cannot block anything either
+    m2 = {"room": 1, "states": {0: [([], [(7, 3)], [], [], ("PARK",))]},
+          "entries": [], "init_entries": []}
+    em2 = _Stub(edges=[E(1, 2, cmp5)], machines=[m, m2])
+    check("written but never compared -> skipped", 7 not in M.gating_registers(em2))
+
+    # a register compared only in a machine ENTRY guard still gates movement
+    m3 = {"room": 1, "states": {0: [([], [(9, 1)], [], [], ("EXIT", 2))]},
+          "entries": [(0, Pred("CMP", 9, "==", 1))], "init_entries": []}
+    check("compared in a machine ENTRY guard counts", 9 in M.gating_registers(_Stub(machines=[m3])))
+    check("discovery is deterministic/sorted", M.gating_registers(em) == sorted(M.gating_registers(em)))
 
 
 def test_goal_reachability_traps():
@@ -146,7 +189,8 @@ def run():
     print("=== test_gate_aware ===")
     test_blocked()
     test_entry_alts()
-    test_status_required()
+    test_required_values()
+    test_gating_registers()
     test_goal_reachability_traps()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL

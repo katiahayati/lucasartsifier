@@ -238,20 +238,16 @@ def build_maps(em):
     return edges, edge_kind, sources, drops, required
 
 
-_STATUS_REG = 101          # gCurrentStatus -- the register LSL2 gates movement on
-
-
-def _status_required(guard):
-    """gCurrentStatus values this guard REQUIRES (`== v`), or None if it doesn't constrain it."""
-    vals = set()
+def _cmp_atoms(guard, out):
+    """Collect (register, op, const, polarity) comparison atoms from a guard tree."""
     def w(x, pol=True):
         if isinstance(x, list):
             for y in x:
                 w(y, pol)
         elif isinstance(x, Pred):
-            if x.kind == "CMP" and x.var == _STATUS_REG and x.op == "==" and pol:
+            if x.kind == "CMP":
                 try:
-                    vals.add(int(x.value))
+                    out.append((x.var, x.op, int(x.value), pol))
                 except (TypeError, ValueError):
                     pass
         elif isinstance(x, (GAnd, GOr)):
@@ -260,6 +256,64 @@ def _status_required(guard):
         elif isinstance(x, GNot):
             w(x.kid, not pol)
     w(guard)
+
+
+def _movement_guards(em):
+    """Every guard that can gate MOVEMENT: room edges, machine EXIT paths, and machine entries
+    (an entry gates the state chain that leads to an EXIT)."""
+    for e in em.ts.edges:
+        yield e.guard
+    for e in em.ts.cs_edges:
+        yield e.guard
+    for info in em.machines:
+        for K, paths in info["states"].items():
+            for (g, w, gg, c, tr) in paths:
+                if tr and tr[0] == "EXIT":
+                    yield g
+        for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+            yield eg
+
+
+def gating_registers(em):
+    """DISCOVER the registers worth promoting into the movement model, instead of naming one.
+
+    The product exists to catch exactly one thing: an edge that SETS R:=v composed with an edge
+    that REQUIRES R==w for w != v. So a register earns promotion iff it is BOTH compared against
+    in a movement guard AND written somewhere -- a register that is never written cannot create
+    an inconsistent composition, and one that is never compared cannot block anything.
+
+    Purely structural: on LSL2 this rediscovers gCurrentStatus (101) as the widest gater, plus 18
+    others, with no game knowledge. See docs/ROADMAP.md for why they are kept as independent
+    PROJECTIONS rather than one joint product."""
+    compared = set()
+    for g in _movement_guards(em):
+        atoms = []
+        _cmp_atoms(g, atoms)
+        for (r, op, v, pol) in atoms:
+            compared.add(r)
+    written = set()
+    for room, script, gi, v, g in em.handler_writes:
+        written.add(gi)
+    for info in em.machines:
+        for K, paths in info["states"].items():
+            for (g, w, gg, c, tr) in paths:
+                for (gi, v) in w:
+                    written.add(gi)
+    return sorted(compared & written)
+
+
+def required_values(guard, reg):
+    """Values of `reg` this guard REQUIRES (positive `== v`), or None if it doesn't constrain it.
+
+    Only positive equalities are used. `!=` and the relational ops are deliberately ignored: they
+    would need the value-partition abstraction to stay exact, and ignoring them is the PERMISSIVE
+    direction (we never block movement the game allows)."""
+    vals = set()
+    atoms = []
+    _cmp_atoms(guard, atoms)
+    for (r, op, v, pol) in atoms:
+        if r == reg and op == "==" and pol:
+            vals.add(v)
     return vals or None
 
 
@@ -304,34 +358,48 @@ def blocked(alts, banned):
     return bool(alts) and all(a & banned for a in alts)
 
 
-def edge_meta(em):
-    """(a,b) -> [(required_status_values|None, status_SET|None, alts)] where `alts` is a DNF
-    tuple of item-sets (see entry_alts / blocked).
+def edge_meta(em, regs):
+    """(a,b) -> [(req, sets, alts)] for the discovered gating `regs`.
 
-    This is what makes reachability GATE-AWARE. The guard-ignoring graph walks rm82 -> rm152 ->
-    rm52 and so welds the volcano to the airport (the mega-SCC that hid the Pamphlet stranding
-    and produced the Airline_Ticket FP). But rm82 dumps you into rm152 with gCurrentStatus 14/15
-    (bomb botched) while rm152's exit to rm52 REQUIRES status 7 -- an impossible composition."""
+    req  = {reg: {allowed values}}   from positive `== v` atoms on the edge's guard
+    sets = {reg: value}              writes the edge performs on the way out
+    alts = DNF tuple of item-sets    (see entry_alts / blocked)
+
+    This is what makes movement GATE-AWARE. The guard-ignoring graph walks rm82 -> rm152 -> rm52
+    and so welds the volcano to the airport (the mega-SCC that hid the Pamphlet stranding and
+    produced the Airline_Ticket FP). But rm82 dumps you into rm152 having set gCurrentStatus to
+    14/15 (bomb botched) while rm152's exit to rm52 REQUIRES 7 -- an impossible composition."""
+    regset = set(regs)
+    def reqs(guard):
+        """One walk of the guard tree for ALL registers -- walking it once per register made
+        edge_meta 19x slower than it needed to be."""
+        atoms = []
+        _cmp_atoms(guard, atoms)
+        out = {}
+        for (r, op, v, pol) in atoms:
+            if r in regset and op == "==" and pol:
+                out.setdefault(r, set()).add(v)
+        return out
     meta = defaultdict(list)
     for e in em.ts.edges:
-        meta[(e.src, e.dst)].append((_status_required(e.guard), None, (frozenset(_own_positive(e.guard)),)))
+        meta[(e.src, e.dst)].append((reqs(e.guard), {}, (frozenset(_own_positive(e.guard)),)))
     md = em.machine_delivered
     for e in em.ts.cs_edges:
         if (e.src, e.dst) in md:
             continue          # same newRoom the machine EXIT already carries, but WITHOUT its
         #                       guard -- keeping it shadows the real gate (rm57 -> rm58 needs the
         #                       ticket handed to the agent). build_maps applies this filter too.
-        meta[(e.src, e.dst)].append((_status_required(e.guard), None, (frozenset(_own_positive(e.guard)),)))
+        meta[(e.src, e.dst)].append((reqs(e.guard), {}, (frozenset(_own_positive(e.guard)),)))
     for info in em.machines:
         eo = entry_alts(info)
         for K, paths in info["states"].items():
             for (g, w, gg, c, tr) in paths:
                 if tr and tr[0] == "EXIT":
-                    setv = next((v for (gi, v) in w if gi == _STATUS_REG), None)
                     exit_own = frozenset(_own_positive(g))
                     alts = eo.get(K) or (frozenset(),)
+                    sets = {gi: v for (gi, v) in w if gi in regset}
                     meta[(info["room"], tr[1])].append(
-                        (_status_required(g), setv, tuple(exit_own | a for a in alts)))
+                        (reqs(g), sets, tuple(exit_own | a for a in alts)))
     return meta
 
 
@@ -362,63 +430,68 @@ class IrSccReach(SccReach):
 
     # ---- gate-aware movement ------------------------------------------------
     def _build_product(self):
-        """Product graph over (room, gCurrentStatus) -- the GATE-AWARE movement model.
+        """Build one PROJECTION per discovered gating register -- the gate-aware movement model.
 
-        The plain room graph ignores guards, so it composes an edge that SETS a register with
-        one that REQUIRES a different value, welding unrelated regions into a mega-SCC. In-room
-        status changes (handler writes, non-exit machine writes) are added unguarded, so the
-        product stays PERMISSIVE: it can only ever remove movement the guards actually forbid.
-        Validated: reaches the same 84 rooms as the guard-ignoring walk, in 829 states."""
+        Not one joint product. Promoting all 19 of LSL2's gating registers jointly explodes past
+        4,000,000 reachable states (the flags are near-independent, so they multiply); the same 19
+        as separate projections cost 3,679 states total. Precision is monotone and soundness is
+        preserved: a genuinely walkable path is walkable in EVERY projection, so intersecting the
+        answers can only remove spurious movement, never invent it. Adding a register can only
+        sharpen the result, which is why we promote every register that qualifies rather than
+        judging which ones matter.
+
+        In-room register changes (handler writes, non-exit machine writes) are added UNGUARDED, so
+        each projection stays permissive and can only remove movement the guards actually forbid."""
         em = self.em
-        self._emeta = edge_meta(em)
-        inroom = defaultdict(set)
+        self.regs = gating_registers(em)
+        self._emeta = edge_meta(em, self.regs)
+        self._inroom = {R: defaultdict(set) for R in self.regs}
+        regset = set(self.regs)
         for room, script, gi, v, g in em.handler_writes:
-            if gi == _STATUS_REG:
-                inroom[room].add(v)
+            if gi in regset:
+                self._inroom[gi][room].add(v)
         for info in em.machines:
             for K, paths in info["states"].items():
                 for (g, w, gg, c, tr) in paths:
                     for (gi, v) in w:
-                        if gi == _STATUS_REG:
-                            inroom[info["room"]].add(v)
-        self._inroom = inroom
-        padj = defaultdict(set)
-        start = (em.cfg.start_room, 0)
-        seen, q = {start}, [start]
+                        if gi in regset:
+                            self._inroom[gi][info["room"]].add(v)
+        self._pstates = {R: self._walk(R, frozenset()) for R in self.regs}
+
+    _FREE = ({}, {}, (frozenset(),))
+
+    def _psucc(self, R, node, banned):
+        """Successors of a (room, value-of-R) node in projection R. `banned` is a set of items you
+        do not hold, so edges needing them are false -- the ITEM dimension of gate-awareness, and
+        what the old `_sealed` heuristic crudely approximated: you cannot use the parachute to
+        walk back to the parachute."""
+        r, st = node
+        out = {(r, v) for v in self._inroom[R].get(r, ())}
+        for b in self.edges.get(r, ()):
+            for (req, sets, alts) in self._emeta.get((r, b), (self._FREE,)):
+                need = req.get(R)
+                if need is not None and st not in need:
+                    continue                      # guard forbids this move at this value of R
+                if banned and blocked(alts, banned):
+                    continue                      # every way through needs a banned item
+                out.add((b, sets.get(R, st)))
+        return out
+
+    def _walk(self, R, banned, starts=None):
+        """Forward reachable (room, value) states in projection R."""
+        seen = set(starts) if starts else {(self.em.cfg.start_room, 0)}
+        q = list(seen)
         while q:
             u = q.pop()
-            for v in self._psucc(u):
-                padj[u].add(v)
+            for v in self._psucc(R, u, banned):
                 if v not in seen:
                     seen.add(v)
                     q.append(v)
-        self._pstates, self._padj = seen, padj
-        self._pprev = defaultdict(set)
-        for a, bs in padj.items():
-            for b in bs:
-                self._pprev[b].add(a)
-
-    _FREE = ((frozenset(),),)
-
-    def _psucc(self, node, banned=frozenset()):
-        """Successors of a (room, status) node. `banned` is a SET of items you do not hold, so
-        edges needing them are false -- the ITEM dimension of gate-awareness, and what the old
-        `_sealed` one-way-edge heuristic crudely approximated: you cannot use the parachute to
-        walk back to the parachute."""
-        r, st = node
-        out = {(r, v) for v in self._inroom.get(r, ())}
-        for b in self.edges.get(r, ()):
-            for (req, setv, alts) in self._emeta.get((r, b), self._FREE):
-                if req is not None and st not in req:
-                    continue                      # guard forbids this move at this status
-                if banned and blocked(alts, banned):
-                    continue                      # every way through needs a banned item
-                out.add((b, setv if setv is not None else st))
-        return out
+        return seen
 
     def _reach_without(self, item):
-        """Rooms reachable from the start WITHOUT ever holding `item` (gate-aware forward walk).
-        `item` may be a single item or a frozenset of them (a disjunctive group).
+        """Rooms reachable from the start WITHOUT ever holding `item` (gate-aware forward walk),
+        intersected over every projection. `item` may be one item or a frozenset (a group).
 
         A room whose own(item) guard can only be reached BY holding item isn't a stranding site
         at all -- you can never stand there lacking it. rm61 tests own(Airline_Ticket) but every
@@ -426,15 +499,11 @@ class IrSccReach(SccReach):
         ban = item if isinstance(item, frozenset) else frozenset({item})
         if ban in self._rw:
             return self._rw[ban]
-        start = (self.em.cfg.start_room, 0)
-        seen, q = {start}, [start]
-        while q:
-            u = q.pop()
-            for v in self._psucc(u, banned=ban):
-                if v not in seen:
-                    seen.add(v)
-                    q.append(v)
-        self._rw[ban] = {r for r, _ in seen}
+        out = None
+        for R in self.regs:
+            rooms = {r for r, _ in self._walk(R, ban)}
+            out = rooms if out is None else (out & rooms)
+        self._rw[ban] = out if out is not None else set(self.reach_rooms)
         return self._rw[ban]
 
     def _need_rooms(self, item):
@@ -442,11 +511,12 @@ class IrSccReach(SccReach):
         return {R for R in super()._need_rooms(item) if R in self._reach_without(item)}
 
     def reobtainable_rooms(self, item):
-        """Rooms from which `item` can still be ACQUIRED -- GATE-AWARE.
+        """Rooms from which `item` can still be ACQUIRED -- GATE-AWARE, intersected over every
+        projection.
 
-        Backward walk in the (room, status) product instead of the guard-ignoring room graph.
-        This replaces the `_sealed` one-way-edge heuristic: a pocket is sealed when the guards
-        actually seal it, which is derived rather than assumed."""
+        Backward walk in each (room, register) projection instead of the guard-ignoring room
+        graph. This replaces the `_sealed` one-way-edge heuristic: a pocket is sealed when the
+        guards actually seal it, which is derived rather than assumed."""
         ban = item if isinstance(item, frozenset) else frozenset({item})
         if ban in self._reob:
             return self._reob[ban]
@@ -456,22 +526,26 @@ class IrSccReach(SccReach):
         if not srcs:
             self._reob[ban] = set()
             return self._reob[ban]
-        prev = defaultdict(set)                   # reverse product edges, minus own(item) gates
-        for u in self._pstates:
-            for v in self._psucc(u, banned=ban):
-                if v in self._pstates:
-                    prev[v].add(u)
-        back = {p for p in self._pstates if p[0] in srcs}
-        q = deque(back)
-        while q:
-            u = q.popleft()
-            for w in prev.get(u, ()):
-                if w not in back:
-                    back.add(w)
-                    q.append(w)
-        self._reob[ban] = {r for r, _ in back}
+        out = None
+        for R in self.regs:
+            states = self._pstates[R]
+            prev = defaultdict(set)               # reverse edges, minus own(item)-gated ones
+            for u in states:
+                for v in self._psucc(R, u, ban):
+                    if v in states:
+                        prev[v].add(u)
+            back = {p for p in states if p[0] in srcs}
+            q = deque(back)
+            while q:
+                u = q.popleft()
+                for w in prev.get(u, ()):
+                    if w not in back:
+                        back.add(w)
+                        q.append(w)
+            rooms = {r for r, _ in back}
+            out = rooms if out is None else (out & rooms)
+        self._reob[ban] = out if out is not None else set()
         return self._reob[ban]
-
 
     # ---- disjunctive requirement groups -------------------------------------
     def disjunctive_groups(self):

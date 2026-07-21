@@ -136,9 +136,31 @@ Both the "only-EVER death-bound" wrinkle and the Grotesque_Gulp regression it wa
 out for free: the Gulp has a fatal use AND winnable ones, so it stays required; Spinach_Dip is
 hopeless everywhere, so it stays a trap. Sweep unchanged at 16/16 zero FP; tests 20+32+25+29.
 
+### Gating registers are now DISCOVERED, not named — DONE (2026-07-21)
+`_STATUS_REG = 101` is gone. `gating_registers()` derives the set from the criterion the product
+is built on: an inconsistent composition needs an edge that SETS R and an edge that REQUIRES R, so
+a register earns promotion iff it is **compared in a movement guard AND written**. Purely
+structural — on LSL2 it rediscovers gCurrentStatus (101) as the widest gater (18 observed values)
+plus 18 others, with no game knowledge.
+
+**Projections, not a joint product.** Promoting all 19 jointly explodes past **4,000,000**
+reachable states (aborted at 19s) because the flags are near-independent and multiply. The same 19
+as INDEPENDENT projections cost **3,679 states total**, and the sweep runs in 0.5s. This is sound
+and monotone: a genuinely walkable path is walkable in every projection, so intersecting the
+per-projection answers can only remove spurious movement, never invent it — each register added
+can only sharpen the result. That is what lets us honour "promote everything, never judge a
+variable irrelevant" at linear rather than exponential cost.
+
+Only positive `== v` atoms are used; `!=` and relational ops are ignored, which is the PERMISSIVE
+direction (we never block movement the game allows). Making those exact needs the value-partition
+abstraction (observed constants as singletons plus the gaps between them) — worth doing only if a
+game turns up that gates movement relationally.
+
+Sweep unchanged at 16/16 zero FP. Tests 20+32+25+35.
+
 ### Still open
-- Only gCurrentStatus is promoted into the product. Generalize to any register that gates
-  movement (discover them from edge guards) before trusting this on KQ4.
+- **Validate the discovery on KQ4** — this is the first piece built to be cross-game by
+  construction, and it has still only ever run on LSL2.
 
 ## Revisit later (flagged by the user)
 The **cutscene splice** that fixed the Airline_Ticket FP may be overfit special-casing — it
