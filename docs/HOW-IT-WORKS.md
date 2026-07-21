@@ -26,14 +26,14 @@ to replay a huge chunk of the game because you missed something early on.
 ## The approach
 
 We do all this automatically by
-1. Decompiling the game binaries into source .sc files (which are a dialect of Smalltalk).
+1. Decompiling the game binaries into source .sc files (which have a Lisp-like s-expression syntax).
 2. Building an intermediate representation of the source and doing abstract interpretation over it to 
    generate a game graph. For this we look at the source as well as pictures and views.
 3. Decomposing the graph into strongly connected components (essentially regions where you can walk freely
    between all the rooms). Note that this is not just geography, but also sometimes conditional gates based
    on game state and/or items obtained.
 4. Finding each stranding: items you need in a later component, obtained in an earlier component.
-5. Automatically deriving the earliest cut point we should prevent you from crossing without the item.
+5. Automatically deriving the last cut point we should prevent you from crossing without the item.
 6. Injecting code at that point to prevent you from crossing.
 7. We automatically find points in the game that let you waste the resource before it's needed, and prevent
    that with a "Just kidding!" message.
@@ -57,7 +57,7 @@ Loose `script.NNN` files in the game folder override the mapped resource, so the
 
 | choice | why |
 |---|---|
-| **sci-tools** (C#, sluicebox) | The only SCI decompiler that reconstructs a **typed control-flow AST** rather than emitting text. We forked it to serialise that AST to JSON (~277 lines, additive) instead of throwing it away — the whole analysis depends on having real `if`/`switch`/`send` structure, not reparsed source. |
+| **sci-tools** (C#, sluicebox) | An excellent SCI decompiler that reconstructs a **typed control-flow AST** rather than emitting text. We forked it to serialise that AST to JSON (~277 lines, additive) instead of throwing it away — the whole analysis depends on having real `if`/`switch`/`send` structure, not reparsed source. |
 | **SCICompanion's compiler** (C++) | To emit a patch you must recompile. SCICompanion is the reference SCI compiler; we ported the compiler core to a headless Linux binary. Regenerating a `.sco` proved byte-identical to the original, which is the evidence the port is faithful. |
 | **Python 3, standard library only** | The analysis is graph algorithms over a JSON AST — Tarjan, BFS, fixpoints. No numpy, no networkx, no solver bindings. ~7,500 lines with zero third-party dependencies, which matters because the fragile parts are the two native toolchains. |
 
@@ -68,18 +68,18 @@ It worked to a point, but ended up requiring a fatal item, and by being very coa
 required items.
 
 **Fully symbolic model checking** We tried modeling winnability symbolically using nuXmv. That worked well while the
-game graph was kept simple, but exploded when we starting introducing player position into the mix. Ultimately the
+game graph was kept simple and on shallow, locla queries, but could not handle the full graph depth. Ultimately the
 model checking did not buy us much practically (other than warm fuzzies about correctness), so we retired it.
 
 ## Future work
 
 **Encode more games** So far we've only done LSL2. We've checked the basic machinery against King's Quest 4,
-and nothing breaks but nothing falls out either, because KQ4's strandings are more state- and item property-based
-than region-based. Conceptually the same ideas should work, but we need to take more into account when building
-the game graph.
+and nothing breaks but nothing falls out either. We think that's because KQ4's strandings are more state- and 
+item property-based than region-based. Conceptually the same ideas should work (famous last words), but we 
+probably need to take more into account when building the game graph.
 
-**Model required actions** For example, in King's Quest 5 you have to throw a shoe at the right time to let
-the rat king save you later. 
+**Model required actions** For example, in King's Quest 5 you have to throw a shoe at a cat at the right time to let
+the mouse save you later. 
 
 **Two constants are still declared per game**: the death signal and the debug globals. Checked
 across both games, they share neither index nor shape (LSL2 dies on `global101 == 1001`, KQ4 on
