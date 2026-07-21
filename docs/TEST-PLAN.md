@@ -38,18 +38,18 @@ get the empty-dock picture).
 
 ## A. Guards — must REFUSE when an item is missing
 
-Refusal is `NotNow` → **"Not now!"**. Nothing should animate or score before it.
+Refusal is **"Not yet!"**. Nothing should animate or score before it.
 
 | # | room | → | required items | trigger action | status |
 |---|---|---|---|---|---|
 | A1 | rm26 | 27 | **5** Swimsuit, **8** Gulp, **9** Sunscreen | board the ship | ✅ |
 | A2 | rm38 | 131 | **11** Fruit, **12** Kit, **14** Wig, **15** Bikini_Top, **and NOT 13** | leave for the end sequence | ✅ |
-| A3 | rm47 | 48 | **17** Knife, **19** Matches, **20** Flower | walk EAST off-screen | ⬜ **untested** |
+| A3 | rm47 | 48 | **17** Knife, **19** Matches, **20** Flower | walk EAST off-screen | ✅ |
 | A4 | rm57 | 58 | **21** Rejuvenator, **24** Chute, **25** Pin, **26** Pamphlet | give ticket to agent | ✅ |
 | A5 | rm63 | 64 | **27** Airsick_Bag | pull cord / jump | ✅ |
 | A6 | rm79 | 80 | **30** Ashes **OR** **31** Sand | `throw vine` across chasm | ✅ |
 
-**A3 refuses with "Not now!" and steps you back from the edge.** rm47's exit is a room property
+**A3 refuses with "Not yet!" and steps you back from the edge.** ✅ confirmed working. rm47's exit is a room property
 (`east 48`), so there is no `newRoom:` to wrap; the guard goes on the room script's own `edgeHit`
 clause instead.
 
@@ -101,15 +101,25 @@ points at that room's patch — revert just that `script.NNN` to isolate.
 ---
 
 ### Status
-A1, A2, A4, A5, A6 confirmed in live play. Outstanding: **A3** (new silent wall), **B1–B3**
-(re-test after the wording fix), and all of **C**.
+**All six guards (A1-A6) confirmed working in live play.** Outstanding: **B1-B3** (re-test after the
+wording fix) and all of **C**.
 
-Two defects were found by playing, both fixed: the refusal said "You don't have it." while the
-player held the item (→ `NotNow` = `proc0_15` = msg 134), and the sink remedy left the game claiming
-a still-held item was gone (→ the "Just kidding!" retraction, since "you thought better of it"
-cannot honestly follow "you carefully pour your bottle on the padlock").
+Four defects were found by PLAYING, none of which any static check caught:
+1. The refusal said "You don't have it." while the player held the item -- it is something else,
+   needed later, that is missing.
+2. Then "Not now!" (`proc0_15`), honest but reads as "the game is busy". Now **"Not yet!"**, which
+   says what is actually meant: you are missing something you will need.
+3. The sink remedy left the game claiming a still-held item was gone -- "you thought better of it"
+   cannot honestly follow "you carefully pour your bottle on the padlock", so it is now an explicit
+   joke: "Just kidding! You hold on to it because you still need it."
+4. rm47 looped forever, printing "You made it!" and awarding 12 points every cycle -- see A3.
 
-### Reference: refusal messages (script 0, `proc0_N` → message N+119)
+### Bonus: skipping the copy protection
+At the phone-number prompt type **`555-0724`** -- a developer backdoor in `rm10.doit`. It bypasses
+the check, sets `global100 = 1` (debug mode already on, no `praise lord` needed) and drops you at
+rm23. Thereafter `rm10.init` prompts for a **"Starting Room"** and jumps straight there.
+
+### Reference: stock refusal messages (script 0, `proc0_N` → message N+119)
 | proc | text |
 |---|---|
 | proc0_15 | **Not now!** ← used by our guards |

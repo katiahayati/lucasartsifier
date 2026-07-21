@@ -161,15 +161,14 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
     return edits
 
 
-REFUSE = "(proc0_15)"
-# `NotNow` -- the standard SCI refusal. In this decompilation Main's procedures are numbered, and
-# proc0_15 prints script 0 message 134, "Not now!" (dumped from the game's text.000; the whole
-# family is proc0_N -> message N+119).
-#
-# NOT proc0_20 (message 139, "You don't have it."), which was the first choice and LIES: reported
-# from live play at rm26, "give passport to man" answered "you don't have it" while the player was
-# holding the passport. What they lacked was something else entirely, needed later. A refusal that
-# misdescribes the reason sends the player hunting for the wrong thing.
+REFUSE = "(proc255_0 {Not yet!})"
+# NOT the stock refusals. proc0_20 ("You don't have it.") LIES -- reported from live play at rm26,
+# where the player was holding the very item they had just used; what they lacked was something
+# else, needed later. proc0_15 ("Not now!") is honest but misleads in a different way: it reads as
+# "the game is busy", when the real meaning is "you are missing something you will need". "Not
+# yet!" says that. Literal {..} strings compile in this dialect (rm5.sc: `proc255_3 {Teleport to:}`)
+# and proc255_0 takes a string pointer -- it is called that way with Format. No apostrophes: a
+# single quote opens a Said spec.
 
 def to_source_syntax(cond):
     """Our specs say `gEgo`; this decompilation names the ego `global0`."""
@@ -213,7 +212,7 @@ def guard_edgehit_clause(text, direction, cond):
                "\t\t\t\t\t(global0 setMotion: 0)\n"
                "\t\t\t\t\t(global0 x: (- (global0 x:) 12))\n"
                "\t\t\t\t\t(global0 edgeHit: 0)   ; else the clause re-fires every cycle\n"
-               "\t\t\t\t\t(proc0_15)  ; softlock-guard\n\t\t\t\t)\n\t\t\t" % (cond, body))
+               "\t\t\t\t\t%s  ; softlock-guard\n\t\t\t\t)\n\t\t\t" % (cond, body, REFUSE))
     return text[:m.end()] + wrapped + text[i - 1:], 1
 
 
