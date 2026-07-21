@@ -576,6 +576,62 @@ class IrSccReach(SccReach):
     def goal_rooms_set(self):
         return {r for r in self.em.cfg.goal_rooms if r in self.comp_of}
 
+    def _clause_key(self, room, guard):
+        """Correlate effects belonging to the SAME source clause. Guard TEXT cannot be used --
+        sibling branches of one `cond` share most conjuncts but differ (the rm82 bomb clause and
+        its machine entry differ only in a counter term) -- so key on the room plus the clause's
+        positive item preconditions, which a clause and the state it arms necessarily share."""
+        return (room, frozenset(_own_positive(guard)))
+
+    def pure_sinks(self):
+        """Consumptions that ACCOMPLISH NOTHING: a handler clause that removes an item from
+        inventory while arming no machine state and writing no register any guard reads.
+
+        Adventure games are full of these (drop it, eat it, throw it) and most are harmless, so
+        this is a candidate set, not a finding -- see dangerous_sinks."""
+        armed, wrote = set(), defaultdict(list)
+        for info in self.em.machines:
+            for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+                armed.add(self._clause_key(info["room"], eg))
+        for room, script, gi, v, g in self.em.handler_writes:
+            wrote[self._clause_key(room, g)].append(gi)
+        for room, script, it, g in self.em.handler_gets:
+            armed.add(self._clause_key(room, g))
+        gate = set(self.regs)
+        out = []
+        for room, script, it, g in self.em.handler_drops:
+            k = self._clause_key(room, g)
+            if k in armed or any(gi in gate for gi in wrote.get(k, ())):
+                continue                          # the clause DOES something -> a real use
+            out.append({"room": room, "script": script, "item": it})
+        return out
+
+    def real_uses(self):
+        """item -> rooms where holding it ARMS something: the uses that are not sinks."""
+        out = defaultdict(set)
+        for info in self.em.machines:
+            for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+                for it in _own_positive(eg):
+                    out[it].add(info["room"])
+        return out
+
+    def dangerous_sinks(self):
+        """Pure sinks that COST you the game: the item is still needed somewhere you can still
+        reach, and once wasted it cannot be re-obtained. The action-shaped sibling of a room-gate
+        stranding -- nothing about it is a movement edge, so `edge_strandings` cannot see it.
+
+        LSL2: rm63 `apply rejuvenator to bolt` (-5 points, and the bolt does NOT open) and rm81
+        `drop rejuvenator` (-5) both destroy the bomb ingredient rm82 needs."""
+        uses = self.real_uses()
+        out = []
+        for sk in self.pure_sinks():
+            it, room = sk["item"], sk["room"]
+            ahead = (uses.get(it, set()) - {room}) & self.rooms_after(room)
+            if not ahead or room in self.reobtainable_rooms(it):
+                continue
+            out.append({**sk, "still_needed_at": sorted(ahead)})
+        return out
+
     def requirement_units(self):
         """Every unit that must be satisfied to win: single items, plus disjunctive GROUPS.
 

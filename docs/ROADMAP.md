@@ -252,6 +252,46 @@ into `python -m guards`, which now exits non-zero if a guard ever creates a stra
 DETECT and create no new strandings — it cannot prove we detect everything. Only a different engine
 can do that, which is why nuXmv is still owed.
 
+### PURE SINKS (the red herrings) — DETECTOR + REMEDY DONE (2026-07-21)
+A third softlock shape: an ACTION that consumes a required item and accomplishes nothing. No
+movement edge is involved, so `edge_strandings` cannot see it.
+
+**Detection.** A consumption is a PURE SINK when its clause arms no machine state and writes no
+register any guard reads. Correlating clause effects by guard TEXT fails -- sibling branches of one
+`cond` share most conjuncts but differ (the rm82 bomb clause and the state it arms differ only in a
+counter term) -- so effects are keyed on (room, positive item preconditions), which a clause and the
+state it arms necessarily share. Sanity-checked in both directions: the rm82 bomb is a REAL use,
+rm63's rejuvenator-on-bolt and the plane's `barf` are sinks.
+
+**83 pure sinks, 2 dangerous.** Being a sink is not a finding -- adventure games are full of ways
+to throw things away. A sink is DANGEROUS when the item is still needed somewhere reachable AND
+cannot be re-obtained: rm63 `apply rejuvenator to bolt` (-5, and the bolt does NOT open) and rm81
+`drop rejuvenator` (-5), both destroying the bomb ingredient rm82 needs.
+
+**The remedy is NOT a guard.** A pure sink does nothing except destroy the item, so the minimal fix
+is to delete the consumption (`put: 21 -1`) and leave the text and score penalty intact -- provably
+side-effect-free, since "arms nothing, writes nothing" is exactly what classified it. The player
+still gets the joke and the -5; they keep the bottle. SAFETY: refused when merely HOLDING the item
+can lose the game (the Spinach_Dip), since that would trade one softlock for another.
+
+**Known limit:** the plane `barf` is judged safe because the bag's source room stays reachable. Our
+model assumes "source room reachable => re-acquirable" and does not model one-time acquisition, so
+this is a possible false negative.
+
+### nuXmv: FALSIFIED as a validator (2026-07-21) — user's instinct was right
+Proposed cheap "breakage detector": ask `INVARSPEC goal-unreachable`, on the theory that a guard
+which BRICKS the game makes the invariant TRUE and IC3 proves invariants fast, while a healthy game
+merely times out. **Measured: it does not work.** Pinning the Parachute off (an unsatisfiable guard
+by construction, and a KNOWN-required item) **timed out after 600s** against the deep `room=178`
+goal. Both directions are intractable there; the 34s->5s figures in this file were waypoint-targeted
+queries, not room 178.
+
+Consequences: nuXmv is NOT a general validator for the patcher. Salvage only as
+**waypoint-targeted, per-guard local queries** (shallow, within-act -- the shape that does work),
+which validate reachability up to a waypoint rather than winnability. Prioritise **ScummVM** as the
+independent oracle instead: it is cheap, genuinely independent, and catches the failure class
+neither the model checker nor the detector can see -- bad placement and malformed source.
+
 ### Remaining (was: task list)
 Status going in: `python -m guards` is fully automatic and the CONDITIONS are semantically right
 (rm138 forbids the dip; boarding requires Parachute/Bobby_Pin/Pamphlet/Hair_Rejuvenator, all four

@@ -211,6 +211,37 @@ def droppability_frontier(s, item):
     return out
 
 
+def sink_remedies(s):
+    """Remedies for DANGEROUS PURE SINKS -- and they are not guards.
+
+    A guard would refuse the player's command. But a pure sink is by definition a clause that does
+    nothing EXCEPT destroy the item, so the minimal fix is to delete the consumption itself
+    (`put: X -1`) and leave the clause's text and score penalty alone. That is provably
+    side-effect-free: "arms nothing, writes nothing a guard reads" is exactly the property that
+    classified it as a sink, so removing its one effect cannot perturb anything else. The player
+    still gets the joke and the -5; they just keep the bottle.
+
+    SAFETY: refuse when merely HOLDING the item can lose the game, because then letting the player
+    keep it trades one softlock for another. The Spinach_Dip is the case -- it is fatal to carry
+    into rm138 -- which is why prohibitions are tracked separately from requirements."""
+    forbidden = set()
+    for gt in survival_gates(s):
+        _, cn, _ = factor(gt["alts"])
+        forbidden |= cn
+    out = []
+    for d in s.dangerous_sinks():
+        it = d["item"]
+        refused = ([f"{s.g.item_name(it)} is fatal to CARRY -- keeping it would trade one "
+                    f"softlock for another"] if it in forbidden else [])
+        out.append({"site": "consumption", "room": d["room"], "script": d["script"],
+                    "item": it, "op": "remove_consumption",
+                    "edit": f"delete `(gEgo put: {it} -1)`",
+                    "why": f"wastes {s.g.item_name(it)}, still needed at "
+                           f"rm{d['still_needed_at']} and not re-obtainable",
+                    "refused": refused})
+    return out
+
+
 def guard_specs(s):
     """ONE spec per placement site, merging both derivations.
 
@@ -341,7 +372,17 @@ def main():
         if sp.get("note"):
             print(f"  {'':<22} ^ {sp['note']}")
 
-    print("\n" + "=" * 78)
+    print("=" * 78)
+    sinks = sink_remedies(s)
+    print(f"DANGEROUS PURE SINKS -- actions that waste an item you still need: {len(sinks)}\n")
+    for sk in sinks:
+        print(f"  rm{sk['room']} (script {sk['script']}): {sk['edit']}")
+        print(f"       {sk['why']}")
+        if sk["refused"]:
+            print(f"       REFUSED: {sk['refused'][0]}")
+    print()
+
+    print("=" * 78)
     r = verify(s, specs)
     print("VERIFY -- re-run the detector against the GUARDED model\n")
     print(f"  softlocks fixed : {[nm(i) for i in r['fixed']]}")
