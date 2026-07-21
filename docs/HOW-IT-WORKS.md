@@ -11,7 +11,7 @@ python -m pipeline /path/to/game --report
 
 ## The problem
 
-Sierra games are not like Lucasarts games: you can get stuck. In LSL2, if you forget to get the
+Sierra games are not like LucasArts games: you can get stuck. In LSL2, if you forget to get the
 sunscreen in LA at the beginning of the game and you board the cruise ship without it, you will
 eventually inevitably die because you can't go back to LA from the ship. The goal of this project is to 
 prevent you from boarding the cruise ship until you have all the items from LA you will need going forward, 
@@ -59,7 +59,7 @@ Loose `script.NNN` files in the game folder override the mapped resource, so the
 |---|---|
 | **sci-tools** (C#, sluicebox) | An excellent SCI decompiler that reconstructs a **typed control-flow AST** rather than emitting text. We forked it to serialise that AST to JSON (~277 lines, additive) instead of throwing it away — the whole analysis depends on having real `if`/`switch`/`send` structure, not reparsed source. |
 | **SCICompanion's compiler** (C++) | To emit a patch you must recompile. SCICompanion is the reference SCI compiler; we ported the compiler core to a headless Linux binary. Regenerating a `.sco` proved byte-identical to the original, which is the evidence the port is faithful. |
-| **Python 3, standard library only** | The analysis is graph algorithms over a JSON AST — Tarjan, BFS, fixpoints. No numpy, no networkx, no solver bindings. ~7,500 lines with zero third-party dependencies, which matters because the fragile parts are the two native toolchains. |
+| **Python 3, standard library only** | The analysis is graph algorithms over a JSON AST — Tarjan, BFS, fixpoints. No numpy, no networkx, no solver bindings. 7,200 lines with zero third-party dependencies, which matters because the fragile parts are the two native toolchains. |
 
 ## What didn't work
 
@@ -68,7 +68,7 @@ It worked to a point, but ended up requiring a fatal item, and by being very coa
 required items.
 
 **Fully symbolic model checking** We tried modeling winnability symbolically using nuXmv. That worked well while the
-game graph was kept simple and on shallow, locla queries, but could not handle the full graph depth. Ultimately the
+game graph was kept simple and on shallow, local queries, but could not handle the full graph depth. Ultimately the
 model checking did not buy us much practically (other than warm fuzzies about correctness), so we retired it.
 
 ## Future work
