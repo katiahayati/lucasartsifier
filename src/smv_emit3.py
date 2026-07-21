@@ -265,8 +265,18 @@ class OpEmitter:
                 "delivered": delivered, "cutscene": True}
 
     def _machine_info(self, room, m):
+        # Items CONSUMED anywhere in this machine (`gEgo put: N -1`). Consuming an item REQUIRES
+        # owning it, and some requirements carry no own() guard at all -- the Flower handed to
+        # the KGBishnas (rm50) exists only as a `put: 20 -1`. Collected for the missability sweep.
+        drops = set()
+        for K, body in m.bodies.items():
+            for p in C._paths_of(self._inline_calls(body, m.script, set())):
+                drops |= set(C._interp(p, self.is_death).drops)
         if room in self._cutscene_room_set():
-            return self._collapse_cutscene(room, m)
+            info = self._collapse_cutscene(room, m)
+            if info is not None:
+                info["drops"] = drops
+            return info
         states = {}
         has_effect = False
         steps_by_state = {}
@@ -295,7 +305,7 @@ class OpEmitter:
             delivered = set()
         return {"room": room, "inst": m.inst, "script": m.script, "states": states,
                 "entries": m.entries, "init_entries": m.init_entries,
-                "start": m.start, "delivered": delivered}
+                "start": m.start, "delivered": delivered, "drops": drops}
 
     def _apply_control_gates(self):
         """Consume control_oracle.find_gates: for each prop-gate, AND the derived door-open

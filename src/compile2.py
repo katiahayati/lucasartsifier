@@ -74,7 +74,7 @@ def _seq(forms):
 
 # ---- interpret a path into (guard, writes, gets, counters, transition) ---
 class Step:
-    __slots__ = ("guard", "writes", "gets", "counters", "trans", "cues")
+    __slots__ = ("guard", "writes", "gets", "counters", "trans", "cues", "drops")
 
     def __init__(self):
         self.guard = []            # atoms (external) or ("CTR", (vt,idx), op, val)
@@ -83,6 +83,9 @@ class Step:
         self.counters = []         # ((vt,idx), kind, val)
         self.trans = ("PARK",)     # first immediate transition wins; else ADVANCE/PARK
         self.cues = 0              # # of cues this path ARMS (each fires one `self cue:`)
+        self.drops = []            # items CONSUMED here (`gEgo put: N -1`). Consuming an item
+        #   requires owning it, and some requirements have NO own() guard at all -- the Flower
+        #   given to the KGBishnas (rm50) is only ever expressed as a `put: 20 -1`.
 
 
 def _count_cues_send(recv, msgs):
@@ -122,6 +125,10 @@ def _interp(path, is_death):
                     it = I.as_int(params[0])
                     if it is not None:
                         st.gets.append(it)
+                elif sel == "put" and I.is_global(recv, G_EGO) and params:
+                    it = I.as_int(params[0])          # `gEgo put: N -1` = consume N
+                    if it is not None:
+                        st.drops.append(it)
                 elif sel == "changeState" and recv.get("t") == "Self" and params and not fixed:
                     k = I.as_int(params[0])
                     if k is not None:

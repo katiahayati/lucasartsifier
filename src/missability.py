@@ -134,6 +134,10 @@ def build_maps(em):
             req(eg, info["room"])
         for K, eg in info.get("init_entries", ()):
             req(eg, info["room"])
+        # CONSUMING an item requires owning it. Catches requirements carrying no own() guard at
+        # all -- the Flower handed to the KGBishnas (rm50) exists only as `gEgo put: 20 -1`.
+        for it in info.get("drops", ()):
+            required[it].add(info["room"])
     return edges, edge_kind, sources, drops, required
 
 
