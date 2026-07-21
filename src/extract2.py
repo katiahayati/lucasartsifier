@@ -95,6 +95,19 @@ def _is_ego_edgehit(n):
     return False
 
 
+G_CURROOM = 11   # gCurRoomNum -- compared against room numbers all over the scripts
+
+
+def _at_item(n):
+    """`(gInv at: N)` -> N. The object handle for inventory item N."""
+    if isinstance(n, dict) and n.get("t") == "Send":
+        recv, msgs = I.send_pairs(n)
+        for sel, params in msgs:
+            if sel == "at" and params:
+                return I.as_int(params[0])
+    return None
+
+
 def _send_atom(n):
     recv, msgs = I.send_pairs(n)
     for sel, params in msgs:
@@ -104,6 +117,15 @@ def _send_atom(n):
                 return Pred("OWN", var=it)
         if sel in ("said",):
             return Pred("SAID")
+        # `(gInv at: X) ownedBy: gCurRoomNum` -- "item X is still LYING IN THIS ROOM". The SCI
+        # idiom for a one-time pickup, used 77 times in LSL2 and previously lost as an opaque.
+        # It matters because `put: X -1` sets the owner to NOWHERE, so once an item guarded this
+        # way is destroyed it can never be re-acquired (barfing into the Airsick_Bag).
+        if sel == "ownedBy":
+            it = _at_item(recv)
+            if it is not None:
+                here = bool(params) and I.is_global(params[0], G_CURROOM)
+                return Pred("LOC", var=it, op="ownedBy", value="room" if here else "other")
         # `(gEgo inRect: a b c d)` -> a POSITION guard over the ego's (x,y). Coordinates are
         # in the AST, so this is derivable; ONE consistent (x,y) is what makes "cross east =>
         # inRect" unavoidable (see docs/DESIGN-positional-model.md).

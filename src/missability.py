@@ -110,6 +110,24 @@ def goal_reaching_rooms(edges, goal_rooms):
     return reachable(rev, set(goal_rooms))
 
 
+_DEBUG_IDX = frozenset({100, 111})   # gDebugging, gForceAtest
+
+
+def _debug_gated_guard(guard):
+    refs = []
+    def w(g):
+        if isinstance(g, list):
+            for x in g: w(x)
+        elif isinstance(g, Pred):
+            if g.var in _DEBUG_IDX: refs.append(g.var)
+        elif isinstance(g, (GAnd, GOr)):
+            for k in g.kids: w(k)
+        elif isinstance(g, GNot):
+            w(g.kid)
+    w(guard)
+    return bool(refs)
+
+
 def build_maps(em):
     """(edges, edge_kind, sources, drops, required) from the JSON-IR OpEmitter."""
     edges, edge_kind = defaultdict(set), defaultdict(set)
@@ -615,6 +633,41 @@ class IrSccReach(SccReach):
                     out[it].add(info["room"])
         return out
 
+    def _loc_required(self, guard, item):
+        """Does this guard REQUIRE item `item`'s object to still be lying in the room?"""
+        found = []
+        def walk(g, pol):
+            if isinstance(g, list):
+                for x in g:
+                    walk(x, pol)
+            elif isinstance(g, Pred):
+                if g.kind == "LOC" and g.var == item and g.value == "room" and pol:
+                    found.append(True)
+            elif isinstance(g, (GAnd, GOr)):
+                for k in g.kids:
+                    walk(k, pol)
+            elif isinstance(g, GNot):
+                walk(g.kid, not pol)
+        walk(guard, True)
+        return bool(found)
+
+    def destroyed_is_permanent(self, item):
+        """Once destroyed with `put: X -1`, is `item` gone for good?
+
+        True when EVERY acquisition demands the object still be lying in the world
+        (`(gInv at: X) ownedBy: gCurRoomNum`). `put: X -1` sets the owner to -1 -- NOWHERE, not a
+        room -- so that test can never hold again. This is the one-time-pickup idiom, and it is
+        why barfing into the Airsick_Bag costs you the game at rm82 even though rm62 is still
+        walkable. Note it does NOT make the item unobtainable for someone who simply never took
+        it, so it is deliberately scoped to DESTRUCTION and leaves the stranding sweep alone."""
+        guards = [a.guard for a in self.em.ts.acqs if a.item == item]
+        guards += [g for room, script, it, g in self.em.handler_gets if it == item]
+        guards = [g for g in guards if not _debug_gated_guard(g)]
+        return bool(guards) and all(self._loc_required(g, item) for g in guards)
+
+    def _groups(self):
+        return {frozenset(g) for gs in self.disjunctive_groups().values() for g in gs}
+
     def dangerous_sinks(self):
         """Pure sinks that COST you the game: the item is still needed somewhere you can still
         reach, and once wasted it cannot be re-obtained. The action-shaped sibling of a room-gate
@@ -627,7 +680,15 @@ class IrSccReach(SccReach):
         for sk in self.pure_sinks():
             it, room = sk["item"], sk["room"]
             ahead = (uses.get(it, set()) - {room}) & self.rooms_after(room)
-            if not ahead or room in self.reobtainable_rooms(it):
+            if not ahead:
+                continue
+            # a one-time pickup destroyed here is gone regardless of which rooms stay walkable
+            if not self.destroyed_is_permanent(it) and room in self.reobtainable_rooms(it):
+                continue
+            # ...but a DISJUNCTIVE alternative rescues you: throwing the Ashes away is survivable
+            # while the Sand is still gettable, since rm81 accepts either.
+            if any(it in G and any(room in self.reobtainable_rooms(o) for o in G - {it})
+                   for G in self._groups()):
                 continue
             out.append({**sk, "still_needed_at": sorted(ahead)})
         return out

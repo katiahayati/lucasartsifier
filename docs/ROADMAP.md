@@ -294,7 +294,26 @@ which validate reachability up to a waypoint rather than winnability. Prioritise
 independent oracle instead: it is cheap, genuinely independent, and catches the failure class
 neither the model checker nor the detector can see -- bad placement and malformed source.
 
-### `ownedBy` — THE modelling gap behind the un-caught barf (found 2026-07-21)
+### `ownedBy` — MODELLED (2026-07-21). The barf is now caught.
+`extract2._send_atom` now recognises `(gInv at: X) ownedBy: gCurRoomNum` and emits
+`Pred(LOC, var=X, value="room")` instead of a generic opaque; 24 acquisitions carry one.
+The emitter's Pred dispatch falls through to `_permissive()` for unknown kinds, so the
+winnability model is untouched -- the atom only carries information for consumers that ask.
+
+`destroyed_is_permanent(X)`: true when EVERY acquisition of X demands the object still be
+lying in the world. `put: X -1` sets the owner to -1 (NOWHERE, not a room), so that test can
+never hold again. Deliberately scoped to DESTRUCTION -- it does not make an item unobtainable
+for a player who simply never took it, so the stranding sweep is unaffected (16/16 holds).
+
+**5 dangerous sinks, all corroborated by a negative designer score:** rm63 + rm81
+Hair_Rejuvenator (-5 each) and rm61/62/63 Airsick_Bag (-2 each, the `barf` in all three plane
+rooms via region 600). 12 items are one-time pickups.
+
+One FP class had to be fixed on the way: destroying the Ashes looked fatal in 10 jungle rooms
+until the DISJUNCTIVE alternative was respected -- rm81 accepts Sand instead, so losing the
+ashes alone is survivable. Same lesson as the guards: reason over requirement UNITS.
+
+#### Original diagnosis (kept -- it is why the fix is shaped this way)
 User's question: the Airsick_Bag's non-reobtainability "should be right there in the code". It is.
 rm62's acquisition reads:
 
