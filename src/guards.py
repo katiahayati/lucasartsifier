@@ -143,6 +143,27 @@ def absorb_ordering(alts):
     return [(p, n - positives, tr) for (p, n, tr) in alts]
 
 
+def fatal_to_carry(gate):
+    """Items whose mere POSSESSION loses the game at this gate.
+
+    Read off the DOOMED branches rather than off common negatives of the hopeful ones. Factoring
+    is fragile here: rm138 state 6 is a day-by-day dispatcher, so its branches are different DAYS
+    (day 5 wants the Gulp, day 6 wants Sewing_Kit or Fruit) rather than alternatives to one
+    choice. `!own(dip)` therefore is not common to every hopeful branch and silently stopped being
+    emitted -- while the DOOMED branch `own(13) -> JUMP 17` states the hazard directly and is
+    invariant to how the days factor.
+
+    An item qualifies only if it appears positively in NO hopeful branch: that separates "carrying
+    this kills you" from "this is one of several things that saves you"."""
+    helpful = set()
+    for (p, n, tr) in gate["alts"]:
+        helpful |= p
+    fatal = set()
+    for (p, n, tr) in gate["doomed"]:
+        fatal |= (p - helpful)
+    return fatal
+
+
 def factor(alts):
     """Hoist literals common to EVERY alternative, so the rendered guard reads the way a human
     would write it: `own(8) & !own(13) & (own(12) | own(11))` rather than a raw DNF."""
@@ -307,7 +328,7 @@ def guard_specs(s):
         if pos_spec:
             specs.append({"site": "gate", "room": gt["room"], "state": gt["state"],
                           "condition": pos_spec, "items": sorted(cp), "refused": []})
-        for it in sorted(cn):                       # each prohibition at ITS OWN site
+        for it in sorted(cn | fatal_to_carry(gt)):  # each prohibition at ITS OWN site
             sites = droppability_frontier(s, it)
             for (a, b) in sites:
                 specs.append({"site": "edge", "from_room": a, "to_room": b,

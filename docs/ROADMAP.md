@@ -72,10 +72,34 @@ the patch reverts by deleting files. `_declare_missing_globals` handles the `glo
 automatically (compile-time only). The patcher REFUSES to emit if any script it edited failed to
 compile.
 
-**Not yet emitted: the 11 guard specs.** Those need placement at the CONTROLLABLE trigger (the
-handler that STARTS a cutscene, never the `newRoom:` at its tail -- guarding the tail hangs the
-game), which is what `trigger.py` implements. Sinks came first because they are pure deletions and
-provably side-effect-free.
+**ALSO EMITTED: the guard specs.** `trigger.py` places each at the CONTROLLABLE trigger -- the handler that
+STARTS the cutscene, never the `newRoom:` at its tail -- and wraps the whole enclosing cond-clause
+so side effects cannot fire ahead of the refusal. Refusal is `(proc0_20)`, the game's own "you
+don't have that" response. 5 of 7 placed directly, 1 relocated, 1 accepted as out of scope:
+
+    rm26 -> rm27   (and (has 5) (has 8) (has 9))                     Swimsuit/Gulp/Sunscreen
+    rm38 -> rm131  (and (...11 12 14 15) (not (has 13)))             + the DIP PROHIBITION
+    rm57 -> rm58   (and (has 21) (has 24) (has 25) (has 26))         boarding: Rejuv/Chute/Pin/Pamphlet
+    rm63 -> rm64   (has 27)                                          the parachute jump
+    rm79 -> rm80   (or (has 30) (has 31))                            the vine chasm
+    rm47 -> rm48   NOT PLACED -- accepted: the henchman deaths we do not prevent, and rm47's only
+                   `newRoom` in source is 96 (the death room), so there is no edge to guard.
+
+**Two bugs this step exposed, both worth remembering:**
+1. **A prohibition's own frontier can be UNCONTROLLABLE.** rm131 -> rm138 is `setScript:` at room
+   init running itself to `newRoom: 138`: no player action to refuse, and refusing an automatic
+   cutscene is exactly the hang trigger.py exists to prevent. Prohibitions now fall back to the
+   nearest EARLIER commit that is both controllable and still lets the player comply -- rm38 ->
+   rm131, whose source room is itself a drop site. Placement needs BOTH satisfiability and
+   controllability; we had only modelled the first.
+2. **`fatal_to_carry` replaces "common negative of the hopeful branches".** rm138 state 6 is a
+   day-by-day dispatcher, so its branches are different DAYS (day 5 wants the Gulp, day 6 wants
+   Sewing_Kit or Fruit) rather than alternatives to one choice. `!own(dip)` was therefore not
+   common to all of them and the prohibition SILENTLY STOPPED being emitted -- while the DOOMED
+   branch `own(13) -> JUMP 17` states the hazard directly and survives any factoring. Read
+   prohibitions off doomed branches, not off what the hopeful ones happen to share.
+
+Sinks came first because they are pure deletions and provably side-effect-free.
 
 ## Pipeline
 `sci-tools` decompile → JSON IR → `extract2` (guards/effects/edges) → `machine2`/`compile2`

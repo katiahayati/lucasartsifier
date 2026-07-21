@@ -31,6 +31,8 @@ import sys
 import config
 import guards as G
 import missability as M
+from sexpr import read_file
+from trigger import find_trigger, wrap_trigger_in_source
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
@@ -149,6 +151,89 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
     return edits
 
 
+REFUSE = "(proc0_20)"   # the game's own "you don't have that" response, used in 14 scripts
+
+
+def to_source_syntax(cond):
+    """Our specs say `gEgo`; this decompilation names the ego `global0`."""
+    return cond.replace("(gEgo has:", "(global0 has:")
+
+
+def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set()):
+    """Place each EDGE guard at its CONTROLLABLE TRIGGER.
+
+    A frontier `newRoom: N` usually sits at the last state of a changeState cutscene -- an
+    UNCONTROLLABLE transition that has already consumed resources and started animating. Guarding
+    it there hangs the game. `trigger.find_trigger` walks back to the player-facing handler that
+    STARTS the cutscene and we guard that instead, so the refusal happens before anything runs.
+    `wrap_trigger_in_source` wraps the whole enclosing cond-clause, not just the changeState, so
+    side-effecting siblings (score, sounds, flag sets) cannot fire ahead of the refusal."""
+    out_unplaced = []
+    by_title = {}
+    for sp in specs:
+        if sp["site"] != "edge" or sp["refused"] or not sp.get("condition"):
+            continue
+        by_title.setdefault(titles_by_num.get(sp["from_room"]), []).append(sp)
+
+    # A prohibition's droppability frontier may be UNCONTROLLABLE. rm131 -> rm138 is: the ship
+    # sequence is `setScript:` at room init and runs itself to `newRoom: 138`, so there is no
+    # player action to refuse and refusing an automatic cutscene would hang the game. Fall back to
+    # the nearest EARLIER commit that is both controllable and still lets the player comply --
+    # rm38 -> rm131, whose source room is itself a drop site for the dip.
+    deferred = []
+    for title, group in list(by_title.items()):
+        keep = []
+        for sp in group:
+            if sp.get("forbid") and title:
+                forms = read_file(os.path.join(dest, "src", title + ".sc"))
+                if find_trigger(forms, sp["to_room"])["kind"] not in ("trigger", "direct"):
+                    deferred.append(sp)
+                    continue
+            keep.append(sp)
+        by_title[title] = keep
+    for sp in deferred:
+        item = sp["forbid"][0]
+        host = None
+        for cand in specs:
+            if (cand["site"] == "edge" and not cand.get("forbid") and not cand["refused"]
+                    and cand["from_room"] in s_drops(item)):
+                host = cand
+                break
+        if host is None:
+            out_unplaced.append({**sp, "applied": False,
+                                 "why": "no controllable commit where the item is still droppable"})
+            continue
+        host["condition"] = "(and %s %s)" % (host["condition"], sp["condition"])
+        host.setdefault("merged", []).append(sp["condition"])
+
+    out = out_unplaced
+    for title, group in sorted((k, v) for k, v in by_title.items() if k):
+        path = os.path.join(dest, "src", title + ".sc")
+        for sp in group:
+            try:
+                forms = read_file(path)
+            except Exception as e:
+                out.append({**sp, "applied": False, "why": "parse failed: %s" % e})
+                continue
+            placement = find_trigger(forms, sp["to_room"])
+            if placement["kind"] not in ("trigger", "direct"):
+                out.append({**sp, "applied": False,
+                            "why": "no controllable trigger (%s)" % placement["kind"],
+                            "placement": placement})
+                continue
+            text = open(path, errors="replace").read()
+            new_text, n = wrap_trigger_in_source(
+                text, placement, to_source_syntax(sp["condition"]), REFUSE)
+            if n == 0:
+                out.append({**sp, "applied": False, "why": "trigger found but no site rewritten",
+                            "placement": placement})
+                continue
+            open(path, "w").write(new_text)
+            out.append({**sp, "applied": True, "title": title, "sites": n,
+                        "placement": placement})
+    return out
+
+
 def run(args, cwd):
     p = subprocess.run([SCICOMPILE] + args, cwd=cwd, capture_output=True, text=True, timeout=1800)
     return p.returncode, p.stdout + p.stderr
@@ -215,7 +300,20 @@ def main():
         mark = "ok " if e["applied"] else "SKIP"
         where = e.get("title", "script%s" % e["script"])
         print("  [%s] %-10s %s" % (mark, where, e["why"]))
-    touched = sorted({e["title"] for e in edits if e["applied"]})
+    specs = G.guard_specs(s)
+    print("\napplying %d guard specs:" % sum(1 for x in specs if x["site"] == "edge"))
+    gedits = apply_guards(dest, specs, titles_by_num, nums,
+                          s_drops=lambda it: s.drops.get(it, set()))
+    for e in gedits:
+        mark = "ok " if e["applied"] else "SKIP"
+        pl = e.get("placement", {})
+        how = ("%s @ %s.%s state %s" % (pl.get("kind"), pl.get("instance"),
+                                        pl.get("trigger_method", pl.get("method")),
+                                        pl.get("trigger_state", "-"))) if e["applied"] else e["why"]
+        print("  [%s] rm%s->rm%s  %s" % (mark, e["from_room"], e["to_room"], how))
+        if e["applied"]:
+            print("        %s" % to_source_syntax(e["condition"]))
+    touched = sorted({e["title"] for e in edits + gedits if e["applied"]})
 
     print("\ncompiling...")
     r = compile_project(dest)
