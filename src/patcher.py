@@ -179,6 +179,44 @@ def to_source_syntax(cond):
 DIRECTIONS = ("north", "south", "east", "west")
 
 
+EDGEHIT = {"north": 1, "east": 2, "south": 3, "west": 4}   # Game.sc Rm.doit switch
+
+
+def guard_edgehit_clause(text, direction, cond):
+    """Guard a room script's own `edgeHit` reaction, which is the real trigger for a
+    room-property exit.
+
+    `Rm.doit` runs `(script doit:)` BEFORE it reads the direction property, so a room whose script
+    reacts to the edge (rm47 awards 12 points and prints "You made it!") will fire that reaction
+    even when the exit is closed -- and since nothing moves the ego off the edge, `edgeHit` stays
+    set and it repeats forever. That is a real loop, found by play-testing, and it is why closing
+    the property alone is NOT enough here.
+
+    So: wrap the clause body, and on refusal clear `edgeHit` (exactly as `Rm.init` does) and step
+    the ego back from the boundary so the flag cannot immediately re-arm."""
+    n = EDGEHIT.get(direction)
+    if n is None:
+        return text, 0
+    m = re.search(r"\(\(==\s*%d\s*\(global0\s+edgeHit:\)\)" % n, text)
+    if not m:
+        return text, 0
+    # body = everything between the clause condition and the clause's closing paren
+    depth, i = 1, m.end()
+    while i < len(text) and depth:
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+        i += 1
+    body = text[m.end():i - 1]
+    wrapped = ("\n\t\t\t\t(if %s%s\n\t\t\t\telse\n"
+               "\t\t\t\t\t(global0 setMotion: 0)\n"
+               "\t\t\t\t\t(global0 x: (- (global0 x:) 12))\n"
+               "\t\t\t\t\t(global0 edgeHit: 0)   ; else the clause re-fires every cycle\n"
+               "\t\t\t\t\t(proc0_15)  ; softlock-guard\n\t\t\t\t)\n\t\t\t" % (cond, body))
+    return text[:m.end()] + wrapped + text[i - 1:], 1
+
+
 def guard_edge_exit(text, inst_name, to_room, cond):
     """Guard a ROOM-PROPERTY exit (`east 48`), which no `newRoom:` call can be wrapped around.
 
@@ -203,6 +241,11 @@ def guard_edge_exit(text, inst_name, to_room, cond):
             break
     if direction is None:
         return text, 0, None
+    # If the room's script reacts to this edge, guard THAT clause instead: closing the property
+    # would let the reaction fire on a loop (see guard_edgehit_clause).
+    new_text, n = guard_edgehit_clause(text, direction, cond)
+    if n:
+        return new_text, n, direction + " (edgeHit clause)"
     init = re.search(r"\(method\s+\(init\)", text[m.start():])
     if not init:
         return text, 0, None

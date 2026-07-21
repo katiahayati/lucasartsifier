@@ -49,10 +49,17 @@ Refusal is `NotNow` → **"Not now!"**. Nothing should animate or score before i
 | A5 | rm63 | 64 | **27** Airsick_Bag | pull cord / jump | ✅ |
 | A6 | rm79 | 80 | **30** Ashes **OR** **31** Sand | `throw vine` across chasm | ✅ |
 
-**A3 is new and never played — and it is a SILENT WALL, not a message.** rm47's exit is a room
-property (`east 48`), so the patch does `(global2 east: 0)` at room init, the idiom rm15/rm42/rm74/
-rm77 already use. Lacking 17/19/20, walking east should simply do nothing; with all three it should
-work normally. Re-checked on every entry, so `pitch` an item, leave, come back to re-test.
+**A3 refuses with "Not now!" and steps you back from the edge.** rm47's exit is a room property
+(`east 48`), so there is no `newRoom:` to wrap; the guard goes on the room script's own `edgeHit`
+clause instead.
+
+*First attempt looped and was fixed* -- worth knowing why. Closing the property (`global2 east: 0`,
+the idiom rm15/rm42/rm74/rm77 use) is NOT enough here: `Rm.doit` runs `(script doit:)` BEFORE it
+reads the direction property, and rm47's script reacts to the east edge by awarding 12 points and
+printing "You made it!". With the property closed the reaction still fired, nothing moved the ego
+off the edge, so `edgeHit` stayed set and it repeated forever. The guard now wraps that clause and,
+on refusal, clears `edgeHit` and steps the ego back 12px. The game's own uses of the idiom escape
+this only because they disable input at the same time.
 
 **A6 disjunction** — **31** only → allow. **30** only → allow. Neither → refuse.
 *(If it demands both, the OR broke.)*
