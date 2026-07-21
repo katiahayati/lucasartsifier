@@ -145,7 +145,14 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
                                  % (sk["item"], title, len(hits))})
             continue
         i = hits[0]
-        lines[i] = ("\t\t\t; [softlock-patch] consumption removed: %s\n" % sk["why"])
+        # Replace the consumption with a LINE OF TEXT, not silence. The clause has usually just
+        # announced the loss ("You do so and immediately discard the now-soiled airsick bag."), so
+        # deleting only the `put:` leaves the game claiming you lost something you are still
+        # holding -- reported from live play, and just a different lie. This says what actually
+        # happened. No apostrophes: a single quote opens a Said spec.
+        indent = re.match(r"[ \t]*", lines[i]).group(0)
+        lines[i] = ("%s(proc255_0 {...but you think better of it, and hang on to it. "
+                    "Something tells you it will matter later.})\n" % indent)
         open(path, "w").write("".join(lines))
         edits.append({**sk, "applied": True, "title": title, "line": i + 1})
     return edits
