@@ -281,9 +281,11 @@ this is a possible false negative.
 ### nuXmv: FALSIFIED as a validator (2026-07-21) — user's instinct was right
 Proposed cheap "breakage detector": ask `INVARSPEC goal-unreachable`, on the theory that a guard
 which BRICKS the game makes the invariant TRUE and IC3 proves invariants fast, while a healthy game
-merely times out. **Measured: it does not work.** Pinning the Parachute off (an unsatisfiable guard
-by construction, and a KNOWN-required item) **timed out after 600s** against the deep `room=178`
-goal. Both directions are intractable there; the 34s->5s figures in this file were waypoint-targeted
+merely times out. **Measured, both arms: it does not work.** Pinning the Parachute off (an
+unsatisfiable guard by construction, and a KNOWN-required item) timed out after **600.0s** against
+the deep `room=178` goal; the unpinned baseline (certify winnability) timed out after **600.1s**.
+The hoped-for asymmetry -- "a broken game makes the invariant TRUE, and IC3 proves invariants
+fast" -- simply does not exist at this target: both directions are intractable; the 34s->5s figures in this file were waypoint-targeted
 queries, not room 178.
 
 Consequences: nuXmv is NOT a general validator for the patcher. Salvage only as
