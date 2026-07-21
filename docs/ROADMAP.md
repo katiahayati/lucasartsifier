@@ -78,29 +78,56 @@ Goal: make deep, target-directed queries tractable so the missability sweep beco
 - **Still open (smaller):** position abstraction (posx/posy 0..319/0..189 -> band booleans) --
   only ~17 input bits vs the 1522 opaque bits just removed, so likely second-order.
 
-## Class-2 detector: FLAG point-of-no-return (task list, ACTIVE)
+## GATE-AWARE MOVEMENT GRAPH — DONE (2026-07-20). Sweep = 16/16, zero FP.
 
-State: the room-gate sweep (`missability.py`) is **16/17 with ZERO false positives** vs the
-user's walkthrough. The single remaining miss is the **Pamphlet**, which is not a room-gate
-stranding at all — it's a FLAG point of no return: giving the Pamphlet to your seatmate sets
-`gBoreStatus=255` (irreversible), which kills the drink-service source of the **Airsick_Bag**.
-Same PONR idea as Class 1 but in flag space instead of room space.
+Replaced the guard-ignoring room graph with a **product over (room, gCurrentStatus)** plus an
+**item dimension**. Both overfit rules the user flagged are now RETIRED, not re-tuned:
 
-1. **Characterize the mechanism concretely** — how does `gBoreStatus=255` actually block the
-   Airsick_Bag acquisition in rm62? Is the source guarded on the flag, or mediated by the
-   `boreScript` machine? This grounds the detector; do NOT design before reading it.
-2. **Detect irreversible flag SETs** — globals written `G:=V` with no path that resets G to a
-   value restoring what it gated. (Start with "never written again"; refine if needed.)
-3. **Detect flag-gated item sources** — for each item, extract the global conditions on each of
-   its acquisition guards, so we know which flag-values kill which sources.
-4. **Combine into the softlock rule** — a REACHABLE irreversible `G:=V` that falsifies **every**
-   source of a still-needed item ⇒ flag-PONR softlock. Reuse the existing goal-aware/required
-   machinery so it reports in the same shape as the room-gate strandings.
-5. **Validate against ground truth** — the Pamphlet MUST be caught, and the existing 16 TP /
-   0 FP must not regress. (Every graph change so far that skipped this step broke the sweep.)
-6. **Note for later, not now** — the same machinery generalizes to *required actions/flags*
-   (KQ5: throw the shoe to save the mouse, else the inn basement is unwinnable): a required
-   flag-VALUE that becomes unreachable. Tabled by the user.
+- **`_sealed` (one-way-edge heuristic) — retired.** Derived replacement: when asking whether item
+  I is re-obtainable you are by definition in a state without I, so every edge guarded on own(I)
+  is false along that walk. `reobtainable_rooms` overridden in `IrSccReach`.
+- **Cutscene splice — retired and deleted.** It was actively harmful: splicing rm83 fabricated an
+  rm82 -> rm92 edge reconnecting the volcano to the island hub, which HID the Ashes/Sand
+  stranding. The ticket FP it papered over had a real root cause (below).
+
+Four bugs it exposed and fixed:
+1. **Register-gated composition.** rm82 sets gCurrentStatus 14/15 and dumps you in rm152, whose
+   exit to rm52 requires status 7. The guard-ignoring graph composed them anyway -> mega-SCC
+   welding volcano to airport -> hid the Pamphlet, caused the ticket FP.
+2. **Unguarded duplicate edges shadowing guarded ones.** `edge_meta` did not apply the
+   `machine_delivered` filter `build_maps` does, so rm57 -> rm58 had a free variant beside the
+   real own(ticket) machine EXIT. THIS was the Airline_Ticket FP.
+3. **Entry guards never reached their exits.** A gate armed by a `Said` handler
+   (`throw ash` -> changeState 8) exits many states later carrying no own(). `entry_alts`
+   propagates entry guards forward along ADVANCE/JUMP/SETSTATE to the EXIT.
+4. **Disjunctive requirements (the long-standing gap).** Entry guards are alternatives, not a
+   conjunction. Intersecting gives "free", unioning gives "needs both" — both wrong. `entry_alts`
+   keeps a DNF; `blocked()` fails an edge only when EVERY alternative needs a banned item.
+
+**`disjunctive_groups` / `group_strandings`** then catch what no per-item sweep can see: rm81 past
+the vine chasm is armed by `throw ash` (30) OR `throw sand` (31), so each looks re-obtainable via
+its sibling — but both sources (rm75/77) are back across a one-way crossing. Losing either is
+survivable; losing both is the softlock. Reported as a group row.
+
+Score vs the user's walkthrough list: **15 single items + 1 disjunctive group = 16/16, ZERO false
+positives.** Airline_Ticket / Bikini_Bottom / Soap correctly NOT flagged; Spinach_Dip still
+correctly treated as a trap. Tests 20+32+25+20 green.
+
+### Deviations to confirm with the user (NOT acted on)
+- **Stout_Stick (28)** — used only in rm72, PRE-chasm; source rm71, also pre-chasm. Intra-jungle,
+  so not a stranding. The user suspected exactly this. No longer flagged.
+- **Vine (29)** — used at rm79 (the chasm throw itself), source rm74, both pre-chasm. Same shape.
+  No longer flagged. Neither item was on the user's enumerated list; both were flagged by the OLD
+  `_sealed` rule, and I had been scoring them as true positives on the assumption the list was
+  incomplete. Flagging this explicitly rather than silently re-scoring.
+
+### Still open
+- **Step 6 — re-derive the TRAP rule from GOAL-REACHABILITY, not death.** Untouched. Current form
+  ("all own() uses are death-bound") is special-cased on death and was patched after a
+  Grotesque_Gulp regression. Principled version: a use that cannot still reach the goal is not a
+  requirement; death is one way to fail that. `edge_strandings` already does this for edges.
+- Only gCurrentStatus is promoted into the product. Generalize to any register that gates
+  movement (discover them from edge guards) before trusting this on KQ4.
 
 ## Revisit later (flagged by the user)
 The **cutscene splice** that fixed the Airline_Ticket FP may be overfit special-casing — it
