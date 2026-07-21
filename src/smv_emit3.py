@@ -114,6 +114,9 @@ class OpEmitter:
         # open. Same shape as the disguise's gCurrentEgoView.
         self.handler_writes = []       # (room, script, gi, val, guard)  -- script for CTR-local resolve
         self.handler_gets = []         # (room, script, item, guard)
+        self.handler_drops = []        # (room, script, item, guard) -- `gEgo put: N -1` in a
+        #   handler. Consuming an item requires owning it; the Pamphlet handed to the bore on
+        #   the plane (rm62) is a Said-handler consumption, invisible to the machine-body scan.
         self.handler_locals = []       # (room, script, (vt,idx), val, guard)
         for rn, s in ir.scripts.items():
             # target rooms: a region script's effects apply in the rooms that activate it;
@@ -433,6 +436,10 @@ class OpEmitter:
                     it = _int(params[0].get("value"))
                     if it is not None:
                         self.handler_gets.append((room, script, it, _conj_atoms(pc)))
+                elif sel == "put" and I.is_global(recv, 0) and params:
+                    it = _int(params[0].get("value"))
+                    if it is not None:
+                        self.handler_drops.append((room, script, it, _conj_atoms(pc)))
         elif tp in ("PublicCall", "LocalCall"):
             self._follow_call(room, script, node, pc, seen)
         for k in node.get("kids", ()):

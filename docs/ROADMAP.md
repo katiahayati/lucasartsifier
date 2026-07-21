@@ -78,6 +78,36 @@ Goal: make deep, target-directed queries tractable so the missability sweep beco
 - **Still open (smaller):** position abstraction (posx/posy 0..319/0..189 -> band booleans) --
   only ~17 input bits vs the 1522 opaque bits just removed, so likely second-order.
 
+## Class-2 detector: FLAG point-of-no-return (task list, ACTIVE)
+
+State: the room-gate sweep (`missability.py`) is **16/17 with ZERO false positives** vs the
+user's walkthrough. The single remaining miss is the **Pamphlet**, which is not a room-gate
+stranding at all — it's a FLAG point of no return: giving the Pamphlet to your seatmate sets
+`gBoreStatus=255` (irreversible), which kills the drink-service source of the **Airsick_Bag**.
+Same PONR idea as Class 1 but in flag space instead of room space.
+
+1. **Characterize the mechanism concretely** — how does `gBoreStatus=255` actually block the
+   Airsick_Bag acquisition in rm62? Is the source guarded on the flag, or mediated by the
+   `boreScript` machine? This grounds the detector; do NOT design before reading it.
+2. **Detect irreversible flag SETs** — globals written `G:=V` with no path that resets G to a
+   value restoring what it gated. (Start with "never written again"; refine if needed.)
+3. **Detect flag-gated item sources** — for each item, extract the global conditions on each of
+   its acquisition guards, so we know which flag-values kill which sources.
+4. **Combine into the softlock rule** — a REACHABLE irreversible `G:=V` that falsifies **every**
+   source of a still-needed item ⇒ flag-PONR softlock. Reuse the existing goal-aware/required
+   machinery so it reports in the same shape as the room-gate strandings.
+5. **Validate against ground truth** — the Pamphlet MUST be caught, and the existing 16 TP /
+   0 FP must not regress. (Every graph change so far that skipped this step broke the sweep.)
+6. **Note for later, not now** — the same machinery generalizes to *required actions/flags*
+   (KQ5: throw the shoe to save the mouse, else the inn basement is unwinnable): a required
+   flag-VALUE that becomes unreachable. Tabled by the user.
+
+## Revisit later (flagged by the user)
+The **cutscene splice** that fixed the Airline_Ticket FP may be overfit special-casing — it
+needed three guards, each added only after the sweep collapsed to 0/17, fixes exactly one case,
+and is validated on one game. It may also be a *proxy* for the gate-aware graph fix. See the
+`cutscene-summarization` memory for the full concern and what to check before trusting it.
+
 ## After COI
 The missability sweep (turn "required" into "actually a softlock"), then re-enable a *safe*
 patcher (never force a fatal item — the Spinach_Dip trap). Auto-discovery of start/goal is a

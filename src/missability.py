@@ -134,10 +134,34 @@ def build_maps(em):
                     sources[it].add(info["room"])
 
     # required: rooms whose guard tests own(item)==True (across every guard-bearing structure).
+    # PASS 1 -- TRAP items: an item whose own()-guarded branch walks into a DEATH is a trap, not
+    # a requirement (Spinach_Dip: eat it -> "the mayonnaise has spoiled" -> death). Mark them
+    # GLOBALLY, because the same item is also consumed on a survivable-looking `Said 'eat'`
+    # handler (rm300) that would otherwise re-add it as required.
+    # An item is a TRAP only if EVERY own()-guarded use walks into a death. Grotesque_Gulp has a
+    # death-bound use (drink it at the wrong moment) AND survivable ones (the raft), so
+    # "death-bound anywhere" would wrongly un-require it; Spinach_Dip is death-bound everywhere.
+    death_bound, survivable = set(), set()
+    for info in em.machines:
+        dr = _death_reachable(info)
+        for K, paths in info["states"].items():
+            for (g, w, gg, c, tr) in paths:
+                tgt = (K + 1 if tr[0] == "ADVANCE" else tr[1] if tr[0] == "JUMP" else
+                       tr[1] + 1 if tr[0] == "SETSTATE" else None)
+                owns = _own_positive(g)
+                if tr[0] == "DEATH" or (tgt is not None and tgt in dr):
+                    death_bound |= owns
+                else:
+                    survivable |= owns
+    trap_items = death_bound - survivable
+
     required = defaultdict(set)
+    def req_item(it, room):
+        if it not in trap_items:
+            required[it].add(room)
     def req(guard, room):
         for it in _own_positive(guard):
-            required[it].add(room)
+            req_item(it, room)
     for e in em.ts.edges:
         req(e.guard, e.src)
     for e in em.ts.cs_edges:
@@ -148,6 +172,10 @@ def build_maps(em):
         req(g, room)
     for room, script, gi, v, g in em.handler_writes:
         req(g, room)
+    # consuming an item in a HANDLER requires owning it there -- the Pamphlet handed to the bore
+    # on the plane (rm62) is a Said-handler `put: 26 -1`, which the machine-body scan never sees.
+    for room, script, it, g in getattr(em, "handler_drops", ()):
+        req_item(it, room)
     for info in em.machines:
         dr = _death_reachable(info)
         for K, paths in info["states"].items():
@@ -172,7 +200,7 @@ def build_maps(em):
         # CONSUMING an item requires owning it. Catches requirements carrying no own() guard at
         # all -- the Flower handed to the KGBishnas (rm50) exists only as `gEgo put: 20 -1`.
         for it in info.get("drops", ()):
-            required[it].add(info["room"])
+            req_item(it, info["room"])
 
     # SPLICE pass-through CUTSCENE rooms out of the room graph. A cutscene has no player input,
     # so it is a corridor, not a decision point -- and leaving it in MASKS reciprocity: rm55 ->
