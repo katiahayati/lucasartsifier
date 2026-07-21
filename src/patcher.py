@@ -145,14 +145,17 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
                                  % (sk["item"], title, len(hits))})
             continue
         i = hits[0]
-        # Replace the consumption with a LINE OF TEXT, not silence. The clause has usually just
-        # announced the loss ("You do so and immediately discard the now-soiled airsick bag."), so
-        # deleting only the `put:` leaves the game claiming you lost something you are still
-        # holding -- reported from live play, and just a different lie. This says what actually
-        # happened. No apostrophes: a single quote opens a Said spec.
+        # Replace the consumption with a LINE OF TEXT, not silence. The clause has just announced
+        # an IRREVERSIBLE act -- "You carefully pour your bottle ... on the padlock", "You dump the
+        # bottle ... on the ice", "You do so and immediately discard the now-soiled airsick bag" --
+        # so deleting only the `put:` leaves the game insisting you lost something you are still
+        # holding. Reported from live play, twice. A retraction cannot be "you thought better of
+        # it" either: you cannot un-pour a bottle. It has to be an explicit joke, which is well
+        # within this game's register. Wording is the user's.
+        # No apostrophes: a single quote opens a Said spec.
         indent = re.match(r"[ \t]*", lines[i]).group(0)
-        lines[i] = ("%s(proc255_0 {...but you think better of it, and hang on to it. "
-                    "Something tells you it will matter later.})\n" % indent)
+        lines[i] = ("%s(proc255_0 {Just kidding! You hold on to it because you still need it.})\n"
+                    % indent)
         open(path, "w").write("".join(lines))
         edits.append({**sk, "applied": True, "title": title, "line": i + 1})
     return edits
@@ -171,6 +174,46 @@ REFUSE = "(proc0_15)"
 def to_source_syntax(cond):
     """Our specs say `gEgo`; this decompilation names the ego `global0`."""
     return cond.replace("(gEgo has:", "(global0 has:")
+
+
+DIRECTIONS = ("north", "south", "east", "west")
+
+
+def guard_edge_exit(text, inst_name, to_room, cond):
+    """Guard a ROOM-PROPERTY exit (`east 48`), which no `newRoom:` call can be wrapped around.
+
+    Walking off-screen is engine-handled: the Rm instance names the neighbour in a property, so
+    there is no call site for `trigger.find_trigger` to find. The game's own idiom for closing such
+    an exit is `(global2 <dir>: 0)` -- used in rm15, rm42, rm74 and rm77 -- so we re-evaluate the
+    guard on every room entry and close the exit when it fails.
+
+    Silent by nature: a disabled edge behaves as a wall, with no refusal text. That is how the game
+    already does it, and it is the only lever available for this kind of exit."""
+    m = re.search(r"\(instance\s+%s\s+of\s+Rm\b" % re.escape(inst_name), text)
+    if not m:
+        return text, 0, None
+    props = re.search(r"\(properties(.*?)\)", text[m.start():], re.S)
+    if not props:
+        return text, 0, None
+    direction = None
+    for d in DIRECTIONS:
+        pm = re.search(r"\b%s\s+(\d+)\b" % d, props.group(1))
+        if pm and int(pm.group(1)) == to_room:
+            direction = d
+            break
+    if direction is None:
+        return text, 0, None
+    init = re.search(r"\(method\s+\(init\)", text[m.start():])
+    if not init:
+        return text, 0, None
+    sup = re.search(r"\n(\s*)\(super init:\)", text[m.start() + init.start():])
+    if not sup:
+        return text, 0, None
+    at = m.start() + init.start() + sup.end()
+    indent = sup.group(1)
+    ins = ("\n%s; [softlock-guard] close this exit until the player can survive past it\n"
+           "%s(if (not %s)\n%s\t(global2 %s: 0)\n%s)" % (indent, indent, cond, indent, direction, indent))
+    return text[:at] + ins + text[at:], 1, direction
 
 
 def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set()):
@@ -231,8 +274,19 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set()):
                 continue
             placement = find_trigger(forms, sp["to_room"])
             if placement["kind"] not in ("trigger", "direct"):
+                # fall back to the room-property exit idiom before giving up
+                text = open(path, errors="replace").read()
+                new_text, n, direction = guard_edge_exit(
+                    text, title, sp["to_room"], to_source_syntax(sp["condition"]))
+                if n:
+                    open(path, "w").write(new_text)
+                    out.append({**sp, "applied": True, "title": title, "sites": n,
+                                "placement": {"kind": "edge-exit", "instance": title,
+                                              "trigger_method": "init", "trigger_state": direction}})
+                    continue
                 out.append({**sp, "applied": False,
-                            "why": "no controllable trigger (%s)" % placement["kind"],
+                            "why": "no controllable trigger (%s) and no room-property exit"
+                                   % placement["kind"],
                             "placement": placement})
                 continue
             text = open(path, errors="replace").read()

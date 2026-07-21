@@ -117,6 +117,22 @@ man" answered "you don't have it" while the player was holding the passport -- w
 something else, needed later. A refusal that misdescribes the reason sends the player hunting for
 the wrong item. Fixed to `proc0_15`.
 
-## Live results so far
-- rm26 ship gate: **CONFIRMED working**
-- rm38 raft gate incl. the Spinach_Dip prohibition: **CONFIRMED working**
+## Live results
+**All gates confirmed working in the real game** (user play-test, 2026-07-21): rm26 ship, rm38 raft
+incl. the Spinach_Dip prohibition, rm57 boarding, rm63 jump, rm79 chasm. Two wording defects were
+found and fixed (below); no gate misbehaved.
+
+**rm47 -> rm48 is now guarded too** (Knife/Matches/Flower). It has no `newRoom:` call to wrap --
+it is a ROOM-PROPERTY exit (`east 48`), walked off-screen and handled by the engine -- so it uses
+the game's own idiom for closing an exit, `(global2 east: 0)` at room init, as rm15/rm42/rm74/rm77
+do. Silent by nature: a closed edge behaves as a wall, with no refusal text. Re-evaluated on every
+entry, so it opens as soon as the player holds the three items.
+
+### Wording defects found in play (both fixed)
+1. Refusal said "You don't have it." while the player WAS holding the item they used -- fixed to
+   `NotNow`.
+2. The sink remedy deleted the consumption but left the clause's message claiming the item was
+   gone: "You carefully pour your bottle ... on the padlock", "You dump the bottle ... on the ice",
+   "You do so and immediately discard the now-soiled airsick bag". Since those acts are
+   irreversible, no "you thought better of it" retraction is honest; it needs an explicit joke,
+   which suits this game: **"Just kidding! You hold on to it because you still need it."**
