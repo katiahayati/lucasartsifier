@@ -100,11 +100,30 @@ KQ4 = GameConfig(
     # discover.py proposed start=23; goal confirmed as the Daventry ending where
     # Rosella cures King Graham (rm694, grahamFace; reached rm693->694, after
     # gamePhase=endGame(99) is set in rm92 when Lolotte dies).
-    # Both discovered by anchors.py. Discovery independently picks start=rm23, the value an
-    # earlier hand analysis had also proposed. It picks victory rm29/rm72 rather than the
-    # hand-read Daventry ending (rm693/694) -- UNVERIFIED, and KQ4 has never been play-tested.
-    start_room=0,
-    goal_rooms=frozenset(),
+    start_room=0,                       # discovered, fine
+    # ========================= PROTOTYPE -- DO NOT KEEP =========================
+    # goal_rooms is DECLARED here only to unblock the KQ4 analysis. It is NOT the
+    # answer, and it must be removed once we know the real one.
+    #
+    # Why discovery cannot find it: KQ4's `global127` does not mean "you died", it
+    # means "the game is over". It is set in 33 death rooms AND in both ending rooms
+    # (Room694.sc:169, Room692.sc:344). anchors.discover_goal excludes death rooms --
+    # correctly, since deaths are terminal too -- so it excludes victory along with
+    # them and returns nothing. One flag, two meanings.
+    #
+    # The real fix is to separate win from lose. Leads, in order of promise:
+    #   1. Main.sc ~795-860 branches inside the global127 handler (`proc0_12 800`
+    #      near 816, a global182 test near 858) -- one may be the discriminator.
+    #   2. A victory-only marker: a score award, or the endGame phase rm92 sets when
+    #      Lolotte dies.
+    #   3. If neither exists, the honest conclusion is that this genuinely cannot be
+    #      derived for KQ4, and the config field is the right home -- but that is a
+    #      finding to establish, not to assume, which is why this is marked.
+    #
+    # Everything derived from this value is provisional. Do not report KQ4 results
+    # as validated while this comment is here.
+    # ============================================================================
+    goal_rooms=frozenset({694}),        # PROTOTYPE (see above)
     death_signal=(127, None),
     # Main.sc:55 `debugOn ;generic debug flag -- set from debug menu`
     debug_globals=frozenset(),                     # KQ4 uses the SetDebug kernel, not a global
