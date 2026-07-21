@@ -203,14 +203,32 @@ class SccReach:
 
     # -- THE single gate-aware detection primitive, shared by the report and the
     #    patcher, so the two can never drift apart again. --------------------
+    def rooms_after(self, b):
+        """Rooms still reachable once you have crossed into `b`.
+
+        A HOOK so subclasses can answer it gate-aware. The default expands b's SCC-condensation
+        reach, which is guard-IGNORING and therefore over-permissive: it makes rooms BEFORE the
+        edge look reachable after it, so items needed only beforehand (the Suitcase, needed at
+        rm52) get demanded at boarding."""
+        cb = self.comp_of.get(b)
+        out = set()
+        for c in self.creach.get(cb, set()):
+            out |= self.comps[c]
+        return out
+
+    def goal_rooms_set(self):
+        return {r for r in GOAL_ROOMS if r in self.comp_of}
+
     def edge_strandings(self):
-        """For every guardable one-way `newRoom` edge a->b, the items obtainable
-        before the edge but LOST after it (gate-aware) and still needed on a path
-        that reaches the goal. `guard(a->b) = AND own(item)` is exactly the
-        LucasArts invariant. Death sinks (crossings that can't reach the goal) and
+        """For every guardable one-way `newRoom` edge a->b, the requirement UNITS obtainable
+        before the edge but LOST after it (gate-aware) and still needed on a path that reaches
+        the goal. `guard(a->b) = AND over units` is exactly the LucasArts invariant, where a
+        disjunctive unit contributes an OR. Death sinks (crossings that can't reach the goal) and
         reversible walk edges are excluded."""
-        reob = {it: self.reobtainable_rooms(it)
-                for it in self.required if self.sources.get(it)}
+        units = (self.requirement_units() if hasattr(self, "requirement_units")
+                 else [frozenset({it}) for it in self.required if self.sources.get(it)])
+        reob = {u: self.reobtainable_rooms(u if len(u) > 1 else next(iter(u))) for u in units}
+        need = {u: set().union(*(self._need_rooms(i) for i in u)) for u in units}
         out = []
         for a, bs in self.edges.items():
             if a not in self.reach_rooms:
@@ -224,16 +242,21 @@ class SccReach:
                 cb = self.comp_of.get(b)
                 if cb is None:
                     continue
-                fwd = self.creach.get(cb, set())         # comps reachable from b (incl b's)
-                if self.goal_comps and not (self.goal_comps & fwd):
+                fwd_rooms = self.rooms_after(b)
+                if self.goal_rooms_set() and not (self.goal_rooms_set() & fwd_rooms):
                     continue                             # crossing b can't win -> death sink
-                items = []
-                for it, R in reob.items():
+                items, groups = [], []
+                for u, R in reob.items():
                     if a in R and b not in R:            # obtainable before a, lost after b
-                        if any(self.comp_of.get(nr) in fwd for nr in self._need_rooms(it)):
-                            items.append(it)             # still needed past the edge
-                if items:
-                    out.append({"from_room": a, "to_room": b, "items": sorted(items)})
+                        if need[u] & fwd_rooms:
+                            # still needed past the edge -- without this, the sole entrance to the
+                            # ENDING looks like a stranding and gets guarded, blocking the win
+                            (items if len(u) == 1 else groups).append(u)
+                items = sorted(next(iter(u)) for u in items)
+                groups = sorted((sorted(u) for u in groups), key=lambda g: g[0])
+                if items or groups:
+                    out.append({"from_room": a, "to_room": b,
+                                "items": items, "groups": groups})
         return out
 
     def analyze(self):

@@ -215,6 +215,58 @@ commit; rm52->rm152, rm82->rm152, rm78->rm178 are over-generation). `frontier_fo
 edge crossing the boundary rather than the ones a player actually crosses. Narrow before emitting
 source.
 
+### GUARD CORRECTNESS — tasks 1-4 DONE (2026-07-21). 6 guards, all correct.
+Output is now 6 frontier guards covering ALL 16 ground-truth softlocks with nothing spurious:
+rm26 (Swimsuit/Gulp/Sunscreen), rm38 (Fruit/Sewing_Kit/Wig/Bikini_Top), rm47 (Knife/Matches/Flower),
+rm57 (Hair_Rejuvenator/Parachute/Bobby_Pin/Pamphlet), rm63 (Airsick_Bag), rm79 (Ashes OR Sand).
+
+Two root causes, both the SAME defect wearing different clothes -- a guard-IGNORING graph leaking
+into an otherwise gate-aware analysis:
+- **Parallel implementation.** `frontier_for` walked the "can still reach a source" boundary itself
+  instead of using `edge_strandings`, and so lacked its "still needed past the edge" conjunct. That
+  emitted a guard on rm78 -> rm178, the SOLE entrance to the ending, which would have refused a
+  legitimate win. Deleted; the group case now goes through the canonical core as a requirement UNIT.
+- **`creach` in the shared core.** `edge_strandings` tested "can reach the goal" and "still needed
+  past" against the SCC condensation, which is guard-ignoring, so the mega-SCC made rooms BEFORE the
+  edge look reachable after it. That demanded the Suitcase (needed at rm52) and the Airline_Ticket
+  (needed at rm57) to BOARD at rm57, and Stout_Stick/Vine on the rm82 "Bad idea" failure path. Fixed
+  with a `rooms_after(b)` hook, overridden gate-aware in IrSccReach.
+
+The satisfiability precondition is now a HARD REFUSAL in code (`unsatisfiable()`), not a hand-run
+audit: 6 emitted, 0 refused. Sweep unchanged at 16/16; tests 20+32+25+35.
+
+### Remaining (was: task list)
+Status going in: `python -m guards` is fully automatic and the CONDITIONS are semantically right
+(rm138 forbids the dip; boarding requires Parachute/Bobby_Pin/Pamphlet/Hair_Rejuvenator, all four
+obtainable pre-boarding, user-confirmed). 9/9 audited satisfiable. But ~3 of 9 frontier guards are
+junk, one is dangerous, and nothing but me has checked the output.
+
+1. ~~Unify the group path into `edge_strandings`; DELETE `frontier_for`.~~ DONE. The canonical core
+   already carries every conjunct my ad-hoc boundary walk lacked -- irreversibility, non-death-sink,
+   and above all **"still needed past the edge"** (search.py:233), which is precisely what makes
+   `rm78 -> rm178` (the sole entrance to the ENDING) spurious. Generalize its per-item loop to
+   iterate REQUIREMENT UNITS = items + disjunctive groups; `reobtainable_rooms` already accepts a
+   frozenset. One library, no drift -- the principle the original patch.py invoked and I violated
+   by writing a second frontier finder.
+2. **Screen pseudo-rooms** (rm0 = Main.sc; regions 300/600/700) out of need-room reporting, so no
+   guard is justified by "needed at rm0".
+3. **Kill the "usable != needed" leak.** `required[X]` counts any room whose guard mentions X,
+   including PURE SINKS -- rm63's `apply rejuvenator to bolt` puts rm63 in `required[21]`. Filter
+   requirements to HOPEFUL uses (same predicate as the trap rule). Today it is harmless only by
+   luck (the rejuvenator IS needed for the bomb); in general it inflates guards.
+4. ~~Safety preconditions as HARD REFUSALS in code~~ DONE for positive literals; the NEGATIVE
+   (droppable-before) counterpart is still owed, and matters for the red-herring guards.
+4b. **Safety preconditions, negative half**, not hand-run audits: positive literal must be
+   obtainable before the edge, negative droppable before it. Refuse loudly rather than emit an
+   unsatisfiable guard -- that is strictly worse than the softlock.
+5. **Merge survival gates + frontier guards into ONE per-site spec**, so each placement carries a
+   single condition instead of two reports.
+6. **Validate against something that is not me**: re-run the sweep on the guarded model -- every
+   softlock gone, ZERO new strandings -- plus unit tests for the new rules.
+
+Then, separately: source emission on the SAME decompilation as the analysis (user decision
+2026-07-21 -- no two-tree seam), then nuXmv winnability and a ScummVM boot.
+
 ### Guard synthesis — next
 1. **Filter death-room frontiers.** rm10->rm90, rm35->rm95/96 surfaced as frontiers but are deaths,
    not commits; screen them with `goal_reaching_rooms`.

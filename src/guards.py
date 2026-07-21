@@ -137,37 +137,49 @@ def frontier_guards(s):
 
     `survival_gates` only fires where the GAME ITSELF tests an item and sorts you into winning and
     losing branches. A stranding is invisible to that: nothing at rm57 mentions the parachute, you
-    simply can no longer come back for it once you board. So the condition has to come from the
-    reachability analysis instead -- the items a commit edge strands, required at the edge that
-    strands them.
+    simply can no longer come back for it once you board. So the condition comes from the
+    reachability analysis instead.
 
-    Returns {(from_room, to_room): {"items": {...}, "groups": [{...}], "why": [...]}}. Items are
-    ANDed (each is independently required past the edge); a disjunctive group contributes an OR."""
-    by_edge = defaultdict(lambda: {"items": set(), "groups": [], "why": []})
-    for c in s.analyze():
-        for e in c["frontier_edges"]:
-            a, b = (int(x[2:]) for x in e.split("->"))
-            rec = by_edge[(a, b)]
-            rec["items"].add(c["item"])
-            rec["why"].append(f"{c['item_name']} (from rm{c['source_rooms']}) needed at rm{c['need_room']}")
-    for row in s.group_strandings():
-        for e in frontier_for(s, frozenset(row["items"])):
-            by_edge[e]["groups"].append(set(row["items"]))
-            by_edge[e]["why"].append(" or ".join(row["item_names"]) + f" needed at rm{row['need_room']}")
-    return by_edge
-
-
-def frontier_for(s, items):
-    """Commit edges past which NONE of `items` can be obtained any more -- the placement rule.
-    A literal is enforced at the last edge where it is still satisfiable, never at the gate."""
-    keep = s.reobtainable_rooms(items)
-    goal_ok = M.goal_reaching_rooms(s.edges, s.em.cfg.goal_rooms)
-    out = []
-    for a in sorted(keep):
-        for b in sorted(s.edges.get(a, ())):
-            if b not in keep and b in s.reach_rooms and b in goal_ok:
-                out.append((a, b))          # b in goal_ok screens out death rooms, not commits
+    Straight off `edge_strandings`, the SAME core the report reads -- one library, no drift. An
+    earlier version walked the boundary of "can still reach a source" itself and emitted three
+    junk guards, one of them on rm78 -> rm178, the sole entrance to the ENDING, which would have
+    refused a legitimate win. `edge_strandings` already requires the unit to be STILL NEEDED past
+    the edge, which rules that out by construction."""
+    out = {}
+    for es in s.edge_strandings():
+        out[(es["from_room"], es["to_room"])] = {"items": set(es["items"]),
+                                                 "groups": [set(g) for g in es["groups"]]}
     return out
+
+
+def unsatisfiable(s, a, b, rec):
+    """Which parts of this guard CANNOT be satisfied before crossing a->b.
+
+    A guard demanding something unobtainable converts a softlock into a permanent wall -- strictly
+    worse than the bug it fixes -- so this is a hard refusal, not a warning. Non-empty means the
+    guard must not be emitted."""
+    pre = M.reachable({x: (set(y) - {b} if x == a else set(y)) for x, y in s.edges.items()},
+                      {s.em.cfg.start_room})
+    bad = []
+    for it in sorted(rec["items"]):
+        if not (s.sources.get(it, set()) & pre):
+            bad.append(s.g.item_name(it))
+    for grp in rec["groups"]:
+        if not any(s.sources.get(i, set()) & pre for i in grp):
+            bad.append("(" + " or ".join(s.g.item_name(i) for i in sorted(grp)) + ")")
+    return bad
+
+
+def render_frontier(rec):
+    terms = [f"(gEgo has: {i})" for i in sorted(rec["items"])]
+    for grp in rec["groups"]:
+        if len(grp) == 1:
+            terms.append(f"(gEgo has: {next(iter(grp))})")
+        else:
+            terms.append("(or " + " ".join(f"(gEgo has: {i})" for i in sorted(grp)) + ")")
+    if not terms:
+        return None
+    return terms[0] if len(terms) == 1 else "(and " + " ".join(terms) + ")"
 
 
 def main():
@@ -195,18 +207,21 @@ def main():
     print("=" * 78)
     fg = frontier_guards(s)
     print(f"frontier guards (structural strandings -- the game never tests these): {len(fg)}\n")
+    refused = 0
     for (a, b), rec in sorted(fg.items()):
-        pos = sorted(rec["items"])
-        terms = [f"(gEgo has: {i})" for i in pos]
-        for grp in rec["groups"]:
-            terms.append("(or " + " ".join(f"(gEgo has: {i})" for i in sorted(grp)) + ")")
-        cond = terms[0] if len(terms) == 1 else "(and " + " ".join(terms) + ")"
+        bad = unsatisfiable(s, a, b, rec)
+        names = [nm(i) for i in sorted(rec["items"])]
+        names += ["(" + " or ".join(nm(i) for i in sorted(g)) + ")" for g in rec["groups"]]
         print(f"rm{a} -> rm{b}")
-        print(f"   guard: {cond}")
-        print(f"   needs: {[nm(i) for i in pos] + ['(' + ' or '.join(nm(i) for i in sorted(g)) + ')' for g in rec['groups']]}")
-        for w in rec["why"][:5]:
-            print(f"     - {w}")
+        if bad:
+            refused += 1
+            print(f"   REFUSED -- cannot be satisfied before this edge: {bad}")
+            print(f"   (emitting it would wall the game, which is worse than the softlock)")
+        else:
+            print(f"   guard: {render_frontier(rec)}")
+            print(f"   needs: {names}")
         print()
+    print(f"{len(fg) - refused} emitted, {refused} refused as unsatisfiable")
     return 0
 
 

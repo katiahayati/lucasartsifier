@@ -435,7 +435,7 @@ class IrSccReach(SccReach):
         self.reach_rooms = reachable(self.edges, {em.cfg.start_room})
         self.members, self.room_region, self.controllers = {}, {}, set()   # no regions in IR
         self.goal_comps = {self.comp_of[r] for r in em.cfg.goal_rooms if r in self.comp_of}
-        self._reob, self._rw = {}, {}
+        self._reob, self._rw, self._after = {}, {}, {}
         self._build_product()
 
     # ---- gate-aware movement ------------------------------------------------
@@ -556,6 +556,38 @@ class IrSccReach(SccReach):
             out = rooms if out is None else (out & rooms)
         self._reob[ban] = out if out is not None else set()
         return self._reob[ban]
+
+    def rooms_after(self, b):
+        """Rooms still reachable after crossing into `b` -- GATE-AWARE, intersected over
+        projections. The condensation default counts the whole mega-SCC, which is what made
+        rm52/rm57 look reachable from rm58 and inflated the boarding guard."""
+        if b in self._after:
+            return self._after[b]
+        out = None
+        for R in self.regs:
+            starts = {p for p in self._pstates[R] if p[0] == b}
+            if not starts:
+                continue
+            rooms = {r for r, _ in self._walk(R, frozenset(), starts)}
+            out = rooms if out is None else (out & rooms)
+        self._after[b] = out if out is not None else {b}
+        return self._after[b]
+
+    def goal_rooms_set(self):
+        return {r for r in self.em.cfg.goal_rooms if r in self.comp_of}
+
+    def requirement_units(self):
+        """Every unit that must be satisfied to win: single items, plus disjunctive GROUPS.
+
+        `edge_strandings` iterates these rather than bare items, so a group inherits all of its
+        conjuncts -- irreversibility, non-death-sink, and "still needed past the edge" -- instead
+        of needing a parallel frontier walk that would drift from the canonical rule."""
+        units = [frozenset({it}) for it in self.required if self.sources.get(it)]
+        for R, groups in self.disjunctive_groups().items():
+            for G in groups:
+                if any(self.sources.get(i) for i in G):
+                    units.append(frozenset(G))
+        return units
 
     # ---- disjunctive requirement groups -------------------------------------
     def disjunctive_groups(self):
