@@ -58,6 +58,7 @@ class _LiveCfg:
 
 TIMER_GLOBALS = _LiveCfg("timer_globals")
 REGION_LABELS = _LiveCfg("region_labels")
+DEBUG_GLOBALS = _LiveCfg("debug_globals")
 
 
 def is_room(game: Game, num: int) -> bool:
@@ -94,6 +95,15 @@ def derived_maps(game: Game):
     global_sets = defaultdict(list)   # global -> [(room, value)]
     for num, s in game.scripts.items():
         for t in s.transitions:
+            # A transition that only fires with a DEBUG global SET is dead in the shipped game
+            # (config pins those off). rm82's `(if gDebugging (gEgo get: 19 21 27))` bomb
+            # hand-out is the landmine: counting its ACQUIRE as a real source makes Matches /
+            # Airsick_Bag look re-obtainable island-wide (rm82 sits in the big island SCC),
+            # which HID their stranding. Skip the whole transition -- its effects and guards
+            # are unreachable.
+            if any(getattr(p, "var", None) in DEBUG_GLOBALS and getattr(p, "want", True)
+                   for p in t.guards):
+                continue
             for e in t.effects:
                 if e.kind == "ACQUIRE":
                     sources[e.arg].add(num)

@@ -2,9 +2,9 @@
  "method": "SCC-condensation + goal-aware frontier (tractable exact reachability)",
  "note": "Naive product-state BFS over (room, item-subset, flag-subset) is intractable here (21 winnability items => 2^21 subsets; hits the state cap). SCC condensation collapses freely-explorable room sets into a DAG of acts whose one-way edges are the true points of no return.",
  "coi_slice": {
-  "items": 21,
+  "items": 22,
   "of_items": 32,
-  "flags": 43,
+  "flags": 65,
   "of_globals": 480
  },
  "rooms": 100,
@@ -112,10 +112,6 @@
   }
  ],
  "goal_rooms": [
-  75,
-  76,
-  77,
-  78,
   178
  ],
  "start_room": 21,
