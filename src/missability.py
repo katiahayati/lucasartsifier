@@ -128,6 +128,12 @@ def build_maps(em):
         for K, paths in info["states"].items():
             for (g, w, gg, c, tr) in paths:
                 req(g, info["room"])
+        # machine ENTRY guards too: a `Said 'throw/beach'` success branch is captured as an
+        # entry/changeState guarded by own(Sand) -- skipping entries lost Sand/Ash.
+        for K, eg in info.get("entries", ()):
+            req(eg, info["room"])
+        for K, eg in info.get("init_entries", ()):
+            req(eg, info["room"])
     return edges, edge_kind, sources, drops, required
 
 
