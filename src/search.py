@@ -144,11 +144,15 @@ class SccReach:
         """Is requiring-room R a one-way POCKET w.r.t. these item sources? True iff,
         after deleting R's OWN one-way exits (its irreversible commit edges), R can
         no longer reach any source. The plane rm63's only exit is the gated jump
-        rm63->64, so deleting it seals rm63 -> stranded. rm81 (throw sand at the
-        ice) keeps a reciprocal exit that loops out to the sand beach and back, so
-        deleting its one-way exit still reaches the source -> NOT sealed -> a normal
-        fetch, not a strand. This is what separates a movement-gate from a
-        side-action requirement without needing a death model."""
+        rm63->64, so deleting it seals rm63 -> stranded.
+
+        KNOWN FP (Airline_Ticket): this over-seals rm57, whose one-way exit rm57->55 is
+        part of a REAL local cycle rm57->55->56->57 back to the rm52 ticket source. We can't
+        tell that real cycle from the SPURIOUS mega-SCC cycles the guard-ignoring graph invents
+        (gated flight/jump edges counted as free -- [[parachute-scc-overmerge-bug]]), so the
+        aggressive delete-all-one-way is the least-bad heuristic (15/16). The proper fix is a
+        GATE-AWARE graph (free vs gated edges) so round-trips are computed over real cycles;
+        SCC/reachability cleverness on the guard-ignoring graph cannot separate the two."""
         e2 = {a: set(b) for a, b in self.edges.items()}
         for Rp in list(e2.get(R, ())):
             if R not in self.edges.get(Rp, set()):       # R->Rp is one-way
