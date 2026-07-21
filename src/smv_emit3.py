@@ -802,6 +802,8 @@ class OpEmitter:
                 if isinstance(v, str) and v.lstrip("-").isdigit():
                     cand.append(int(v))
             lo, hi = min(cand), max(cand)
+            if hi == lo:                # a collapsed cutscene has one state -> 0..0, which nuXmv
+                hi = lo + 1             # rejects; widen to a valid 2-value range (extra value unreachable)
             L.append(f"  {ms} : {lo} .. {hi};")
 
         L.append("ASSIGN")
