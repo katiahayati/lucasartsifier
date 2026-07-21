@@ -76,7 +76,11 @@ Each prints its original message, then **"Just kidding! You hold on to it becaus
 | B2 | rm81 | `drop rejuvenator` | **21** | ⬜ re-test (wording fixed) |
 | B3 | rm61 / 62 / 63 | `barf` (or `use bag`) | **27** | ⬜ re-test (wording fixed) |
 
-Check inventory after each. The score penalty (−5 / −5 / −2) still applies — you did do the silly thing.
+Check inventory after each. **The score penalty is also removed** (−5 / −5 / −2): it was the price
+of destroying the item, and the destruction is gone. Charging for something that did not happen
+would cap the reachable score permanently — a small unwinnable state of its own in a scored game.
+Guards need no equivalent change: `trigger.py` wraps the whole clause, so a refusal never reaches
+the score line (rm47's +12 sits inside the guarded branch).
 
 ## C. Regression — must not brick normal play (MOST IMPORTANT)
 

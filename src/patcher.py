@@ -156,8 +156,19 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
         indent = re.match(r"[ \t]*", lines[i]).group(0)
         lines[i] = ("%s(proc255_0 {Just kidding! You hold on to it because you still need it.})\n"
                     % indent)
+        # Drop the penalty too. It was the price of DESTROYING the item, and the destruction is
+        # gone -- charging for something that did not happen also caps the reachable score
+        # permanently, which is a small unwinnable state of its own in a scored game. Only ever a
+        # NEGATIVE score adjacent to the consumption; a positive one rewards something legitimate.
+        dropped_score = None
+        if i + 1 < len(lines):
+            sm = re.match(r"\s*\(global1\s+changeScore:\s*(-\d+)\)\s*$", lines[i + 1])
+            if sm:
+                dropped_score = int(sm.group(1))
+                del lines[i + 1]
         open(path, "w").write("".join(lines))
-        edits.append({**sk, "applied": True, "title": title, "line": i + 1})
+        edits.append({**sk, "applied": True, "title": title, "line": i + 1,
+                      "score_removed": dropped_score})
     return edits
 
 
@@ -409,7 +420,9 @@ def main():
     for e in edits:
         mark = "ok " if e["applied"] else "SKIP"
         where = e.get("title", "script%s" % e["script"])
-        print("  [%s] %-10s %s" % (mark, where, e["why"]))
+        extra = ("  (also dropped the %d penalty)" % e["score_removed"]
+                 if e.get("score_removed") else "")
+        print("  [%s] %-10s %s%s" % (mark, where, e["why"], extra))
     specs = G.guard_specs(s)
     print("\napplying %d guard specs:" % sum(1 for x in specs if x["site"] == "edge"))
     gedits = apply_guards(dest, specs, titles_by_num, nums,
