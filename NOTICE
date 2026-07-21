@@ -1,0 +1,44 @@
+This project builds on two upstream works. Neither is redistributed in full;
+`vendor/` is not tracked.
+
+--------------------------------------------------------------------------------
+SCICompanion -- https://github.com/EricOakford/SCICompanion (orig. scicompanion.com)
+Copyright (c) 2015 Philip Fortier
+GPL-2.0-or-later
+
+`tools/scicompile/` is a headless Linux port of SCICompanion's SCI script
+compiler. It contains modified copies of SCICompanion sources (each file states
+that it is a modified copy and what changed) and links its compiler, class
+browser, resource map and SCO subsystems. It is therefore a derivative work and
+is licensed GPL-2.0-or-later; see tools/scicompile/LICENSE.
+
+Changes made:
+  * headless Linux build: MFC/Win32 replaced by minimal shims (tools/scicompile/compat)
+  * mechanical MSVC -> GCC fixes (dependent-name typename, rvalue stream binding, ...)
+  * ScriptId::_Init path fix: split on the last separator of EITHER kind, so POSIX
+    '/' paths resolve (previously broke the class browser and Compile-All)
+  * new `--all` (Compile-All) and `--sco` modes
+  * two upstream defect fixes in SCO.cpp, both triggered only by compiling a
+    DIFFERENT decompiler's output:
+      - SCOFromScriptAndCompiledScript: nameToCompiledObject[...] used operator[],
+        which inserts a nullptr for an absent class name and is then dereferenced
+      - the export loop bounds-checked the instance branch but not the procedure
+        branch, so a procedure-classified export with no public procedures in
+        source indexed off the end of the vector
+
+Prof-UIS (bundled with SCICompanion) is proprietary and is neither used nor
+redistributed here; the port is headless and links no GUI code.
+
+--------------------------------------------------------------------------------
+sci-tools -- https://github.com/sluicebox/sci-tools
+Copyright (c) sluicebox
+MIT
+
+Used as the decompiler front-end. `tools/sci-tools-fork/json-ir.patch` adds a
+`--json` flag that serialises the typed control-flow AST it already builds, so
+the analysis can consume it instead of reparsing generated text. The patch is
+additive; the upstream sources are fetched and patched at build time, not vendored.
+
+--------------------------------------------------------------------------------
+Game data (Sierra On-Line) is not included in this repository under any terms.
+You must supply your own copy of a game to run any of this.
