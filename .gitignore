@@ -8,3 +8,16 @@ out/
 tools/scicompile/build/
 .venv-bdd/
 build/
+reports/
+
+# planning / scratch notes (kept locally, not versioned)
+PLAN.md
+PLAN-v2.md
+ENGINE-DIRECTION.md
+TODO.md
+REVIEW-FIXES-TESTPLAN.md
+KATIA_README
+
+# one-off probes and the control-oracle proof-of-concept (incl. rendered game art)
+tools/probe_*.py
+tools/pic-oracle/
