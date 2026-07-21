@@ -688,8 +688,17 @@ unique_ptr<CSCOFile> SCOFromScriptAndCompiledScript(const Script &script, const 
         if (!object->IsInstance())
         {
             CSCOObjectClass newSCOObject;
-            CompiledObject *compiledObject = nameToCompiledObject[object->GetName()];
-            // With object and compiledObject, we should have everything we need?
+            // NULL CHECK (added for the headless port). `operator[]` INSERTS a nullptr when the
+            // name is absent, and every use below dereferences it. A class named in source but
+            // not present in the compiled script is a source/binary disagreement -- skip it
+            // rather than crash. Same root cause as the export bounds check below: upstream's
+            // source always came from its own decompiler, so the two agreed by construction.
+            auto itCompiled = nameToCompiledObject.find(object->GetName());
+            if (itCompiled == nameToCompiledObject.end() || !itCompiled->second)
+            {
+                continue;
+            }
+            CompiledObject *compiledObject = itCompiled->second;
             newSCOObject.SetName(object->GetName());
             newSCOObject.SetPublic(compiledObject->IsPublic);   // REVIEW: When is a class not public?
             newSCOObject.SetSpecies(compiledObject->GetSpecies());
@@ -756,8 +765,17 @@ unique_ptr<CSCOFile> SCOFromScriptAndCompiledScript(const Script &script, const 
         }
         else if (compiledScript.IsExportAProcedure(exportOffset))
         {
-            exportName = publicProcNames[procIndex++];
-            sco->GetExports().emplace_back(exportName, exportIndex);
+            // BOUNDS CHECK (added for the headless port). Upstream guards the INSTANCE branch
+            // above but not this one, so an export the compiled script classifies as a procedure
+            // while the source declares no public procedures indexes off the end of the vector.
+            // LSL2 script 6 (Airplane) does exactly that: zero procedures in source, yet a
+            // procedure-looking export -- segfault. Upstream never hits it because its own
+            // decompiler generated the source, so the two always agreed by construction.
+            if (procIndex < publicProcNames.size())
+            {
+                exportName = publicProcNames[procIndex++];
+                sco->GetExports().emplace_back(exportName, exportIndex);
+            }
         }
         // Exports may be zero too. We won't write those to the SCO though.
         exportIndex++;

@@ -24,6 +24,7 @@
 #include "CompileContext.h"
 #include "ClassBrowser.h"
 #include "SCO.h"
+#include "CompiledScript.h"
 #include "Version.h"
 
 #include <cstdio>
@@ -210,6 +211,91 @@ namespace
             }
         }
         return changed;
+    }
+
+    // Generate the .sco interface files the way SCICompanion's DECOMPILER does
+    // (DecompileScript.cpp: SCOFromScriptAndCompiledScript + SaveSCOFile), pairing each
+    // parsed source with the game's compiled script resource.
+    //
+    // Why this mode has to exist: `(use X)` is resolved by reading X.sco from disk, and
+    // every LSL2 script has at least one `use`, so no script compiles standalone and
+    // Compile-All cannot bootstrap from an empty project. SCICompanion never notices
+    // because its decompiler always wrote the .sco set first. Our decompiler is
+    // sci-tools, which does not, so we derive the same files from THE GAME plus OUR
+    // decompilation -- no borrowed artifacts from anyone else's source tree.
+    int RunGenerateSCO(const std::string &gameDir)
+    {
+        if (!BringUpApp(gameDir))
+        {
+            return 1;
+        }
+
+        CResourceMap &resourceMap = appState->GetResourceMap();
+        const GameFolderHelper &helper = resourceMap.Helper();
+
+        std::vector<ScriptId> scripts;
+        resourceMap.GetAllScripts(scripts);
+        fprintf(stderr, "Generate SCO: %zu script entries in game.ini [Script]\n", scripts.size());
+
+        int written = 0, noSource = 0, noResource = 0, parseFail = 0;
+        for (ScriptId &scriptId : scripts)
+        {
+            std::ifstream probe(scriptId.GetFullPath().c_str());
+            if (!probe.is_open())
+            {
+                noSource++;                       // stale game.ini row naming a non-script
+                continue;
+            }
+            probe.close();
+
+            // The compiled script for this number, straight from the game's resources.
+            // Exports must be loaded: the SCO records them.
+            const uint16_t scriptNum = (uint16_t)scriptId.GetResourceNumber();
+            CompiledScript compiled(scriptNum, CompiledScriptFlags::None);
+            if (!compiled.Load(helper, appState->GetVersion(), scriptNum))
+            {
+                noResource++;
+                continue;
+            }
+
+            CompileLog log;
+            ClassBrowserLock lock(appState->GetClassBrowser());
+            lock.Lock();
+
+            CCrystalTextBuffer buffer;
+            if (!buffer.LoadFromFile(scriptId.GetFullPath().c_str()))
+            {
+                noSource++;
+                continue;
+            }
+            SetLanguageFromBuffer(scriptId, buffer);   // picks SCI vs Studio syntax
+
+            CScriptStreamLimiter limiter(&buffer);
+            CCrystalScriptStream stream(&limiter);
+            auto pScript = std::make_unique<sci::Script>(scriptId);
+
+            bool parsed = SyntaxParser_Parse(
+                *pScript, stream, PreProcessorDefinesFromSCIVersion(appState->GetVersion()), &log);
+            log.CalculateErrors();
+            if (!parsed)
+            {
+                parseFail++;
+                fprintf(stderr, "  %-14s parse failed: %s\n",
+                        scriptId.GetTitle().c_str(), FirstError(log).c_str());
+                buffer.FreeAll();
+                continue;
+            }
+
+            std::unique_ptr<CSCOFile> sco = SCOFromScriptAndCompiledScript(*pScript, compiled);
+            SaveSCOFile(helper, *sco);
+            written++;
+            buffer.FreeAll();
+        }
+
+        fprintf(stderr,
+                "\n==== Generate SCO: %d written, %d without source, %d without a compiled "
+                "resource, %d parse failures ====\n", written, noSource, noResource, parseFail);
+        return (written > 0) ? 0 : 1;
     }
 
     int RunCompileAll(const std::string &gameDir)
@@ -440,6 +526,10 @@ namespace
 
 int main(int argc, char **argv)
 {
+    if (argc == 3 && std::string(argv[1]) == "--sco")
+    {
+        return RunGenerateSCO(argv[2]);
+    }
     if (argc == 3 && std::string(argv[1]) == "--all")
     {
         return RunCompileAll(argv[2]);
@@ -451,7 +541,8 @@ int main(int argc, char **argv)
     fprintf(stderr,
             "usage:\n"
             "  %s <gameProjectDir> <input.sc> <output.bin>   compile one script\n"
+            "  %s --sco <gameProjectDir>                      Generate .sco from source + game resources\n"
             "  %s --all <gameProjectDir>                      Compile All (write .sco files)\n",
-            argv[0], argv[0]);
+            argv[0], argv[0], argv[0]);
     return 2;
 }

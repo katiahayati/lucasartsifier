@@ -218,3 +218,41 @@ artifacts, and it generalises to any SCI title.
 **Do not** seed `.sco` files from a foreign decompilation. We tried that with the EricOakford tree
 and it "worked" only because both describe the same game; it is precisely the two-tree seam that
 has now caused three separate failures.
+
+## `--sco` mode — bootstrapping from OUR decompilation (2026-07-21)
+
+```
+scicompile --sco <gameProjectDir>    # parse each .sc, pair with its compiled resource, save .sco
+scicompile --all <gameProjectDir>    # then Compile-All resolves every (use X)
+```
+
+`--sco` mirrors what SCICompanion's decompiler does at `DecompileScript.cpp:538`:
+`SCOFromScriptAndCompiledScript(parsedSource, compiledScript)` then `SaveSCOFile`. Both
+translation units were already in this port's build, so the mode is wiring, not new logic. It
+derives the interface set from **the pristine game plus our own sluicebox decompilation** -- no
+artifacts borrowed from anyone else's source tree.
+
+**Result on LSL2: `--sco` writes 118/118, then `--all` compiles 117/118.**
+
+### Two latent upstream bugs it exposed (fixed in `patched/SCO.cpp`)
+Both are the same shape, and both are invisible to SCICompanion because *its own decompiler*
+generated the source it later compiles, so source and binary agree by construction. Feed it a
+DIFFERENT decompiler's output and they bite immediately:
+
+1. **Null deref on class lookup.** `nameToCompiledObject[object->GetName()]` uses `operator[]`,
+   which INSERTS a nullptr for an absent name; every following line dereferences it. Now uses
+   `find()` and skips a class the compiled script does not contain.
+2. **Unbounded export index.** The export loop bounds-checks the INSTANCE branch but not the
+   PROCEDURE branch: `publicProcNames[procIndex++]` with no size check. LSL2 script 6 (`Airplane`)
+   declares zero procedures in source yet has a procedure-classified export -- segfault on the
+   first one. Now bounds-checked like its sibling.
+
+### Two source-level gaps in the sluicebox decompilation
+- **`global480` (blocks rm63, a patch site).** Script 0's `(local ...)` block declares 480 globals
+  (`global0..global479`), but the game genuinely reads `global480`; the IR agrees the block is 480
+  long. Declaring one more global in `Main.sc` fixes it. Compile-time only -- the room script
+  compiles to an absolute global index the interpreter resolves against its own global array,
+  which the original game already indexes this far.
+- **`CosMult` (blocks Actor.sc only).** A kernel/procedure name this compiler's vocabulary does not
+  know. `Actor.sc` is a system script we never patch, and its `.sco` is already correct from
+  `--sco`, so 117/118 is sufficient: we only ever recompile the rooms we edit.
