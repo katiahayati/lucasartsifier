@@ -151,8 +151,15 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
     return edits
 
 
-REFUSE = "(proc0_20)"   # the game's own "you don't have that" response, used in 14 scripts
-
+REFUSE = "(proc0_15)"
+# `NotNow` -- the standard SCI refusal. In this decompilation Main's procedures are numbered, and
+# proc0_15 prints script 0 message 134, "Not now!" (dumped from the game's text.000; the whole
+# family is proc0_N -> message N+119).
+#
+# NOT proc0_20 (message 139, "You don't have it."), which was the first choice and LIES: reported
+# from live play at rm26, "give passport to man" answered "you don't have it" while the player was
+# holding the passport. What they lacked was something else entirely, needed later. A refusal that
+# misdescribes the reason sends the player hunting for the wrong thing.
 
 def to_source_syntax(cond):
     """Our specs say `gEgo`; this decompilation names the ego `global0`."""

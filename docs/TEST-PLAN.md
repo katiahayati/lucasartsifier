@@ -96,3 +96,27 @@ at ROOM INIT, so acquire both BEFORE entering:
 Airsick_Bag, Hair_Rejuvenator and Matches for free, silently masking whether the sink fixes
 worked. Toggle it off (`praise lord` again) before any volcano test. This global is also why the
 analyser filters debug-gated acquisitions; otherwise it would conclude the bomb needs nothing.
+
+## Refusal message
+
+The guards answer with **`NotNow`** = `proc0_15` = script 0 message 134, **"Not now!"**.
+
+In this decompilation Main's procedures are numbered, so the family is `proc0_N` -> message N+119
+(dumped from the game's own `text.000`):
+
+| proc | msg | text |
+|---|---|---|
+| proc0_15 | 134 | **Not now!**  <- the standard refusal |
+| proc0_16 | 135 | You're not close enough. |
+| proc0_17 | 136 | You already took it. |
+| proc0_19 | 138 | You can't do that here; at least, not now. |
+| proc0_20 | 139 | You don't have it. |
+
+The first build used `proc0_20`, which **lies**: reported from live play at rm26, "give passport to
+man" answered "you don't have it" while the player was holding the passport -- what they lacked was
+something else, needed later. A refusal that misdescribes the reason sends the player hunting for
+the wrong item. Fixed to `proc0_15`.
+
+## Live results so far
+- rm26 ship gate: **CONFIRMED working**
+- rm38 raft gate incl. the Spinach_Dip prohibition: **CONFIRMED working**
