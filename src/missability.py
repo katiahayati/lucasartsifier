@@ -57,6 +57,30 @@ def _own_positive(guard):
     return out
 
 
+def _death_reachable(info):
+    """States of this machine from which a DEATH is reachable (backward closure over
+    ADVANCE/JUMP/SETSTATE). Used to spot TRAP gates -- an own(item) branch that walks into a
+    death is not a requirement (Spinach_Dip's spoiled mayonnaise)."""
+    succ, dead = defaultdict(set), set()
+    for K, paths in info["states"].items():
+        for (g, w, gg, c, tr) in paths:
+            if tr[0] == "DEATH":
+                dead.add(K)
+            elif tr[0] == "ADVANCE":
+                succ[K].add(K + 1)
+            elif tr[0] == "JUMP":
+                succ[K].add(tr[1])
+            elif tr[0] == "SETSTATE":
+                succ[K].add(tr[1] + 1)
+    out, changed = set(dead), True
+    while changed:
+        changed = False
+        for K, ss in succ.items():
+            if K not in out and (ss & out):
+                out.add(K); changed = True
+    return out
+
+
 def build_maps(em):
     """(edges, edge_kind, sources, drops, required) from the JSON-IR OpEmitter."""
     edges, edge_kind = defaultdict(set), defaultdict(set)
@@ -125,8 +149,19 @@ def build_maps(em):
     for room, script, gi, v, g in em.handler_writes:
         req(g, room)
     for info in em.machines:
+        dr = _death_reachable(info)
         for K, paths in info["states"].items():
             for (g, w, gg, c, tr) in paths:
+                # A path guarded by own(X) that LEADS TO DEATH is a TRAP gate, not a
+                # requirement: rm138's day-6 hunger accepts `own(Spinach_Dip)` -> eat it ->
+                # "the mayonnaise has spoiled in the hot, tropical sun!" -> death, while the
+                # sibling `own(Sewing_Kit)` branch fishes and lives. Counting the trap made
+                # Spinach_Dip look required. Skip death-bound paths; keep the survivable one.
+                tgt = (K + 1 if tr[0] == "ADVANCE" else
+                       tr[1] if tr[0] == "JUMP" else
+                       tr[1] + 1 if tr[0] == "SETSTATE" else None)
+                if tr[0] == "DEATH" or (tgt is not None and tgt in dr):
+                    continue
                 req(g, info["room"])
         # machine ENTRY guards too: a `Said 'throw/beach'` success branch is captured as an
         # entry/changeState guarded by own(Sand) -- skipping entries lost Sand/Ash.

@@ -333,12 +333,12 @@ def summarize_machine(machine, is_death, from_state=None):
     out = []
     budget = [PATH_CAP]
 
-    def walk(state, counters, guard, writes, gets, depth, seen):
+    def walk(state, counters, guard, writes, gets, drops, depth, seen):
         if depth > COUNTER_CAP * 4 or budget[0] <= 0:
             return
         if state not in steps:
             if state <= max(steps, default=0):
-                walk(state + 1, counters, guard, writes, gets, depth + 1, seen)
+                walk(state + 1, counters, guard, writes, gets, drops, depth + 1, seen)
             return
         for st in steps[state]:
             budget[0] -= 1
@@ -353,23 +353,24 @@ def summarize_machine(machine, is_death, from_state=None):
             if not ok:
                 continue
             ng, nw, ngets = guard + ext, writes + st.writes, gets + st.gets
+            ndrops = drops + st.drops
             nc = _apply_counters(counters, st.counters)
             tr = st.trans
             key = (state, tuple(sorted(nc.items())))
             if tr[0] == "EXIT":
-                out.append((tr[1], _conj(ng), dict(nw), list(ngets), False))
+                out.append((tr[1], _conj(ng), dict(nw), list(ngets), list(ndrops), False))
             elif tr[0] == "DEATH":
-                out.append((None, _conj(ng), dict(nw), list(ngets), True))
+                out.append((None, _conj(ng), dict(nw), list(ngets), list(ndrops), True))
             elif key in seen:
                 continue
             elif tr[0] == "ADVANCE":
-                walk(state + 1, nc, ng, nw, ngets, depth + 1, seen | {key})
+                walk(state + 1, nc, ng, nw, ngets, ndrops, depth + 1, seen | {key})
             elif tr[0] == "JUMP":
-                walk(tr[1], nc, ng, nw, ngets, depth + 1, seen | {key})
+                walk(tr[1], nc, ng, nw, ngets, ndrops, depth + 1, seen | {key})
             elif tr[0] == "SETSTATE":
-                walk(tr[1] + 1, nc, ng, nw, ngets, depth + 1, seen | {key})
+                walk(tr[1] + 1, nc, ng, nw, ngets, ndrops, depth + 1, seen | {key})
 
-    walk(machine.start if from_state is None else from_state, {}, [], [], [], 0, frozenset())
+    walk(machine.start if from_state is None else from_state, {}, [], [], [], [], 0, frozenset())
     return out
 
 

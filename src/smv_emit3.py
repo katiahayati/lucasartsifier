@@ -244,12 +244,14 @@ class OpEmitter:
         path), carrying accumulated writes+gets, replacing the internal state sequence. Summarize
         from every entry state (rm92 enters at 16/23/... by gIslandStatus), not just start."""
         entry_ks = {m.start} | {k for k, _ in m.entries} | {k for k, _ in m.init_entries}
-        states, has_effect = {}, False
+        states, has_effect, drops = {}, False, set()
         for K in entry_ks:
             paths = []
-            for (X, gtree, writes, gets, dead) in C.summarize_machine(m, self.is_death, from_state=K):
+            for (X, gtree, writes, gets, sdrops, dead) in C.summarize_machine(m, self.is_death, from_state=K):
                 trans = ("DEATH",) if dead else ("EXIT", X)
                 paths.append(([gtree] if gtree is not None else [], list(writes.items()), gets, [], trans))
+                if not dead:
+                    drops |= set(sdrops)   # consumed on a SURVIVABLE path -> a real requirement
                 has_effect = True
             if paths:
                 states[K] = paths
@@ -262,21 +264,11 @@ class OpEmitter:
             delivered = set()
         return {"room": room, "inst": m.inst, "script": m.script, "states": states,
                 "entries": m.entries, "init_entries": m.init_entries, "start": m.start,
-                "delivered": delivered, "cutscene": True}
+                "delivered": delivered, "cutscene": True, "drops": drops}
 
     def _machine_info(self, room, m):
-        # Items CONSUMED anywhere in this machine (`gEgo put: N -1`). Consuming an item REQUIRES
-        # owning it, and some requirements carry no own() guard at all -- the Flower handed to
-        # the KGBishnas (rm50) exists only as a `put: 20 -1`. Collected for the missability sweep.
-        drops = set()
-        for K, body in m.bodies.items():
-            for p in C._paths_of(self._inline_calls(body, m.script, set())):
-                drops |= set(C._interp(p, self.is_death).drops)
         if room in self._cutscene_room_set():
-            info = self._collapse_cutscene(room, m)
-            if info is not None:
-                info["drops"] = drops
-            return info
+            return self._collapse_cutscene(room, m)
         states = {}
         has_effect = False
         steps_by_state = {}
@@ -293,6 +285,38 @@ class OpEmitter:
                     has_effect = True
                 paths.append((st.guard, st.writes, st.gets, st.counters, st.trans))
             states[K] = paths
+        # Items CONSUMED (`gEgo put: N -1`) on a SURVIVABLE path: consuming an item requires
+        # owning it (the Flower at rm50 has no own() guard at all, only the consumption). Skip
+        # death-bound paths -- consuming on the way to a death is a TRAP, not a requirement.
+        succ, deadK = {}, set()
+        for K, steps in steps_by_state.items():
+            for st in steps:
+                t = st.trans
+                if t[0] == "DEATH":
+                    deadK.add(K)
+                elif t[0] == "ADVANCE":
+                    succ.setdefault(K, set()).add(K + 1)
+                elif t[0] == "JUMP":
+                    succ.setdefault(K, set()).add(t[1])
+                elif t[0] == "SETSTATE":
+                    succ.setdefault(K, set()).add(t[1] + 1)
+        dr, changed = set(deadK), True
+        while changed:
+            changed = False
+            for K, ss in succ.items():
+                if K not in dr and (ss & dr):
+                    dr.add(K); changed = True
+        drops = set()
+        for K, steps in steps_by_state.items():
+            for st in steps:
+                if not st.drops:
+                    continue
+                t = st.trans
+                tgt = (K + 1 if t[0] == "ADVANCE" else t[1] if t[0] == "JUMP" else
+                       t[1] + 1 if t[0] == "SETSTATE" else None)
+                if t[0] == "DEATH" or (tgt is not None and tgt in dr):
+                    continue
+                drops |= set(st.drops)
         if not has_effect:
             return None
         # which exits this machine can actually DELIVER (control_exits): a changeState
