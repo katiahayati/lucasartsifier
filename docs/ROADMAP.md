@@ -194,12 +194,43 @@ deck where "throw bread overboard" works, +2 score), which is exactly where the 
 belongs. `drops` — declared since the first version but never populated — is now filled from
 handler and machine drops, which is what makes this computable.
 
+### Frontier guards wired (2026-07-21) — the boarding case
+`survival_gates` only fires where the GAME tests an item. A stranding is invisible to it: nothing
+at rm57 mentions the parachute, you simply cannot come back once you board. So `frontier_guards`
+adds the second source, taking conditions from the reachability analysis and placing them on the
+edge that strands. 9 guards on LSL2, e.g.
+
+    rm57 -> rm58 : (and (has: 21) (has: 24) (has: 25) (has: 26))
+                   Hair_Rejuvenator, Parachute, Bobby_Pin, Pamphlet -- "don't board without these"
+    rm79 -> rm80 : (or (has: 30) (has: 31))     the vine chasm, disjunction carried through
+    rm26 -> rm27 : Swimsuit, Grotesque_Gulp, Sunscreen
+    rm38 -> rm131: Fruit, Sewing_Kit, Wig, Bikini_Top
+
+The obtainability precondition was checked by hand on the boarding guard and all four items are
+gettable pre-boarding (Hair_Rejuvenator's source rm151 is the AIRPORT barbershop, user-confirmed),
+so it cannot deadlock. That check is NOT yet in the code — see below.
+
+**Known rough edge:** the Ashes/Sand group emits at FOUR edges (rm79->rm80 is the real player
+commit; rm52->rm152, rm82->rm152, rm78->rm178 are over-generation). `frontier_for` lists every
+edge crossing the boundary rather than the ones a player actually crosses. Narrow before emitting
+source.
+
 ### Guard synthesis — next
 1. **Filter death-room frontiers.** rm10->rm90, rm35->rm95/96 surfaced as frontiers but are deaths,
    not commits; screen them with `goal_reaching_rooms`.
-2. **Emit specs per literal at its own frontier** (JSON), with the two safety preconditions as hard
-   refusals: positive literal must be obtainable before the edge, negative must be droppable before
-   it. A guard that cannot be satisfied is strictly worse than the softlock.
+2. **Make the two safety preconditions HARD REFUSALS in code** (currently only checked by hand):
+   positive literal obtainable before the edge, negative droppable before it. A guard that cannot
+   be satisfied is strictly worse than the softlock it fixes.
+2b. **PURE-SINK actions (new class, found 2026-07-21).** An action that consumes a required item
+   and accomplishes nothing: rm63 `apply rejuvenator to bolt` (-5, does NOT open the bolt, destroys
+   the bomb ingredient needed at rm82) and the plane region's `barf`/`apply bag` (-2, destroys the
+   Airsick_Bag that rm82 s7 kills you for lacking). DERIVATION VERIFIED: correlate a consumption
+   with its same-clause writes -- a consumption writing no GATING register is a pure sink. On rm63
+   this cleanly separates Bobby_Pin (writes g_143, the bolt counter) from Hair_Rejuvenator and
+   Airsick_Bag (write nothing). Guard class = refuse the destructive command, not a movement edge.
+   NB the naive version is circular: `required` counts a room where an item is merely USABLE
+   (including wastefully), which is the old "usable != needed" defect; the write-correlation is
+   what fixes it.
 3. **Validate with a DIFFERENT engine than the detector** — the exact lesson of `DISABLED_WHY`.
    Ladder: structural self-check -> re-run the sweep on the guarded model (softlock gone, no NEW
    strandings) -> nuXmv winnability -> boot in ScummVM.
