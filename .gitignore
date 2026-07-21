@@ -21,3 +21,9 @@ KATIA_README
 # one-off probes and the control-oracle proof-of-concept (incl. rendered game art)
 tools/probe_*.py
 tools/pic-oracle/
+docs/ROADMAP.md
+docs/NOTES-control-oracle-integration.md
+docs/DESIGN-positional-model.md
+docs/findings-timed-and-forced-deaths.md
+*.swp
+*.swo

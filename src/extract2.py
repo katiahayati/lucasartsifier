@@ -130,7 +130,7 @@ def _send_atom(n):
                 return Pred("LOC", var=it, op="ownedBy", value="room" if here else "other")
         # `(gEgo inRect: a b c d)` -> a POSITION guard over the ego's (x,y). Coordinates are
         # in the AST, so this is derivable; ONE consistent (x,y) is what makes "cross east =>
-        # inRect" unavoidable (see docs/DESIGN-positional-model.md).
+        # inRect" unavoidable: one consistent (x,y) per step, not a fresh choice per guard.
         if sel == "inRect" and I.is_global(recv, G_EGO) and len(params) >= 4:
             cs = [I.as_int(p) for p in params[:4]]
             if all(c is not None for c in cs):

@@ -5,7 +5,7 @@ item literals positive AND negative. These pin the logic that decides WHAT goes 
 WHERE it is enforced -- the two things the old `patch.py` got catastrophically wrong (it required
 the fatal Spinach_Dip and ANDed two OR-alternatives).
 
-End-to-end scoring stays in `python -m guards` / `python -m missability`; see docs/ROADMAP.md.
+End-to-end scoring stays in `python -m guards` / `python -m missability`.
 """
 import sys
 

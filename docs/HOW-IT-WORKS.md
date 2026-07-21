@@ -86,3 +86,6 @@ across both games, they share neither index nor shape (LSL2 dies on `global101 =
 boolean `global127`; KQ4 has no debug global at all). Deriving a rule from two disagreeing examples
 would be overfitting, so they are declared — by index, since the IR carries no symbol table.
 
+## Who's "we"?
+
+Katia (human) and Claude (AI). Claude wrote all the code; Katia, uh, supervised, and came up with ideas.

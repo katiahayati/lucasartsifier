@@ -7,7 +7,7 @@
 These replaced two rules the user flagged as overfit: the `_sealed` one-way-edge heuristic and
 the cutscene splice. The point of pinning them here is that the OLD rules were fitted to LSL2
 outcomes, whereas these are derived -- so they need input/output tests that do not mention LSL2.
-Ground-truth scoring stays end-to-end (`python -m missability`); see docs/ROADMAP.md.
+Ground-truth scoring stays end-to-end (`python -m missability`).
 """
 import sys
 

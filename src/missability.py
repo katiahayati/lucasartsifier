@@ -310,7 +310,7 @@ def gating_registers(em):
     an inconsistent composition, and one that is never compared cannot block anything.
 
     Purely structural: on LSL2 this rediscovers gCurrentStatus (101) as the widest gater, plus 18
-    others, with no game knowledge. See docs/ROADMAP.md for why they are kept as independent
+    others, with no game knowledge. See docs/HOW-IT-WORKS.md for why they are kept as independent
     PROJECTIONS rather than one joint product."""
     compared = set()
     for g in _movement_guards(em):

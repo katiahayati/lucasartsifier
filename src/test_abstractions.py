@@ -5,7 +5,7 @@
 
 These pin the transforms we WROTE (right output for a given input). They do NOT and cannot
 find a MISSED abstraction (an unmodeled construct) -- that shows up only as end-to-end
-divergence (the winnability run / the missability sweep). See docs/ROADMAP.md.
+divergence (the winnability run / the missability sweep). See docs/ARCHITECTURE.md.
 """
 import sys
 import compile2 as C
