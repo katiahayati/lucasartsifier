@@ -235,6 +235,23 @@ into an otherwise gate-aware analysis:
 The satisfiability precondition is now a HARD REFUSAL in code (`unsatisfiable()`), not a hand-run
 audit: 6 emitted, 0 refused. Sweep unchanged at 16/16; tests 20+32+25+35.
 
+### Tasks 5-6 also DONE (2026-07-21): merged specs, relocated prohibitions, self-verification
+`guard_specs` now emits ONE spec per placement site across both derivations -- 11 specs, 0 refused:
+6 structural `edge` guards plus 4 `gate` guards, and the Spinach_Dip prohibition **automatically
+relocated** off rm138 to `rm131 -> rm138` by `droppability_frontier`, the exact mirror of the
+obtainability test. That is the user's "refuse to board" DERIVED rather than hardcoded: forbidding
+the dip at the raft, where it can no longer be ditched, would convert a death into a permanent wall.
+
+`verify()` re-runs the detector against the GUARDED model (guards injected into the movement
+model's DNF alternatives): **all 15 items + the Ashes/Sand group fixed, none remaining, and ZERO
+NEW softlocks introduced** -- the last being the failure mode that got patch.py disabled. Wired
+into `python -m guards`, which now exits non-zero if a guard ever creates a stranding.
+17 new unit tests (test_guards.py) pin what goes in a guard and where; suite 20+32+25+35+17.
+
+**Honest limit on `verify()`:** it shares the detector's core, so it proves the guards close what we
+DETECT and create no new strandings — it cannot prove we detect everything. Only a different engine
+can do that, which is why nuXmv is still owed.
+
 ### Remaining (was: task list)
 Status going in: `python -m guards` is fully automatic and the CONDITIONS are semantically right
 (rm138 forbids the dip; boarding requires Parachute/Bobby_Pin/Pamphlet/Hair_Rejuvenator, all four

@@ -182,6 +182,114 @@ def render_frontier(rec):
     return terms[0] if len(terms) == 1 else "(and " + " ".join(terms) + ")"
 
 
+def droppability_frontier(s, item):
+    """Edges past which `item` can no longer be DROPPED -- where a `not (has: X)` must be
+    enforced. The exact mirror of the obtainability test in `edge_strandings`, and the reason
+    placement is a real question: the Spinach_Dip may only be forbidden while you can still ditch
+    it (ship rooms), so guarding `!own(13)` at the raft would convert a death into a permanent
+    wall. Same filters -- irreversible commits only, no death sinks."""
+    targets = s.drops.get(item, set())
+    if not targets:
+        return []
+    rev = defaultdict(set)
+    for a, bs in s.edges.items():
+        for b in bs:
+            rev[b].add(a)
+    keep = M.reachable(rev, set(targets))          # rooms from which a drop site is reachable
+    out = []
+    for a in sorted(keep):
+        if a not in s.reach_rooms:
+            continue
+        for b in sorted(s.edges.get(a, ())):
+            if b in keep or b not in s.reach_rooms:
+                continue
+            if a in s.edges.get(b, set()):
+                continue                            # reversible walk -> not a commit
+            if s.goal_rooms_set() and not (s.goal_rooms_set() & s.rooms_after(b)):
+                continue                            # death sink, not a commit
+            out.append((a, b))
+    return out
+
+
+def guard_specs(s):
+    """ONE spec per placement site, merging both derivations.
+
+    Sites are of two kinds. A `gate` is where the game itself tests you and branches into winning
+    and losing futures (rm138's raft). An `edge` is a structural commit where nothing is tested at
+    all and you simply cannot come back (rm57 boarding). Negative literals are RELOCATED off the
+    gate to the last edge where the item is still droppable -- enforcing them at the gate is the
+    permanent-wall bug."""
+    specs = []
+    for (a, b), rec in sorted(frontier_guards(s).items()):
+        bad = unsatisfiable(s, a, b, rec)
+        specs.append({"site": "edge", "from_room": a, "to_room": b,
+                      "condition": render_frontier(rec),
+                      "items": sorted(rec["items"]), "groups": [sorted(g) for g in rec["groups"]],
+                      "refused": bad})
+    for gt in survival_gates(s):
+        cp, cn, rest = factor(gt["alts"])
+        pos_spec = render(cp, set(), rest)
+        if pos_spec:
+            specs.append({"site": "gate", "room": gt["room"], "state": gt["state"],
+                          "condition": pos_spec, "items": sorted(cp), "refused": []})
+        for it in sorted(cn):                       # each prohibition at ITS OWN site
+            sites = droppability_frontier(s, it)
+            for (a, b) in sites:
+                specs.append({"site": "edge", "from_room": a, "to_room": b,
+                              "condition": f"(not (gEgo has: {it}))", "items": [], "forbid": [it],
+                              "refused": [] if sites else [f"{s.g.item_name(it)} undroppable"],
+                              "note": f"prohibition relocated from rm{gt['room']} -- last point "
+                                      f"the item can still be got rid of"})
+            if not sites:
+                specs.append({"site": "gate", "room": gt["room"], "state": gt["state"],
+                              "condition": f"(not (gEgo has: {it}))", "items": [], "forbid": [it],
+                              "refused": [f"{s.g.item_name(it)} cannot be dropped anywhere -- "
+                                          f"guarding this would wall the game"]})
+    return specs
+
+
+def apply_guards(s, specs):
+    """Inject the emitted guards into the movement model, so the sweep can be re-run against a
+    GUARDED game. Conjunctive items intersect every DNF alternative; a disjunctive group expands
+    them (traversable iff SOME alternative is fully held).
+
+    Note what this canNOT check: prohibitions. The walk models "items you do not hold", so a
+    `not (has: X)` guard has no representation here and is excluded from this pass."""
+    for sp in specs:
+        if sp["site"] != "edge" or sp["refused"] or sp.get("forbid"):
+            continue
+        key = (sp["from_room"], sp["to_room"])
+        variants = s._emeta.get(key)
+        if not variants:
+            continue
+        req = frozenset(sp.get("items", ()))
+        out = []
+        for (rq, sets, alts) in variants:
+            base = [a | req for a in (alts or (frozenset(),))]
+            for g in sp.get("groups", []):
+                base = [b | {m} for b in base for m in g]
+            out.append((rq, sets, tuple(base)))
+        s._emeta[key] = out
+    s._reob.clear(); s._rw.clear(); s._after.clear()
+    s._pstates = {R: s._walk(R, frozenset()) for R in s.regs}
+    return s
+
+
+def verify(s, specs):
+    """Re-run the detector against the guarded model: every softlock must be gone, and -- the part
+    that actually matters -- NO NEW ones may appear. A guard that fixes one stranding by creating
+    another is the failure mode that got patch.py disabled."""
+    before = {c["item"] for c in s.analyze()}
+    before_groups = {frozenset(r["items"]) for r in s.group_strandings()}
+    apply_guards(s, specs)
+    after = {c["item"] for c in s.analyze()}
+    after_groups = {frozenset(r["items"]) for r in s.group_strandings()}
+    return {"fixed": sorted(before - after), "remaining": sorted(after & before),
+            "NEW": sorted(after - before),
+            "groups_fixed": [sorted(g) for g in before_groups - after_groups],
+            "groups_new": [sorted(g) for g in after_groups - before_groups]}
+
+
 def main():
     s = M.load()
     nm = s.g.item_name
@@ -222,7 +330,29 @@ def main():
             print(f"   needs: {names}")
         print()
     print(f"{len(fg) - refused} emitted, {refused} refused as unsatisfiable")
-    return 0
+
+    print("=" * 78)
+    specs = guard_specs(s)
+    print(f"MERGED SPECS -- one per placement site: {len(specs)}\n")
+    for sp in specs:
+        where = (f"rm{sp['from_room']} -> rm{sp['to_room']}" if sp["site"] == "edge"
+                 else f"rm{sp['room']} state {sp['state']}")
+        print(f"  {where:<22} {'REFUSED ' + str(sp['refused']) if sp['refused'] else sp['condition']}")
+        if sp.get("note"):
+            print(f"  {'':<22} ^ {sp['note']}")
+
+    print("\n" + "=" * 78)
+    r = verify(s, specs)
+    print("VERIFY -- re-run the detector against the GUARDED model\n")
+    print(f"  softlocks fixed : {[nm(i) for i in r['fixed']]}")
+    print(f"  groups fixed    : {[[nm(i) for i in g] for g in r['groups_fixed']]}")
+    print(f"  still remaining : {[nm(i) for i in r['remaining']] or 'none'}")
+    print(f"  NEW introduced  : {[nm(i) for i in r['NEW']] or 'NONE'}"
+          f"   {'<-- would be a regression' if r['NEW'] else ''}")
+    print(f"  new groups      : {r['groups_new'] or 'NONE'}")
+    ok = not r["remaining"] and not r["NEW"] and not r["groups_new"]
+    print(f"\n  {'PASS' if ok else 'FAIL'}: guards close every detected softlock and create none")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
