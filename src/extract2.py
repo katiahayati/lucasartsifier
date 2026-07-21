@@ -14,6 +14,8 @@ OWN/SAID/POS/CMP/opaque), validated against the old model before registers/machi
 """
 from __future__ import annotations
 
+import config
+
 import os
 from dataclasses import dataclass, field
 
@@ -325,8 +327,7 @@ def extract(ir):
 
 if __name__ == "__main__":
     import sys
-    path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-        os.environ.get("CLAUDE_JOB_DIR", "/tmp"), "tmp", "lsl2_decomp", "lsl2.ir.json")
+    path = sys.argv[1] if len(sys.argv) > 1 else config.ACTIVE.ir_path
     ir = I.load_ir(path)
     ts = extract(ir)
     print(f"rooms={len(ts.rooms)} edges={len(ts.edges)} acqs={len(ts.acqs)} items={len(ts.items)}")

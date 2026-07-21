@@ -26,7 +26,7 @@ _IR = None
 def real_ir():
     global _IR
     if _IR is None:
-        p = os.path.join(os.environ.get("CLAUDE_JOB_DIR", "/tmp"), "tmp", "lsl2_decomp", "lsl2.ir.json")
+        p = config.ACTIVE.ir_path
         _IR = I.load_ir(p) if os.path.exists(p) else False
     return _IR
 

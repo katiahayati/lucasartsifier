@@ -10,6 +10,7 @@ Parts under test:
 """
 import sys
 sys.path.insert(0, ".")
+import config
 import ir as I
 from guard_ast import Pred, GAnd, GOr, GNot
 
@@ -59,10 +60,10 @@ def real_em():
     global _EM
     if _EM is None:
         import os
-        p = os.path.join(os.environ.get("CLAUDE_JOB_DIR", "/tmp"), "tmp", "lsl2_decomp", "lsl2.ir.json")
+        p = config.ACTIVE.ir_path
         if not os.path.exists(p):
             return None
-        import config, smv_emit3 as E
+        import smv_emit3 as E
         ir = I.load_ir(p)
         _EM = E.OpEmitter(ir, config.LSL2, lambda gi, v: gi == 101 and v == 1001)
         _EM.emit()   # populate n_opaque etc.

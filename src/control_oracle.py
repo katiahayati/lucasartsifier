@@ -19,6 +19,8 @@ the footprint from the VIEW, the walkable region from the PIC control plane.
 """
 from __future__ import annotations
 
+import config
+
 import os
 from collections import deque
 
@@ -609,8 +611,7 @@ def find_gates(cfg, ir, rooms=None):
 
 if __name__ == "__main__":
     import config
-    ir = I.load_ir(os.path.join(os.environ.get("CLAUDE_JOB_DIR", "/tmp"),
-                                "tmp", "lsl2_decomp", "lsl2.ir.json"))
+    ir = I.load_ir(config.ACTIVE.ir_path)
     gates = find_gates(config.LSL2, ir)
     print(f"found {len(gates)} prop-gates:")
     for g in gates:

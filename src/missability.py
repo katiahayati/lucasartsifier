@@ -747,8 +747,7 @@ class IrSccReach(SccReach):
 
 def load(cfg=None, ir_path=None):
     cfg = cfg or config.ACTIVE
-    ir_path = ir_path or os.path.join(os.environ.get("CLAUDE_JOB_DIR", ""), "tmp",
-                                      "lsl2_decomp", "lsl2.ir.json")
+    ir_path = ir_path or cfg.ir_path
     ir = I.load_ir(ir_path)
     em = E.OpEmitter(ir, cfg, lambda gi, v: gi == 101 and v == 1001)
     return IrSccReach(em)

@@ -55,8 +55,8 @@ def designer_score(s):
         return os.path.isdir(d) and any(re.match(r"rm\d+\.sc$", f) for f in os.listdir(d))
 
     out = {}
-    cands = [os.path.join(os.path.dirname(getattr(s.em.ir, "path", "") or ""), "src"),
-             os.path.join(os.environ.get("CLAUDE_JOB_DIR", ""), "tmp", "lsl2_decomp", "src")]
+    cands = [s.em.cfg.src_dir,
+             os.path.join(os.path.dirname(getattr(s.em.ir, "path", "") or ""), "src")]
     src = next((d for d in cands if _has_rooms(d)), None)
     if src is None:
         return out

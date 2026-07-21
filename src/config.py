@@ -22,12 +22,13 @@ _ROOT = os.path.dirname(_HERE)
 @dataclass(frozen=True)
 class GameConfig:
     name: str
-    src_dir: str                    # directory of decompiled .sc scripts
+    src_dir: str                    # directory of decompiled .sc scripts (OURS -- see ir_path)
     resource_dir: str               # dir with RESOURCE.MAP + RESOURCE.00x (PIC/VIEW control-map oracle)
     start_room: int                 # free-roam entry point for reachability
     goal_rooms: frozenset           # winning-terminal rooms (victory)
     goal_scripts: tuple             # scripts whose guards seed the COI goal cone
     timer_globals: frozenset        # per-cycle game-clock globals (timed gates)
+    ir_path: str = ""               # JSON IR our sci-tools fork emits alongside src_dir
     region_labels: dict = field(default_factory=dict)   # region# -> label (report only)
     # (global, value) whose assignment IS death. Both games raise death from Main's
     # doit via a plain global write, so the IR already carries these as SET effects
@@ -57,7 +58,12 @@ class GameConfig:
 
 LSL2 = GameConfig(
     name="Leisure Suit Larry 2: Goes Looking for Love (v1.002.000, SCI0, DOS/English)",
-    src_dir=os.path.join(_ROOT, "vendor", "sci-scripts", "lsl2-dos-1.002.000", "src"),
+    # OUR OWN decompilation, reproducible from the pristine game in ~1s:
+    #   tools/sci-tools-fork/build.sh /mnt/i/sierra/lsl2 build/ir
+    # Deliberately NOT a downloaded pre-made .sc tree: one of those exists only for LSL2,
+    # so depending on it would make the pipeline unable to open any other game.
+    src_dir=os.path.join(_ROOT, "build", "ir", "src"),
+    ir_path=os.path.join(_ROOT, "build", "ir", "lsl2.ir.json"),
     resource_dir="/mnt/i/sierra/lsl2",   # PRISTINE game. Never point this at a patched
     #   build: `out/lsl2_playable` used to live here and was the previous (broken) patcher
     #   output, so the control-map oracle was reading resources of our own making.

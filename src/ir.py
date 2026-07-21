@@ -16,6 +16,8 @@ Child positions mirror sci-tools' AST getters, e.g.:
 """
 from __future__ import annotations
 
+import config
+
 import json
 import os
 
@@ -127,8 +129,7 @@ def as_int(n):
 
 if __name__ == "__main__":
     import sys
-    path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-        os.environ.get("CLAUDE_JOB_DIR", "/tmp"), "tmp", "lsl2_decomp", "lsl2.ir.json")
+    path = sys.argv[1] if len(sys.argv) > 1 else config.ACTIVE.ir_path
     ir = load_ir(path)
     print(f"game={ir.game} scripts={len(ir.scripts)} selectors={len(ir.selectors)}")
     print("globals (script 0 locals):", len(ir.script(0).locals))

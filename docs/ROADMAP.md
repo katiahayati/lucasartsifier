@@ -32,11 +32,24 @@ resources of our own making. It now points at the pristine `/mnt/i/sierra/lsl2`.
 ScummVM LOOSE PATCH FILES in the game directory -- no resource.map surgery needed. Four of those
 five rooms are our own frontier-guard sites.
 
-**Still one seam left (NOT yet resolved):** there are two sluicebox trees --
-`vendor/sci-scripts/lsl2-dos-1.002.000/src` (named locals: `aWater1`, `restoreX`) and the job-dir
-decompilation the JSON IR was actually generated from (raw `local0/1/2`). All 118 files differ by
-naming. `cfg.src_dir` points at the vendor one while the IR came from the other. Pick one and
-regenerate the IR from it before emitting any patch.
+**Second seam CLOSED the same day.** There were two sluicebox trees: a DOWNLOADED pre-made one
+(`vendor/sci-scripts`, with recovered local names) and the one WE generate. Kept ours, on the user's
+reasoning: *"the vendor one was a pre-generated decompilation we downloaded... keep the one we
+generated, for generalizability."* A curated .sc tree exists only for LSL2, so depending on it would
+leave the pipeline unable to open any other game.
+
+Our decompilation is reproducible from the pristine resources in ~1 second:
+
+    tools/sci-tools-fork/build.sh /mnt/i/sierra/lsl2 build/ir     # 118/118 scripts, 779/779 fns
+
+and it regenerated **byte-identical** to what we had been analysing all session (same .sc tree, same
+IR md5) -- so the decompiler is deterministic and nothing about the analysis moved. `cfg.src_dir` and
+the new `cfg.ir_path` both point at `build/ir`; `vendor/sci-scripts` is deleted.
+
+**Every `CLAUDE_JOB_DIR` reference is gone** from src/. The IR path was resolved from an EPHEMERAL
+job directory in six modules and two test files -- so the suite would have silently shrunk (32->6,
+25->11 cases) or broken outright on any other machine. All config-driven now; the full suite passes
+with `CLAUDE_JOB_DIR=` empty.
 
 ## Pipeline
 `sci-tools` decompile → JSON IR → `extract2` (guards/effects/edges) → `machine2`/`compile2`

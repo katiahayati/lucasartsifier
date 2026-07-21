@@ -20,6 +20,8 @@ write reconstruction (the seam that lost the parachute).
 """
 from __future__ import annotations
 
+import config
+
 from dataclasses import dataclass, field
 
 import ir as I
@@ -318,8 +320,7 @@ class MachineBuilder:
 if __name__ == "__main__":
     import os
     import sys
-    path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-        os.environ.get("CLAUDE_JOB_DIR", "/tmp"), "tmp", "lsl2_decomp", "lsl2.ir.json")
+    path = sys.argv[1] if len(sys.argv) > 1 else config.ACTIVE.ir_path
     ir = I.load_ir(path)
 
     def is_death(gi, v):

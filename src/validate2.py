@@ -205,8 +205,7 @@ if __name__ == "__main__":
     import os
     import sys
     import config
-    path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-        os.environ.get("CLAUDE_JOB_DIR", "/tmp"), "tmp", "lsl2_decomp", "lsl2.ir.json")
+    path = sys.argv[1] if len(sys.argv) > 1 else config.ACTIVE.ir_path
     ir = I.load_ir(path)
     is_death = lambda gi, v: gi == 101 and v == 1001
     em = E.OpEmitter(ir, config.LSL2, is_death)
