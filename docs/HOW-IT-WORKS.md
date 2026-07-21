@@ -46,7 +46,7 @@ We do all this automatically by
 | **decompile** | `sci-tools` reads `RESOURCE.MAP`/`00x` and emits a `.sc` tree plus a typed-AST JSON IR |
 | **extract** | walk each room's AST, composing path conditions into guarded movement edges, item acquisitions, register writes |
 | **lift** | turn each room's `changeState` switch into an explicit state machine (SCI's cutscene idiom) |
-| **analyse** | gate-aware reachability over rooms × registers × items → items that are **required** and **irreversibly missable** |
+| **analyze** | gate-aware reachability over rooms × registers × items → items that are **required** and **irreversibly missable** |
 | **derive** | each stranding becomes a guard condition; each item-destroying dead-end action becomes a removal |
 | **patch** | edit the `.sc` sources, recompile, wrap changed scripts as ScummVM loose patch files |
 
