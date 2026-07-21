@@ -37,6 +37,47 @@ from collections import defaultdict
 import missability as M
 
 
+def designer_score(s):
+    """(script, item) -> the score delta the game applies when that item is consumed.
+
+    ADVISORY ONLY -- it never gates what we emit. `changeScore` is a designer convention, not a
+    semantic property (model.py: "never a win oracle"), and it is a poor RULE: 3 of our sinks carry
+    no score at all, and one carries a POSITIVE score (throwing the Spinach_Dip overboard is a sink
+    structurally, but it is the intended action -- the game pays you to ditch a fatal item).
+
+    As an ORACLE it is excellent, because it shares no machinery with our analysis: all 6
+    negative-score consumptions are sinks we classified independently, with zero disagreements.
+    A `real use` carrying a negative score would be a lead that our detector missed something."""
+    import os, re
+    def _has_rooms(d):
+        # must contain the decompiled ROOM scripts -- a bare "src" resolves to this repo's own
+        # source directory, which exists and would silently yield nothing
+        return os.path.isdir(d) and any(re.match(r"rm\d+\.sc$", f) for f in os.listdir(d))
+
+    out = {}
+    cands = [os.path.join(os.path.dirname(getattr(s.em.ir, "path", "") or ""), "src"),
+             os.path.join(os.environ.get("CLAUDE_JOB_DIR", ""), "tmp", "lsl2_decomp", "src")]
+    src = next((d for d in cands if _has_rooms(d)), None)
+    if src is None:
+        return out
+    for fn in sorted(os.listdir(src)):
+        m = re.match(r"rm(\d+)\.sc$", fn)
+        if not m:
+            continue
+        script = int(m.group(1))
+        lines = open(os.path.join(src, fn)).read().splitlines()
+        for i, line in enumerate(lines):
+            mm = re.search(r"put:\s*(\d+)\s*-1", line)
+            if not mm:
+                continue
+            for j in range(max(0, i - 6), min(len(lines), i + 7)):
+                ms = re.search(r"changeScore:\s*(-?\d+)", lines[j])
+                if ms:
+                    out[(script, int(mm.group(1)))] = int(ms.group(1))
+                    break
+    return out
+
+
 def own_literals(guard):
     """(positive, negative) item literals of a path condition.
 
@@ -224,6 +265,7 @@ def sink_remedies(s):
     SAFETY: refuse when merely HOLDING the item can lose the game, because then letting the player
     keep it trades one softlock for another. The Spinach_Dip is the case -- it is fatal to carry
     into rm138 -- which is why prohibitions are tracked separately from requirements."""
+    scores = designer_score(s)
     forbidden = set()
     for gt in survival_gates(s):
         _, cn, _ = factor(gt["alts"])
@@ -233,7 +275,9 @@ def sink_remedies(s):
         it = d["item"]
         refused = ([f"{s.g.item_name(it)} is fatal to CARRY -- keeping it would trade one "
                     f"softlock for another"] if it in forbidden else [])
+        score = scores.get((d["script"], it))
         out.append({"site": "consumption", "room": d["room"], "script": d["script"],
+                    "corroboration": (None if score is None else f"designer_score={score}"),
                     "item": it, "op": "remove_consumption",
                     "edit": f"delete `(gEgo put: {it} -1)`",
                     "why": f"wastes {s.g.item_name(it)}, still needed at "
@@ -378,6 +422,8 @@ def main():
     for sk in sinks:
         print(f"  rm{sk['room']} (script {sk['script']}): {sk['edit']}")
         print(f"       {sk['why']}")
+        if sk.get("corroboration"):
+            print(f"       corroborated independently: {sk['corroboration']} (advisory)")
         if sk["refused"]:
             print(f"       REFUSED: {sk['refused'][0]}")
     print()

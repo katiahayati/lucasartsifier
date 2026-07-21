@@ -294,6 +294,37 @@ which validate reachability up to a waypoint rather than winnability. Prioritise
 independent oracle instead: it is cheap, genuinely independent, and catches the failure class
 neither the model checker nor the detector can see -- bad placement and malformed source.
 
+### `ownedBy` — THE modelling gap behind the un-caught barf (found 2026-07-21)
+User's question: the Airsick_Bag's non-reobtainability "should be right there in the code". It is.
+rm62's acquisition reads:
+
+    (if (Said 'get/bag')
+      (cond ((not ((global9 at: 27) ownedBy: global11))  (proc0_17))   ; bag still lying HERE?
+            ((!= global101 1009)                         (proc0_16))   ; only during the window
+            (else ... (global0 get: 27))))
+
+We extract this as `GAnd([opaque(), ¬¬opaque(), ¬(101!=1009)])`. The status window we DO capture --
+but the one-time-ness lives in the `ownedBy` test, which we render as generic `opaque()` and then
+permissively drop. `put: 27 -1` sets the object's owner to -1 (NOWHERE), so after barfing
+`ownedBy: <room>` can never hold again and the bag is gone for good. Our model instead assumes
+"source room reachable => re-acquirable", so the barf looks harmless.
+
+**`ownedBy` occurs 77 times across 28 files; `smv_emit3`/`extract2`/`ir` mention it ZERO times.**
+This is the 4th state store from the taxonomy (item properties, [[item-property-state-not-modelled]])
+in its commonest and most tractable form.
+
+Proposed model -- a per-item LOCATION with three abstract values, which drops straight into the
+projection framework we already have (one projection per item-location, exactly like the gating
+registers):
+    IN_WORLD (lying at its home room) -> HELD (ego, via `get`) -> GONE (`put: X -1`, destroyed)
+    `(at: X) ownedBy: curRoom`  ==  loc(X) == IN_WORLD and curRoom == home(X)
+`put: X <room>` returns it to IN_WORLD at that room. This makes an acquisition guarded on ownedBy
+correctly ONE-TIME, which should catch the barf.
+
+**CAUTION before building:** this changes the DETECTION side too (acquisition availability), so it
+can move the 16/16 score in either direction. Validate against the ground truth carefully, and do
+not re-score any enumerated item without asking ([[dont-flip-enumerated-ground-truth]]).
+
 ### Remaining (was: task list)
 Status going in: `python -m guards` is fully automatic and the CONDITIONS are semantically right
 (rm138 forbids the dip; boarding requires Parachute/Bobby_Pin/Pamphlet/Hair_Rejuvenator, all four
