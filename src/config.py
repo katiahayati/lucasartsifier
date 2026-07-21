@@ -24,6 +24,9 @@ class GameConfig:
     name: str
     src_dir: str                    # directory of decompiled .sc scripts (OURS -- see ir_path)
     resource_dir: str               # dir with RESOURCE.MAP + RESOURCE.00x (PIC/VIEW control-map oracle)
+    # Both anchors are DISCOVERABLE -- leave start_room 0 / goal_rooms empty and
+    # anchors.discover() derives them from the game (see anchors.py). The values below are
+    # kept because they are hand-verified; the derived pair reproduces them exactly.
     start_room: int                 # free-roam entry point for reachability
     goal_rooms: frozenset           # winning-terminal rooms (victory)
     goal_scripts: tuple             # scripts whose guards seed the COI goal cone

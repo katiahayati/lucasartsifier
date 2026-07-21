@@ -750,6 +750,15 @@ def load(cfg=None, ir_path=None):
     ir_path = ir_path or cfg.ir_path
     ir = I.load_ir(ir_path)
     em = E.OpEmitter(ir, cfg, lambda gi, v: gi == 101 and v == 1001)
+    if not cfg.start_room or not cfg.goal_rooms:
+        # Derive the reachability anchors from the game rather than declaring them. See anchors.py:
+        # start = first room the player can act in, widest forward reach; goal = terminal,
+        # reachable, never fatal. On LSL2 the derived pair reproduces the hand-tuned one exactly.
+        import dataclasses, anchors
+        st, gl = anchors.discover(em)
+        cfg = dataclasses.replace(cfg, start_room=cfg.start_room or st,
+                                  goal_rooms=cfg.goal_rooms or gl)
+        em.cfg = cfg
     return IrSccReach(em)
 
 
