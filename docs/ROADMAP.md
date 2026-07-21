@@ -121,11 +121,22 @@ correctly treated as a trap. Tests 20+32+25+20 green.
   `_sealed` rule, and I had been scoring them as true positives on the assumption the list was
   incomplete. Flagging this explicitly rather than silently re-scoring.
 
+### TRAP rule re-derived from GOAL-REACHABILITY — DONE (2026-07-20)
+The death special-case is gone. `hopeful()` asks whether the goal is still reachable after a use:
+DEATH is False, EXIT inherits its destination room's prospects, PARK inherits THIS room's (control
+returns to the player), and ADVANCE/JUMP/SETSTATE resolve through a backward fixpoint over the
+machine (`goal_reaching`). An item is a TRAP only if EVERY own()-guarded use is hopeless.
+
+This **subsumes** the old rule (death is one way to be hopeless) and generalizes it: a use that
+merely strands you in a region with no route to the goal now counts too, with no death involved —
+untestable under the old formulation. It also removed a SECOND copy of the death special-case that
+was sitting in the per-use requirement pass. `_death_reachable` is deleted.
+
+Both the "only-EVER death-bound" wrinkle and the Grotesque_Gulp regression it was patched for fall
+out for free: the Gulp has a fatal use AND winnable ones, so it stays required; Spinach_Dip is
+hopeless everywhere, so it stays a trap. Sweep unchanged at 16/16 zero FP; tests 20+32+25+29.
+
 ### Still open
-- **Step 6 — re-derive the TRAP rule from GOAL-REACHABILITY, not death.** Untouched. Current form
-  ("all own() uses are death-bound") is special-cased on death and was patched after a
-  Grotesque_Gulp regression. Principled version: a use that cannot still reach the goal is not a
-  requirement; death is one way to fail that. `edge_strandings` already does this for edges.
 - Only gCurrentStatus is promoted into the product. Generalize to any register that gates
   movement (discover them from edge guards) before trusting this on KQ4.
 

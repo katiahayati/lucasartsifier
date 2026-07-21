@@ -57,28 +57,57 @@ def _own_positive(guard):
     return out
 
 
-def _death_reachable(info):
-    """States of this machine from which a DEATH is reachable (backward closure over
-    ADVANCE/JUMP/SETSTATE). Used to spot TRAP gates -- an own(item) branch that walks into a
-    death is not a requirement (Spinach_Dip's spoiled mayonnaise)."""
-    succ, dead = defaultdict(set), set()
-    for K, paths in info["states"].items():
-        for (g, w, gg, c, tr) in paths:
-            if tr[0] == "DEATH":
-                dead.add(K)
-            elif tr[0] == "ADVANCE":
-                succ[K].add(K + 1)
-            elif tr[0] == "JUMP":
-                succ[K].add(tr[1])
-            elif tr[0] == "SETSTATE":
-                succ[K].add(tr[1] + 1)
-    out, changed = set(dead), True
+def _after(info, tr, gr, goal_ok):
+    """Can the goal still be reached AFTER taking this transition?"""
+    if tr[0] == "DEATH":
+        return False                           # death is just one way to fail goal-reachability
+    if tr[0] == "EXIT":
+        return tr[1] in goal_ok
+    if tr[0] == "PARK":
+        return info["room"] in goal_ok         # control returns to the player, in this room
+    return True                                # ADVANCE/JUMP/SETSTATE resolve via `gr`
+
+
+def next_state(K, tr):
+    """The machine state a transition lands on, or None if it leaves the machine."""
+    return (K + 1 if tr[0] == "ADVANCE" else
+            tr[1] if tr[0] == "JUMP" else
+            tr[1] + 1 if tr[0] == "SETSTATE" else None)
+
+
+def hopeful(info, K, tr, gr, goal_ok):
+    """Can the goal still be reached after taking this path out of state K?
+
+    This is the rule the TRAP test is built on. An own(X)-guarded path you cannot still WIN from
+    is not evidence that X is required -- death is merely the commonest way to fail that, and a
+    use stranding you in a region with no route to the goal fails it identically."""
+    nxt = next_state(K, tr)
+    return _after(info, tr, gr, goal_ok) if nxt is None else gr.get(nxt, True)
+
+
+def goal_reaching(info, goal_ok):
+    """State -> can the goal still be reached from it (backward fixpoint over the machine)."""
+    gr, changed = {}, True
     while changed:
         changed = False
-        for K, ss in succ.items():
-            if K not in out and (ss & out):
-                out.add(K); changed = True
-    return out
+        for K, paths in info["states"].items():
+            cur = any(hopeful(info, K, tr, gr, goal_ok) for (g, w, gg, c, tr) in paths)
+            if gr.get(K) != cur:
+                gr[K] = cur
+                changed = True
+    return gr
+
+
+def goal_reaching_rooms(edges, goal_rooms):
+    """Rooms from which a goal room is still reachable (backward walk in the room graph).
+
+    The guard-IGNORING graph is deliberate: over-approximating goal-reachability makes fewer uses
+    look hopeless, so we under-call traps and OVER-require -- the safe direction."""
+    rev = defaultdict(set)
+    for a, bs in edges.items():
+        for b in bs:
+            rev[b].add(a)
+    return reachable(rev, set(goal_rooms))
 
 
 def build_maps(em):
@@ -138,22 +167,22 @@ def build_maps(em):
     # a requirement (Spinach_Dip: eat it -> "the mayonnaise has spoiled" -> death). Mark them
     # GLOBALLY, because the same item is also consumed on a survivable-looking `Said 'eat'`
     # handler (rm300) that would otherwise re-add it as required.
-    # An item is a TRAP only if EVERY own()-guarded use walks into a death. Grotesque_Gulp has a
-    # death-bound use (drink it at the wrong moment) AND survivable ones (the raft), so
-    # "death-bound anywhere" would wrongly un-require it; Spinach_Dip is death-bound everywhere.
-    death_bound, survivable = set(), set()
-    for info in em.machines:
-        dr = _death_reachable(info)
+    # The rule is GOAL-REACHABILITY, not death: a use you cannot still win from is not evidence
+    # that the item is needed. Death is merely the commonest way to fail that -- a use that dumps
+    # you in a region with no path to the goal fails it too, and this catches those for free.
+    # An item is a TRAP only if EVERY own()-guarded use is hopeless: Grotesque_Gulp has a fatal
+    # use (drink it at the wrong moment) AND winnable ones (the raft), so "hopeless anywhere"
+    # would wrongly un-require it; Spinach_Dip is hopeless everywhere.
+    goal_ok = goal_reaching_rooms(edges, em.cfg.goal_rooms)
+
+    gr_maps, hopefuls, hopeless = {}, set(), set()
+    for i, info in enumerate(em.machines):
+        gr = gr_maps[i] = goal_reaching(info, goal_ok)
         for K, paths in info["states"].items():
             for (g, w, gg, c, tr) in paths:
-                tgt = (K + 1 if tr[0] == "ADVANCE" else tr[1] if tr[0] == "JUMP" else
-                       tr[1] + 1 if tr[0] == "SETSTATE" else None)
-                owns = _own_positive(g)
-                if tr[0] == "DEATH" or (tgt is not None and tgt in dr):
-                    death_bound |= owns
-                else:
-                    survivable |= owns
-    trap_items = death_bound - survivable
+                target = hopefuls if hopeful(info, K, tr, gr, goal_ok) else hopeless
+                target |= _own_positive(g)
+    trap_items = hopeless - hopefuls
 
     required = defaultdict(set)
     def req_item(it, room):
@@ -176,19 +205,16 @@ def build_maps(em):
     # on the plane (rm62) is a Said-handler `put: 26 -1`, which the machine-body scan never sees.
     for room, script, it, g in getattr(em, "handler_drops", ()):
         req_item(it, room)
-    for info in em.machines:
-        dr = _death_reachable(info)
+    for i, info in enumerate(em.machines):
+        gr = gr_maps[i]
         for K, paths in info["states"].items():
             for (g, w, gg, c, tr) in paths:
-                # A path guarded by own(X) that LEADS TO DEATH is a TRAP gate, not a
-                # requirement: rm138's day-6 hunger accepts `own(Spinach_Dip)` -> eat it ->
-                # "the mayonnaise has spoiled in the hot, tropical sun!" -> death, while the
-                # sibling `own(Sewing_Kit)` branch fishes and lives. Counting the trap made
-                # Spinach_Dip look required. Skip death-bound paths; keep the survivable one.
-                tgt = (K + 1 if tr[0] == "ADVANCE" else
-                       tr[1] if tr[0] == "JUMP" else
-                       tr[1] + 1 if tr[0] == "SETSTATE" else None)
-                if tr[0] == "DEATH" or (tgt is not None and tgt in dr):
+                # Same GOAL-REACHABILITY rule as the trap pass, applied per use: an own(X) path
+                # you cannot still win from is not evidence X is required here. rm138's day-6
+                # hunger accepts own(Spinach_Dip) -> eat it -> "the mayonnaise has spoiled in the
+                # hot, tropical sun!" -> death, while the sibling own(Sewing_Kit) branch fishes
+                # and lives. Counting the hopeless branch made Spinach_Dip look required.
+                if not hopeful(info, K, tr, gr, goal_ok):
                     continue
                 req(g, info["room"])
         # machine ENTRY guards too: a `Said 'throw/beach'` success branch is captured as an

@@ -92,11 +92,62 @@ def test_status_required():
     check("own() alone constrains no status", M._status_required(_own(3)) is None)
 
 
+def test_goal_reachability_traps():
+    """The TRAP rule, re-derived: a use you cannot still WIN from is not evidence of a
+    requirement. Death is only the commonest way to fail that -- these pin the general rule."""
+    print("\n-- goal-reachability trap rule --")
+    GOAL = {50}                      # rooms from which the goal is still reachable
+
+    # rm138-shaped: one own()-guarded path dies, a sibling exits somewhere winnable.
+    m = _machine({0: [([_own(13)], [], [], [], ("DEATH",)),
+                      ([_own(12)], [], [], [], ("EXIT", 50))]})
+    gr = M.goal_reaching(m, GOAL)
+    check("a DEATH path is hopeless",
+          not M.hopeful(m, 0, ("DEATH",), gr, GOAL))
+    check("an EXIT to a goal-reaching room is hopeful",
+          M.hopeful(m, 0, ("EXIT", 50), gr, GOAL))
+
+    # THE GENERALIZATION: no death at all -- the use just strands you where the goal is gone.
+    check("an EXIT to a room with NO route to the goal is hopeless (no death involved)",
+          not M.hopeful(m, 0, ("EXIT", 99), gr, GOAL))
+
+    # PARK hands control back to the player, so it inherits THIS room's prospects
+    m_ok = _machine({0: [([], [], [], [], ("PARK",))]})
+    m_ok["room"] = 50
+    check("PARK in a goal-reaching room is hopeful",
+          M.hopeful(m_ok, 0, ("PARK",), M.goal_reaching(m_ok, GOAL), GOAL))
+    m_bad = _machine({0: [([], [], [], [], ("PARK",))]})
+    m_bad["room"] = 99
+    check("PARK in a room with no route to the goal is hopeless",
+          not M.hopeful(m_bad, 0, ("PARK",), M.goal_reaching(m_bad, GOAL), GOAL))
+
+    # propagation: a chain ending in death is hopeless all the way back
+    chain = _machine({0: [([], [], [], [], ("ADVANCE",))],
+                      1: [([], [], [], [], ("ADVANCE",))],
+                      2: [([], [], [], [], ("DEATH",))]})
+    grc = M.goal_reaching(chain, GOAL)
+    check("hopelessness propagates backward along a chain",
+          grc[0] is False and grc[1] is False and grc[2] is False)
+    # ...but one winnable branch anywhere makes the state hopeful
+    fork = _machine({0: [([], [], [], [], ("ADVANCE",))],
+                     1: [([], [], [], [], ("DEATH",)),
+                         ([], [], [], [], ("EXIT", 50))]})
+    check("a single winnable branch makes the state hopeful",
+          M.goal_reaching(fork, GOAL)[0] is True)
+
+    # goal_reaching_rooms: backward walk over the room graph
+    edges = {1: {2}, 2: {50}, 7: {8}, 8: {7}}
+    ok = M.goal_reaching_rooms(edges, {50})
+    check("rooms feeding the goal are goal-reaching", {1, 2, 50} <= ok)
+    check("a disconnected pocket is not", not ({7, 8} & ok))
+
+
 def run():
     print("=== test_gate_aware ===")
     test_blocked()
     test_entry_alts()
     test_status_required()
+    test_goal_reachability_traps()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 
