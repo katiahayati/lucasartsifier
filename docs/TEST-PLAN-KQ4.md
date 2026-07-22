@@ -71,6 +71,36 @@ region scope in `extract` should flip the direction to unicorn → Lolotte.
 
 ---
 
+## 2b. Is the fishing pole REALLY re-baitable?  ← and our reason for saying so is weak
+
+The pole is EXCLUDED from `resource_exhaustion` because its `loop` property is written to both 0
+and 1, which the one-way test reads as "restorable". That test is SYNTACTIC -- it asks whether the
+good value is ever written, not whether that write is still REACHABLE.
+
+```lisp
+Main.sc:1205-6   ((Inv at: 19) moveTo: 666)   ((Inv at: 17) loop: 1)   ; worm on hook, pole baited
+Room95.sc:652    ((Inv at: 17) loop: 0)                                 ; unbaited
+Room95.sc:675    ((Inv at: 19) moveTo: 777)                             ; the worm is consumed
+```
+
+Re-baiting needs a worm. The robin only appears while the worm is `ownedBy: 206` (`Room23.sc:144`,
+`Room29.sc:84`, 50% per room entry), and **no site anywhere moves item 19 back to 206 from 777**.
+So after one cast there is no second worm, and the pole cannot be re-baited.
+
+Whether that is a SOFTLOCK depends on whether a baited pole is ever needed twice -- you only need
+one Dead_Fish, so probably not. But the reason we excluded it is wrong either way, and if the cast
+can fail (worm consumed, no fish) it becomes a real one.
+
+- [ ] Cast and MISS, if missing is possible. Is the worm gone? Can you get another?
+- [ ] After catching the fish, check the pole: does it still say baited? Try `put worm on hook`.
+- [ ] Confirm the robin never returns once the worm has been used.
+
+**What the answer changes.** If a cast can consume the worm without producing the fish, the Worm
+belongs in `resource_exhaustion` and the pole's exclusion is a false negative. See TODO A0m:
+the one-way test needs to ask whether the restoring write is REACHABLE, not merely present.
+
+---
+
 ## 3. The Shovel — confirm the mechanism end to end
 
 Believed solid; source and the user agree. Recorded so a play-test can close it.
