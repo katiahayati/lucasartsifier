@@ -80,6 +80,14 @@ def _cmp_atom(n, tp):
         return ("CTR", (a["vtype"][0], a["index"]), op, I.as_int(b))
     if I.is_local_or_temp(b) and I.as_int(a) is not None:
         return ("CTR", (b["vtype"][0], b["index"]), _REV[op], I.as_int(a))
+    # `(== ((Inv at: 17) loop:) 1)` -- the FOURTH store: state living in an item's own property.
+    # Went to OPAQUE, which threw the fact away; carried as IPROP it is at least preserved.
+    ip = item_prop_read(a)
+    if ip is not None and I.as_int(b) is not None:
+        return Pred("IPROP", var=ip, op=op, value=I.as_int(b))
+    ip = item_prop_read(b)
+    if ip is not None and I.as_int(a) is not None:
+        return Pred("IPROP", var=ip, op=_REV[op], value=I.as_int(a))
     # `(edgeHit) == N` -> the ego is at screen edge N (a POSITION guard over (x,y)).
     if _is_ego_edgehit(a) and I.as_int(b) is not None and op == "==":
         return ("POS", "edge", I.as_int(b))
@@ -99,6 +107,24 @@ def _is_ego_edgehit(n):
 
 
 G_CURROOM = 11   # gCurRoomNum -- compared against room numbers all over the scripts
+
+
+def item_prop_read(n):
+    """`((Inv at: 17) loop:)` -> `(item, property)` if that pair is tracked state, else None.
+
+    Only pairs the game both writes and reads count -- a `view:` read is cosmetic, a `loop:` read
+    on the fishing pole is asking whether it is baited. The distinction is discovered, not listed.
+    """
+    if not (isinstance(n, dict) and n.get("t") == "Send"):
+        return None
+    recv, msgs = I.send_pairs(n)
+    it = _at_item(recv)
+    if it is None:
+        return None
+    for sel, params in msgs:
+        if not params and (it, sel) in _IPROPS:
+            return (it, sel)
+    return None
 
 
 def _at_item(n):
@@ -129,13 +155,17 @@ def _at_item(n):
 EGO = V.EGO      # destination sentinel: the item is now HELD
 
 _VOCAB = None    # installed by extract(); one game per process
+_IPROPS = {}     # (item, property) -> values written -- the FOURTH store, discovered
+#   the same way gating registers are: written AND read. See vocab.item_property_registers.
 
 
 def install_vocabulary(ir):
     """Derive this game's item-location vocabulary. Returns it, or None if the game has no
     recognisable store -- which is a finding, not something to paper over with a default."""
-    global _VOCAB
+    global _VOCAB, _IPROPS
     _VOCAB = V.Vocabulary.from_ir(ir)
+    _IPROPS = (V.item_property_registers(ir, _VOCAB.store_class, _VOCAB.prop, _at_item)
+               if _VOCAB else {})
     return _VOCAB
 
 
@@ -151,6 +181,9 @@ def item_transfer(recv, sel, params):
 
 
 def _send_atom(n):
+    ip = item_prop_read(n)          # `(if ((Inv at: 15) loop:) {Broken Shovel} ...)`
+    if ip is not None:
+        return Pred("IPROP", var=ip, op="!=", value=0)
     recv, msgs = I.send_pairs(n)
     for sel, params in msgs:
         if sel == "has" and I.is_global(recv, G_EGO):

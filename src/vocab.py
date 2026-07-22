@@ -211,6 +211,66 @@ def _class_globals(ir):
     return out
 
 
+def item_property_registers(ir, store_class, location_prop, item_of_receiver):
+    """(item, property) pairs the game uses as STATE -- the "fourth store".
+
+    Discovered the same way `gating_registers` discovers globals: a thing is state if it is both
+    WRITTEN and READ. Nothing here names `loop`; we ask which properties of the item class the
+    game writes with a constant and also reads back, and the answer in KQ4 is the bow, the shovel
+    and the fishing pole --
+
+        (Inv at: 14) loop: {0,1}     Cupid's Bow      loaded / spent
+        (Inv at: 15) loop: {1}       Shovel           `(if (self loop:) {Broken Shovel} ...)`
+        (Inv at: 17) loop: {0,1}     Fishing Pole     baited with the worm, or not
+
+    -- and in LSL2, nothing, which is why this store never came up until a second game.
+
+    The location property is excluded: it is the same store `Vocabulary` already models, and
+    reading it here would double-count it."""
+    from collections import defaultdict
+    cls = ir.find_class(store_class)
+    props = set(cls.props) if cls else set()
+    props.discard(location_prop)
+    written, compared, counters = defaultdict(set), defaultdict(set), set()
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for body in o.methods.values():
+                for n in I.walk(body):
+                    if n.get("t") != "Send":
+                        continue
+                    try:
+                        recv, msgs = I.send_pairs(n)
+                    except Exception:                      # noqa: BLE001
+                        continue
+                    it = item_of_receiver(recv)
+                    if it is None:
+                        continue
+                    for pair in msgs:
+                        if not pair or pair[0] not in props:
+                            continue
+                        sel, ps = pair
+                        if ps:                             # a WRITE
+                            v = I.as_int(ps[0])
+                            if v is not None:
+                                written[(it, sel)].add(v)
+                            elif any(y.get("t") in ("Add", "Sub") for y in I.walk(ps[0])):
+                                # `loop: (+ (loop:) 1)` -- an INCREMENT, so this is a COUNTER, not
+                                # a flag. Cupid's Bow counts arrows USED (shootBow.sc:48) and is
+                                # tested `(>= (loop:) 2)`. A constants-only scan reports {0,1} and
+                                # models a counter as a boolean, which is worse than not modelling
+                                # it: the whole point of this store is that you can spend too many.
+                                counters.add((it, sel))
+                                written[(it, sel)].add(0)
+                        else:                              # `loop:` -- a READ
+                            compared[(it, sel)].add(s.number)
+    out = {}
+    for k in sorted(set(written) & set(compared)):
+        if not written[k]:
+            continue
+        out[k] = {"values": sorted(written[k]), "counter": k in counters}
+    return out
+
+
 class Vocabulary:
     """How THIS game says "move an item" and "is the item here", derived from its class table.
 
