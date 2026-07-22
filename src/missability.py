@@ -914,11 +914,27 @@ def load(cfg=None, ir_path=None):
     cfg = cfg or config.ACTIVE
     ir_path = ir_path or cfg.ir_path
     ir = I.load_ir(ir_path)
+    # DERIVE both of the old per-game constants; config is now only a fallback/override.
+    # See vocab.derive_death / derive_debug -- the anchors are engine vocabulary (the Game
+    # subclass's route to Restore/Restart/Quit, and the `^=` toggle a debug checkbox compiles to),
+    # which is why they survive a change of game. The old claim here was that death "cannot be
+    # derived; LSL2 and KQ4 disagree on both index and shape" -- true only if you guess the shape
+    # instead of reading it out of the test.
+    import vocab as V
     sig = tuple(cfg.death_signal) if cfg.death_signal else ()
     if not sig:
-        raise SystemExit("config.death_signal is unset: declare (global_index, value) -- value "
-                         "None means any non-zero write. It cannot be derived; LSL2 and KQ4 "
-                         "disagree on both index and shape.")
+        found = V.derive_death(ir)
+        if found:
+            sig = found[0][0]
+    if not sig:
+        raise SystemExit("could not derive a death signal, and config.death_signal is unset. "
+                         "Expected the Game subclass to test a global on the way to "
+                         "restart:/restore:.")
+    import dataclasses
+    if not cfg.debug_globals:
+        cfg = dataclasses.replace(cfg, debug_globals=frozenset(V.derive_debug(ir)))
+    if not cfg.death_signal:
+        cfg = dataclasses.replace(cfg, death_signal=sig)   # so reports show what was derived
     d_gi, d_val = sig[0], (sig[1] if len(sig) > 1 else None)
     is_death = (lambda gi, v: gi == d_gi and v == d_val) if d_val is not None else \
                (lambda gi, v: gi == d_gi and bool(v))

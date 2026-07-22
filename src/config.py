@@ -88,8 +88,12 @@ LSL2 = GameConfig(
     # bypassable via the rm90-93 intro-cutscene tangle (rm92 <- rm91 <- rm90) -- see
     # docs/NOTES / the endgame-cluster memory; that untangling is separate open work.
     goal_rooms=frozenset({178}),
-    death_signal=(101, 1001),
-    debug_globals=frozenset({100, 111}),          # gDebugging, gForceAtest
+    # BOTH DERIVED (vocab.derive_death / derive_debug); left empty so the derivation runs.
+    # Kept as override fields only. Derivation reproduces the hand-declared (101, 1001) exactly,
+    # and derives debug {14, 100} where {100, 111} was declared -- behaviourally identical
+    # (global111 is never written, so the model already pins it at 0).
+    death_signal=(),
+    debug_globals=frozenset(),
 )
 
 KQ4 = GameConfig(
@@ -105,20 +109,11 @@ KQ4 = GameConfig(
     # ACHIEVED is the win -- rm694 is `(if (gEgo has: 25) <cure your father> else <watch him die>)`
     # while rm692, the marry-Edgar ending, asks nothing. Discovery reproduces rm694 exactly.
     goal_rooms=frozenset(),
-    death_signal=(127, None),
-    # global215 is KQ4's debug flag -- the direct analogue of LSL2's gDebugging, found when
-    # Main's own methods were finally walked. An earlier note here claimed KQ4 "uses the SetDebug
-    # kernel, not a global"; SetDebug (Main.sc:945) is a separate thing, and the flag is real:
-    #   DebugMenu.sc:60    (^= global215 $0001)          toggled from the debug menu
-    #   Main.sc:1846       (Said 'overtime/nosleep') -> (= global215 1)   typed cheat code
-    #   Main.sc:1016       gates the cheat block: `Said 'enter/night'` sets global100 (NIGHT),
-    #                      global109, global160 and hands over items 3, 14, 15, 16 and 25
-    #   copyProtect.sc:687 (if (and global215 (ReadNumber ...)) (self newRoom: <that number>))
-    #                      -- with debug on, the copy-protection screen warps to ANY room.
-    # The warp survives only because its destination is a local, not a constant, so no edge is
-    # extracted; that is luck, not a defence. Exactly the LSL2 rm82/rm75 landmine this field
-    # exists for -- declare it rather than rely on the coincidence.
-    debug_globals=frozenset({215}),
+    death_signal=(),          # DERIVED -> (127, None), any non-zero
+    # DERIVED -> {215}, found as the global a debug menu TOGGLES with `^=`. An earlier note
+    # here claimed KQ4 had no debug global at all; `copyProtect.sc:687` uses it to warp to any
+    # room you type, so leaving it unpinned would have emptied the analysis.
+    debug_globals=frozenset(),
 )
 
 # The config the pipeline runs against. Swap this (or set it from run.py) to target

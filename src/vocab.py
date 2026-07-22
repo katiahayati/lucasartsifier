@@ -365,3 +365,137 @@ if __name__ == "__main__":
                   f"   write via {st['writers']}   read via {st['readers']}")
             for w in d["wrappers"]:
                 print(f"    {w['kind']:5s}  {w['class']}::{w['selector']} -> {w['forwards_to']}")
+
+
+# ---- the last two declared constants, DERIVED ----------------------------
+# config.py used to argue these could not be derived: "LSL2 raises death as
+# `gCurrentStatus == 1001` while KQ4 uses a boolean -- they share neither index nor shape."
+# That only holds if you have to GUESS the shape. Read the test itself and the shape comes with
+# it. Both anchors are ENGINE vocabulary, which is why they survive the game boundary:
+#
+#   DEATH  the global the Game subclass tests on the way to offering Restore / Restart / Quit.
+#          `restart:` / `restore:` are Game methods. LSL2 hands off through `dyingScript` while
+#          KQ4 offers the dialog inline, so the hand-off is followed one `setScript:` hop -- the
+#          same thing the machine lift already does.
+#   DEBUG  a debug flag is TOGGLED, not set: `(^= <global> $0001)`, what a menu checkbox compiles
+#          to. Nothing else in a game XORs a global with 1.
+#
+# Verified against the hand-declared values: death reproduces (101, 1001) and (127, None) EXACTLY.
+# Debug derives {14, 100} for LSL2 where {100, 111} was declared -- not set-equal but
+# BEHAVIOURALLY equal (same 15 items + 1 group): global111 is never written, so the model already
+# pins it at 0, and global14 is inert. KQ4 derives {215} exactly. Dropping debug pinning entirely
+# costs 3 items (rm82's `if gDebugging` hands you the whole bomb), so it is not cosmetic.
+RESTART_SELECTORS = ("restart", "restore")
+
+
+def game_objects(ir):
+    """Objects whose class is (or descends from) the engine `Game` class."""
+    game = ir.find_class("Game")
+    if game is None:
+        return []
+    species = {game.species}
+    changed = True
+    while changed:                       # subclasses of Game, transitively
+        changed = False
+        for s in ir.scripts.values():
+            for o in s.objects:
+                if o.is_class and o.super in species and o.species not in species:
+                    species.add(o.species); changed = True
+    return [o for s in ir.scripts.values() for o in s.objects
+            if o.super in species or o.species in species]
+
+
+def test_shape(node):
+    """A test expression -> (global index, required value or None for 'any non-zero')."""
+    if I.is_global(node):
+        return (node["index"], None)
+    if node.get("t") == "Eq":
+        ks = node.get("kids") or []
+        if len(ks) >= 2:
+            for a, b in ((ks[0], ks[1]), (ks[1], ks[0])):
+                if I.is_global(a) and I.as_int(b) is not None:
+                    return (a["index"], I.as_int(b))
+    return None
+
+
+def _script_named(ir, name):
+    for s in ir.scripts.values():
+        o = s.by_name.get(name)
+        if o is not None:
+            return o
+    return None
+
+
+def _offers_restart(ir, node, depth):
+    """Does this branch reach Restore/Restart/Quit -- directly, or through a script it starts?
+
+    LSL2 hands off: `(if (== gCurrentStatus 1001) (gCurRoom setScript: dyingScript))`, and it is
+    dyingScript that offers the dialog. KQ4 offers it inline. Following `setScript:` one hop is
+    the same thing the machine lift already does, so the anchor is shared even though the shape
+    of the hand-off is not."""
+    for m in I.walk(node):
+        if m.get("t") != "Send":
+            continue
+        try:
+            _r, msgs = I.send_pairs(m)
+        except Exception:                      # noqa: BLE001
+            continue
+        for pair in msgs:
+            if not pair:
+                continue
+            if pair[0] in RESTART_SELECTORS:
+                return True
+            if pair[0] == "setScript" and depth < 2 and pair[1]:
+                tgt = pair[1][0]
+                if isinstance(tgt, dict) and tgt.get("t") == "Object":
+                    obj = _script_named(ir, tgt.get("name"))
+                    if obj is not None and any(
+                            _offers_restart(ir, b, depth + 1) for b in obj.methods.values()):
+                        return True
+    return False
+
+
+def derive_death(ir):
+    """The global whose truth means the run is over: tested on the way to Restore/Restart/Quit."""
+    hits = []
+    for o in game_objects(ir):
+        for mname, body in o.methods.items():
+            for n in I.walk(body):
+                if n.get("t") != "If":
+                    continue
+                ks = n.get("kids") or []
+                if len(ks) < 2:
+                    continue
+                shape = test_shape(ks[0])
+                if shape is None:
+                    continue
+                if _offers_restart(ir, ks[1], depth=0):
+                    hits.append((shape, o.name, mname))
+    return hits
+
+
+def derive_debug(ir):
+    """Globals TOGGLED with `^=` -- what a debug menu checkbox compiles to.
+
+    Nothing else in a game XORs a global with 1. Both titles do exactly this:
+    LSL2 `(^= gDebugging $0001)`, KQ4 `(^= global215 $0001)`."""
+    out = {}
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for mname, body in o.methods.items():
+                for n in I.walk(body):
+                    if n.get("t") != "AssignmentXor":
+                        continue
+                    ks = n.get("kids") or []
+                    if ks and I.is_global(ks[0]):
+                        out.setdefault(ks[0]["index"], set()).add(f"{o.name}::{mname}")
+    for name, body in ((n, b) for s in ir.scripts.values() for n, b in s.procs.items()):
+        for n in I.walk(body):
+            if n.get("t") != "AssignmentXor":
+                continue
+            ks = n.get("kids") or []
+            if ks and I.is_global(ks[0]):
+                out.setdefault(ks[0]["index"], set()).add(f"proc {name}")
+    return out
+
+

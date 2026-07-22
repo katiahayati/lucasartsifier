@@ -18,6 +18,7 @@ produces a confident wrong answer instead of an error.
   6  pending room   -- `(= global13 N)` IS `newRoom: N`, one layer down. KQ4 uses it 20 times.
   7  register flips -- the SECOND softlock class: a flag advances and shuts a region.
   8  goal discovery -- victory when the game ends wins and losses through one flag.
+  9  derived constants -- death and debug read out of the game, not declared.
 
 Parts 2-7 need a real IR and skip cleanly without one; 1, 1b and 4 are pure.
 """
@@ -299,6 +300,34 @@ def test_goal_discovery():
     check("KQ4: rm692 (marry Edgar) does not", 692 not in win, repr(win))
 
 
+def test_derived_constants():
+    print("\nPart 9: death and debug are DERIVED, not declared")
+    import os, dataclasses, config, ir as I, vocab as V, missability as M
+    for which, cfg, want_death in (("LSL2", config.LSL2, (101, 1001)),
+                                   ("KQ4", config.KQ4, (127, None))):
+        if not os.path.exists(cfg.ir_path):
+            print(f"  (skip {which}: no IR)")
+            continue
+        ir = I.load_ir(cfg.ir_path)
+        # DEATH: the global the Game subclass tests on the way to Restore/Restart/Quit. LSL2 hands
+        # off through `dyingScript` and KQ4 offers the dialog inline -- one `setScript:` hop apart,
+        # same anchor. Must reproduce the hand-declared value exactly.
+        got = [shape for shape, _o, _m in V.derive_death(ir)]
+        check(f"{which}: death signal derives as {want_death}", want_death in got, repr(got))
+        # DEBUG: a flag that is TOGGLED (`^=`), which is what a menu checkbox compiles to.
+        dbg = set(V.derive_debug(ir))
+        check(f"{which}: a debug flag is derived", bool(dbg), repr(sorted(dbg)))
+        check(f"{which}: ...covering everything declared that is ever written",
+              cfg.debug_globals <= dbg or not cfg.debug_globals, repr(sorted(dbg)))
+    # and the whole analysis must be unchanged with NOTHING declared
+    if os.path.exists(config.LSL2.ir_path):
+        blank = dataclasses.replace(config.LSL2, death_signal=(), debug_globals=frozenset())
+        s = M.load(cfg=blank)
+        items = sorted({x["item_name"] for x in s.analyze()})
+        check("LSL2 fully derived still finds 15 items + 1 group",
+              len(items) == 15 and len(s.group_strandings()) == 1, f"{len(items)} items")
+
+
 def run():
     test_item_transfer()
     test_ownedby_spelling()
@@ -309,6 +338,7 @@ def run():
     test_pending_room()
     test_register_strandings()
     test_goal_discovery()
+    test_derived_constants()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 
