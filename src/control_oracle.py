@@ -29,7 +29,7 @@ from sci_resource import Sci0Game
 import sci_gfx
 from sci_gfx import W, H
 from guard_ast import GAnd, GOr, GNot
-from extract2 import atom
+from extract import atom
 
 # control bit N ($ mask 1<<N) blocks the ego iff N is in its illegalBits.
 # Actor default illegalBits = $8000 (control color 15). Rooms may add more via

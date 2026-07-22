@@ -17,14 +17,14 @@ python -m pipeline /path/to/game          # decompile -> analyse -> derive -> pa
         |
    ir.py ........................ load the typed AST, index scripts/objects/methods
         v
-   extract2.py .................. walk each AST, compose PATH CONDITIONS
+   extract.py .................. walk each AST, compose PATH CONDITIONS
         |                         -> movement edges, item get/put, register writes, guards
         +--> guard_ast.py ........ the Pred/GAnd/GOr/GNot types every stage shares
         v
-   machine2.py .................. lift `changeState` switches into explicit state machines
-   compile2.py .................. per-state ops; cue carry; chain compression
+   machine.py .................. lift `changeState` switches into explicit state machines
+   compile.py .................. per-state ops; cue carry; chain compression
         v
-   smv_emit3.py ................. OpEmitter: assembles the whole operational model
+   opmodel.py ................. OpEmitter: assembles the whole operational model
         |                         (rooms, machines, handlers, registers, cutscene sets)
         +--> control_oracle.py ... positional gates read from PIC/VIEW art
         |      +--> sci_gfx.py ... decode pictures/views
@@ -58,10 +58,10 @@ python -m pipeline /path/to/game          # decompile -> analyse -> derive -> pa
 | file | lines | role |
 |---|---:|---|
 | `ir.py` | 137 | Loads `<game>.ir.json`; indexes scripts, objects, methods, procedures. Thin. |
-| `extract2.py` | 368 | The real extractor. Walks each typed AST composing path conditions into guarded edges, acquisitions, drops, register writes. Room identity comes from *inheritance* from the `Rm`/`Room` class. |
-| `machine2.py` | 339 | Lifts SCI's `changeState` switch idiom into an explicit state machine — the construct that holds every cutscene, and where most gates hide. |
-| `compile2.py` | 390 | Per-state operations: cross-state cue carry (SCI's `cycles`/`seconds` semantics), effect-free chain compression. |
-| `smv_emit3.py` | 964 | `OpEmitter` — assembles everything into one operational model: rooms, machines, handler gets/drops/writes, register domains, cutscene classification. Named for the SMV emission it also does; the SMV path is now vestigial (see below). |
+| `extract.py` | 368 | The real extractor. Walks each typed AST composing path conditions into guarded edges, acquisitions, drops, register writes. Room identity comes from *inheritance* from the `Rm`/`Room` class. |
+| `machine.py` | 339 | Lifts SCI's `changeState` switch idiom into an explicit state machine — the construct that holds every cutscene, and where most gates hide. |
+| `compile.py` | 390 | Per-state operations: cross-state cue carry (SCI's `cycles`/`seconds` semantics), effect-free chain compression. |
+| `opmodel.py` | 964 | `OpEmitter` — assembles everything into one operational model: rooms, machines, handler gets/drops/writes, register domains, cutscene classification. Also still emits SMV, which is vestigial (see below). |
 | `guard_ast.py` | 64 | `Pred / GAnd / GOr / GNot`. Pure data, no dependencies — deliberately, so nothing needs the old front end to talk about guards. |
 | `config.py` | 115 | Per-game config — now paths and overrides only. Anchors, `death_signal` and `debug_globals` are all DISCOVERED; see `vocab.py`. |
 
@@ -93,11 +93,14 @@ end-to-end scoring lives in `python -m missability` and `python -m guards`.
 
 ## Two things worth knowing
 
-**`smv_emit3.py` is misnamed.** It began as an SMV emitter for nuXmv model checking; that direction
-was measured and largely abandoned (both query directions time out at 600s against the real goal).
-What survived, and what the name now hides, is `OpEmitter` — the operational model every analysis
-reads. The SMV emission still works and is used for shallow waypoint queries. Renaming it would
-touch a dozen imports for cosmetic gain, so it is documented rather than renamed.
+**`opmodel.py` used to be called `smv_emit3.py`.** It began as an SMV emitter for nuXmv model
+checking; that direction was measured and largely abandoned (both query directions time out at
+600s against the real goal). What survived is `OpEmitter` — the operational model every analysis
+reads — and the SMV emission is now a vestigial side-door used for shallow waypoint queries.
+This section used to argue the rename wasn't worth a dozen import changes. It was.
+
+Three siblings carried version numbers from an early parallel branch and no longer do:
+`extract2` → `extract`, `machine2` → `machine`, `compile2` → `compile`.
 
 **The analysis never reads `.sc` text.** Everything upstream of `patcher.py` works from the JSON IR.
 Only patch *emission* touches source, via `sexpr.py`/`trigger.py`. That separation is why swapping

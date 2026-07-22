@@ -11,7 +11,7 @@ GET effect): a state var msM (reset to M.start whenever room!=R), and its gating
 promoted vars (reset when away). A step action at (room=R, msM=K) fires one path of state
 K: applies its writes/gets/counters and transitions msM (ADVANCE->K+1, JUMP j, SETSTATE
 j+1, EXIT->room:=r, DEATH->dead). Player entries (handleEvent changeState:K, guarded) set
-msM. init writes are forced on entry. Movement/item edges come from extract2 (flat).
+msM. init writes are forced on entry. Movement/item edges come from extract (flat).
 
 Guards: OWN->item; CMP on a promoted global-> the tracked var; CTR (Local vs literal)->
 the tracked counter var; opaque/untracked-> a fresh nondet input (satisfiable both ways).
@@ -22,9 +22,9 @@ import os
 import subprocess
 
 import ir as I
-import machine2 as M
-import compile2 as C
-from extract2 import extract, atom, item_transfer, _room_object, EGO
+import machine as M
+import compile as C
+from extract import extract, atom, item_transfer, _room_object, EGO
 from guard_ast import GAnd, GOr, GNot, Pred
 
 
@@ -90,7 +90,7 @@ class OpEmitter:
         # "room R". region_rooms: region-script -> {rooms that activate it}.
         #
         # The room lookup here used to be `by_name["rm<N>"]` -- the LSL2 decompiler naming
-        # convention, which extract2._room_object stopped relying on when KQ4 turned out to
+        # convention, which extract._room_object stopped relying on when KQ4 turned out to
         # name its rooms `Room<N>`. That fix never reached this copy, so KQ4 mapped 0 region
         # scripts and every one of its 26 regions was dropped whole (LSL2: 9 regions over 62
         # rooms). SCI dispatches at three scopes -- Main, region, room -- and this is the
@@ -210,7 +210,7 @@ class OpEmitter:
                 self.reg_vals.setdefault(gi, {0}).add(v)
                 self._scan_domains_guard(g, None)   # guard values (e.g. gIslandStatus==2)
         # exits the machines can deliver -> which changeState newRoom targets DON'T need a
-        # flat fallback (the rest do, gated by their extract2 path condition).
+        # flat fallback (the rest do, gated by their extract path condition).
         self.machine_delivered = set()
         for info in self.machines:
             for dst in info.get("delivered", ()):
@@ -458,10 +458,10 @@ class OpEmitter:
         """Path-condition walk of a handler; record global + local writes + item transfers,
         FOLLOWING PublicCall/LocalCall into their procedures (across scripts).
 
-        Control flow comes from `extract2.walk_stream` / `ir.control_shape` -- this used to
-        re-implement If and Cond itself, in code identical to extract2's and machine2's, and
+        Control flow comes from `extract.walk_stream` / `ir.control_shape` -- this used to
+        re-implement If and Cond itself, in code identical to extract's and machine's, and
         handled neither Switch nor Loop, so both were silently dropped here."""
-        from extract2 import walk_stream
+        from extract import walk_stream
         walk_stream(node, pc, lambda n, p: self._heffect(room, script, n, p, seen))
 
     def _heffect(self, room, script, node, pc, seen):
@@ -523,7 +523,7 @@ class OpEmitter:
         policy that is ours is `undecided=OPAQUE`: a write inside a switch case or a loop must be
         POSSIBLE, never FORCED. Forcing them is the rm79 seal -- init set gIslandStatus:=3
         unconditionally and every win edge needing g101==0 died."""
-        from extract2 import walk_stream
+        from extract import walk_stream
         walk_stream(node, pc, lambda n, p: self._init_leaf(room, script, n, p, seen),
                     undecided=Pred("OPAQUE"))
 

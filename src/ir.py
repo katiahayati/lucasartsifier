@@ -115,8 +115,8 @@ def send_pairs(send):
 
 
 # ---- SCI's statement forms, named ONCE --------------------------------------
-# Four walkers used to each re-derive how a branch composes path conditions -- extract2._walk,
-# smv_emit3._hwalk, machine2._ops and compile2._paths_of, in near-identical code. That is not a
+# Four walkers used to each re-derive how a branch composes path conditions -- extract._walk,
+# opmodel._hwalk, machine._ops and compile._paths_of, in near-identical code. That is not a
 # style problem, it is where three of this project's bugs came from: a node type handled in one
 # copy and not another silently drops whatever it contains, and only a game noticing gives it
 # away. `Loop` cost us that twice.

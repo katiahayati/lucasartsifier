@@ -5,13 +5,13 @@ produced a wrong answer:
 
   * `asserts_eq` -- "does this atom assert equality" -- lived in `required_values` AND in
     `edge_meta.reqs`. Fixing one left KQ4's night gate parsed and completely toothless.
-  * the `rm<N>` room lookup lived in `extract2._room_object` AND `smv_emit3.region_rooms`.
+  * the `rm<N>` room lookup lived in `extract._room_object` AND `opmodel.region_rooms`.
     Fixing one left KQ4 with 0 of its 26 region scripts.
   * `Increment` was handled for LOCALS only, so KQ4's dig counter and its clock are invisible.
 
 RESOLVED STRUCTURALLY for control flow: `ir.control_shape` now names SCI's statement forms once,
-and all four walkers consume it (`extract2.walk_stream` for the three streaming ones,
-`compile2._paths_of` for the path enumerator). If/Cond/Loop have vanished from this matrix as a
+and all four walkers consume it (`extract.walk_stream` for the three streaming ones,
+`compile._paths_of` for the path enumerator). If/Cond/Loop have vanished from this matrix as a
 result. What remains here is the EFFECT vocabulary, which legitimately differs per walker -- and
 that is exactly the distinction worth keeping the matrix for.
 
@@ -63,33 +63,33 @@ LIT = re.compile(r'"([A-Za-z_]+)"')
 # Anything NOT in here that is known to some walkers and not others fails the test, which is the
 # whole point: a new asymmetry must be justified in writing before it can be ignored.
 ACCEPTED = {
-    "changeState": "extract2 deliberately skips changeState -- the MACHINE owns those bodies, and "
+    "changeState": "extract deliberately skips changeState -- the MACHINE owns those bodies, and "
                    "a flat duplicate would bypass the gate (see Extractor.run).",
-    "newRoom":     "smv_emit3 does not read newRoom itself; it consumes the edges extract2 and "
+    "newRoom":     "opmodel does not read newRoom itself; it consumes the edges extract and "
                    "the machine lift already produced.",
-    "LocalCall":   "compile2 works on paths the machine lift already inlined calls into.",
+    "LocalCall":   "compile works on paths the machine lift already inlined calls into.",
     "PublicCall":  "as LocalCall.",
-    "setScript":   "extract2/smv_emit3 see setScript only as machine ARMING, which machine2 owns.",
-    "init":        "smv_emit3 and machine2 treat init specially (forced entry writes); the others "
+    "setScript":   "extract/opmodel see setScript only as machine ARMING, which machine owns.",
+    "init":        "opmodel and machine treat init specially (forced entry writes); the others "
                    "have no entry concept.",
     "cue":         "cue counting is a machine concern only.",
-    "setCycle":    "arming selectors -- machine2/compile2 for cues, extract2 for cue-armed edges.",
+    "setCycle":    "arming selectors -- machine/compile for cues, extract for cue-armed edges.",
     "setMotion":   "as setCycle.",
-    "setRegions":  "region membership is built once, in smv_emit3.",
-    "Add":         "arithmetic appears in guard atoms (extract2) and in counter detection (vocab).",
+    "setRegions":  "region membership is built once, in opmodel.",
+    "Add":         "arithmetic appears in guard atoms (extract) and in counter detection (vocab).",
     "Sub":         "as Add.",
-    "Eq":          "comparison node types are guard-atom concerns: extract2 builds atoms, vocab "
+    "Eq":          "comparison node types are guard-atom concerns: extract builds atoms, vocab "
                    "reads class-table comparisons.",
     "Ne":          "as Eq.",
     "Assignment":  "every walker records writes in its own vocabulary.",
     "Send":        "as Cond -- vocab matches sends by selector via ir.send_pairs, not by node type.",
-    "Switch":      "extract2._global_room_values reads switch CASE LABELS as data (the room "
-                   "numbers a revolving-door global can hold) and machine2._top_switch finds the "
+    "Switch":      "extract._global_room_values reads switch CASE LABELS as data (the room "
+                   "numbers a revolving-door global can hold) and machine._top_switch finds the "
                    "switch that IS the machine. Neither is control flow -- that now lives only in "
                    "ir.control_shape, which is why If/Cond/Loop no longer appear in this matrix "
                    "at all.",
     "Decrement":   "KNOWN GAP, tracked as TODO A0g(1): Increment/Decrement are handled for LOCALS "
-                   "in the machine walkers and not at all in extract2, and never for GLOBALS "
+                   "in the machine walkers and not at all in extract, and never for GLOBALS "
                    "anywhere -- which is why KQ4's dig counter and its clock are invisible.",
     "Increment":   "as Decrement -- TODO A0g(1).",
 }

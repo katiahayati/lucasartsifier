@@ -63,9 +63,9 @@ design and the bow row is a false positive to be removed.
 [20, 26, 27]"* — spend it at Lolotte, still needed at the unicorn. That is backwards in plot terms:
 the unicorn comes first.
 
-**Known cause, not a mystery:** `extract2.Extractor.run()` walks room scripts only, so
+**Known cause, not a mystery:** `extract.Extractor.run()` walks room scripts only, so
 `regUnicorn`'s arrow spend (a REGION script) is invisible and only Lolotte's was recorded. Fixing
-region scope in `extract2` should flip the direction to unicorn → Lolotte.
+region scope in `extract` should flip the direction to unicorn → Lolotte.
 
 - [ ] After that fix, confirm the reported direction is unicorn → Lolotte.
 

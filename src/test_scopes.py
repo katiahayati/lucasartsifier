@@ -47,7 +47,7 @@ def check(name, cond, detail=""):
 def _transfer(node):
     """Run item_transfer over the one message in a synthetic Send."""
     import ir as I
-    from extract2 import item_transfer
+    from extract import item_transfer
     recv, msgs = I.send_pairs(node)
     for sel, params in msgs:
         r = item_transfer(recv, sel, params)
@@ -58,8 +58,8 @@ def _transfer(node):
 
 def test_item_transfer():
     print("Part 1: item_transfer -- both spellings of the item-location store")
-    import os, config, ir as I, extract2 as X
-    from extract2 import EGO
+    import os, config, ir as I, extract as X
+    from extract import EGO
     # The selector table is DERIVED from the game's class table now, not hardcoded, so a
     # vocabulary has to be installed before any of this means anything. Synthetic CALL SITES
     # against a real derived vocabulary -- which is a better test than synthetic both ends.
@@ -113,7 +113,7 @@ def test_item_transfer():
 
 def test_ownedby_spelling():
     print("\nPart 1b: ownedBy -- 'is the item still lying there', spelled two ways")
-    from extract2 import atom
+    from extract import atom
     from guard_ast import Pred
     # LSL2: `ownedBy: gCurRoomNum` -- says "here" without naming a room.
     g = atom(SEND(INV_AT(18), MSG("ownedBy", V("Global", 11))))
@@ -235,7 +235,7 @@ def test_cue_arming():
 
 def test_pending_room():
     print("\nPart 6: the pending-room global -- newRoom: written one layer down")
-    import ir as I, config, extract2 as X
+    import ir as I, config, extract as X
     import os
     for which, cfg in (("LSL2", config.LSL2), ("KQ4", config.KQ4)):
         if not os.path.exists(cfg.ir_path):

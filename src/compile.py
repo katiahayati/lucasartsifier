@@ -1,4 +1,4 @@
-"""Compile a lifted machine (machine2) into transition-system contributions:
+"""Compile a lifted machine (machine) into transition-system contributions:
 edges (with guards + register writes delivered on the move), deaths, and forced
 entry-writes. Effect-timing is the machine's own control flow.
 
@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import ir as I
 from guard_ast import GAnd, GNot, Pred
-from extract2 import atom, _conj, G_EGO, item_transfer, EGO
-import machine2 as M
+from extract import atom, _conj, G_EGO, item_transfer, EGO
+import machine as M
 
 COUNTER_CAP = 40          # loop/unroll bound
 PATH_CAP = 4000           # per-machine path budget
@@ -83,7 +83,7 @@ class Step:
 
 
 def _count_cues_send(recv, msgs):
-    """How many cues a single send ARMS (mirrors machine2._is_cue_send, but counts each
+    """How many cues a single send ARMS (mirrors machine._is_cue_send, but counts each
     cue-arming message rather than OR-ing them). Each armed cue completes later and drives
     one `(self cue:)` -> one changeState:+1."""
     n = 0
@@ -121,7 +121,7 @@ def _interp(path, is_death):
                         st.trans = ("JUMP", k); fixed = True
                 else:
                     # `gEgo get:/put:` and `(Inv at: N) moveTo:` are one operation -- see
-                    # extract2.item_transfer. Held (dest == EGO) is a get; anywhere else is a
+                    # extract.item_transfer. Held (dest == EGO) is a get; anywhere else is a
                     # loss of ownership, whether that is limbo (-1, 999) or a spot in the world.
                     tr = item_transfer(recv, sel, params)
                     if tr is not None:

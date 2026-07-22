@@ -1,4 +1,4 @@
-"""Missability sweep on the JSON-IR / smv_emit3 front-end (the canonical one), NOT the stale
+"""Missability sweep on the JSON-IR / opmodel front-end (the canonical one), NOT the stale
 model.Game / analyze.py front-end that search.py was left on.
 
 search.py's SCC-condensation *algorithm* (tarjan_scc, reobtainable_rooms/_sealed,
@@ -15,7 +15,7 @@ from collections import defaultdict, deque
 
 import ir as I
 import config
-import smv_emit3 as E
+import opmodel as E
 from guard_ast import GAnd, GOr, GNot, Pred
 from scc_core import tarjan_scc, reachable, SccReach
 
@@ -129,7 +129,7 @@ def _debug_gated_guard(guard, debug_idx=frozenset()):
 
 def _iprop_spec(em):
     """(item, prop) -> {values, counter} for the fourth store, as extraction discovered it."""
-    import extract2 as X
+    import extract as X
     return dict(getattr(X, "_IPROPS", {}))
 
 
@@ -137,13 +137,13 @@ _IPROP_SPEC = {}
 
 
 def build_maps(em):
-    global _IPROP_SPEC
-    _IPROP_SPEC = _iprop_spec(em)
     """(edges, edge_kind, sources, drops, required, guard_required) from the JSON-IR OpEmitter.
 
     `guard_required` is `required` WITHOUT the consumption fallback -- only rooms where the game
     actually tests `has: X`. That is the evidence that an item ARMS something, which is a
     different question from where it is needed, and `real_uses` wants the former."""
+    global _IPROP_SPEC
+    _IPROP_SPEC = _iprop_spec(em)
     edges, edge_kind = defaultdict(set), defaultdict(set)
     md = em.machine_delivered
 

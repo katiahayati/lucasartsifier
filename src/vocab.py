@@ -129,7 +129,7 @@ def derive(ir):
 
 
 # ---- the derived table, in the form extraction needs ---------------------
-EGO = "ego"          # destination sentinel: the item is HELD (shared with extract2)
+EGO = "ego"          # destination sentinel: the item is HELD (shared with extract)
 
 
 def _arg_roles(ir, wrapper_cls, selector, core):

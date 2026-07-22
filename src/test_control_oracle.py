@@ -127,7 +127,7 @@ def test_emitter_gate():
     ir = real_ir()
     if not ir or not have_resources():
         print("  [SKIP] IR/resources not present"); return
-    import smv_emit3 as E
+    import opmodel as E
     em = E.OpEmitter(ir, config.LSL2, lambda gi, v: gi == 101 and v == 1001)
     check("em.control_gates has the rm82 gate",
           any(g["room"] == 82 and g["gated_room"] == 83 for g in getattr(em, "control_gates", [])))
@@ -177,7 +177,7 @@ def test_crossing_gate():
     east = [g for g in cg if g["gated_room"] == 48]
     check("crossing gate carries a disguise condition (safe_guard)", east and east[0].get("safe_guard") is not None)
     check("... safe_value is the disguise value 8", east and east[0].get("safe_value") == 8)
-    import smv_emit3 as E
+    import opmodel as E
     em = E.OpEmitter(ir, config.LSL2, lambda gi, v: gi == 101 and v == 1001)
     e48 = [e for e in em.ts.edges if e.src == 47 and e.dst == 48]
     g48 = repr(e48[0].guard).replace(" ", "") if e48 else ""

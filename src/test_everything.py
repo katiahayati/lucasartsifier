@@ -33,7 +33,7 @@ def check(name, cond, detail=""):
 # ---- Part 1: local-compare guards ---------------------------------------
 def test_local_compare():
     print("Part 1: local-compare guards")
-    from extract2 import atom
+    from extract import atom
     # `(== <Local#2> 5)` should NOT be opaque -- it should be a tracked-local guard
     g = atom(CMP("Eq", V("Local", 2), N(5)))
     is_ctr = isinstance(g, tuple) and g and g[0] == "CTR"
@@ -63,7 +63,7 @@ def real_em():
         p = config.ACTIVE.ir_path
         if not os.path.exists(p):
             return None
-        import smv_emit3 as E
+        import opmodel as E
         ir = I.load_ir(p)
         _EM = E.OpEmitter(ir, config.LSL2, lambda gi, v: gi == 101 and v == 1001)
         _EM.emit()   # populate n_opaque etc.
@@ -91,7 +91,7 @@ def test_local_compare_real():
 # ---- Part 2: setScript capture ------------------------------------------
 def test_setscript():
     print("Part 2: setScript capture")
-    from machine2 import _setscript_target
+    from machine import _setscript_target
     check("setScript target from Object ref", _setscript_target(OBJ("henchScript")) == "henchScript")
     check("setScript target from (X new:)",
           _setscript_target(SEND(OBJ("henchScript"), MSG("new"))) == "henchScript")
@@ -154,7 +154,7 @@ def test_disguise():
 # ---- Part 6: consistent positional model --------------------------------
 def test_positions():
     print("Part 6: consistent position (x,y) instead of independent opaques")
-    from extract2 import atom
+    from extract import atom
     r = atom(SEND(V("Global", 0), MSG("inRect", N(86), N(2), N(333), N(140))))
     check("atom(inRect a b c d) -> POS rect", r == ("POS", "rect", (86, 2, 333, 140)), repr(r))
     e = atom(CMP("Eq", N(2), SEND(V("Global", 0), MSG("edgeHit"))))

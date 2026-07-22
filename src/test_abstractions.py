@@ -1,15 +1,15 @@
 """Unit tests for the three model-reduction / fidelity transforms, in ISOLATION:
-  - compile2.carry_cues        (SCI cross-state cue carry: PARK -> ADVANCE where covered)
-  - compile2.compress_chains   (collapse effect-free ADVANCE runs)
-  - smv_emit3 opaque elimination (existentially project unresolvable guards out; ~0 free bools)
+  - compile.carry_cues        (SCI cross-state cue carry: PARK -> ADVANCE where covered)
+  - compile.compress_chains   (collapse effect-free ADVANCE runs)
+  - opmodel opaque elimination (existentially project unresolvable guards out; ~0 free bools)
 
 These pin the transforms we WROTE (right output for a given input). They do NOT and cannot
 find a MISSED abstraction (an unmodeled construct) -- that shows up only as end-to-end
 divergence (the winnability run / the missability sweep). See docs/ARCHITECTURE.md.
 """
 import sys
-import compile2 as C
-import smv_emit3 as E
+import compile as C
+import opmodel as E
 from guard_ast import GAnd, GOr, GNot
 
 PASS, FAIL = [], []

@@ -13,7 +13,8 @@ state. Each state body is a sequence of ops, some guarded by if/cond path condit
   GET i      `(gEgo get: i)`                       -- acquire item
   COUNTER    `(++ c)`/`(-- c)`/`(= c lit)`        -- bounded local counter update
 A state that arms NO cue and does not transfer PARKS (waits for the next player action);
-it does NOT fall into the next state (segments-per-entry -- see machine.py's hard lesson).
+it does NOT fall into the next state (segments-per-entry -- the hard lesson of the
+DELETED first-generation lifter this file replaced; git history has it).
 
 Effect-timing is exactly the machine's own control flow, so there is no ENTRY/SELF/EXIT
 write reconstruction (the seam that lost the parachute).
@@ -25,7 +26,7 @@ import config
 from dataclasses import dataclass, field
 
 import ir as I
-from extract2 import atom, _conj, G_EGO, G_CURROOM, item_transfer, EGO
+from extract import atom, _conj, G_EGO, G_CURROOM, item_transfer, EGO
 
 
 @dataclass
@@ -138,7 +139,7 @@ class MachineBuilder:
     def _scan_setscript(self, node, pc, m, source):
         """Find `(x setScript: <ref>)` where <ref> is m, and record an entry to m at state 0 with
         the path condition. Control flow is shared -- this used to hand-roll If and Cond."""
-        from extract2 import walk_stream
+        from extract import walk_stream
         walk_stream(node, pc, lambda n, p: self._setscript_leaf(n, p, m, source))
 
     def _setscript_leaf(self, node, pc, m, source):
@@ -172,7 +173,7 @@ class MachineBuilder:
 
         Control flow is shared (walk_stream); this used to hand-roll If and Cond, in a third copy
         of the same code."""
-        from extract2 import walk_stream
+        from extract import walk_stream
         walk_stream(node, pc,
                     lambda n, p: self._entry_leaf(n, p, m, script, seen, source, is_self_obj))
 
@@ -206,9 +207,9 @@ class MachineBuilder:
     def _ops(self, node, pc, out):
         """Walk a state body, composing path conditions, appending guarded ops.
 
-        Control flow comes from `extract2.walk_stream` / `ir.control_shape`; this used to
-        re-implement If/Cond/Switch itself, in code identical to extract2's and smv_emit3's."""
-        from extract2 import walk_stream
+        Control flow comes from `extract.walk_stream` / `ir.control_shape`; this used to
+        re-implement If/Cond/Switch itself, in code identical to extract's and opmodel's."""
+        from extract import walk_stream
         walk_stream(node, pc, lambda n, p: self._op_leaf(n, _conj(p), out))
 
     def _op_leaf(self, node, g, out):
@@ -235,7 +236,7 @@ class MachineBuilder:
                 if k is not None:
                     out.append(Op("JUMP", g, k))
             else:
-                # Same recogniser compile2 uses -- these two walkers must not drift.
+                # Same recogniser compile uses -- these two walkers must not drift.
                 tr = item_transfer(recv, sel, params)
                 if tr is not None and tr[1] == EGO:
                     out.append(Op("GET", g, tr[0]))

@@ -62,7 +62,7 @@ _REV = {"==": "==", "!=": "!=", ">": "<", ">=": "<=", "<": ">", "<=": ">="}
 
 def _cmp_atom(n, tp):
     """A comparison test -> a guard. Global vs literal -> Pred CMP; LOCAL/Temp vs literal ->
-    a CTR tuple `("CTR", (vt_char, idx), op, val)` (same format compile2 uses for machine
+    a CTR tuple `("CTR", (vt_char, idx), op, val)` (same format compile uses for machine
     bodies), so gexpr resolves it against the tracked local. `henchStatus==0` and the like
     used to fall through to OPAQUE -- the 'everything means everything' local-guard hole."""
     ks = n["kids"]
@@ -189,7 +189,7 @@ def walk_stream(node, pc, on_leaf, on_loop=None, undecided=None):
     differ between walkers.
 
     Loop policy here is "visit everything inside it", which is the permissive reading a streaming
-    walker wants. compile2 makes the other choice on the same shape.
+    walker wants. compile makes the other choice on the same shape.
     """
     shape = I.control_shape(node)
     kind = shape[0]
@@ -506,7 +506,7 @@ class Extractor:
         acquisition is monotone).
 
         Control flow comes from `walk_stream` / `ir.control_shape`. This used to re-implement
-        If/Cond/Switch/Loop itself, in code all but identical to smv_emit3's and machine2's --
+        If/Cond/Switch/Loop itself, in code all but identical to opmodel's and machine's --
         which is how `Loop` came to be missing from two of the three."""
         def enter_loop(n):
             prev = self._list_loop
