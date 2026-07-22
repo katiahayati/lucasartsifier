@@ -925,12 +925,31 @@ class IrSccReach(SccReach):
         for room, it, prop, val, g in getattr(self.em.ts, "item_prop_writes", ()):
             if it not in oneway:
                 continue
-            ahead = (uses.get(it, set()) - {room}) & self.rooms_after(room)
-            if not ahead:
+            # ...and this particular write must BE the degradation. For a counter only the
+            # increment degrades -- DebugMenu resets the bow's arrow count to 0, which is the
+            # opposite. For a single-valued property the write of that value is the degradation.
+            sp = spec.get((it, prop), {})
+            if sp.get("counter"):
+                if val != "inc":
+                    continue
+            elif val not in sp.get("values", ()):
                 continue
-            out.append({"pattern": "resource-exhaustion", "item": it,
-                        "item_name": self.g.item_name(it), "property": prop,
-                        "at_room": room, "still_needed_at": sorted(ahead)})
+            # room 0 is MAIN -- a scope, not a place. A degradation there can happen wherever the
+            # player is standing, so widen it exactly as `_sink_rooms` does for global sinks.
+            # KQ4's `Said 'launch'` lives in Main and spends an arrow through `ScriptID 305`, so
+            # this is the difference between seeing the bow's real waste and seeing only its two
+            # legitimate uses.
+            sites = self._sink_rooms({"script": 0, "room": 0}) if room == 0 else [room]
+            for site in sites:
+                ahead = (uses.get(it, set()) - {site}) & self.rooms_after(site)
+                if not ahead:
+                    continue
+                out.append({"pattern": "resource-exhaustion", "item": it,
+                            "item_name": self.g.item_name(it), "property": prop,
+                            "at_room": site, "global_scope": room == 0,
+                            "still_needed_at": sorted(ahead)})
+                if room == 0:
+                    break        # one witness room is enough to condemn a global-scope site
         return out
 
     def requirement_units(self):

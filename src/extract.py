@@ -444,6 +444,44 @@ class Extractor:
                                     out.setdefault(v, set()).add(rn)
         return out
 
+    def scriptid_refs(self):
+        """`(target script, room, guard)` for every `(ScriptID N)` -- SCI's dynamic script load.
+
+        A fourth scope, after Main / region / room. `Main.sc:1116` answers `Said 'launch'` ANYWHERE
+        with `(gEgo setScript: (ScriptID 305 0))`, and script 305 (`shootBow`) is where the arrow is
+        actually spent -- so firing into the air costs an arrow and we could not see it. Two deaths
+        hide the same way: `timeOut` (the 24-hour deadline) and `openPbox` both write the game-over
+        global from scripts that are neither rooms nor regions.
+
+        The reference's PATH CONDITION comes with it, which is what keeps `DebugMenu` (script 801,
+        loaded from Main under a debug gate) from handing the player every item.
+
+        KQ4 has 8 such scripts; LSL2 has ZERO `ScriptID` call sites, so this cannot move it."""
+        out, seen = [], set()
+        for rn, sc in self.ir.scripts.items():
+            if _room_object(sc, self.ir):
+                rooms = [rn]
+            elif rn == 0:
+                rooms = [0]            # Main is a SCOPE; consumers widen room 0 to everywhere
+            else:
+                continue
+            bodies = list(sc.procs.values()) + [b for o in sc.objects for b in o.methods.values()]
+            for b in bodies:
+                def leaf(n, pc, _rooms=rooms):
+                    if n.get("t") != "KernelCall" or n.get("name") != "ScriptID":
+                        return
+                    ks = n.get("kids") or []
+                    tgt = I.as_int(ks[0]) if ks else None
+                    if tgt is None:
+                        return
+                    for room in _rooms:
+                        key = (tgt, room)
+                        if key not in seen:
+                            seen.add(key)
+                            out.append((tgt, room, list(pc)))
+                walk_stream(b, [], leaf)
+        return out
+
     def run(self):
         # room universe: any script that has an rm<N> Room instance
         room_scripts = {n: s for n, s in self.ir.scripts.items() if _room_object(s, self.ir)}
@@ -464,6 +502,21 @@ class Extractor:
                         self._walk(room, meth_ast, [], rgn, set(),
                                    movement=(mname != "changeState"))
                 self._cur_obj = ""
+        # SCRIPTS LOADED BY `ScriptID` -- see scriptid_refs. Walked with the referencing site's
+        # path condition, in the scope that loaded them.
+        for tgt, room, pc in self.scriptid_refs():
+            ts_ = self.ir.scripts.get(tgt)
+            # `(ScriptID 0 N)` is how a room reaches MAIN's public procedures -- Main is already
+            # its own scope, and walking it into every referencing room attributed its debug
+            # cheat block to 25 rooms.
+            if ts_ is None or tgt == 0 or tgt in room_scripts or tgt in regions:
+                continue
+            for o in ts_.objects:
+                self._cur_obj = o.name
+                for mname, meth_ast in o.methods.items():
+                    self._walk(room, meth_ast, list(pc), tgt, set(),
+                               movement=(mname != "changeState"))
+            self._cur_obj = ""
         for n, s in room_scripts.items():
             self._nav_edges(n, s)
             for o in s.objects:

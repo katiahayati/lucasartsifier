@@ -22,7 +22,7 @@ Useful item numbers (`newInvItem` declaration order in `Main.sc`, 0-indexed):
 
 ---
 
-## 1. Can Cupid's arrows actually be WASTED?  ← the open one
+## 1. Cupid's arrows — ANSWERED 2026-07-22: YES, wasteable. Found in source.
 
 **Why it matters.** The user's original claim was *"you can waste Cupid's arrows before needing the
 last one for Lolotte."* Source confirms a two-arrow budget with two consumers and no visible slack,
@@ -44,16 +44,24 @@ What we could NOT find: a site that consumes an arrow for nothing. A MISS does n
 sits inside the `(global125 inRect: 0 0 319 189)` hit branch, and the `else` is just a message. And
 after the first hit `uniActions changeState: 10` runs, which looks like it ends the encounter.
 
-**To check in play:**
-- [ ] Shoot at the unicorn and MISS (fire while it is off-screen). Does the arrow count go up?
-      Check by trying to shoot Lolotte afterwards, or `showSelf` on the bow.
-- [ ] After hitting the unicorn once, can you shoot it AGAIN? If yes, that is the waste.
-- [ ] Is there any third thing you can shoot? (`Said 'launch/arrow...'` handlers elsewhere.)
-- [ ] Fire twice at anything, then reach Lolotte: does `Room82` message 33 appear?
+**ANSWER: there is a THIRD consumer, and it is global.**
 
-**What the answer changes.** If arrows can be wasted, `resource_exhaustion` is right to flag the bow
-and the patch should refuse the wasting shot. If they cannot, the two-arrow budget is exact-fit by
-design and the bow row is a false positive to be removed.
+```lisp
+Main.sc:1116   ((Said 'launch')                                     ; ANYWHERE in the game
+                 (cond ((not (gEgo has: 14))        msg22)
+                       ((>= ((Inv at: 14) loop:) 2) msg23)          ; out of arrows
+                       (...)  (gEgo setScript: (ScriptID 305 0))))  ; -> shootBow
+shootBow.sc:48   ((Inv at: 14) loop: (+ ((Inv at: 14) loop:) 1))     ; spends one
+```
+
+So `shoot bow` fires an arrow **wherever you are, at nothing**, and it is gone. Two arrows, three
+consumers, and the third is unlimited. The user's original recollection was right, and their later
+"you can only use the bow once on the unicorn" is ALSO right -- different things.
+
+`resource_exhaustion` now reports it: *"Cupid's_Bow one-way at rm1, still needed at [20,26,27,82],
+[ANYWHERE -- Main scope]"*. Still worth one confirmation in play:
+
+- [ ] Type `shoot bow` twice anywhere, then reach Lolotte at rm82. Message 33 expected.
 
 ---
 
