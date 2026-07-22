@@ -119,7 +119,17 @@ def _tests_achievement(em, rooms):
 
     A death does not check your inventory; it just ends. A victory does -- that is what makes it a
     victory rather than a stop. KQ4's rm694 is `(if (gEgo has: 25) <cure your father> else <watch
-    him die>)`, while rm692, the marry-Edgar ending, tests nothing at all."""
+    him die>)`, while rm692, the marry-Edgar ending, tests nothing at all.
+
+    Tested against a rival hypothesis and kept. The rival: a losing end offers the player
+    Restore/Restart/Quit and a winning one does not, which would ground the test in engine
+    vocabulary instead of an inference about game design. It is false -- NO ending room offers that
+    dialog in either game, because it is centralised in `Main::doit` behind the game-over global,
+    which is the same reason goal discovery needed a fallback at all. What the comparison did show
+    is that `has:` occurs in KQ4's winning ending and nowhere in its losing one, and that the
+    winner alone CONSUMES what it asked for (`Room694.sc:197`, `(gEgo put: 25 999)`). So this is
+    the only structural difference between the two, not a convenient one. A third game would
+    stress it properly."""
     from guard_ast import GAnd, GOr, GNot, Pred
     def owns(g):
         if isinstance(g, list):
