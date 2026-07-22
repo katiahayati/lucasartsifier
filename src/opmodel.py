@@ -114,6 +114,21 @@ class OpEmitter:
                                     v = _int(p.get("value"))
                                     if v is not None:
                                         self.region_rooms.setdefault(v, set()).add(rn)
+        # Hoisted above the init/machine pass: `_init_writes` records room-LOCAL
+        # seeds too, and it runs first.
+        self.handler_writes = []       # (room, script, gi, val, guard)  -- script for CTR-local resolve
+        self.handler_gets = []         # (room, script, item, guard)
+        self.handler_drops = []        # (room, script, item, guard) -- `gEgo put: N -1` in a
+        #   handler. Consuming an item requires owning it; the Pamphlet handed to the bore on
+        #   the plane (rm62) is a Said-handler consumption, invisible to the machine-body scan.
+        self.handler_moves = []        # (room, script, item, dest, guard) -- the same transfers as
+        #   gets/drops, but keeping the DESTINATION that `put:`/`moveTo:` carry. KQ4 uses
+        #   pseudo-room numbers as item states (206 unplaced, 666 on the hook, 777 eaten,
+        #   999 destroyed), so `where did it go` separates "elsewhere" from "gone" -- see
+        #   `item_moves_to_world`, which is what keeps a bird placing a worm out of the
+        #   dangerous-sink report.
+        self.handler_locals = []       # (room, script, (vt,idx), val, guard)
+
         for rn, s in ir.scripts.items():
             # A region's machines run in the rooms that activate it, exactly as its handlers do
             # (below). Lifting them only for real rooms dropped 12 of KQ4's region scripts whole
@@ -145,18 +160,6 @@ class OpEmitter:
         # when the player says "lower lifeboats"). Guard = the path condition (Said/opaque
         # permissive). Without these, promoted gates like `gLoweredLifeboats!=0` can never
         # open. Same shape as the disguise's gCurrentEgoView.
-        self.handler_writes = []       # (room, script, gi, val, guard)  -- script for CTR-local resolve
-        self.handler_gets = []         # (room, script, item, guard)
-        self.handler_drops = []        # (room, script, item, guard) -- `gEgo put: N -1` in a
-        #   handler. Consuming an item requires owning it; the Pamphlet handed to the bore on
-        #   the plane (rm62) is a Said-handler consumption, invisible to the machine-body scan.
-        self.handler_moves = []        # (room, script, item, dest, guard) -- the same transfers as
-        #   gets/drops, but keeping the DESTINATION that `put:`/`moveTo:` carry. KQ4 uses
-        #   pseudo-room numbers as item states (206 unplaced, 666 on the hook, 777 eaten,
-        #   999 destroyed), so `where did it go` separates "elsewhere" from "gone" -- see
-        #   `item_moves_to_world`, which is what keeps a bird placing a worm out of the
-        #   dangerous-sink report.
-        self.handler_locals = []       # (room, script, (vt,idx), val, guard)
         for rn, s in ir.scripts.items():
             # target rooms: a region script's effects apply in the rooms that activate it;
             # a real room's in itself. (A region "room" R is never entered directly.)
@@ -532,7 +535,10 @@ class OpEmitter:
         self._hwalk(room, tgt_script, body, pc, seen | {name})
 
     def _init_writes(self, room, script):
-        obj = script.by_name.get(f"rm{room}")
+        # `by_name["rm<N>"]` -- the LSL2 decompiler naming convention, for the FOURTH time. KQ4
+        # names its rooms `Room<N>`, so NO KQ4 room's `init` was ever walked: every entry write,
+        # global or local, was missing. `_room_object` asks about inheritance instead.
+        obj = _room_object(script, self.ir)
         if obj is None or "init" not in obj.methods:
             return
         # Entry global writes WITH their path condition, FOLLOWING calls (e.g. proc0_2 =
@@ -551,6 +557,25 @@ class OpEmitter:
 
     def _init_leaf(self, room, script, node, pc, seen):
         tp = node["t"]
+        # ROOM LOCALS set in init. Dropped until now, and that is where a room's own state is
+        # seeded: KQ4's ocean (rm31) is a 2-D grid in local1/local2, and `init` chooses the cell
+        # from `(switch global12 ...)` -- which previous room you came from. With switch case
+        # labels now modelled as guards (see ir.control_shape), those seeds carry
+        # `global12 == 44` and the like, which is exactly the fact that the whale's belly puts
+        # you one step from the island.
+        if tp == "Assignment" and I.is_local_or_temp(node["kids"][0]):
+            d, src = node["kids"][0], node["kids"][1]
+            v = _int(src.get("value"))
+            self.handler_locals.append((room, script, (d["vtype"][0], d["index"]),
+                                        v, _conj_atoms(pc)))
+        elif tp == "Increment" and I.is_local_or_temp(node["kids"][0]):
+            d = node["kids"][0]
+            self.handler_locals.append((room, script, (d["vtype"][0], d["index"]),
+                                        ("inc",), _conj_atoms(pc)))
+        elif tp == "Decrement" and I.is_local_or_temp(node["kids"][0]):
+            d = node["kids"][0]
+            self.handler_locals.append((room, script, (d["vtype"][0], d["index"]),
+                                        ("dec",), _conj_atoms(pc)))
         if tp == "Assignment" and I.is_global(node["kids"][0]):
             gi, v = node["kids"][0]["index"], _int(node["kids"][1].get("value"))
             if v is not None and not self.is_death(gi, v):
