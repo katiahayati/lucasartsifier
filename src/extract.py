@@ -419,11 +419,51 @@ class Extractor:
             for name, body in s.procs.items():
                 self.procs_by[(rn, name)] = body
 
+    def region_members(self):
+        """region-script -> the rooms that activate it, from `(self setRegions: R)` in a room.
+
+        The same map `opmodel` builds. It lives in both because both walk: opmodel picks up a
+        region's HANDLER effects, and this walker picks up its edges, acquisitions and item
+        properties -- and until now this half simply did not run, so `regUnicorn`'s arrow spend
+        was invisible and `resource_exhaustion` reported the bow's direction backwards."""
+        out = {}
+        for rn, s in self.ir.scripts.items():
+            room = _room_object(s, self.ir)
+            if room is None:
+                continue
+            for _mn, a in room.methods.items():
+                for n in I.walk(a):
+                    if n.get("t") != "Send":
+                        continue
+                    recv, msgs = I.send_pairs(n)
+                    for sel, params in msgs:
+                        if sel == "setRegions":
+                            for p in params:
+                                v = I.as_int(p)
+                                if v is not None:
+                                    out.setdefault(v, set()).add(rn)
+        return out
+
     def run(self):
         # room universe: any script that has an rm<N> Room instance
         room_scripts = {n: s for n, s in self.ir.scripts.items() if _room_object(s, self.ir)}
         for n in room_scripts:
             self.ts.rooms.add(n)
+        # A region's scripts run in the rooms that activate it -- SCI's middle dispatch scope.
+        # Walked with the DECLARING room as context, so an acquisition or a property write inside
+        # a region is attributed where the player actually is.
+        regions = self.region_members()
+        for rgn, members in sorted(regions.items()):
+            rs = self.ir.scripts.get(rgn)
+            if rs is None or rgn in room_scripts:
+                continue
+            for room in sorted(members):
+                for o in rs.objects:
+                    self._cur_obj = o.name
+                    for mname, meth_ast in o.methods.items():
+                        self._walk(room, meth_ast, [], rgn, set(),
+                                   movement=(mname != "changeState"))
+                self._cur_obj = ""
         for n, s in room_scripts.items():
             self._nav_edges(n, s)
             for o in s.objects:
