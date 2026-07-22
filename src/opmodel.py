@@ -332,7 +332,7 @@ class OpEmitter:
         for K, steps in steps_by_state.items():
             paths = []
             for st in steps:
-                if st.writes or st.gets or st.trans[0] in ("EXIT", "DEATH"):
+                if C.step_effects(st) or st.trans[0] in ("EXIT", "DEATH"):
                     has_effect = True
                 paths.append((st.guard, st.writes, st.gets, st.counters, st.trans))
             states[K] = paths
@@ -369,6 +369,14 @@ class OpEmitter:
                     continue
                 drops |= set(st.drops)
         if not has_effect:
+            return None
+        # ...and it must be able to RUN. A machine whose `start` is not among its own states and
+        # which nothing ever enters can never execute, so modelling it would contribute phantom
+        # edges, sources and requirements -- the very bypass the start-state fall-through hack
+        # used to create. Separate question from `has_effect`, and keeping them separate is what
+        # surfaced this: widening the effect test alone resurrected rm43's MDscript, which drops
+        # an item and has no way in.
+        if m.start not in states and not m.entries and not m.init_entries:
             return None
         # which exits this machine can actually DELIVER (control_exits): a changeState
         # newRoom target the machine cannot walk to needs a flat fallback so the room

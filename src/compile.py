@@ -192,6 +192,20 @@ def carry_cues(steps_by_state, start):
         surplus = min(max(0, surplus + st.cues - 1) for st in flow)   # least carry (conservative)
 
 
+def step_effects(st):
+    """Everything this step CHANGES, transition aside. ONE definition, consulted everywhere.
+
+    `compress_chains` (which DELETES states it judges unobservable) and `opmodel._machine_info`
+    (which drops whole machines) each carried their own list, and each list was written when the
+    model had fewer stores. Neither counted `drops` or `moves`, so a state whose only effect was
+    LOSING an item read as nothing at all: 4 such states in LSL2 (rm26 Cruise_Ticket, rm61
+    Airline_Ticket, rm72 Stout_Stick, rm116 Million_Dollar_Bill) and 6 in KQ4, including rm15's
+    frogActions dropping the Gold_Ball.
+
+    Whenever a new store is added, this is the function to revisit -- and now it is the only one."""
+    return bool(st.writes or st.gets or st.drops or st.moves or st.counters)
+
+
 def compress_chains(steps_by_state, entry_states, start):
     """Collapse maximal runs of effect-free unconditional ADVANCE states into a single hop.
 
@@ -209,8 +223,7 @@ def compress_chains(steps_by_state, entry_states, start):
         if not sts or len(sts) != 1:
             return False
         st = sts[0]
-        return (st.trans == ("ADVANCE",) and not st.guard and not st.writes
-                and not st.gets and not st.counters
+        return (st.trans == ("ADVANCE",) and not st.guard and not step_effects(st)
                 and J not in entry_states and J != start)
 
     def skip(J):
