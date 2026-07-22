@@ -20,6 +20,7 @@ import os
 from dataclasses import dataclass, field
 
 import ir as I
+import vocab as V
 from guard_ast import GAnd, GOr, GNot, Pred
 
 G_EGO = 0        # gEgo   (get:/put:/has: receiver)  -- confirmed by IR survey
@@ -110,53 +111,43 @@ def _at_item(n):
     return None
 
 
-# ---- the item-LOCATION store, written two ways ---------------------------
-# SCI moves an inventory item by setting its OWNER, and the games spell that differently:
-# LSL2 sends the EGO `get:`/`put:`, KQ4 sends the ITEM `moveTo:`. They are one operation --
-# `get: N` IS `(item N) moveTo: gEgo` -- and we read only the first spelling, so KQ4's
-# Dead_Fish, whose ONLY acquisition is `((Inv at: 24) moveTo: gEgo)` (Room95.sc:673), did not
-# exist in our model at all. It is not a KQ4-only idiom either: LSL2 destroys the Soap with
-# `((global9 at: 18) moveTo: -1)` at rm48 and rm71, which we have always missed.
+# ---- the item-LOCATION store: DERIVED, not catalogued ---------------------
+# We used to hand-write a recogniser per spelling -- `gEgo get:`, `gEgo put:`, `(Inv at: N)
+# moveTo:`, a raw `owner:` write -- and each new game produced another one. They are not four
+# idioms. They are ONE property write, and the game says so in its own class table:
 #
-# The DESTINATION is the second half, and `put:` has always discarded it. KQ4 uses pseudo-room
-# numbers as item STATES -- 206 not-yet-appeared, 23/29 lying on the ground, 666 baited on the
-# hook, 777 eaten, 207 given to the pelican, 999 destroyed -- so "where did it go" is the whole
-# difference between an item that is merely elsewhere and one that is gone. We return the raw
-# destination and let callers decide what a number means; only smv_emit3 knows the room set.
-EGO = "ego"      # destination sentinel: the item is now HELD
+#     (class InvI of Obj  (properties ... owner 0 loop 0 ...)
+#       (method (ownedBy param1) (return (== owner param1)))       ; READ  the location
+#       (method (moveTo param1)  (= owner param1) (return self)))  ; WRITE the location
+#
+#     (class Ego ... (method (put param1 param2) ((global9 at: param1) moveTo: ...)))
+#
+# vocab.Vocabulary reads that and derives which selectors move an item and where the item and
+# destination sit in each. Both games independently yield the same table, and the two exclusions
+# the hand-written version made by eye (Window's same-named `moveTo: x y`) fall out of the
+# receiver and arity of the class's own method. See docs/HOW-IT-WORKS and TODO A0.
+EGO = V.EGO      # destination sentinel: the item is now HELD
+
+_VOCAB = None    # installed by extract(); one game per process
+
+
+def install_vocabulary(ir):
+    """Derive this game's item-location vocabulary. Returns it, or None if the game has no
+    recognisable store -- which is a finding, not something to paper over with a default."""
+    global _VOCAB
+    _VOCAB = V.Vocabulary.from_ir(ir)
+    return _VOCAB
 
 
 def item_transfer(recv, sel, params):
-    """An inventory-transfer send -> `(item, dest)`, else None.
+    """An inventory-transfer send -> `(item, dest)`, else None. `dest` is EGO or an int
+    (a room number, real or pseudo; -1 = nowhere, SCI's own idiom).
 
-    `dest` is EGO or an int (a room number, real or pseudo; -1 = nowhere, SCI's own idiom).
-    Recognises all three spellings:  `gEgo get: N`  /  `gEgo put: N D`  /  `(Inv at: N) moveTo: D`.
-    """
-    if sel in ("get", "put") and I.is_global(recv, G_EGO) and params:
-        it = I.as_int(params[0])
-        if it is None:
-            return None
-        if sel == "get":
-            return (it, EGO)
-        # `put: N D` -- D defaults to NOWHERE when omitted, which is how LSL2 writes it.
-        if len(params) < 2:
-            return (it, -1)
-        if I.is_global(params[1], G_EGO):
-            return (it, EGO)
-        d = I.as_int(params[1])
-        return (it, d if d is not None else -1)
-    # `(Inv at: N) moveTo: D`. The `_at_item` receiver test is what keeps this off the
-    # Window/View `moveTo: x y` selector, which is a completely unrelated screen-position send
-    # (LSL2's dialog code uses it 30-odd times with two coordinate arguments).
-    if sel == "moveTo" and len(params) == 1:
-        it = _at_item(recv)
-        if it is None:
-            return None
-        if I.is_global(params[0], G_EGO):
-            return (it, EGO)
-        d = I.as_int(params[0])
-        return (it, d) if d is not None else None
-    return None
+    The selector table is DERIVED per game -- see install_vocabulary. What stays here is the one
+    structural fact that is not vocabulary: how an item is REFERRED to, `(<inv> at: N)`."""
+    if _VOCAB is None:
+        return None
+    return _VOCAB.transfer(recv, sel, params, _at_item)
 
 
 def _send_atom(n):
@@ -556,12 +547,12 @@ class Extractor:
         self._record_arming(room, node, pc)
         recv, msgs = I.send_pairs(node)
         for sel, params in msgs:
-            # `(<item> owner: <where>)` -- the item-location store written as a RAW PROPERTY, the
-            # third spelling after `gEgo get:/put:` and `(Inv at: N) moveTo:`. Only read inside a
-            # list walk, where it means the whole inventory at once: KQ4's Room92 confiscates
-            # everything to room 89 and Room89's cupboard hands it all back. `owner:` is also a
-            # Sound property (`(trollMusic owner: self)`), which the destination test excludes.
-            if sel == "owner" and params and self._list_loop:
+            # The store property written DIRECTLY, bypassing its own accessor -- and inside a
+            # list walk, so it means the whole inventory at once: KQ4's Room92 confiscates
+            # everything to room 89 and Room89's cupboard hands it all back. The property name
+            # comes from the derived vocabulary, not from us; `owner:` is also a Sound property
+            # (`(trollMusic owner: self)`), which the destination test excludes.
+            if _VOCAB is not None and sel == _VOCAB.prop and params and self._list_loop:
                 d = params[0]
                 dest = (EGO if I.is_global(d, G_EGO)
                         else I.as_int(d) if I.as_int(d) is not None else None)
@@ -579,11 +570,14 @@ class Extractor:
                     if dst is not None:
                         (self.ts.edges if movement else self.ts.cs_edges).append(
                             Edge(room, dst, _conj(pc), self._cur_obj))
-            elif sel == "get" and I.is_global(recv, G_EGO) and params:
-                it = I.as_int(params[0])
-                if it is not None:
-                    self.ts.items.add(it)
-                    self.ts.acqs.append(Acq(it, room, _conj(pc)))
+            else:
+                # ACQUISITION -- the last hardcoded `sel == "get"` here is gone too: whether a
+                # send hands the player an item is a question for the derived vocabulary, not a
+                # selector name we happen to know.
+                tr = item_transfer(recv, sel, params)
+                if tr is not None and tr[1] == EGO:
+                    self.ts.items.add(tr[0])
+                    self.ts.acqs.append(Acq(tr[0], room, _conj(pc)))
 
     def _global_room_values(self, room, gi):
         """Room numbers a `newRoom:` global can hold, from switch-on-G case labels and
@@ -619,6 +613,7 @@ class Extractor:
 
 
 def extract(ir):
+    install_vocabulary(ir)      # derive this game's item-transfer selectors first
     return Extractor(ir).run()
 
 

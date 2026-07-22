@@ -56,7 +56,22 @@ def _transfer(node):
 
 def test_item_transfer():
     print("Part 1: item_transfer -- both spellings of the item-location store")
+    import os, config, ir as I, extract2 as X
     from extract2 import EGO
+    # The selector table is DERIVED from the game's class table now, not hardcoded, so a
+    # vocabulary has to be installed before any of this means anything. Synthetic CALL SITES
+    # against a real derived vocabulary -- which is a better test than synthetic both ends.
+    if not os.path.exists(config.LSL2.ir_path):
+        print("  (skip: no LSL2 IR to derive a vocabulary from)")
+        return
+    v = X.install_vocabulary(I.load_ir(config.LSL2.ir_path))
+    check("a vocabulary is derived at all", v is not None, repr(v))
+    if v is None:
+        return
+    check("...naming the store and its accessors", v.prop == "owner"
+          and "moveTo" in v.writes and "ownedBy" in v.reads, v.describe())
+    check("...and the game's own wrappers over them", {"get", "put"} <= set(v.writes),
+          sorted(v.writes))
 
     # -- LSL2's spelling: the EGO is the receiver -------------------------
     check("gEgo get: 9 -> (9, EGO)",
