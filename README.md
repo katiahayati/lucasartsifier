@@ -77,17 +77,27 @@ rather than declared; see `src/anchors.py`.
 
 ## Limits
 
-- **One game is genuinely validated.** KQ4 runs end to end (110 rooms) and reports no stranded-item
-  softlocks, consistent with an earlier independent analysis — but it has never been play-tested.
-- **One softlock class.** Item stranding, plus item-destroying dead-end actions. Positional deaths
-  and required *actions* (KQ5's throw-the-shoe-at-the-cat) are out of scope.
-- **Deaths are deliberately left in.** They are usually informative, often funny, and Al Lowe's
-  "Save Early, Save Often!" still applies. What this removes is the case where you cannot know
-  anything is wrong until hours later.
-- **Two constants are declared per game**: the death signal and the debug globals. Checked across
-  two games they share neither index nor shape, so deriving a rule from them would be overfitting.
-  Both matter: KQ4's debug flag lets the copy-protection screen warp to any room you type, which
-  unpinned would make every room reachable from the start.
+- **One game is genuinely validated.** KQ4 runs end to end (110 rooms) and now reports findings of
+  its own — stranded items, a wasteable one, finite items spent by ordinary use — several of them
+  confirmed against the player's own knowledge of the game. But it has never been play-tested, and
+  play-testing is the only oracle a new title has.
+- **Required *actions* are out of scope** (KQ5's throw-the-shoe-at-the-cat). What is in scope has
+  turned out to be one rule rather than several: a transition must not be taken while something it
+  needs is still required and no longer obtainable. That covers a room edge, a plot flag advancing,
+  and an event the player does not control — a whale that swallows you, nightfall.
+- **Some deaths are deliberately left in** — the ones you can still avoid from where you are. Walk
+  onto the KGB beach without the disguise and you die; we allow that, because every piece of the
+  disguise is still reachable from that screen. Reach the raft without sunscreen and you also die,
+  but by then the sunscreen is hours behind you in Los Angeles — so we refuse the crossing that
+  stranded it, and refuse it at the cruise ship. The test is the same one used for softlocks: is
+  what you need still obtainable? Whether failing it kills you or merely leaves you stuck does not
+  change the answer or the fix. Al Lowe's "Save Early, Save Often!" still applies.
+- **Nothing game-specific is declared any more** — not the start room, the victory room, the death
+  signal, or the debug flag. `config.py` holds paths and optional overrides. The death signal is the
+  global the Game class tests on its way to offering Restore/Restart/Quit; the debug flag is the one
+  a menu toggles with `^=`. Both reproduce the values we used to hand-write. That matters more than
+  it sounds: KQ4's debug flag lets the copy-protection screen warp to any room you type, and
+  unpinned it would make every room reachable from the start.
 - **Five defects were found by playing** that no static check caught — misleading refusal text, a
   self-contradicting message, an infinite loop, and a whole class of item destruction living in a
   globally-active script. Verification proved the guards closed every *detected* softlock and
