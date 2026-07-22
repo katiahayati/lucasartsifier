@@ -34,8 +34,24 @@ sys.path.insert(0, ".")
 
 SRC = os.path.dirname(os.path.abspath(__file__))
 
-# Every file that walks the IR -- each is a place a construct could be recognised.
-WALKERS = ["extract2.py", "smv_emit3.py", "compile2.py", "machine2.py", "vocab.py"]
+def _walker_files():
+    """Every file that walks IR nodes -- DERIVED, not listed.
+
+    A hardcoded list is the same catalogue bug this whole test exists to catch: a seventh walker
+    added later would simply not be checked. A file is a walker if it touches IR node structure.
+    `ir.py` is excluded because it IS the classifier they all consume."""
+    out = []
+    for name in sorted(os.listdir(SRC)):
+        if not name.endswith(".py") or name.startswith("test_") or name == "ir.py":
+            continue
+        with open(os.path.join(SRC, name)) as f:
+            text = f.read()
+        if any(k in text for k in ('["t"]', '.get("t")', '["kids"]', 'get("kids"')):
+            out.append(name)
+    return out
+
+
+WALKERS = _walker_files()
 
 _SUBJ = (r'(?:sel|tp|t|pair\[0\]|mn|mname|'
          r'(?:n|x|y|k|m|node|param)\s*(?:\.get\("t"\)|\["t"\]))')

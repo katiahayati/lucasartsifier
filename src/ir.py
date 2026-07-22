@@ -128,14 +128,22 @@ def send_pairs(send):
 # over both shipped games; anything outside it makes `control_shape` return ("unknown", t) so a
 # third title fails visibly rather than quietly analysing less. See test_walkers.
 
-KNOWN_NODES = frozenset({
-    # statements / control
-    "List", "If", "Cond", "Case", "Else", "Switch", "Loop", "Break", "BreakIf", "Continue",
-    "Return",
+# LEAF nodes carry no control flow of their own: effects, operands, operators, and the
+# no-body jumps. Everything NOT listed here and not handled as control below comes back as
+# ("unknown", t) -- LOUD.
+#
+# The split matters. An earlier cut had one KNOWN_NODES set doing double duty ("we have seen it"
+# AND "treat it as a leaf"), which means adding a new CONTROL form to silence an error would
+# quietly make its contents vanish. That is exactly what `Loop` did to us twice. Here a control
+# form you have not classified cannot be silenced by adding it to a list -- it has to be
+# classified.
+LEAF_NODES = frozenset({
     # effects
     "Send", "SendMessage", "Assignment", "Increment", "Decrement", "PublicCall", "LocalCall",
     "KernelCall", "AssignmentAdd", "AssignmentSub", "AssignmentXor", "AssignmentBinOr",
     "AssignmentBinAnd",
+    # jumps with no contained statements
+    "Break", "BreakIf", "Continue", "Return",
     # operands / expressions
     "Number", "String", "Variable", "ComplexVariable", "Property", "Object", "Self", "Super",
     "Selector", "Class", "AddressOf", "Rest", "Said",
@@ -195,7 +203,10 @@ def control_shape(node):
     if t == "Loop":
         return ("loop", ks[0] if len(ks) > 0 else None, ks[1] if len(ks) > 1 else None,
                 ks[2] if len(ks) > 2 else None, ks[3] if len(ks) > 3 else None)
-    if t in KNOWN_NODES:
+    if t in ("Case", "Else"):
+        # normally consumed by their Cond/Switch parent; classified so a direct visit descends
+        return ("seq", ks)
+    if t in LEAF_NODES:
         return ("leaf",)
     return ("unknown", t)
 
