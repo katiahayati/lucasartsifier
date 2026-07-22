@@ -258,6 +258,43 @@ def _room_species(ir):
     return species
 
 
+def pending_room_global(ir):
+    """The global that IS `newRoom:` at the engine level, or None.
+
+    DISCOVERED, not declared. Every SCI0 Game loop contains the same shape --
+
+        (if (!= <pending> <current>) (self newRoom: <pending>))
+
+    -- so the pending-room global is the one that is (a) compared against another global and
+    (b) handed to `newRoom:` inside that comparison's body. Both LSL2 and KQ4 land on global13,
+    but by derivation rather than coincidence, and the test does not confuse it with a plain
+    room-valued global like LSL2's revolving-door `gRmAfter40`: that one is never compared
+    against the current-room global."""
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for body in o.methods.values():
+                for n in I.walk(body):
+                    if n.get("t") != "If":
+                        continue
+                    ks = n.get("kids") or []
+                    test = ks[0] if ks else None
+                    if not test or test.get("t") != "Ne":
+                        continue
+                    tk = test.get("kids") or []
+                    if len(tk) < 2 or not (I.is_global(tk[0]) and I.is_global(tk[1])):
+                        continue
+                    pair = {tk[0]["index"], tk[1]["index"]}
+                    for m in I.walk(ks[1] if len(ks) > 1 else None):
+                        if m.get("t") != "Send":
+                            continue
+                        _recv, msgs = I.send_pairs(m)
+                        for sel, params in msgs:
+                            if (sel == "newRoom" and params and I.is_global(params[0])
+                                    and params[0]["index"] in pair):
+                                return params[0]["index"]
+    return None
+
+
 def _room_object(script, ir=None):
     """The Room instance of a room script: an instance of the Rm/Room class, else named rm<N>."""
     if ir is not None:
@@ -279,6 +316,7 @@ class Extractor:
         self.ts = TS()
         self._cur_obj = ""                  # object whose method is being walked
         self._armed = {}                    # room -> {object name: [guard, ...]}
+        self._pending = pending_room_global(ir)
         self.procs_by = {}
         for rn, s in ir.scripts.items():
             for name, body in s.procs.items():
@@ -401,6 +439,7 @@ class Extractor:
             self._send_effect(room, node, pc, movement)
         elif tp == "Assignment" and movement:
             self._nav_assignment(room, node, pc)
+            self._pending_room_assignment(room, node, pc)
         elif tp in ("PublicCall", "LocalCall"):
             tgt = node.get("script", script)
             name = node.get("name")
@@ -409,6 +448,33 @@ class Extractor:
                 self._walk(room, body, pc, tgt, seen | {name}, movement)
         for k in node.get("kids", ()):
             self._walk(room, k, pc, script, seen, movement)
+
+    def _pending_room_assignment(self, room, node, pc):
+        """`(= gNewRoomNum 57)` -- a room change written at the engine level instead of as
+        `newRoom:`.
+
+        SCI's Game loop is literally
+
+            (if (!= global13 global11)          ; Game.sc, in both LSL2 and KQ4
+                (self newRoom: global13))
+
+        so assigning that global IS `newRoom:`, one layer down. KQ4 uses it 20 times and LSL2
+        never, which is why it went unnoticed -- and it is not a corner case there: rm6 enters the
+        witches' cave with `(= global13 57)` on a control-colour test, so rm57 had NO in-edges at
+        all. That in turn made rm57 look "sealed" in the day/night analysis and, worse, let start
+        discovery anchor on a room nothing can reach.
+
+        Same family as the revolving door (`newRoom: <global>`) we already resolve, approached from
+        the other side: there the destination was in a variable, here the whole call is."""
+        if self._pending is None:
+            return
+        kids = node.get("kids") or []
+        if len(kids) < 2 or not I.is_global(kids[0], self._pending):
+            return
+        dst = I.as_int(kids[1])
+        if dst is None or dst == 0 or dst == 0xffff:
+            return
+        self.ts.edges.append(Edge(room, dst, _conj(pc), self._cur_obj))
 
     def _nav_assignment(self, room, node, pc):
         """`(= north 5)` -- a walk-off exit set by ASSIGNING the room's own property.

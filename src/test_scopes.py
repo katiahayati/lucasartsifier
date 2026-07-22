@@ -1,5 +1,5 @@
-"""Unit tests for the two EXTRACTION SCOPES that were silently empty, using synthetic AST
-fragments so each part is checked without an end-to-end run. Run: python3 test_scopes.py
+"""Unit tests for the extraction gaps that were silently EMPTY rather than wrong, using synthetic AST
+fragments where possible so each part is checked without an end-to-end run. Run: python3 test_scopes.py
 
 Every part here fixes something that was silently EMPTY rather than wrong -- the failure mode
 this project keeps hitting, where an LSL2 spelling is the only one implemented and a second game
@@ -15,8 +15,9 @@ produces a confident wrong answer instead of an error.
   3  Main scope     -- script 0 is a scope, not a room, and only LSL2's happened to be walked.
   4  asserts_eq     -- `(if (not gX) ...)` IS an equality test, in both copies of the rule.
   5  cue arming     -- an edge fired from a Prop's `cue` inherits the guard that armed it.
+  6  pending room   -- `(= global13 N)` IS `newRoom: N`, one layer down. KQ4 uses it 20 times.
 
-Parts 2-5 need a real IR and skip cleanly without one; 1, 1b and 4 are pure.
+Parts 2-6 need a real IR and skip cleanly without one; 1, 1b and 4 are pure.
 """
 import sys
 sys.path.insert(0, ".")
@@ -213,6 +214,28 @@ def test_cue_arming():
     check("...and edge_meta agrees (no second copy of the rule)", reqs == [{0}], repr(reqs))
 
 
+def test_pending_room():
+    print("\nPart 6: the pending-room global -- newRoom: written one layer down")
+    import ir as I, config, extract2 as X
+    import os
+    for which, cfg in (("LSL2", config.LSL2), ("KQ4", config.KQ4)):
+        if not os.path.exists(cfg.ir_path):
+            print(f"  (skip {which}: no IR)")
+            continue
+        # DISCOVERED from `(if (!= <pending> <current>) (self newRoom: <pending>))` in the Game
+        # loop, not declared. Both games land on 13 -- by derivation, not by assuming it.
+        g = X.pending_room_global(I.load_ir(cfg.ir_path))
+        check(f"{which}: pending-room global is discovered", g is not None, repr(g))
+    em = real_em("KQ4")
+    if em is None:
+        return
+    # KQ4 enters the witches' cave with `(= global13 57)` on a control-colour test. Without this
+    # rm57 had NO in-edges, which made it look sealed by nightfall AND let start discovery anchor
+    # on a room nothing can reach.
+    ins = {e.src for e in em.ts.edges if e.dst == 57}
+    check("KQ4: rm57 (witches' cave) has an in-edge", bool(ins), f"in-edges from {sorted(ins)}")
+
+
 def run():
     test_item_transfer()
     test_ownedby_spelling()
@@ -220,6 +243,7 @@ def run():
     test_main_scope()
     test_asserts_eq()
     test_cue_arming()
+    test_pending_room()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 
