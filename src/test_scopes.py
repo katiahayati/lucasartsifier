@@ -17,6 +17,7 @@ produces a confident wrong answer instead of an error.
   5  cue arming     -- an edge fired from a Prop's `cue` inherits the guard that armed it.
   6  pending room   -- `(= global13 N)` IS `newRoom: N`, one layer down. KQ4 uses it 20 times.
   7  register flips -- the SECOND softlock class: a flag advances and shuts a region.
+  8  goal discovery -- victory when the game ends wins and losses through one flag.
 
 Parts 2-7 need a real IR and skip cleanly without one; 1, 1b and 4 are pure.
 """
@@ -261,6 +262,28 @@ def test_register_strandings():
     check("no finding has a source inside its own post-flip region", True)
 
 
+def test_goal_discovery():
+    print("\nPart 8: victory is discovered, including when it shares death's flag")
+    import os, dataclasses, config, missability as M, anchors as A
+    for which, cfg, want in (("LSL2", config.LSL2, 86), ("KQ4", config.KQ4, 694)):
+        if not os.path.exists(cfg.ir_path):
+            print(f"  (skip {which}: no IR)")
+            continue
+        em = M.load(cfg=dataclasses.replace(cfg, start_room=0, goal_rooms=frozenset())).em
+        got = sorted(em.cfg.goal_rooms)
+        # KQ4's global127 means "the game is over", not "you died" -- it fires in 33 death rooms
+        # AND in both endings, so the primary rule throws victory out with the losses. The
+        # fallback picks the excluded terminal whose ending TESTS WHAT YOU ACHIEVED.
+        check(f"{which}: goal discovered as rm{want}", got == [want], repr(got))
+    em = real_em("KQ4")
+    if em is None:
+        return
+    # the discriminator itself: the win asks what you are carrying, the loss does not
+    win = A._tests_achievement(em, {692, 694})
+    check("KQ4: rm694 (cure your father) tests achievement", 694 in win, repr(win))
+    check("KQ4: rm692 (marry Edgar) does not", 692 not in win, repr(win))
+
+
 def run():
     test_item_transfer()
     test_ownedby_spelling()
@@ -270,6 +293,7 @@ def run():
     test_cue_arming()
     test_pending_room()
     test_register_strandings()
+    test_goal_discovery()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 

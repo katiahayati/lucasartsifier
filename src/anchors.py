@@ -114,6 +114,35 @@ def discover_start(em, edges=None, entries=None):
     return max(sorted(candidates), key=lambda r: len(reachable(edges, {r})))
 
 
+def _tests_achievement(em, rooms):
+    """Of `rooms`, those whose ending asks WHAT THE PLAYER IS CARRYING.
+
+    A death does not check your inventory; it just ends. A victory does -- that is what makes it a
+    victory rather than a stop. KQ4's rm694 is `(if (gEgo has: 25) <cure your father> else <watch
+    him die>)`, while rm692, the marry-Edgar ending, tests nothing at all."""
+    from guard_ast import GAnd, GOr, GNot, Pred
+    def owns(g):
+        if isinstance(g, list):
+            return any(owns(x) for x in g)
+        if isinstance(g, Pred):
+            return g.kind == "OWN"
+        if isinstance(g, (GAnd, GOr)):
+            return any(owns(k) for k in g.kids)
+        if isinstance(g, GNot):
+            return owns(g.kid)
+        return False
+    out = set()
+    for info in em.machines:
+        if info["room"] not in rooms:
+            continue
+        guards = [g for _K, paths in info["states"].items() for (g, _w, _gg, _c, _tr) in paths]
+        guards += [eg for _K, eg in list(info.get("entries", ()))
+                   + list(info.get("init_entries", ()))]
+        if any(owns(g) for g in guards):
+            out.add(info["room"])
+    return out
+
+
 def discover_goal(em, edges=None, start=None):
     """Terminal, reachable, and never fatal -- the room you reach, cannot leave, and survive."""
     edges = edges if edges is not None else movement_edges(em)
@@ -123,16 +152,27 @@ def discover_goal(em, edges=None, start=None):
     reach = reachable(edges, {start})
     deadly = death_rooms(em)
     rooms = set(em.rooms)
-    out = set()
+    out, excluded = set(), set()
     for r in sorted(reach):
         if r not in rooms or r == 0:               # script 0 is Main, not a location
             continue
         if set(edges.get(r, ())) - {r}:            # still has somewhere to go
             continue
-        if r in deadly:
-            continue
-        out.add(r)
-    return frozenset(out)
+        (excluded if r in deadly else out).add(r)
+    if out:
+        return frozenset(out)
+    # FALLBACK for a game that ends the run through the SAME flag it uses for death. KQ4's
+    # global127 does not mean "you died", it means "the game is over": it is set in 33 death rooms
+    # AND in both endings, so the deadly filter above throws victory out with the losses and
+    # returns nothing. That is the whole reason KQ4's goal has been a declared prototype.
+    #
+    # Among the terminals we just excluded, the ending that TESTS WHAT YOU ACHIEVED is the win.
+    # KQ4's two are rm694 -- `(if (gEgo has: 25) <cure your father> else <watch him die>)` -- and
+    # rm692, the marry-Edgar ending, which asks nothing. Note this makes victory a STATE and not
+    # really a room: rm694 holds both outcomes, and it is the Magic Fruit requirement, captured
+    # separately, that distinguishes them. Naming the room is the honest half of that; see
+    # TODO 6.1 for making the goal a predicate.
+    return frozenset(_tests_achievement(em, excluded))
 
 
 def discover(em):

@@ -54,9 +54,9 @@ class GameConfig:
     # model.py does not parse. Either could change under a perfectly reasonable
     # edit -- a different start anchor, or adding `^=` for completeness -- and the
     # analysis would silently degrade with no test failing. Declare them instead.
-    # QA scaffolding to pin off, by global INDEX. Also not universal: LSL2 gates its debug
-    # item hand-outs on globals 100/111, whereas KQ4 has no debug global at all -- it calls the
-    # SetDebug kernel. An empty set is therefore a legitimate answer, not a missing value.
+    # QA scaffolding to pin off, by global INDEX. Not universal in VALUE but so far universal in
+    # KIND: LSL2 gates its debug item hand-outs on globals 100/111, KQ4 on global215. We once
+    # recorded that KQ4 "has no debug global at all"; that was only true while Main went unwalked.
     debug_globals: frozenset = frozenset()
     # Phase 4 mode-register promotion (closure.py). Empty = OFF (the default): a set
     # of register names to promote into the location state, or "auto" for the
@@ -97,33 +97,14 @@ KQ4 = GameConfig(
     src_dir=os.path.join(_ROOT, "build", "kq4", "src"),
     ir_path=os.path.join(_ROOT, "build", "kq4", "kq4.ir.json"),
     resource_dir="/mnt/i/sierra/kq4",
-    # discover.py proposed start=23; goal confirmed as the Daventry ending where
-    # Rosella cures King Graham (rm694, grahamFace; reached rm693->694, after
-    # gamePhase=endGame(99) is set in rm92 when Lolotte dies).
-    start_room=0,                       # discovered, fine
-    # ========================= PROTOTYPE -- DO NOT KEEP =========================
-    # goal_rooms is DECLARED here only to unblock the KQ4 analysis. It is NOT the
-    # answer, and it must be removed once we know the real one.
-    #
-    # Why discovery cannot find it: KQ4's `global127` does not mean "you died", it
-    # means "the game is over". It is set in 33 death rooms AND in both ending rooms
-    # (Room694.sc:169, Room692.sc:344). anchors.discover_goal excludes death rooms --
-    # correctly, since deaths are terminal too -- so it excludes victory along with
-    # them and returns nothing. One flag, two meanings.
-    #
-    # The real fix is to separate win from lose. Leads, in order of promise:
-    #   1. Main.sc ~795-860 branches inside the global127 handler (`proc0_12 800`
-    #      near 816, a global182 test near 858) -- one may be the discriminator.
-    #   2. A victory-only marker: a score award, or the endGame phase rm92 sets when
-    #      Lolotte dies.
-    #   3. If neither exists, the honest conclusion is that this genuinely cannot be
-    #      derived for KQ4, and the config field is the right home -- but that is a
-    #      finding to establish, not to assume, which is why this is marked.
-    #
-    # Everything derived from this value is provisional. Do not report KQ4 results
-    # as validated while this comment is here.
-    # ============================================================================
-    goal_rooms=frozenset({694}),        # PROTOTYPE (see above)
+    start_room=0,                       # DISCOVERED -> rm99, the room Main.sc:779 starts in
+    # DISCOVERED (anchors.discover_goal), not declared -- the prototype that used to sit here
+    # is gone. It took a second rule to get there: KQ4's global127 means "the game is over", not
+    # "you died", so it fires in 33 death rooms AND in both endings and the primary rule threw
+    # victory out with the losses. Among those excluded terminals, the ending that TESTS WHAT YOU
+    # ACHIEVED is the win -- rm694 is `(if (gEgo has: 25) <cure your father> else <watch him die>)`
+    # while rm692, the marry-Edgar ending, asks nothing. Discovery reproduces rm694 exactly.
+    goal_rooms=frozenset(),
     death_signal=(127, None),
     # global215 is KQ4's debug flag -- the direct analogue of LSL2's gDebugging, found when
     # Main's own methods were finally walked. An earlier note here claimed KQ4 "uses the SetDebug
