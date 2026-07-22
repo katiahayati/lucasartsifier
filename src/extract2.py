@@ -250,6 +250,10 @@ class TS:
     bulk_moves: list = field(default_factory=list)  # (room, dest, guard) -- a transfer of the
     #   WHOLE inventory at once, written as a walk of the Inv list. No item number appears
     #   anywhere, so this is the one case where "no constant" must mean "all of them".
+    item_prop_writes: list = field(default_factory=list)  # (room, item, prop, value, guard);
+    #   value is an int or "inc". The FOURTH store -- state living in an item's own property.
+    #   Breaking the shovel and spending an arrow are written here, and they mean the same thing
+    #   as losing the item: its uses stop accepting it.
 
 
 def _conj(pc):
@@ -580,6 +584,17 @@ class Extractor:
         self._record_arming(room, node, pc)
         recv, msgs = I.send_pairs(node)
         for sel, params in msgs:
+            # A WRITE to a tracked item property -- the FOURTH store. `(Inv at: 15) loop: 1`
+            # breaks the shovel; `(Inv at: 14) loop: (+ (loop:) 1)` spends an arrow. Both mean
+            # the same thing as losing the item, because its uses stop accepting it:
+            #   Room16:249  (if (and (gEgo has: 15) (== 0 ((Inv at: 15) loop:))) ... dig ...)
+            it = _at_item(recv)
+            if params and it is not None and (it, sel) in _IPROPS:
+                v = I.as_int(params[0])
+                if v is None and any(y.get("t") in ("Add", "Sub") for y in I.walk(params[0])):
+                    v = "inc"
+                if v is not None:
+                    self.ts.item_prop_writes.append((room, it, sel, v, _conj(pc)))
             # The store property written DIRECTLY, bypassing its own accessor -- and inside a
             # list walk, so it means the whole inventory at once: KQ4's Room92 confiscates
             # everything to room 89 and Room89's cupboard hands it all back. The property name

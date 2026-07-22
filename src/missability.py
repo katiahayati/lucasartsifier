@@ -127,7 +127,18 @@ def _debug_gated_guard(guard, debug_idx=frozenset()):
     return bool(refs)
 
 
+def _iprop_spec(em):
+    """(item, prop) -> {values, counter} for the fourth store, as extraction discovered it."""
+    import extract2 as X
+    return dict(getattr(X, "_IPROPS", {}))
+
+
+_IPROP_SPEC = {}
+
+
 def build_maps(em):
+    global _IPROP_SPEC
+    _IPROP_SPEC = _iprop_spec(em)
     """(edges, edge_kind, sources, drops, required, guard_required) from the JSON-IR OpEmitter.
 
     `guard_required` is `required` WITHOUT the consumption fallback -- only rooms where the game
@@ -194,6 +205,32 @@ def build_maps(em):
     for room, dest, _g in getattr(em.ts, "bulk_moves", ()):
         for it in all_items:
             (sources if dest == E.EGO else drops)[it].add(room)
+
+    # THE FOURTH STORE. An item's own property can hold state, and putting it into a state the
+    # item's USES reject is the same thing as losing the item:
+    #     Room16:249  (if (and (gEgo has: 15) (== 0 ((Inv at: 15) loop:))) ... dig ...)
+    #     Room16:592  ((Inv at: 15) loop: 1)            -- the shovel breaks, and stays broken
+    #     Room82:625  ((Inv at: 14) loop: (+ ... 1))    -- an arrow is spent, and never comes back
+    # The shovel is a CHAIN, and we currently see only its last link:
+    #     Room16:611  (= local5 (* (- (++ global113) 1) 3))   ++ per hole dug -- INVISIBLE, since
+    #                                                          _hwalk handles Increment on LOCALS
+    #                                                          only, never on globals
+    #     Room16:589  (if (>= global113 5) ...)                ignored -- relational ops are
+    #                                                          deliberately permissive
+    #     Room16:592  ((Inv at: 15) loop: 1)                   recorded, as of this change
+    # so the drop site is right and its CONDITION is not modelled at all. Over-approximating a
+    # loss is the safe direction, but nothing yet turns it into a finding -- see TODO A0g.
+    # so these feed `drops`, not the movement product: nothing about them is a room gate.
+    #
+    # ONE-WAY is the whole question, and the discovered value set answers it without a rule about
+    # `loop`: a property written to exactly one value, or incremented with no reset, cannot be put
+    # back. KQ4's fishing pole writes BOTH 0 and 1 -- you can re-bait it -- so it is excluded, and
+    # excluded for a reason rather than by name.
+    for room, it, prop, val, _g in getattr(em.ts, "item_prop_writes", ()):
+        spec = getattr(E.X, "_IPROPS", {}).get((it, prop)) if hasattr(E, "X") else None
+        spec = spec or _IPROP_SPEC.get((it, prop))
+        if spec and (spec.get("counter") or len(spec.get("values", ())) == 1):
+            drops[it].add(room)
 
     # DROP sites -- where an item can LEAVE your inventory. Declared since the first version but
     # never populated. Needed to place NEGATIVE guard literals: `!own(Spinach_Dip)` may only be
