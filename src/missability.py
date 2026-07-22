@@ -183,6 +183,18 @@ def build_maps(em):
                 for it in gg:
                     sources[it].add(info["room"])
 
+    # BULK transfers -- the whole inventory at once, written as a walk of the Inv list setting
+    # each item's `owner:`. KQ4 confiscates everything at rm92 (captured) and rm81 (the wedding
+    # room) into room 89, and rm89's cupboard hands it all back. No item number appears anywhere
+    # in that code, so this is the one case where "no constant" has to mean "every item".
+    #
+    # Fed to sources/drops only, NOT to the consumption-as-requirement fallback: being taken from
+    # you is not evidence that you needed it there.
+    all_items = set(em.ts.items) | set(sources) | {it for _r, _s, it, _g in em.handler_gets}
+    for room, dest, _g in getattr(em.ts, "bulk_moves", ()):
+        for it in all_items:
+            (sources if dest == E.EGO else drops)[it].add(room)
+
     # DROP sites -- where an item can LEAVE your inventory. Declared since the first version but
     # never populated. Needed to place NEGATIVE guard literals: `!own(Spinach_Dip)` may only be
     # demanded where the dip can still be got rid of (rm131, `throw bread overboard`, +2 score).

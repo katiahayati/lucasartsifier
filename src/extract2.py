@@ -223,6 +223,9 @@ class TS:
     #   guard). The MACHINE owns these; used as a GATED fallback only where the machine
     #   walk can't deliver the exit (control_exits) -- avoids a false dead-end without
     #   reintroducing a free bypass.
+    bulk_moves: list = field(default_factory=list)  # (room, dest, guard) -- a transfer of the
+    #   WHOLE inventory at once, written as a walk of the Inv list. No item number appears
+    #   anywhere, so this is the one case where "no constant" must mean "all of them".
 
 
 def _conj(pc):
@@ -295,6 +298,29 @@ def pending_room_global(ir):
     return None
 
 
+def _walks_a_list(loop):
+    """Does this Loop iterate a linked list -- `(for ((= v (L first:))) v ((= v (L next: v))))`?
+
+    That control shape is what makes an `owner:` write inside the body a BULK transfer rather than
+    a single item's: there is no item number anywhere in
+
+        (for ((= local6 (global9 first:))) local6 ((= local6 (global9 next: local6)))
+          (if (and (= local5 (NodeValue local6)) (== (local5 owner:) gEgo))
+              (local5 owner: 89)))                            ; KQ4 Room92 -- Lolotte's guards
+                                                              ; take EVERYTHING you are carrying
+    Only the init and increment are inspected, never the body, so a body that happens to send
+    `next:` to something cannot make itself bulk."""
+    kids = loop.get("kids") or []
+    for k in kids[:3]:                          # init, test, increment -- NOT the body
+        for n in I.walk(k):
+            if n.get("t") != "Send":
+                continue
+            _recv, msgs = I.send_pairs(n)
+            if any(sel in ("first", "next") for sel, _p in msgs):
+                return True
+    return False
+
+
 def _room_object(script, ir=None):
     """The Room instance of a room script: an instance of the Rm/Room class, else named rm<N>."""
     if ir is not None:
@@ -317,6 +343,7 @@ class Extractor:
         self._cur_obj = ""                  # object whose method is being walked
         self._armed = {}                    # room -> {object name: [guard, ...]}
         self._pending = pending_room_global(ir)
+        self._list_loop = False             # inside a `for` that walks a linked list
         self.procs_by = {}
         for rn, s in ir.scripts.items():
             for name, body in s.procs.items():
@@ -433,7 +460,15 @@ class Extractor:
                     self._walk(room, k["kids"][0], pc + priors, script, seen, movement)
             return
         if tp == "Loop":
-            self._walk(room, node["kids"][0], pc, script, seen, movement)
+            # kids are [init, test, increment, BODY] -- walking only kids[0] dropped every loop
+            # BODY in the game (67 of them in LSL2, 76 in KQ4). That is how KQ4's endgame
+            # confiscation stayed invisible: Room92 takes your whole inventory with a `for` over
+            # the Inv list, and the loop body is where the taking happens.
+            prev = self._list_loop
+            self._list_loop = prev or _walks_a_list(node)
+            for k in node.get("kids", ()):
+                self._walk(room, k, pc, script, seen, movement)
+            self._list_loop = prev
             return
         if tp == "Send":
             self._send_effect(room, node, pc, movement)
@@ -521,6 +556,17 @@ class Extractor:
         self._record_arming(room, node, pc)
         recv, msgs = I.send_pairs(node)
         for sel, params in msgs:
+            # `(<item> owner: <where>)` -- the item-location store written as a RAW PROPERTY, the
+            # third spelling after `gEgo get:/put:` and `(Inv at: N) moveTo:`. Only read inside a
+            # list walk, where it means the whole inventory at once: KQ4's Room92 confiscates
+            # everything to room 89 and Room89's cupboard hands it all back. `owner:` is also a
+            # Sound property (`(trollMusic owner: self)`), which the destination test excludes.
+            if sel == "owner" and params and self._list_loop:
+                d = params[0]
+                dest = (EGO if I.is_global(d, G_EGO)
+                        else I.as_int(d) if I.as_int(d) is not None else None)
+                if dest is not None:
+                    self.ts.bulk_moves.append((room, dest, _conj(pc)))
             if sel in ("newRoom", "entranceTo") and params:
                 dsts = [I.as_int(params[0])]
                 if dsts[0] is None and I.is_global(params[0]):
