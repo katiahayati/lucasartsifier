@@ -1,0 +1,135 @@
+"""Sweep OUR OWN source for the "rule implemented in one of two places" bug.
+
+Three of this project's bugs had exactly this shape, and every one was found only when a GAME
+produced a wrong answer:
+
+  * `asserts_eq` -- "does this atom assert equality" -- lived in `required_values` AND in
+    `edge_meta.reqs`. Fixing one left KQ4's night gate parsed and completely toothless.
+  * the `rm<N>` room lookup lived in `extract2._room_object` AND `smv_emit3.region_rooms`.
+    Fixing one left KQ4 with 0 of its 26 region scripts.
+  * `Increment` was handled for LOCALS only, so KQ4's dig counter and its clock are invisible.
+
+The structural cause is that we run SEVERAL walkers over the same IR, each recognising its own
+partially-overlapping set of node types and selectors. A construct one walker knows and another
+does not is either a deliberate asymmetry or a latent bug, and nothing tells them apart -- so this
+builds the matrix and asserts every asymmetry is one we have written down and justified.
+
+Reads our source, not the game's, so it finds these WITHOUT a game having to expose them first.
+It found the `Loop`-inside-`changeState` bug on its first run.
+
+Run: python3 test_walkers.py
+"""
+import os
+import re
+import sys
+from collections import defaultdict
+
+sys.path.insert(0, ".")
+
+SRC = os.path.dirname(os.path.abspath(__file__))
+
+# Every file that walks the IR -- each is a place a construct could be recognised.
+WALKERS = ["extract2.py", "smv_emit3.py", "compile2.py", "machine2.py", "vocab.py"]
+
+_SUBJ = (r'(?:sel|tp|t|pair\[0\]|mn|mname|'
+         r'(?:n|x|y|k|m|node|param)\s*(?:\.get\("t"\)|\["t"\]))')
+EQ = re.compile(_SUBJ + r'\s*==\s*"([A-Za-z_]+)"')
+IN = re.compile(_SUBJ + r'\s+(?:not\s+)?in\s+\(([^)]*)\)')
+LIT = re.compile(r'"([A-Za-z_]+)"')
+
+# Asymmetries we have looked at and accepted. Key: construct -> why it is fine.
+# Anything NOT in here that is known to some walkers and not others fails the test, which is the
+# whole point: a new asymmetry must be justified in writing before it can be ignored.
+ACCEPTED = {
+    "changeState": "extract2 deliberately skips changeState -- the MACHINE owns those bodies, and "
+                   "a flat duplicate would bypass the gate (see Extractor.run).",
+    "newRoom":     "smv_emit3 does not read newRoom itself; it consumes the edges extract2 and "
+                   "the machine lift already produced.",
+    "LocalCall":   "compile2 works on paths the machine lift already inlined calls into.",
+    "PublicCall":  "as LocalCall.",
+    "setScript":   "extract2/smv_emit3 see setScript only as machine ARMING, which machine2 owns.",
+    "init":        "smv_emit3 and machine2 treat init specially (forced entry writes); the others "
+                   "have no entry concept.",
+    "cue":         "cue counting is a machine concern only.",
+    "setCycle":    "arming selectors -- machine2/compile2 for cues, extract2 for cue-armed edges.",
+    "setMotion":   "as setCycle.",
+    "setRegions":  "region membership is built once, in smv_emit3.",
+    "Add":         "arithmetic appears in guard atoms (extract2) and in counter detection (vocab).",
+    "Sub":         "as Add.",
+    "Eq":          "comparison node types are guard-atom concerns: extract2 builds atoms, vocab "
+                   "reads class-table comparisons.",
+    "Ne":          "as Eq.",
+    "Assignment":  "every walker records writes in its own vocabulary.",
+    "Cond":        "vocab.py is not a control-flow walker -- it reads the CLASS TABLE (which "
+                   "property a method writes, which selector forwards where) and never needs to "
+                   "know about branching. Same for If/Send/Switch.",
+    "If":          "as Cond.",
+    "Send":        "as Cond -- vocab matches sends by selector via ir.send_pairs, not by node type.",
+    "Switch":      "as Cond.",
+    "Decrement":   "KNOWN GAP, tracked as TODO A0g(1): Increment/Decrement are handled for LOCALS "
+                   "in the machine walkers and not at all in extract2, and never for GLOBALS "
+                   "anywhere -- which is why KQ4's dig counter and its clock are invisible.",
+    "Increment":   "as Decrement -- TODO A0g(1).",
+    "Loop":        "KNOWN BUG, tracked as TODO A0i: compile2._paths_of falls through to "
+                   "[[('D', node)]] for any node type it does not name, so a Loop inside a "
+                   "changeState body is one opaque item and its contents are DROPPED. 16 such "
+                   "loops in each game, holding 45 (LSL2) and 161 (KQ4) effects.",
+}
+
+PASS, FAIL = [], []
+def check(name, cond, detail=""):
+    (PASS if cond else FAIL).append(name)
+    print(f"  [{'PASS' if cond else 'FAIL'}] {name}" + (f"  -- {detail}" if detail and not cond else ""))
+
+
+def matrix():
+    """construct -> set of walker files that name it."""
+    seen = defaultdict(set)
+    for name in WALKERS:
+        path = os.path.join(SRC, name)
+        if not os.path.exists(path):
+            continue
+        with open(path) as f:
+            text = f.read()
+        for m in EQ.finditer(text):
+            seen[m.group(1)].add(name)
+        for m in IN.finditer(text):
+            for lit in LIT.findall(m.group(1)):
+                seen[lit].add(name)
+    return seen
+
+
+def run():
+    print("Walker coverage matrix -- who recognises which IR construct")
+    seen = matrix()
+    shared = {c: f for c, f in seen.items() if len(f) >= 2}
+    print(f"  {len(seen)} constructs, {len(shared)} known to more than one walker\n")
+
+    header = f"{'construct':16s} " + " ".join(f"{w.replace('.py','')[:9]:>10s}" for w in WALKERS)
+    print(header)
+    print("-" * len(header))
+    for c, files in sorted(shared.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        if len(files) == len(WALKERS):
+            continue                                   # everyone agrees: nothing to explain
+        marks = " ".join(f"{('X' if w in files else '.'):>10s}" for w in WALKERS)
+        print(f"{c:16s} {marks}")
+
+    print()
+    unexplained = sorted(c for c, f in shared.items()
+                         if len(f) != len(WALKERS) and c not in ACCEPTED)
+    check("every partial-coverage construct is documented in ACCEPTED",
+          not unexplained,
+          f"undocumented asymmetries: {unexplained} -- each is either a deliberate design "
+          f"choice (add it to ACCEPTED with the reason) or the next instance of the "
+          f"one-of-two-places bug")
+
+    # the allow-list must not rot: an entry for a construct nobody mentions any more is dead
+    dead = sorted(c for c in ACCEPTED if c not in seen)
+    check("no dead entries in ACCEPTED", not dead, f"unreferenced: {dead}")
+
+    print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
+    return not FAIL
+
+
+if __name__ == "__main__":
+    sys.exit(0 if run() else 1)
