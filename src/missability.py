@@ -212,6 +212,9 @@ def build_maps(em):
     trap_items = hopeless - hopefuls
 
     required = defaultdict(set)
+    # CONSUMPTION is a FALLBACK evidence source, not an additive one -- see the note where it is
+    # applied, below. Collected separately so it can be weighed after all guard evidence is in.
+    consumed_at = defaultdict(set)
     def req_item(it, room):
         if it not in trap_items:
             required[it].add(room)
@@ -228,10 +231,10 @@ def build_maps(em):
         req(g, room)
     for room, script, gi, v, g in em.handler_writes:
         req(g, room)
-    # consuming an item in a HANDLER requires owning it there -- the Pamphlet handed to the bore
-    # on the plane (rm62) is a Said-handler `put: 26 -1`, which the machine-body scan never sees.
+    # consuming an item in a HANDLER -- the Pamphlet handed to the bore on the plane (rm62) is a
+    # Said-handler `put: 26 -1`, which the machine-body scan never sees. Held back; see below.
     for room, script, it, g in getattr(em, "handler_drops", ()):
-        req_item(it, room)
+        consumed_at[it].add(room)
     for i, info in enumerate(em.machines):
         gr = gr_maps[i]
         for K, paths in info["states"].items():
@@ -250,10 +253,31 @@ def build_maps(em):
             req(eg, info["room"])
         for K, eg in info.get("init_entries", ()):
             req(eg, info["room"])
-        # CONSUMING an item requires owning it. Catches requirements carrying no own() guard at
-        # all -- the Flower handed to the KGBishnas (rm50) exists only as `gEgo put: 20 -1`.
         for it in info.get("drops", ()):
-            req_item(it, info["room"])
+            consumed_at[it].add(info["room"])
+
+    # CONSUMPTION as requirement evidence -- a FALLBACK, scoped exactly as its own rationale
+    # always stated: it "catches requirements carrying NO own() guard at all", like the Flower
+    # handed to the KGBishnas (rm50), which exists in the game only as `gEgo put: 20 -1`.
+    # It was being applied unconditionally, which is additive rather than fallback, and that is
+    # a different rule: for an item the game DOES test for, every place it is later used up
+    # becomes an extra "needed here" room -- including places past a one-way edge.
+    #
+    # That produced two confirmed false positives the moment `moveTo:` extraction made LSL2's
+    # consumptions visible: rm48's "take off the bikini" handler destroys the Soap, the
+    # Bikini_Top and the Bikini_Bottom on three adjacent lines, so all three gained `required@48`
+    # beyond the one-way rm47 -> rm48. Both the Soap and the Bikini_Bottom are re-obtainable/safe
+    # in play (confirmed by the user); the Bikini_Top is a true softlock, but on its own evidence
+    # -- the real `has:` test at rm44, across the rm38 -> rm131 boarding frontier.
+    #
+    # An item the game tests for already tells us where it is needed. Consumption only speaks
+    # for items that carry no test at all -- which is every case this rule was built for
+    # (Flower, Pamphlet, Bobby_Pin, Airsick_Bag, Matches, Hair_Rejuvenator, Sand, ...), all of
+    # which have empty guard evidence and so are untouched.
+    for it, rooms in consumed_at.items():
+        if not required.get(it):
+            for room in rooms:
+                req_item(it, room)
 
     # NOTE: a CUTSCENE-SPLICE pass used to live here -- it rewrote `pred -> cutscene -> succ`
     # into `pred -> succ` to fix the Airline_Ticket false positive. It is RETIRED (git history

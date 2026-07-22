@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import ir as I
 from guard_ast import GAnd, GNot, Pred
-from extract2 import atom, _conj, G_EGO
+from extract2 import atom, _conj, G_EGO, item_transfer, EGO
 import machine2 as M
 
 COUNTER_CAP = 40          # loop/unroll bound
@@ -74,7 +74,7 @@ def _seq(forms):
 
 # ---- interpret a path into (guard, writes, gets, counters, transition) ---
 class Step:
-    __slots__ = ("guard", "writes", "gets", "counters", "trans", "cues", "drops")
+    __slots__ = ("guard", "writes", "gets", "counters", "trans", "cues", "drops", "moves")
 
     def __init__(self):
         self.guard = []            # atoms (external) or ("CTR", (vt,idx), op, val)
@@ -86,6 +86,7 @@ class Step:
         self.drops = []            # items CONSUMED here (`gEgo put: N -1`). Consuming an item
         #   requires owning it, and some requirements have NO own() guard at all -- the Flower
         #   given to the KGBishnas (rm50) is only ever expressed as a `put: 20 -1`.
+        self.moves = []            # (item, dest) -- gets+drops with the destination kept
 
 
 def _count_cues_send(recv, msgs):
@@ -121,18 +122,19 @@ def _interp(path, is_death):
                     r = I.as_int(params[0])
                     if r is not None:
                         st.trans = ("EXIT", r); fixed = True
-                elif sel == "get" and I.is_global(recv, G_EGO) and params:
-                    it = I.as_int(params[0])
-                    if it is not None:
-                        st.gets.append(it)
-                elif sel == "put" and I.is_global(recv, G_EGO) and params:
-                    it = I.as_int(params[0])          # `gEgo put: N -1` = consume N
-                    if it is not None:
-                        st.drops.append(it)
                 elif sel == "changeState" and recv.get("t") == "Self" and params and not fixed:
                     k = I.as_int(params[0])
                     if k is not None:
                         st.trans = ("JUMP", k); fixed = True
+                else:
+                    # `gEgo get:/put:` and `(Inv at: N) moveTo:` are one operation -- see
+                    # extract2.item_transfer. Held (dest == EGO) is a get; anywhere else is a
+                    # loss of ownership, whether that is limbo (-1, 999) or a spot in the world.
+                    tr = item_transfer(recv, sel, params)
+                    if tr is not None:
+                        it, dest = tr
+                        st.moves.append((it, dest))
+                        (st.gets if dest == EGO else st.drops).append(it)
             c = _count_cues_send(recv, msgs)
             if c:
                 st.cues += c

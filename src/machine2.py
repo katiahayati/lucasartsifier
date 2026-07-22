@@ -25,7 +25,7 @@ import config
 from dataclasses import dataclass, field
 
 import ir as I
-from extract2 import atom, _conj, G_EGO, G_CURROOM
+from extract2 import atom, _conj, G_EGO, G_CURROOM, item_transfer, EGO
 
 
 @dataclass
@@ -281,14 +281,15 @@ class MachineBuilder:
                 r = I.as_int(params[0])
                 if r is not None:
                     out.append(Op("EXIT", g, r))
-            elif sel == "get" and I.is_global(recv, G_EGO) and params:
-                it = I.as_int(params[0])
-                if it is not None:
-                    out.append(Op("GET", g, it))
             elif sel == "changeState" and recv.get("t") == "Self" and params:
                 k = I.as_int(params[0])
                 if k is not None:
                     out.append(Op("JUMP", g, k))
+            else:
+                # Same recogniser compile2 uses -- these two walkers must not drift.
+                tr = item_transfer(recv, sel, params)
+                if tr is not None and tr[1] == EGO:
+                    out.append(Op("GET", g, tr[0]))
         if _is_cue_send(recv, msgs):
             out.append(Op("ADVANCE", g))
 

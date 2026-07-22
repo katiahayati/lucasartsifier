@@ -23,7 +23,7 @@ import ir as I
 from guard_ast import GAnd, GOr, GNot, Pred
 
 G_EGO = 0        # gEgo   (get:/put:/has: receiver)  -- confirmed by IR survey
-G_CURROOM = 2    # gCurRoom (newRoom: receiver)
+G_ROOMOBJ = 2    # gCurRoom, the room OBJECT (the `newRoom:` receiver) -- not the room NUMBER
 
 NAV_SELECTORS = ("north", "south", "east", "west")
 
@@ -107,6 +107,55 @@ def _at_item(n):
         for sel, params in msgs:
             if sel == "at" and params:
                 return I.as_int(params[0])
+    return None
+
+
+# ---- the item-LOCATION store, written two ways ---------------------------
+# SCI moves an inventory item by setting its OWNER, and the games spell that differently:
+# LSL2 sends the EGO `get:`/`put:`, KQ4 sends the ITEM `moveTo:`. They are one operation --
+# `get: N` IS `(item N) moveTo: gEgo` -- and we read only the first spelling, so KQ4's
+# Dead_Fish, whose ONLY acquisition is `((Inv at: 24) moveTo: gEgo)` (Room95.sc:673), did not
+# exist in our model at all. It is not a KQ4-only idiom either: LSL2 destroys the Soap with
+# `((global9 at: 18) moveTo: -1)` at rm48 and rm71, which we have always missed.
+#
+# The DESTINATION is the second half, and `put:` has always discarded it. KQ4 uses pseudo-room
+# numbers as item STATES -- 206 not-yet-appeared, 23/29 lying on the ground, 666 baited on the
+# hook, 777 eaten, 207 given to the pelican, 999 destroyed -- so "where did it go" is the whole
+# difference between an item that is merely elsewhere and one that is gone. We return the raw
+# destination and let callers decide what a number means; only smv_emit3 knows the room set.
+EGO = "ego"      # destination sentinel: the item is now HELD
+
+
+def item_transfer(recv, sel, params):
+    """An inventory-transfer send -> `(item, dest)`, else None.
+
+    `dest` is EGO or an int (a room number, real or pseudo; -1 = nowhere, SCI's own idiom).
+    Recognises all three spellings:  `gEgo get: N`  /  `gEgo put: N D`  /  `(Inv at: N) moveTo: D`.
+    """
+    if sel in ("get", "put") and I.is_global(recv, G_EGO) and params:
+        it = I.as_int(params[0])
+        if it is None:
+            return None
+        if sel == "get":
+            return (it, EGO)
+        # `put: N D` -- D defaults to NOWHERE when omitted, which is how LSL2 writes it.
+        if len(params) < 2:
+            return (it, -1)
+        if I.is_global(params[1], G_EGO):
+            return (it, EGO)
+        d = I.as_int(params[1])
+        return (it, d if d is not None else -1)
+    # `(Inv at: N) moveTo: D`. The `_at_item` receiver test is what keeps this off the
+    # Window/View `moveTo: x y` selector, which is a completely unrelated screen-position send
+    # (LSL2's dialog code uses it 30-odd times with two coordinate arguments).
+    if sel == "moveTo" and len(params) == 1:
+        it = _at_item(recv)
+        if it is None:
+            return None
+        if I.is_global(params[0], G_EGO):
+            return (it, EGO)
+        d = I.as_int(params[0])
+        return (it, d) if d is not None else None
     return None
 
 

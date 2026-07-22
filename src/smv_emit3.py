@@ -24,7 +24,7 @@ import subprocess
 import ir as I
 import machine2 as M
 import compile2 as C
-from extract2 import extract, atom
+from extract2 import extract, atom, item_transfer, _room_object, EGO
 from guard_ast import GAnd, GOr, GNot, Pred
 
 
@@ -84,9 +84,16 @@ class OpEmitter:
         # that room. Region-script effects (e.g. rm300.handleEvent's gWearingSunscreen:=3
         # on the ship voyage) apply in the rooms that set the region, NOT in an unreachable
         # "room R". region_rooms: region-script -> {rooms that activate it}.
+        #
+        # The room lookup here used to be `by_name["rm<N>"]` -- the LSL2 decompiler naming
+        # convention, which extract2._room_object stopped relying on when KQ4 turned out to
+        # name its rooms `Room<N>`. That fix never reached this copy, so KQ4 mapped 0 region
+        # scripts and every one of its 26 regions was dropped whole (LSL2: 9 regions over 62
+        # rooms). SCI dispatches at three scopes -- Main, region, room -- and this is the
+        # middle one; losing it silently loses every guard and effect that lives there.
         self.region_rooms = {}
         for rn, s in ir.scripts.items():
-            room = s.by_name.get(f"rm{rn}")
+            room = _room_object(s, ir)
             if room is None:
                 continue
             for _mn, a in room.methods.items():
@@ -100,13 +107,21 @@ class OpEmitter:
                                     if v is not None:
                                         self.region_rooms.setdefault(v, set()).add(rn)
         for rn, s in ir.scripts.items():
-            if rn not in self.ts.rooms:
+            # A region's machines run in the rooms that activate it, exactly as its handlers do
+            # (below). Lifting them only for real rooms dropped 12 of KQ4's region scripts whole
+            # -- among them regUnicorn's `uniActions`, the ONLY place the Golden_Bridle is ever
+            # required. The duplication is not an approximation: the same machine really is live
+            # in each of those rooms.
+            targets = self.region_rooms.get(rn) or ({rn} if rn in self.ts.rooms else None)
+            if not targets:
                 continue
-            self._init_writes(rn, s)
+            if rn in self.ts.rooms:
+                self._init_writes(rn, s)
             for m in self.mb.machines(s):
-                info = self._machine_info(rn, m)
-                if info:
-                    self.machines.append(info)
+                for room in sorted(targets):
+                    info = self._machine_info(room, m)
+                    if info:
+                        self.machines.append(info)
         # player-action effects in handleEvent/doit: register writes + item get/put that
         # the game does NOT do via a changeState machine (e.g. `(= gLoweredLifeboats 1)`
         # when the player says "lower lifeboats"). Guard = the path condition (Said/opaque
@@ -117,6 +132,12 @@ class OpEmitter:
         self.handler_drops = []        # (room, script, item, guard) -- `gEgo put: N -1` in a
         #   handler. Consuming an item requires owning it; the Pamphlet handed to the bore on
         #   the plane (rm62) is a Said-handler consumption, invisible to the machine-body scan.
+        self.handler_moves = []        # (room, script, item, dest, guard) -- the same transfers as
+        #   gets/drops, but keeping the DESTINATION that `put:`/`moveTo:` carry. KQ4 uses
+        #   pseudo-room numbers as item states (206 unplaced, 666 on the hook, 777 eaten,
+        #   999 destroyed), so `where did it go` separates "elsewhere" from "gone" -- see
+        #   `item_moves_to_world`, which is what keeps a bird placing a worm out of the
+        #   dangerous-sink report.
         self.handler_locals = []       # (room, script, (vt,idx), val, guard)
         for rn, s in ir.scripts.items():
             # target rooms: a region script's effects apply in the rooms that activate it;
@@ -432,14 +453,16 @@ class OpEmitter:
         elif tp == "Send":
             recv, msgs = I.send_pairs(node)
             for sel, params in msgs:
-                if sel == "get" and I.is_global(recv, 0) and params:
-                    it = _int(params[0].get("value"))
-                    if it is not None:
-                        self.handler_gets.append((room, script, it, _conj_atoms(pc)))
-                elif sel == "put" and I.is_global(recv, 0) and params:
-                    it = _int(params[0].get("value"))
-                    if it is not None:
-                        self.handler_drops.append((room, script, it, _conj_atoms(pc)))
+                tr = item_transfer(recv, sel, params)
+                if tr is None:
+                    continue
+                it, dest = tr
+                g = _conj_atoms(pc)
+                self.handler_moves.append((room, script, it, dest, g))
+                if dest == EGO:
+                    self.handler_gets.append((room, script, it, g))
+                else:
+                    self.handler_drops.append((room, script, it, g))
         elif tp in ("PublicCall", "LocalCall"):
             self._follow_call(room, script, node, pc, seen)
         for k in node.get("kids", ()):
