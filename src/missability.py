@@ -573,14 +573,43 @@ class IrSccReach(SccReach):
         self._emeta = edge_meta(em, self.regs)
         self._inroom = {R: defaultdict(set) for R in self.regs}
         regset = set(self.regs)
+        dbg = frozenset(em.cfg.debug_globals)
         for room, script, gi, v, g in em.handler_writes:
-            if gi in regset:
+            # A debug-gated write is not real availability -- the same reason `build_maps` skips
+            # debug-gated ACQUISITIONS (rm82's `if gDebugging` hands over the whole bomb). Applied
+            # here it also restores single-writer structure: KQ4's `Said 'enter/night'` cheat sets
+            # global109 := 3 from Main, which is the only thing stopping Lolotte's task counter
+            # from having exactly one writer -- see register monotonicity below.
+            # LSL2 has 62 debug-gated writes and NONE touches a gating register, so this cannot
+            # move it; KQ4 has 12 across 8 registers, among them global100 (night) and global109.
+            if gi in regset and not _debug_gated_guard(g, dbg):
                 self._inroom[gi][room].add(v)
+        # MACHINE writes, with the machine's own entry guard on the SAME register kept as an
+        # ordering. KQ4 dispatches Lolotte's conversations with `(switch global109 (1 lotTalk3)
+        # (2 lotTalk4) (3 lotTalk5))`, and each writes the next value -- so lotTalk4 is a
+        # transition 2 -> 3, not "3 becomes available". Collapsing it to a free value is what let
+        # the model walk back from task 3 to task 1 and made every flip look reversible.
+        self._rstep = {R: defaultdict(set) for R in self.regs}
         for info in em.machines:
+            gates = {}
+            for R in self.regs:
+                need = set()
+                for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+                    rv = required_values(eg, R)
+                    if rv:
+                        need |= rv
+                if need:
+                    gates[R] = need
             for K, paths in info["states"].items():
                 for (g, w, gg, c, tr) in paths:
                     for (gi, v) in w:
-                        if gi in regset:
+                        if gi not in regset:
+                            continue
+                        need = gates.get(gi)
+                        if need:
+                            for frm in need:
+                                self._rstep[gi][info["room"]].add((frm, v))
+                        else:
                             self._inroom[gi][info["room"]].add(v)
         self._pstates = {R: self._walk(R, frozenset()) for R in self.regs}
 
@@ -593,6 +622,8 @@ class IrSccReach(SccReach):
         walk back to the parachute."""
         r, st = node
         out = {(r, v) for v in self._inroom[R].get(r, ())}
+        # ...plus writes the game only makes FROM a particular value of R -- see _build_product
+        out |= {(r, to) for (frm, to) in self._rstep[R].get(r, ()) if frm == st}
         for b in self.edges.get(r, ()):
             for (req, sets, alts) in self._emeta.get((r, b), (self._FREE,)):
                 need = req.get(R)
@@ -880,8 +911,12 @@ class IrSccReach(SccReach):
                 if not seeds:
                     continue
                 after = self._walk(R, frozenset(), starts=seeds)
-                if any(v != w for (_r, v) in after):
-                    continue                        # you can get back out; not a point of no return
+                # NOTE there is deliberately no separate "is this irreversible" test. An earlier
+                # version required that no state at another value be reachable, which rejects
+                # every plot counter -- moving FORWARD is not getting back out. `after` already
+                # includes whatever the register does next, so if a source is still reachable the
+                # flip stranded nothing, and if it is not, the flip stranded it. The source test
+                # below IS the irreversibility test.
                 rooms_after = {r for (r, _v) in after}
                 if goal and not (goal & rooms_after):
                     continue                        # already unwinnable: a dead end, not a softlock

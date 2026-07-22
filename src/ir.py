@@ -190,15 +190,28 @@ def control_shape(node):
                 arms.append((list(priors), ck[0]))
         return ("branch", arms)
     if t == "Switch":
-        # switch TESTS are not modelled (the head is `(= state param1)` in the machine idiom and
-        # a value match elsewhere); each case body is an unconditional alternative.
-        arms = []
+        # A case label on a VALUE head is a guard: `(switch global109 (1 <body>) ...)` means
+        # `global109 == 1` inside that body. KQ4 dispatches Lolotte's four conversations exactly
+        # that way, and each writes the next value of global109 -- so the switch IS the ordering
+        # that makes the counter monotone. Treating every case as unconditional erased it.
+        #
+        # Only for a plain global read. The machine idiom's head is `(= state param1)`, an
+        # Assignment, and synthesising `state == K` guards there would be noise -- machine.py
+        # consumes that switch structurally, via _top_switch.
+        head = ks[0] if ks else None
+        valued = bool(head) and head.get("t") == "Variable" and head.get("vtype") == "Global"
+        arms, priors = [], []
         for c in ks[1:]:
             ck = c.get("kids") or []
             if c.get("t") == "Case" and len(ck) > 1:
-                arms.append(([], ck[1]))
+                if valued and isinstance(ck[0], dict) and ck[0].get("t") == "Number":
+                    test = {"t": "Eq", "kids": [head, ck[0]]}
+                    arms.append((priors + [(test, True)], ck[1]))
+                    priors = priors + [(test, False)]
+                else:
+                    arms.append(([], ck[1]))
             elif c.get("t") == "Else" and ck:
-                arms.append(([], ck[0]))
+                arms.append((list(priors), ck[0]))
         return ("branch", arms)
     if t == "Loop":
         return ("loop", ks[0] if len(ks) > 0 else None, ks[1] if len(ks) > 1 else None,
