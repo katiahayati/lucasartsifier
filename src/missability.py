@@ -895,6 +895,41 @@ class IrSccReach(SccReach):
                                     "still_needed_at": sorted(ahead)})
         return out
 
+    def resource_exhaustion(self):
+        """Items you USE UP rather than throw away -- the fourth store's softlock shape.
+
+        `dangerous_sinks` asks for a PURE sink: a clause that wastes the item and does nothing
+        else, like pouring the rejuvenator on a bolt. Breaking the shovel is not that. It happens
+        inside a perfectly legitimate dig, so the clause plainly does something, and the purity
+        test rejects it -- correctly, for what that test is for.
+
+        The shape here is different: a finite item, degraded ONE-WAY by ordinary use, and still
+        required somewhere else. KQ4's shovel snaps after five holes (`Room16:589`,
+        `(if (>= global113 5) ((Inv at: 15) loop: 1))`), and it is needed in BOTH the graveyard
+        and the crypt -- and global113 is a global, so holes dug in one count against the other.
+        Cupid's bow is the same shape with a counter instead of a flag.
+
+        Conjuncts, deliberately the same three `dangerous_sinks` uses, minus purity:
+          1. the degradation is one-way (decided upstream, by the discovered value set);
+          2. the item is still needed somewhere reachable from the degradation site;
+          3. that somewhere is not the site itself -- using it where it is needed is the point.
+        """
+        spec = _IPROP_SPEC
+        oneway = {it for (it, _p), sp in spec.items()
+                  if sp.get("counter") or len(sp.get("values", ())) == 1}
+        uses = self.real_uses()
+        out = []
+        for room, it, prop, val, g in getattr(self.em.ts, "item_prop_writes", ()):
+            if it not in oneway:
+                continue
+            ahead = (uses.get(it, set()) - {room}) & self.rooms_after(room)
+            if not ahead:
+                continue
+            out.append({"pattern": "resource-exhaustion", "item": it,
+                        "item_name": self.g.item_name(it), "property": prop,
+                        "at_room": room, "still_needed_at": sorted(ahead)})
+        return out
+
     def requirement_units(self):
         """Every unit that must be satisfied to win: single items, plus disjunctive GROUPS.
 
@@ -995,6 +1030,9 @@ if __name__ == "__main__":
     flagged = sorted({c["item"] for c in cands})
     print(f"softlock candidates ({len(flagged)} items):",
           [s.g.item_name(i) for i in flagged])
+    for row in s.resource_exhaustion():
+        print(f"  + resource exhaustion: {row['item_name']} ({row['property']}) becomes unusable "
+              f"at rm{row['at_room']}, still needed at {row['still_needed_at']}")
     for row in s.group_strandings():
         print(f"  + disjunctive group {row['item_names']} needed at rm{row['need_room']}, "
               f"all sources {row['source_rooms']} unreachable from there")

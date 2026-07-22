@@ -19,6 +19,7 @@ produces a confident wrong answer instead of an error.
   7  register flips -- the SECOND softlock class: a flag advances and shuts a region.
   8  goal discovery -- victory when the game ends wins and losses through one flag.
   9  derived constants -- death and debug read out of the game, not declared.
+ 10  resource exhaustion -- a finite item degraded one-way by ordinary use.
 
 Parts 2-7 need a real IR and skip cleanly without one; 1, 1b and 4 are pure.
 """
@@ -328,6 +329,28 @@ def test_derived_constants():
               len(items) == 15 and len(s.group_strandings()) == 1, f"{len(items)} items")
 
 
+def test_resource_exhaustion():
+    print("\nPart 10: resource exhaustion -- items you use UP, not throw away")
+    import os, config, missability as M
+    for which, cfg, want in (("LSL2", config.LSL2, False), ("KQ4", config.KQ4, True)):
+        if not os.path.exists(cfg.ir_path):
+            print(f"  (skip {which}: no IR)")
+            continue
+        rows = M.load(cfg=cfg).resource_exhaustion()
+        # LSL2 has no item-property writes at all, so this class cannot fire there -- which is
+        # also why the whole fourth store went unnoticed until a second game.
+        check(f"{which}: resource-exhaustion findings {'exist' if want else 'are empty'}",
+              bool(rows) == want, repr([(r["item_name"], r["at_room"]) for r in rows]))
+        if which == "KQ4":
+            # by NUMBER, not name: missability._NAMES is LSL2's map and is applied to any game,
+            # so KQ4's item 15 (the Shovel) prints as "Bikini_Top". Reporting hazard, logged.
+            shovel = [r for r in rows if r["item"] == 15]
+            # the Shovel snaps after five wrong digs (Room16:589) and global113 is a GLOBAL, so
+            # holes dug in the graveyard count against the crypt -- it is needed in both.
+            check("KQ4: the Shovel is flagged in both digging rooms",
+                  {r["at_room"] for r in shovel} == {16, 18}, repr(shovel))
+
+
 def run():
     test_item_transfer()
     test_ownedby_spelling()
@@ -339,6 +362,7 @@ def run():
     test_register_strandings()
     test_goal_discovery()
     test_derived_constants()
+    test_resource_exhaustion()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 
