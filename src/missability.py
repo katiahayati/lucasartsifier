@@ -17,6 +17,7 @@ import ir as I
 import config
 import opmodel as E
 import vocab
+import grid
 from guard_ast import GAnd, GOr, GNot, Pred
 from scc_core import tarjan_scc, reachable, SccReach
 
@@ -986,6 +987,142 @@ class IrSccReach(SccReach):
                     break        # one witness room is enough to condemn a global-scope site
         return out
 
+    def joint_strandings(self):
+        """Softlocks only a JOINT projection can see: an item behind a gate whose two conditions
+        live in DIFFERENT registers, so every single-register projection lets it through.
+
+        KQ4's Golden Bridle is the case. It is on Genesta's island (rm43), reachable only through
+        the whale, and the whale is one-time. Reaching the island needs BOTH "you arrived from the
+        whale or the island" (the previous-room global) AND "the whale is unspent" (a monotone
+        flag). The independent projections `_build_product` makes cannot express that conjunction:
+        in the previous-room projection the whale edge is free, in the flag projection the island
+        edge is free, so each says the island is still reachable and their intersection agrees. Only
+        the two TOGETHER show the single window closing behind you.
+
+        And it is a STATE-level property, not a room-level one: you CAN reach the unicorn before the
+        whale (flag still 0, island still reachable), so `reobtainable_rooms` -- which collapses to
+        rooms -- calls the island reobtainable and reports nothing. The softlock is that you can
+        ALSO reach the unicorn AFTER the whale (flag 1) with no bridle and no way back. So the test
+        is: is there a reachable joint state at a room where the item is required, from which no
+        source of it is reachable, while the goal still is (so it is the ITEM that is missing, not a
+        generic dead end)?
+
+        Everything derived: the island's previous-room gate comes from `grid.analyze` (the ocean's
+        virtual map summarised to an edge gate); the whale flag is the monotone register gating a
+        previous-room the gate names. Runs only when a grid gate exists, so LSL2 (no grid) reports
+        nothing and cannot be moved by it."""
+        prev_global = self._prev_room_global()
+        gates = grid.analyze(self.em, prev_global)
+        if not gates:
+            return []
+        prev_universe = set().union(*(set().union(*ex.values()) for ex in gates.values()))
+
+        # DERIVE the joint monotone flags: registers that gate an in-edge to a previous-room the
+        # grid names, and that only ever advance (domain {0} or {0, v}, set by an entry write).
+        def edge_eqs(guard):
+            out = defaultdict(set)
+            atoms = []
+            _cmp_atoms(guard, atoms)
+            for (r, op, v, pol) in atoms:
+                if asserts_eq(op, pol):
+                    out[r].add(v)
+            return out
+
+        entry_writes = defaultdict(dict)
+        for room, vs in self.em.init_writes.items():
+            for gi, v in vs.items():
+                entry_writes[gi][room] = v
+
+        def monotone(gi):
+            dom = self.em.reg_vals.get(gi, set())
+            return len(dom) <= 2 and 0 in dom and gi in entry_writes
+
+        flags = set()
+        in_eqs = defaultdict(list)                      # (src,dst) -> {reg:{vals}}
+        for e in list(self.em.ts.edges) + list(self.em.ts.cs_edges):
+            eqs = edge_eqs(e.guard)
+            in_eqs[(e.src, e.dst)].append(eqs)
+            if e.dst in prev_universe:
+                for gi in eqs:
+                    if monotone(gi):
+                        flags.add(gi)
+        flags = sorted(flags)
+        if not flags:
+            return []
+
+        # --- joint reachability over (room, previous-room-abstract, flag values) ------------
+        def succ(state):
+            r, pa, fv = state
+            out = set()
+            for b in self.edges.get(r, ()):
+                gate = gates.get(r, {}).get(b)
+                if gate is not None and pa not in gate:
+                    continue                            # grid gate: wrong entry cell
+                blocked_flag = False
+                nfv = list(fv)
+                for reqs in in_eqs.get((r, b), ()):
+                    for i, gi in enumerate(flags):
+                        if gi in reqs and fv[i] not in reqs[gi]:
+                            blocked_flag = True
+                if blocked_flag:
+                    continue
+                for i, gi in enumerate(flags):
+                    w = entry_writes[gi].get(b)
+                    if w is not None:
+                        nfv[i] = w
+                out.add((b, r if r in prev_universe else "o", tuple(nfv)))
+            return out
+
+        start = (self.em.cfg.start_room, "o", tuple(0 for _ in flags))
+        F = {start}
+        q = deque([start])
+        rev = defaultdict(set)
+        while q:
+            u = q.popleft()
+            for v in succ(u):
+                rev[v].add(u)
+                if v not in F:
+                    F.add(v)
+                    q.append(v)
+
+        def backward(targets):
+            seen = set(targets)
+            dq = deque(seen)
+            while dq:
+                u = dq.popleft()
+                for w in rev.get(u, ()):
+                    if w not in seen:
+                        seen.add(w)
+                        dq.append(w)
+            return seen
+
+        goal = self.goal_rooms_set()
+        can_win = backward({s for s in F if s[0] in goal}) if goal else F
+
+        out = []
+        for it in sorted(self.required):
+            srcs = self.sources.get(it, set())
+            need = self.required[it]
+            if not srcs or not need:
+                continue
+            can_get = backward({s for s in F if s[0] in srcs})
+            # a reachable state at a required room, from which no source is reachable (cannot get
+            # the item) but the goal still is (so it is the item that is missing, not a dead end).
+            stuck = sorted({s[0] for s in F
+                            if s[0] in need and s not in can_get and s in can_win})
+            if stuck:
+                out.append({"pattern": "joint-window-point-of-no-return",
+                            "item": it, "item_name": self.g.item_name(it),
+                            "source_rooms": sorted(srcs), "flags": flags,
+                            "stranded_at": stuck})
+        return out
+
+    def _prev_room_global(self):
+        if not hasattr(self, "_prg"):
+            import extract as X
+            self._prg = X.prev_room_global(self.em.ir)
+        return self._prg
+
     def requirement_units(self):
         """Every unit that must be satisfied to win: single items, plus disjunctive GROUPS.
 
@@ -1092,3 +1229,9 @@ if __name__ == "__main__":
     for row in s.group_strandings():
         print(f"  + disjunctive group {row['item_names']} needed at rm{row['need_room']}, "
               f"all sources {row['source_rooms']} unreachable from there")
+    base = {c["item"] for c in cands}
+    for row in s.joint_strandings():
+        if row["item"] in base:
+            continue                    # already an edge/register stranding -- the joint just re-sees it
+        print(f"  + joint-window softlock: {row['item_name']} (source {row['source_rooms']}) is "
+              f"unreachable once flags {row['flags']} advance -- still needed at {row['stranded_at']}")

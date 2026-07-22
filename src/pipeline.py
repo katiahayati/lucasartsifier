@@ -103,7 +103,8 @@ def main(argv=None):
     print(f"    {len(s.rooms)} rooms, {len(s.comps)} strongly-connected components, "
           f"{len(s.regs)} gating registers")
     cands = s.analyze()
-    items = sorted({c["item"] for c in cands})
+    joints = s.joint_strandings()
+    items = sorted({c["item"] for c in cands} | {j["item"] for j in joints})
     groups = s.group_strandings()
     print(f"    softlocks: {len(items)} items"
           + (f" + {len(groups)} disjunctive group(s)" if groups else ""))
@@ -111,6 +112,9 @@ def main(argv=None):
         print(f"      - {s.g.item_name(i)}")
     for r in groups:
         print(f"      - {' or '.join(r['item_names'])}  (needed at rm{r['need_room']})")
+    for j in joints:
+        if j["item"] not in {c["item"] for c in cands}:
+            print(f"      - {j['item_name']}  (behind a one-time window: {j['flags']})")
 
     step(3, "DERIVE")
     specs = G.guard_specs(s)

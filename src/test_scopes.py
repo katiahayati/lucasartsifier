@@ -22,6 +22,9 @@ produces a confident wrong answer instead of an error.
  10  resource exhaustion -- a finite item degraded one-way by ordinary use.
  11  item names    -- the number -> name map derives from the game's own class table, not one
                        hardcoded LSL2 dict applied to every game (KQ4's Shovel was "Bikini_Top").
+ 12  grid + joint  -- a room that is a virtual map (KQ4's ocean) summarises to an edge gate on the
+                       previous-room global, and the JOINT of that gate with the one-time whale flag
+                       strands the Golden Bridle -- a softlock no single-register projection sees.
 
 Parts 2-7 need a real IR and skip cleanly without one; 1, 1b and 4 are pure.
 """
@@ -376,6 +379,46 @@ def test_item_names():
               all(m.get(i) == n for i, n in want.items()), repr({i: m.get(i) for i in want}))
 
 
+def test_grid_and_joint():
+    print("\nPart 12: the ocean grid + the joint-window softlock (KQ4 Golden Bridle)")
+    import os, config, missability as M, grid, extract as X, ir as I
+
+    # (a) the previous-room global derives from the Game loop, both games -> global12
+    for which, cfg in (("LSL2", config.LSL2), ("KQ4", config.KQ4)):
+        if not os.path.exists(cfg.ir_path):
+            continue
+        prg = X.prev_room_global(I.load_ir(cfg.ir_path))
+        check(f"{which}: previous-room global derives as 12", prg == 12, repr(prg))
+
+    # (b) the ocean summarises to an edge gate: the island (rm43) is reachable ONLY from the whale
+    #     (44) or the island itself (43). LSL2 has no virtual-map room and yields nothing.
+    if os.path.exists(config.LSL2.ir_path):
+        g = grid.analyze(M.load(cfg=config.LSL2).em, 12)
+        check("LSL2: no grid rooms (latches are not grids)", g == {}, repr(g))
+    if os.path.exists(config.KQ4.ir_path):
+        g = grid.analyze(M.load(cfg=config.KQ4).em, 12)
+        island = g.get(31, {}).get(43)
+        check("KQ4: rm31->43 (island) gated on previous-room in {43,44}",
+              island == frozenset({43, 44}), repr(island))
+
+    # (c) the joint (previous-room x one-time whale flag) strands the Golden Bridle -- a softlock no
+    #     single-register projection sees. LSL2 (no grid) reports nothing.
+    if os.path.exists(config.LSL2.ir_path):
+        js = M.load(cfg=config.LSL2).joint_strandings()
+        check("LSL2: no joint-window softlocks", js == [], repr(js))
+    if os.path.exists(config.KQ4.ir_path):
+        s = M.load(cfg=config.KQ4)
+        js = s.joint_strandings()
+        bridle = [f for f in js if f["item"] == 21]
+        check("KQ4: Golden Bridle (21) is a joint-window softlock",
+              len(bridle) == 1 and bridle[0]["source_rooms"] == [43]
+              and 183 in bridle[0]["flags"], repr(bridle))
+        # the net effect on the reported set is EXACTLY +Golden_Bridle over the base sweep
+        base = {c["item"] for c in s.analyze()}
+        net = {f["item"] for f in js} - base
+        check("KQ4: joint sweep adds exactly the Golden Bridle", net == {21}, repr(sorted(net)))
+
+
 def run():
     test_item_transfer()
     test_ownedby_spelling()
@@ -389,6 +432,7 @@ def run():
     test_derived_constants()
     test_resource_exhaustion()
     test_item_names()
+    test_grid_and_joint()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 

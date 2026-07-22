@@ -368,6 +368,59 @@ def pending_room_global(ir):
     return None
 
 
+def prev_room_global(ir):
+    """The global that holds the PREVIOUS room, or None.
+
+    DISCOVERED from the same Game-loop shape as `pending_room_global`. The loop saves the current
+    room before switching -- `(= <previous> <current>)` -- where `<current>` is the current-room
+    global, i.e. the member of the `(!= pending current)` comparison that is NOT handed to
+    `newRoom:`. Both LSL2 and KQ4 land on global12 (current global11, pending global13), by
+    derivation. It is what a virtual-map room reads to seed its entry cell, so `grid.analyze`
+    gates a grid exit on it -- "you can only reach the island if you arrived from the whale"."""
+    pending = pending_room_global(ir)
+    if pending is None:
+        return None
+    current = None
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for body in o.methods.values():
+                for n in I.walk(body):
+                    if n.get("t") != "If":
+                        continue
+                    ks = n.get("kids") or []
+                    test = ks[0] if ks else None
+                    if not test or test.get("t") != "Ne":
+                        continue
+                    tk = test.get("kids") or []
+                    if len(tk) < 2 or not (I.is_global(tk[0]) and I.is_global(tk[1])):
+                        continue
+                    pair = {tk[0]["index"], tk[1]["index"]}
+                    if pending not in pair:
+                        continue
+                    for m in I.walk(ks[1] if len(ks) > 1 else None):
+                        if m.get("t") != "Send":
+                            continue
+                        _recv, msgs = I.send_pairs(m)
+                        for sel, params in msgs:
+                            if (sel == "newRoom" and params and I.is_global(params[0])
+                                    and params[0]["index"] in pair):
+                                current = (pair - {pending}).pop()
+    if current is None:
+        return None
+    # previous = the global assigned FROM the current-room global (saved before the update)
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for body in o.methods.values():
+                for n in I.walk(body):
+                    if n.get("t") != "Assignment":
+                        continue
+                    ks = n.get("kids") or []
+                    if (len(ks) >= 2 and I.is_global(ks[0]) and I.is_global(ks[1])
+                            and ks[1]["index"] == current and ks[0]["index"] != current):
+                        return ks[0]["index"]
+    return None
+
+
 def _walks_a_list(loop):
     """Does this Loop iterate a linked list -- `(for ((= v (L first:))) v ((= v (L next: v))))`?
 
