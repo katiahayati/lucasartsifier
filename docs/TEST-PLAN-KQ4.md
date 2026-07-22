@@ -101,6 +101,23 @@ the one-way test needs to ask whether the restoring write is REACHABLE, not mere
 
 ---
 
+## 2c. The Gold Ball -- is rm21 a real second source?
+
+`drops[5] = [15]` (throwing it in the pond) and `sources[5] = [15, 21]`. The second source is why
+it is NOT flagged as a softlock: the model thinks you can get another. The user's recollection is
+that you cannot -- *"if you throw the ball in the pond and don't get the crown from the frog you
+can't try again. There's definitely ways to lose that gold ball."*
+
+- [ ] Throw the ball in the pond (rm15) and DO NOT take the crown from the frog. Can you retrieve
+      the ball, at rm15 or anywhere else?
+- [ ] What is rm21's ball source -- the initial pickup, or a genuine second chance?
+
+**What the answer changes.** If rm21 is only the initial placement, then losing the ball at rm15 is
+a true stranding we are missing, and the same one-time-pickup question applies as to the fishing
+pole in 2b -- a source that exists syntactically but is unreachable once used.
+
+---
+
 ## 3. The Shovel — confirm the mechanism end to end
 
 Believed solid; source and the user agree. Recorded so a play-test can close it.
