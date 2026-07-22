@@ -134,6 +134,20 @@ is alive.)
 
 ---
 
+## 2d. Peacock Feather / the whale — ANSWERED by the user 2026-07-22
+
+*"You can get the peacock feather from a bunch of different locations on Genesta's island. You need
+it inside the belly of the whale, and without it you can't escape the whale and you die."*
+
+So: nine sources (rm33–41) are real, the requirement at rm44 is real, and the failure mode is a
+DEATH you cannot avert from inside the whale. Detected by the stranding pass; belongs to the
+unfair-death class. See TODO E0c.
+
+- [ ] Confirm the whale can swallow you while you have no feather (the roll is 40% per ocean entry
+      at `Room31.sc:195`, gated on `global109 == 1`).
+
+---
+
 ## 3. The Shovel — confirm the mechanism end to end
 
 Believed solid; source and the user agree. Recorded so a play-test can close it.
