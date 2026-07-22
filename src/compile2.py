@@ -23,54 +23,31 @@ PATH_CAP = 4000           # per-machine path budget
 # ---- leaf-path enumeration through a state body --------------------------
 def _paths_of(node):
     """List of paths through `node`; each path is a list of ('T', testnode, pol) and
-    ('D', opnode) items in source order. Branches fan out; sequences compose."""
+    ('D', opnode) items in source order. Branches fan out; sequences compose.
+
+    The control flow comes from `ir.control_shape`, shared with the three STREAMING walkers.
+    Only the policy differs and legitimately so: they visit everything inside a loop, while this
+    fans out "skipped" and "ran once". That split -- one shape, two policies -- is the whole
+    point; what used to be duplicated was the shape, and `Loop` was missing from this copy."""
     if node is None:
         return [[]]
-    tp = node["t"]
-    if tp == "List":
-        return _seq(node["kids"])
-    if tp == "If":
-        ks = node["kids"]
-        test = ks[0]
-        out = [[("T", test, True)] + p for p in _paths_of(ks[1])]
-        if len(ks) > 2:
-            out += [[("T", test, False)] + p for p in _paths_of(ks[2])]
-        else:
-            out.append([("T", test, False)])
-        return out
-    if tp == "Cond":
-        out, priors = [], []
-        for c in node["kids"]:
-            if c["t"] == "Case":
-                test = c["kids"][0]
-                for p in _paths_of(c["kids"][1]):
-                    out.append([("T", t2, False) for t2 in priors] + [("T", test, True)] + p)
-                priors.append(test)
-            elif c["t"] == "Else":
-                for p in _paths_of(c["kids"][0]):
-                    out.append([("T", t2, False) for t2 in priors] + p)
-        return out or [[]]
-    if tp == "Switch":
+    shape = I.control_shape(node)
+    kind = shape[0]
+    if kind == "seq":
+        return _seq(shape[1])
+    if kind == "branch":
         out = []
-        for c in node["kids"][1:]:
-            body = c["kids"][1] if c["t"] == "Case" else c["kids"][0]
-            out += _paths_of(body)
+        for conds, body in shape[1]:
+            prefix = [("T", t, pol) for (t, pol) in conds]
+            for p in _paths_of(body):
+                out.append(prefix + p)
         return out or [[]]
-    if tp == "Loop":
-        # kids are [init, test, increment, BODY]. Without this the fall-through below turned the
-        # whole loop into ONE opaque ("D", node) item, and `_interp` -- which only inspects such
-        # an item for Send/Assignment/Increment -- dropped everything inside it. 16 loops sit in
-        # changeState bodies in each game, holding 45 (LSL2) and 161 (KQ4) effects.
-        # The body may run or not, so it fans out exactly like an `If` with no else: one path
-        # where the loop is skipped, one where it runs. Not modelling N iterations is deliberate
-        # -- effects here are monotone (a get is a get however many times it happens) and the
-        # alternative is unbounded.
-        ks = node["kids"]
-        init = ks[0] if len(ks) > 0 else None
-        incr = ks[2] if len(ks) > 2 else None
-        body = ks[3] if len(ks) > 3 else None
+    if kind == "loop":
+        init, _test, incr, body = shape[1], shape[2], shape[3], shape[4]
         if body is None:
             return _seq([init])
+        # N iterations are deliberately not modelled: the effects are monotone (a get is a get
+        # however many times it happens) and the alternative is unbounded.
         return _seq([init]) + _seq([init, body, incr])
     return [[("D", node)]]
 

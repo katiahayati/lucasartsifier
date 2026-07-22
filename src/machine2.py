@@ -136,41 +136,26 @@ class MachineBuilder:
         return m
 
     def _scan_setscript(self, node, pc, m, source):
-        """Find `(x setScript: <ref>)` where <ref> is m, and record an entry to m at state 0
-        with the path condition. Handles If/Cond path conditions."""
-        if node is None:
+        """Find `(x setScript: <ref>)` where <ref> is m, and record an entry to m at state 0 with
+        the path condition. Control flow is shared -- this used to hand-roll If and Cond."""
+        from extract2 import walk_stream
+        walk_stream(node, pc, lambda n, p: self._setscript_leaf(n, p, m, source))
+
+    def _setscript_leaf(self, node, pc, m, source):
+        if node["t"] != "Send":
             return
-        from guard_ast import GNot
-        tp = node["t"]
-        if tp == "If":
-            ks = node["kids"]
-            a = atom(ks[0])
-            self._scan_setscript(ks[1], pc + [a], m, source)
-            if len(ks) > 2:
-                self._scan_setscript(ks[2], pc + [GNot(a) if a else None], m, source)
-            return
-        if tp == "Cond":
-            priors = []
-            for c in node["kids"]:
-                if c["t"] == "Case":
-                    a = atom(c["kids"][0])
-                    self._scan_setscript(c["kids"][1], pc + priors + [a], m, source)
-                    priors = priors + [GNot(a) if a else None]
-                elif c["t"] == "Else":
-                    self._scan_setscript(c["kids"][0], pc + priors, m, source)
-            return
-        if tp == "Send":
-            _recv, msgs = I.send_pairs(node)
-            for sel, params in msgs:
-                if sel == "setScript" and params and _setscript_target(params[0]) == m.inst:
-                    g = _conj(pc)
-                    m.entries.append((0, g))
-                    if source == "init":
-                        m.init_entries.append((0, g))
-        for k in node.get("kids", ()):
-            self._scan_setscript(k, pc, m, source)
+        recv, msgs = I.send_pairs(node)
+        for sel, params in msgs:
+            if sel == "setScript" and params and _setscript_target(params[0]) == m.inst:
+                g = _conj(pc)
+                m.entries.append((0, g))
+                if source == "init":
+                    m.init_entries.append((0, g))   # ADDITIONALLY, not instead -- an init-sourced
+                    #   entry is bundled onto room arrival AND is still a normal entry
 
     def _top_switch(self, cs):
+        """The `(switch (= state param1) ...)` that IS the machine -- identified by its head
+        assigning the `state` property, not by position."""
         for n in I.walk(cs):
             if n["t"] == "Switch":
                 head = n["kids"][0]
@@ -181,30 +166,18 @@ class MachineBuilder:
         return None
 
     def _entries(self, node, pc, m, script, seen, source=None, is_self_obj=False):
-        """Find player-triggered `(self changeState: K)` entries and the FULL path
-        condition that gates them -- handling If AND Cond, and FOLLOWING PublicCall/
-        LocalCall (the changeState often lives inside a proc, and the guard, e.g.
-        `has: Passport`, sits on a Cond case above the call)."""
-        if node is None:
-            return
-        from guard_ast import GNot
+        """Find player-triggered `(<me> changeState: K)` entries and the FULL path condition that
+        gates them, FOLLOWING PublicCall/LocalCall (the changeState often lives inside a proc,
+        with the guard -- e.g. `has: Passport` -- on a Cond case above the call).
+
+        Control flow is shared (walk_stream); this used to hand-roll If and Cond, in a third copy
+        of the same code."""
+        from extract2 import walk_stream
+        walk_stream(node, pc,
+                    lambda n, p: self._entry_leaf(n, p, m, script, seen, source, is_self_obj))
+
+    def _entry_leaf(self, node, pc, m, script, seen, source, is_self_obj):
         tp = node["t"]
-        if tp == "If":
-            ks = node["kids"]
-            a = atom(ks[0])
-            self._entries(ks[1], pc + [a], m, script, seen, source, is_self_obj)
-            if len(ks) > 2:
-                self._entries(ks[2], pc + [GNot(a) if a else None], m, script, seen, source, is_self_obj)
-            return
-        if tp == "Cond":
-            priors = []
-            for c in node["kids"]:
-                if c["t"] == "Case":
-                    self._entries(c["kids"][1], pc + priors + [atom(c["kids"][0])], m, script, seen, source, is_self_obj)
-                    priors = priors + [GNot(atom(c["kids"][0]))]
-                elif c["t"] == "Else":
-                    self._entries(c["kids"][0], pc + priors, m, script, seen, source, is_self_obj)
-            return
         if tp == "Send":
             recv, msgs = I.send_pairs(node)
             # `(self changeState:K)` only when scanning THIS machine's own object; OR
@@ -214,55 +187,33 @@ class MachineBuilder:
             # `changeState: 9/15` to henchScript (the disguise), etc.
             targets_me = ((recv.get("t") == "Self" and is_self_obj)
                           or (recv.get("t") == "Object" and recv.get("name") == m.inst))
-            if targets_me:
-                for sel, params in msgs:
-                    if sel == "changeState" and params:
-                        k = I.as_int(params[0])
-                        if k is not None:
-                            m.entries.append((k, _conj(pc)))
-                            if source == "init":
-                                m.init_entries.append((k, _conj(pc)))
+            if not targets_me:
+                return
+            for sel, params in msgs:
+                if sel == "changeState" and params:
+                    k = I.as_int(params[0])
+                    if k is not None:
+                        m.entries.append((k, _conj(pc)))
+                        if source == "init":
+                            m.init_entries.append((k, _conj(pc)))
         elif tp in ("PublicCall", "LocalCall"):
             tgt = node.get("script", script)
             name = node.get("name")
             body = self.procs_by.get((tgt, name))
             if tgt != 255 and body is not None and name not in seen:
                 self._entries(body, pc, m, tgt, seen | {name}, source, is_self_obj)
-        for k in node.get("kids", ()):
-            self._entries(k, pc, m, script, seen, source, is_self_obj)
 
     def _ops(self, node, pc, out):
-        """Walk a state body, composing path conditions, appending guarded ops."""
-        if node is None:
-            return
+        """Walk a state body, composing path conditions, appending guarded ops.
+
+        Control flow comes from `extract2.walk_stream` / `ir.control_shape`; this used to
+        re-implement If/Cond/Switch itself, in code identical to extract2's and smv_emit3's."""
+        from extract2 import walk_stream
+        walk_stream(node, pc, lambda n, p: self._op_leaf(n, _conj(p), out))
+
+    def _op_leaf(self, node, g, out):
+        """What one statement means to the machine model -- the part that is ours, not shared."""
         tp = node["t"]
-        if tp == "If":
-            ks = node["kids"]
-            a = atom(ks[0])
-            self._ops(ks[1], pc + [a], out)
-            if len(ks) > 2:
-                from guard_ast import GNot
-                self._ops(ks[2], pc + [GNot(a) if a else None], out)
-            return
-        if tp == "Cond":
-            from guard_ast import GNot
-            priors = []   # a case (and the else) runs only if all PRIOR cases failed
-            for c in node["kids"]:
-                if c["t"] == "Case":
-                    a = atom(c["kids"][0])
-                    self._ops(c["kids"][1], pc + priors + [a], out)
-                    priors = priors + [GNot(a) if a is not None else None]
-                elif c["t"] == "Else":
-                    self._ops(c["kids"][0], pc + priors, out)
-            return
-        if tp == "Switch":
-            for c in node["kids"][1:]:
-                if c["t"] == "Case":
-                    self._ops(c["kids"][1], pc, out)
-                elif c["t"] == "Else":
-                    self._ops(c["kids"][0], pc, out)
-            return
-        g = _conj(pc)
         if tp == "Send":
             self._send_op(node, g, out)
         elif tp == "Assignment":
@@ -271,8 +222,6 @@ class MachineBuilder:
             self._counter_op(node["kids"][0], "inc", None, g, out)
         elif tp == "Decrement":
             self._counter_op(node["kids"][0], "dec", None, g, out)
-        for k in node.get("kids", ()):
-            self._ops(k, pc, out)
 
     def _send_op(self, node, g, out):
         recv, msgs = I.send_pairs(node)

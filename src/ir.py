@@ -114,6 +114,92 @@ def send_pairs(send):
     return receiver, msgs
 
 
+# ---- SCI's statement forms, named ONCE --------------------------------------
+# Four walkers used to each re-derive how a branch composes path conditions -- extract2._walk,
+# smv_emit3._hwalk, machine2._ops and compile2._paths_of, in near-identical code. That is not a
+# style problem, it is where three of this project's bugs came from: a node type handled in one
+# copy and not another silently drops whatever it contains, and only a game noticing gives it
+# away. `Loop` cost us that twice.
+#
+# So the LANGUAGE knowledge lives here and the walkers keep only their own effect handling, which
+# is the part that should differ. Adding a statement form is one line, and every walker gets it.
+#
+# The other half is that an UNRECOGNISED form must be loud. `KNOWN_NODES` is the full inventory
+# over both shipped games; anything outside it makes `control_shape` return ("unknown", t) so a
+# third title fails visibly rather than quietly analysing less. See test_walkers.
+
+KNOWN_NODES = frozenset({
+    # statements / control
+    "List", "If", "Cond", "Case", "Else", "Switch", "Loop", "Break", "BreakIf", "Continue",
+    "Return",
+    # effects
+    "Send", "SendMessage", "Assignment", "Increment", "Decrement", "PublicCall", "LocalCall",
+    "KernelCall", "AssignmentAdd", "AssignmentSub", "AssignmentXor", "AssignmentBinOr",
+    "AssignmentBinAnd",
+    # operands / expressions
+    "Number", "String", "Variable", "ComplexVariable", "Property", "Object", "Self", "Super",
+    "Selector", "Class", "AddressOf", "Rest", "Said",
+    # operators
+    "Not", "And", "Or", "Eq", "Ne", "Lt", "Le", "Gt", "Ge", "Ult", "Ule", "Ugt", "Uge",
+    "Add", "Sub", "Mul", "Div", "Mod", "Neg", "BinAnd", "BinOr", "BinNot", "Xor", "Shr", "Shl",
+})
+
+
+def control_shape(node):
+    """How a node composes CONTROL FLOW. The single place SCI's statement forms are named.
+
+        ("seq",    [kids])                    run in order
+        ("branch", [(conds, body), ...])      alternatives; conds is [(test_node, polarity)]
+        ("loop",   init, test, incr, body)    kids in SCI's order -- policy is the caller's
+        ("leaf",)                             an effect or an operand; the caller decides
+        ("unknown", t)                        a form we have never seen: handle it LOUDLY
+
+    A branch arm carries a LIST of conditions rather than one, because `cond` arms run only if
+    every prior case failed -- that accumulation used to be re-implemented in every walker.
+
+    `loop` deliberately stays a shape rather than being desugared: a streaming walker wants to
+    visit everything inside it, while a path enumerator wants to fan out "runs" and "skipped".
+    Those are different POLICIES over the same SHAPE, and only the shape was ever duplicated."""
+    if node is None:
+        return ("leaf",)
+    t = node.get("t")
+    ks = node.get("kids") or []
+    if t == "List":
+        return ("seq", ks)
+    if t == "If":
+        test = ks[0] if ks else None
+        arms = [([(test, True)], ks[1] if len(ks) > 1 else None)]
+        arms.append(([(test, False)], ks[2] if len(ks) > 2 else None))
+        return ("branch", arms)
+    if t == "Cond":
+        arms, priors = [], []
+        for c in ks:
+            ck = c.get("kids") or []
+            if c.get("t") == "Case" and ck:
+                arms.append((priors + [(ck[0], True)], ck[1] if len(ck) > 1 else None))
+                priors = priors + [(ck[0], False)]
+            elif c.get("t") == "Else" and ck:
+                arms.append((list(priors), ck[0]))
+        return ("branch", arms)
+    if t == "Switch":
+        # switch TESTS are not modelled (the head is `(= state param1)` in the machine idiom and
+        # a value match elsewhere); each case body is an unconditional alternative.
+        arms = []
+        for c in ks[1:]:
+            ck = c.get("kids") or []
+            if c.get("t") == "Case" and len(ck) > 1:
+                arms.append(([], ck[1]))
+            elif c.get("t") == "Else" and ck:
+                arms.append(([], ck[0]))
+        return ("branch", arms)
+    if t == "Loop":
+        return ("loop", ks[0] if len(ks) > 0 else None, ks[1] if len(ks) > 1 else None,
+                ks[2] if len(ks) > 2 else None, ks[3] if len(ks) > 3 else None)
+    if t in KNOWN_NODES:
+        return ("leaf",)
+    return ("unknown", t)
+
+
 def is_global(n, index=None):
     return (n and n["t"] == "Variable" and n["vtype"] == "Global"
             and (index is None or n["index"] == index))

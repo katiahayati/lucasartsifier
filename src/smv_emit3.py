@@ -455,28 +455,18 @@ class OpEmitter:
                 self._hwalk(room, MAIN_SCRIPT, body, [], set())
 
     def _hwalk(self, room, script, node, pc, seen):
-        """Path-condition walk of a handler; record global + local writes + item gets,
-        FOLLOWING PublicCall/LocalCall into their procedures (across scripts)."""
-        if node is None:
-            return
+        """Path-condition walk of a handler; record global + local writes + item transfers,
+        FOLLOWING PublicCall/LocalCall into their procedures (across scripts).
+
+        Control flow comes from `extract2.walk_stream` / `ir.control_shape` -- this used to
+        re-implement If and Cond itself, in code identical to extract2's and machine2's, and
+        handled neither Switch nor Loop, so both were silently dropped here."""
+        from extract2 import walk_stream
+        walk_stream(node, pc, lambda n, p: self._heffect(room, script, n, p, seen))
+
+    def _heffect(self, room, script, node, pc, seen):
+        """What one statement MEANS to the handler model. The part that is ours, not shared."""
         tp = node["t"]
-        if tp == "If":
-            ks = node["kids"]
-            a = atom(ks[0])
-            self._hwalk(room, script, ks[1], pc + [a], seen)
-            if len(ks) > 2:
-                self._hwalk(room, script, ks[2], pc + [GNot(a) if a else None], seen)
-            return
-        if tp == "Cond":
-            priors = []   # a case (and the else) runs only if all PRIOR cases failed
-            for c in node["kids"]:
-                if c["t"] == "Case":
-                    a = atom(c["kids"][0])
-                    self._hwalk(room, script, c["kids"][1], pc + priors + [a], seen)
-                    priors = priors + [GNot(a) if a is not None else None]
-                elif c["t"] == "Else":
-                    self._hwalk(room, script, c["kids"][0], pc + priors, seen)
-            return
         if tp == "Assignment":
             dst, src = node["kids"][0], node["kids"][1]
             v = _int(src.get("value"))
@@ -508,8 +498,6 @@ class OpEmitter:
                     self.handler_drops.append((room, script, it, g))
         elif tp in ("PublicCall", "LocalCall"):
             self._follow_call(room, script, node, pc, seen)
-        for k in node.get("kids", ()):
-            self._hwalk(room, script, k, pc, seen)
 
     def _follow_call(self, room, script, node, pc, seen):
         tgt_script = node.get("script", script)   # PublicCall carries its script; Local = same
@@ -531,31 +519,16 @@ class OpEmitter:
         self._init_walk(room, script.number, obj.methods["init"], [], set())
 
     def _init_walk(self, room, script, node, pc, seen):
-        if node is None:
-            return
+        """Entry writes with their path condition. Control flow is shared (walk_stream); the one
+        policy that is ours is `undecided=OPAQUE`: a write inside a switch case or a loop must be
+        POSSIBLE, never FORCED. Forcing them is the rm79 seal -- init set gIslandStatus:=3
+        unconditionally and every win edge needing g101==0 died."""
+        from extract2 import walk_stream
+        walk_stream(node, pc, lambda n, p: self._init_leaf(room, script, n, p, seen),
+                    undecided=Pred("OPAQUE"))
+
+    def _init_leaf(self, room, script, node, pc, seen):
         tp = node["t"]
-        if tp == "If":
-            ks = node["kids"]
-            a = atom(ks[0])
-            self._init_walk(room, script, ks[1], pc + [a], seen)
-            if len(ks) > 2:
-                self._init_walk(room, script, ks[2], pc + [GNot(a) if a else None], seen)
-            return
-        if tp == "Cond":
-            priors = []
-            for c in node["kids"]:
-                if c["t"] == "Case":
-                    a = atom(c["kids"][0])
-                    self._init_walk(room, script, c["kids"][1], pc + priors + [a], seen)
-                    priors = priors + [GNot(a) if a else None]
-                elif c["t"] == "Else":
-                    self._init_walk(room, script, c["kids"][0], pc + priors, seen)
-            return
-        if tp in ("Switch", "Loop"):
-            # a value we can't decide -> writes inside are CONDITIONAL (optional), never forced
-            for k in node.get("kids", ()):
-                self._init_walk(room, script, k, pc + [Pred("OPAQUE")], seen)
-            return
         if tp == "Assignment" and I.is_global(node["kids"][0]):
             gi, v = node["kids"][0]["index"], _int(node["kids"][1].get("value"))
             if v is not None and not self.is_death(gi, v):
@@ -569,8 +542,6 @@ class OpEmitter:
             body = self.procs_by.get((tgt, name))
             if tgt != 255 and body is not None and name not in seen:
                 self._init_walk(room, tgt, body, pc, seen | {name})
-        for k in node.get("kids", ()):
-            self._init_walk(room, script, k, pc, seen)
 
     def _scan_domains(self, guard, script):
         for a in guard:

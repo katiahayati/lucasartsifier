@@ -9,6 +9,12 @@ produced a wrong answer:
     Fixing one left KQ4 with 0 of its 26 region scripts.
   * `Increment` was handled for LOCALS only, so KQ4's dig counter and its clock are invisible.
 
+RESOLVED STRUCTURALLY for control flow: `ir.control_shape` now names SCI's statement forms once,
+and all four walkers consume it (`extract2.walk_stream` for the three streaming ones,
+`compile2._paths_of` for the path enumerator). If/Cond/Loop have vanished from this matrix as a
+result. What remains here is the EFFECT vocabulary, which legitimately differs per walker -- and
+that is exactly the distinction worth keeping the matrix for.
+
 The structural cause is that we run SEVERAL walkers over the same IR, each recognising its own
 partially-overlapping set of node types and selectors. A construct one walker knows and another
 does not is either a deliberate asymmetry or a latent bug, and nothing tells them apart -- so this
@@ -60,24 +66,16 @@ ACCEPTED = {
                    "reads class-table comparisons.",
     "Ne":          "as Eq.",
     "Assignment":  "every walker records writes in its own vocabulary.",
-    "Cond":        "vocab.py is not a control-flow walker -- it reads the CLASS TABLE (which "
-                   "property a method writes, which selector forwards where) and never needs to "
-                   "know about branching. Same for If/Send/Switch.",
-    "If":          "as Cond.",
     "Send":        "as Cond -- vocab matches sends by selector via ir.send_pairs, not by node type.",
-    "Switch":      "as Cond.",
+    "Switch":      "extract2._global_room_values reads switch CASE LABELS as data (the room "
+                   "numbers a revolving-door global can hold) and machine2._top_switch finds the "
+                   "switch that IS the machine. Neither is control flow -- that now lives only in "
+                   "ir.control_shape, which is why If/Cond/Loop no longer appear in this matrix "
+                   "at all.",
     "Decrement":   "KNOWN GAP, tracked as TODO A0g(1): Increment/Decrement are handled for LOCALS "
                    "in the machine walkers and not at all in extract2, and never for GLOBALS "
                    "anywhere -- which is why KQ4's dig counter and its clock are invisible.",
     "Increment":   "as Decrement -- TODO A0g(1).",
-    "Loop":        "FIXED (was TODO A0i, found by this very sweep). compile2._paths_of used to "
-                   "fall through to [[('D', node)]] for any node type it did not name, so a Loop "
-                   "inside a changeState body became one opaque item and its contents were "
-                   "dropped -- 16 such loops per game, holding 45 (LSL2) and 161 (KQ4) effects. "
-                   "compile2 now names it. machine2 still does not, and does not need to: its "
-                   "_ops ends in a generic `for k in node.get('kids', ())`, so it already walks "
-                   "loop bodies. That distinction -- explicit case vs generic recursion -- is "
-                   "exactly what this matrix cannot see, so check it before trusting a row.",
 }
 
 PASS, FAIL = [], []

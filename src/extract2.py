@@ -180,6 +180,48 @@ def item_transfer(recv, sel, params):
     return _VOCAB.transfer(recv, sel, params, _at_item)
 
 
+def walk_stream(node, pc, on_leaf, on_loop=None, undecided=None):
+    """Visit every statement under `node`, carrying the composed path condition.
+
+    The control flow comes from `ir.control_shape`, so this function -- and every walker built on
+    it -- learns a new statement form the moment that classifier does. `on_leaf(node, pc)` gets
+    each effect/operand node and decides what it means; that part is the caller's and SHOULD
+    differ between walkers.
+
+    Loop policy here is "visit everything inside it", which is the permissive reading a streaming
+    walker wants. compile2 makes the other choice on the same shape.
+    """
+    shape = I.control_shape(node)
+    kind = shape[0]
+    if kind == "seq":
+        for k in shape[1]:
+            walk_stream(k, pc, on_leaf)
+        return
+    if kind == "branch":
+        for conds, body in shape[1]:
+            ext = []
+            for (test, pol) in conds:
+                a = atom(test)
+                ext.append(a if pol else (GNot(a) if a is not None else None))
+            walk_stream(body, pc + ext, on_leaf)
+        return
+    if kind == "loop":
+        # `on_loop` lets a caller note that it is INSIDE a loop and restore afterwards -- the
+        # bulk-inventory walk needs that context and nothing else does.
+        restore = on_loop(node) if on_loop else None
+        lpc = pc + ([undecided] if undecided is not None else [])
+        for k in shape[1:]:
+            walk_stream(k, lpc, on_leaf, on_loop, undecided)
+        if restore is not None:
+            restore()
+        return
+    if node is None:
+        return
+    on_leaf(node, pc)
+    for k in node.get("kids", ()):
+        walk_stream(k, pc, on_leaf, on_loop, undecided)
+
+
 def _send_atom(n):
     ip = item_prop_read(n)          # `(if ((Inv at: 15) loop:) {Broken Shovel} ...)`
     if ip is not None:
@@ -458,59 +500,36 @@ class Extractor:
                 self.ts.edges.append(Edge(room_num, et))
 
     def _walk(self, room, node, pc, script, seen, movement=True):
-        """Compose path conditions and record effects (newRoom, get:), FOLLOWING calls in
-        context. `movement=False` for a changeState body: the MACHINE owns those newRoom
-        exits, so a free flat duplicate would bypass the gate. Items (get:) always captured
-        (duplicate acquisition is monotone)."""
-        if node is None:
-            return
-        tp = node["t"]
-        if tp == "If":
-            ks = node["kids"]
-            test = atom(ks[0])
-            self._walk(room, ks[1], pc + [test], script, seen, movement)
-            if len(ks) > 2:
-                self._walk(room, ks[2], pc + [GNot(test) if test is not None else None], script, seen, movement)
-            return
-        if tp == "Switch":
-            for k in node["kids"][1:]:
-                body = k["kids"][1] if k["t"] == "Case" else (k["kids"][0] if k["t"] == "Else" else None)
-                self._walk(room, body, pc, script, seen, movement)
-            return
-        if tp == "Cond":
-            priors = []   # a case (and the else) runs only if all PRIOR cases failed
-            for k in node["kids"]:
-                if k["t"] == "Case":
-                    a = atom(k["kids"][0])
-                    self._walk(room, k["kids"][1], pc + priors + [a], script, seen, movement)
-                    priors = priors + [GNot(a) if a is not None else None]
-                elif k["t"] == "Else":
-                    self._walk(room, k["kids"][0], pc + priors, script, seen, movement)
-            return
-        if tp == "Loop":
-            # kids are [init, test, increment, BODY] -- walking only kids[0] dropped every loop
-            # BODY in the game (67 of them in LSL2, 76 in KQ4). That is how KQ4's endgame
-            # confiscation stayed invisible: Room92 takes your whole inventory with a `for` over
-            # the Inv list, and the loop body is where the taking happens.
+        """Compose path conditions and record effects (newRoom, item transfers), FOLLOWING calls
+        in context. `movement=False` for a changeState body: the MACHINE owns those newRoom exits,
+        so a free flat duplicate would bypass the gate. Items are always captured (duplicate
+        acquisition is monotone).
+
+        Control flow comes from `walk_stream` / `ir.control_shape`. This used to re-implement
+        If/Cond/Switch/Loop itself, in code all but identical to smv_emit3's and machine2's --
+        which is how `Loop` came to be missing from two of the three."""
+        def enter_loop(n):
             prev = self._list_loop
-            self._list_loop = prev or _walks_a_list(node)
-            for k in node.get("kids", ()):
-                self._walk(room, k, pc, script, seen, movement)
-            self._list_loop = prev
-            return
-        if tp == "Send":
-            self._send_effect(room, node, pc, movement)
-        elif tp == "Assignment" and movement:
-            self._nav_assignment(room, node, pc)
-            self._pending_room_assignment(room, node, pc)
-        elif tp in ("PublicCall", "LocalCall"):
-            tgt = node.get("script", script)
-            name = node.get("name")
-            body = self.procs_by.get((tgt, name))
-            if tgt != 255 and body is not None and name not in seen:
-                self._walk(room, body, pc, tgt, seen | {name}, movement)
-        for k in node.get("kids", ()):
-            self._walk(room, k, pc, script, seen, movement)
+            self._list_loop = prev or _walks_a_list(n)
+            def restore():
+                self._list_loop = prev
+            return restore
+
+        def leaf(n, p):
+            tp = n["t"]
+            if tp == "Send":
+                self._send_effect(room, n, p, movement)
+            elif tp == "Assignment" and movement:
+                self._nav_assignment(room, n, p)
+                self._pending_room_assignment(room, n, p)
+            elif tp in ("PublicCall", "LocalCall"):
+                tgt = n.get("script", script)
+                name = n.get("name")
+                body = self.procs_by.get((tgt, name))
+                if tgt != 255 and body is not None and name not in seen:
+                    self._walk(room, body, p, tgt, seen | {name}, movement)
+
+        walk_stream(node, pc, leaf, enter_loop)
 
     def _pending_room_assignment(self, room, node, pc):
         """`(= gNewRoomNum 57)` -- a room change written at the engine level instead of as
