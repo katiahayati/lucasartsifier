@@ -128,7 +128,11 @@ def _debug_gated_guard(guard, debug_idx=frozenset()):
 
 
 def build_maps(em):
-    """(edges, edge_kind, sources, drops, required) from the JSON-IR OpEmitter."""
+    """(edges, edge_kind, sources, drops, required, guard_required) from the JSON-IR OpEmitter.
+
+    `guard_required` is `required` WITHOUT the consumption fallback -- only rooms where the game
+    actually tests `has: X`. That is the evidence that an item ARMS something, which is a
+    different question from where it is needed, and `real_uses` wants the former."""
     edges, edge_kind = defaultdict(set), defaultdict(set)
     md = em.machine_delivered
 
@@ -274,6 +278,7 @@ def build_maps(em):
     # for items that carry no test at all -- which is every case this rule was built for
     # (Flower, Pamphlet, Bobby_Pin, Airsick_Bag, Matches, Hair_Rejuvenator, Sand, ...), all of
     # which have empty guard evidence and so are untouched.
+    guard_required = {it: set(rooms) for it, rooms in required.items()}
     for it, rooms in consumed_at.items():
         if not required.get(it):
             for room in rooms:
@@ -286,7 +291,7 @@ def build_maps(em):
     # volcano to the island hub, hiding the Ashes/Sand stranding. The gate-aware product graph
     # subsumes it -- the ticket FP was really an unguarded duplicate edge shadowing the machine
     # EXIT's own(ticket) guard (see edge_meta's machine_delivered filter).
-    return edges, edge_kind, sources, drops, required
+    return edges, edge_kind, sources, drops, required, guard_required
 
 
 def _cmp_atoms(guard, out):
@@ -459,7 +464,8 @@ class IrSccReach(SccReach):
     def __init__(self, em):
         self.em = em
         self.g = _NameShim()
-        self.edges, self.edge_kind, self.sources, self.drops, self.required = build_maps(em)
+        (self.edges, self.edge_kind, self.sources, self.drops, self.required,
+         self.guard_required) = build_maps(em)
         self.rooms = list(em.rooms)
         self.comps, self.comp_of = tarjan_scc(self.rooms, self.edges)
         self.cedges = defaultdict(set)
@@ -674,17 +680,31 @@ class IrSccReach(SccReach):
             if gi in gate:
                 for it in _own_positive(g):
                     out[it].add(room)
+        # ...and the THIRD half: an own()-guarded machine STATE path. `(if (gEgo has: 25)
+        # (self changeState: 20))` at KQ4's Room690 is what makes the Magic Fruit matter -- it
+        # arms the good ending -- but it is neither a machine ENTRY nor a register write, so the
+        # danger test could not see it and eating the fruit looked free. `guard_required` is
+        # already exactly this evidence, filtered for goal-reachability and traps by build_maps,
+        # so take it from there rather than re-deriving (and re-deciding) it here.
+        for it, rooms in self.guard_required.items():
+            out[it] |= rooms
         return out
 
-    def _loc_required(self, guard, item):
-        """Does this guard REQUIRE item `item`'s object to still be lying in the room?"""
+    def _loc_required(self, guard, item, room=None):
+        """Does this guard REQUIRE item `item`'s object to still be lying in THIS room?
+
+        `room` is where the guard was found. LSL2 writes the test as `ownedBy: gCurRoomNum`, which
+        says "here" without naming a room; KQ4 names it -- `ownedBy: 78` inside Room78. Both mean
+        the same thing, and only the caller knows which room it is in, which is why the atom keeps
+        the literal instead of collapsing it at extraction time."""
         found = []
         def walk(g, pol):
             if isinstance(g, list):
                 for x in g:
                     walk(x, pol)
             elif isinstance(g, Pred):
-                if g.kind == "LOC" and g.var == item and g.value == "room" and pol:
+                if (g.kind == "LOC" and g.var == item and pol
+                        and (g.value == "room" or (room is not None and g.value == room))):
                     found.append(True)
             elif isinstance(g, (GAnd, GOr)):
                 for k in g.kids:
@@ -703,10 +723,11 @@ class IrSccReach(SccReach):
         why barfing into the Airsick_Bag costs you the game at rm82 even though rm62 is still
         walkable. Note it does NOT make the item unobtainable for someone who simply never took
         it, so it is deliberately scoped to DESTRUCTION and leaves the stranding sweep alone."""
-        guards = [a.guard for a in self.em.ts.acqs if a.item == item]
-        guards += [g for room, script, it, g in self.em.handler_gets if it == item]
-        guards = [g for g in guards if not _debug_gated_guard(g, frozenset(self.em.cfg.debug_globals))]
-        return bool(guards) and all(self._loc_required(g, item) for g in guards)
+        guards = [(a.guard, a.room) for a in self.em.ts.acqs if a.item == item]
+        guards += [(g, room) for room, script, it, g in self.em.handler_gets if it == item]
+        dbg = frozenset(self.em.cfg.debug_globals)
+        guards = [(g, r) for (g, r) in guards if not _debug_gated_guard(g, dbg)]
+        return bool(guards) and all(self._loc_required(g, item, r) for (g, r) in guards)
 
     def _groups(self):
         return {frozenset(g) for gs in self.disjunctive_groups().values() for g in gs}

@@ -28,6 +28,10 @@ from extract2 import extract, atom, item_transfer, _room_object, EGO
 from guard_ast import GAnd, GOr, GNot, Pred
 
 
+MAIN_SCRIPT = 0     # script 0 -- the Game subclass. A dispatch SCOPE, never a room.
+                    # missability.GLOBAL_SCRIPTS is the consumer-side half of the same fact.
+
+
 def _int(x):
     try:
         return int(x)
@@ -146,6 +150,14 @@ class OpEmitter:
                 targets = self.region_rooms[rn]
             elif rn in self.ts.rooms:
                 targets = {rn}
+            elif rn == MAIN_SCRIPT:
+                # Main is a SCOPE, not a room: its Game subclass's handleEvent/doit/newRoom run
+                # everywhere. LSL2's script 0 happens to land in ts.rooms and so was walked;
+                # KQ4's is not, so every effect in its Main was dropped -- including
+                # `(gEgo put: 25 999)` at Main.sc:1246, the Magic Fruit being eaten. Recorded
+                # against room 0 (as LSL2's already was); consumers that know Main is global
+                # widen it -- see missability.GLOBAL_SCRIPTS.
+                targets = {0}
             else:
                 continue
             for room in targets:

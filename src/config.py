@@ -125,8 +125,19 @@ KQ4 = GameConfig(
     # ============================================================================
     goal_rooms=frozenset({694}),        # PROTOTYPE (see above)
     death_signal=(127, None),
-    # Main.sc:55 `debugOn ;generic debug flag -- set from debug menu`
-    debug_globals=frozenset(),                     # KQ4 uses the SetDebug kernel, not a global
+    # global215 is KQ4's debug flag -- the direct analogue of LSL2's gDebugging, found when
+    # Main's own methods were finally walked. An earlier note here claimed KQ4 "uses the SetDebug
+    # kernel, not a global"; SetDebug (Main.sc:945) is a separate thing, and the flag is real:
+    #   DebugMenu.sc:60    (^= global215 $0001)          toggled from the debug menu
+    #   Main.sc:1846       (Said 'overtime/nosleep') -> (= global215 1)   typed cheat code
+    #   Main.sc:1016       gates the cheat block: `Said 'enter/night'` sets global100 (NIGHT),
+    #                      global109, global160 and hands over items 3, 14, 15, 16 and 25
+    #   copyProtect.sc:687 (if (and global215 (ReadNumber ...)) (self newRoom: <that number>))
+    #                      -- with debug on, the copy-protection screen warps to ANY room.
+    # The warp survives only because its destination is a local, not a constant, so no edge is
+    # extracted; that is luck, not a defence. Exactly the LSL2 rm82/rm75 landmine this field
+    # exists for -- declare it rather than rely on the coincidence.
+    debug_globals=frozenset({215}),
 )
 
 # The config the pipeline runs against. Swap this (or set it from run.py) to target

@@ -86,6 +86,8 @@ rather than declared; see `src/anchors.py`.
   anything is wrong until hours later.
 - **Two constants are declared per game**: the death signal and the debug globals. Checked across
   two games they share neither index nor shape, so deriving a rule from them would be overfitting.
+  Both matter: KQ4's debug flag lets the copy-protection screen warp to any room you type, which
+  unpinned would make every room reachable from the start.
 - **Five defects were found by playing** that no static check caught — misleading refusal text, a
   self-contradicting message, an infinite loop, and a whole class of item destruction living in a
   globally-active script. Verification proved the guards closed every *detected* softlock and

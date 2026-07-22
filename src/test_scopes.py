@@ -85,6 +85,36 @@ def test_item_transfer():
                          MSG("moveTo", EGO_VAR))) is None)
 
 
+def test_ownedby_spelling():
+    print("\nPart 1b: ownedBy -- 'is the item still lying there', spelled two ways")
+    from extract2 import atom
+    from guard_ast import Pred
+    # LSL2: `ownedBy: gCurRoomNum` -- says "here" without naming a room.
+    g = atom(SEND(INV_AT(18), MSG("ownedBy", V("Global", 11))))
+    check("ownedBy: gCurRoomNum -> LOC value 'room'",
+          isinstance(g, Pred) and g.kind == "LOC" and g.var == 18 and g.value == "room", repr(g))
+    # KQ4: `ownedBy: 78` inside Room78 -- the same claim, with the room named. The literal is
+    # KEPT rather than collapsed, because only the caller knows which room it is standing in:
+    # `ownedBy: 206` (the worm's limbo) is the same syntax and means the opposite.
+    g = atom(SEND(INV_AT(25), MSG("ownedBy", N(78))))
+    check("ownedBy: 78 -> LOC value 78 (literal kept, not flattened to 'other')",
+          isinstance(g, Pred) and g.kind == "LOC" and g.var == 25 and g.value == 78, repr(g))
+    g = atom(SEND(INV_AT(19), MSG("ownedBy", N(206))))
+    check("ownedBy: 206 -> LOC value 206", isinstance(g, Pred) and g.value == 206, repr(g))
+
+    # ...and the consumer resolves it against the room the guard was found in.
+    import missability as M
+    loc = M.IrSccReach._loc_required
+    fruit_here = atom(SEND(INV_AT(25), MSG("ownedBy", N(78))))
+    check("_loc_required(guard, 25, room=78) is True   (the fruit is on the tree here)",
+          loc(None, fruit_here, 25, 78) is True)
+    check("_loc_required(guard, 25, room=23) is False  (a different room's claim)",
+          loc(None, fruit_here, 25, 23) is False)
+    lsl2_here = atom(SEND(INV_AT(18), MSG("ownedBy", V("Global", 11))))
+    check("_loc_required still True for the gCurRoomNum spelling with no room given",
+          loc(None, lsl2_here, 18) is True)
+
+
 _EM_CACHE = {}
 def real_em(which):
     """Load a real model once; None if that game's IR is not present."""
@@ -129,9 +159,26 @@ def test_region_scope():
               f"{len(machine_rooms)} machine rooms, {len(region_members)} region members")
 
 
+def test_main_scope():
+    print("\nPart 3: Main scope -- script 0 is a scope, not a room")
+    for which in ("LSL2", "KQ4"):
+        em = real_em(which)
+        if em is None:
+            continue
+        # LSL2's script 0 happened to land in ts.rooms and so was walked; KQ4's did not, so every
+        # effect in its Main was dropped -- including the Magic Fruit being eaten. Whether a game
+        # declares a room object in script 0 must not decide whether Main is analysed at all.
+        n = sum(1 for x in em.handler_writes if x[1] == 0)
+        n += sum(1 for x in em.handler_gets if x[1] == 0)
+        n += sum(1 for x in em.handler_drops if x[1] == 0)
+        check(f"{which}: Main (script 0) contributes handler effects", n > 0, f"{n} effects")
+
+
 def run():
     test_item_transfer()
+    test_ownedby_spelling()
     test_region_scope()
+    test_main_scope()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 

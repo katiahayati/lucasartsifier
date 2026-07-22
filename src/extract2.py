@@ -168,15 +168,24 @@ def _send_atom(n):
                 return Pred("OWN", var=it)
         if sel in ("said",):
             return Pred("SAID")
-        # `(gInv at: X) ownedBy: gCurRoomNum` -- "item X is still LYING IN THIS ROOM". The SCI
-        # idiom for a one-time pickup, used 77 times in LSL2 and previously lost as an opaque.
-        # It matters because `put: X -1` sets the owner to NOWHERE, so once an item guarded this
-        # way is destroyed it can never be re-acquired (barfing into the Airsick_Bag).
+        # `(gInv at: X) ownedBy: <where>` -- "item X is currently AT <where>". The SCI idiom for a
+        # one-time pickup, used 77 times in LSL2 and previously lost as an opaque. It matters
+        # because destroying an item sets its owner to NOWHERE, so the test can never hold again
+        # (barfing into the Airsick_Bag).
+        #
+        # The two games spell <where> differently, as usual: LSL2 writes `gCurRoomNum` (60 sites),
+        # KQ4 writes the room number as a LITERAL (`ownedBy: 78` inside Room78, where the Magic
+        # Fruit hangs on the tree). Carry the destination through rather than deciding here --
+        # only the caller knows which room it is standing in. See missability._loc_required.
         if sel == "ownedBy":
             it = _at_item(recv)
             if it is not None:
-                here = bool(params) and I.is_global(params[0], G_CURROOM)
-                return Pred("LOC", var=it, op="ownedBy", value="room" if here else "other")
+                where = "other"
+                if params and I.is_global(params[0], G_CURROOM):
+                    where = "room"
+                elif params and I.as_int(params[0]) is not None:
+                    where = I.as_int(params[0])
+                return Pred("LOC", var=it, op="ownedBy", value=where)
         # `(gEgo inRect: a b c d)` -> a POSITION guard over the ego's (x,y). Coordinates are
         # in the AST, so this is derivable; ONE consistent (x,y) is what makes "cross east =>
         # inRect" unavoidable: one consistent (x,y) per step, not a fresh choice per guard.

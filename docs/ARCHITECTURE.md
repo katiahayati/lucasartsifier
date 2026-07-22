@@ -80,9 +80,9 @@ python -m pipeline /path/to/game          # decompile -> analyse -> derive -> pa
 | `trigger.py` | 279 | Finds the **controllable trigger** for a guard — the handler that *starts* a cutscene, never the `newRoom:` at its tail — and wraps the whole enclosing clause so side effects cannot fire ahead of a refusal. |
 | `sexpr.py` | 191 | S-expression reader for `.sc` source. Only the patch path needs source text; the analysis never touches it. |
 
-### Tests (156)
+### Tests (164)
 `test_gate_aware` (35) · `test_control_oracle` (32) · `test_everything` (25) · `test_abstractions` (20) ·
-`test_guards` (17) · `test_scopes` (17) · `test_anchors` (10). Almost all on synthetic inputs —
+`test_guards` (17) · `test_scopes` (25) · `test_anchors` (10). Almost all on synthetic inputs —
 end-to-end scoring lives in `python -m missability` and `python -m guards`.
 
 ### Native

@@ -83,8 +83,15 @@ the mouse save you later.
 
 **Two constants are still declared per game**: the death signal and the debug globals. Checked
 across both games, they share neither index nor shape (LSL2 dies on `global101 == 1001`, KQ4 on
-boolean `global127`; KQ4 has no debug global at all). Deriving a rule from two disagreeing examples
-would be overfitting, so they are declared — by index, since the IR carries no symbol table.
+boolean `global127`; the debug flag is LSL2's `global100`/`global111` and KQ4's `global215`).
+Deriving a rule from two disagreeing examples would be overfitting, so they are declared — by
+index, since the IR carries no symbol table.
+
+We were wrong about KQ4's for a while, and it is worth saying why: we recorded "KQ4 has no debug
+global at all" because we had never walked KQ4's `Main`, which is where the flag is read. Unpinned
+it would have been the worst kind of landmine — `copyProtect.sc` uses it to warp to any room number
+you type, which would have made every room reachable from the start and quietly emptied the whole
+analysis.
 
 ## Who's "we"?
 
