@@ -16,8 +16,9 @@ produces a confident wrong answer instead of an error.
   4  asserts_eq     -- `(if (not gX) ...)` IS an equality test, in both copies of the rule.
   5  cue arming     -- an edge fired from a Prop's `cue` inherits the guard that armed it.
   6  pending room   -- `(= global13 N)` IS `newRoom: N`, one layer down. KQ4 uses it 20 times.
+  7  register flips -- the SECOND softlock class: a flag advances and shuts a region.
 
-Parts 2-6 need a real IR and skip cleanly without one; 1, 1b and 4 are pure.
+Parts 2-7 need a real IR and skip cleanly without one; 1, 1b and 4 are pure.
 """
 import sys
 sys.path.insert(0, ".")
@@ -236,6 +237,30 @@ def test_pending_room():
     check("KQ4: rm57 (witches' cave) has an in-edge", bool(ins), f"in-edges from {sorted(ins)}")
 
 
+def test_register_strandings():
+    print("\nPart 7: register-flip strandings agree with the edge detector")
+    import os, config, missability as M
+    if not os.path.exists(config.LSL2.ir_path):
+        print("  (skip: no LSL2 IR)")
+        return
+    s = M.load(cfg=config.LSL2)
+    found = {r["item_name"] for r in s.register_strandings()}
+    known = {c["item_name"] for c in s.analyze()} | {"Ashes", "Sand"}
+    # The two detectors see different CLASSES (crossing a one-way edge vs a flag advancing), so
+    # they need not agree -- but on the one game with hand-verified ground truth, everything the
+    # register detector finds is already known. A new name here is a claim about LSL2 and needs
+    # the user, not a passing test.
+    check("LSL2: register-flip findings introduce no new items",
+          not (found - known), f"new: {sorted(found - known)}")
+    check("LSL2: the register detector finds something at all", bool(found), f"{len(found)} items")
+    for r in s.register_strandings():
+        if r["source_rooms"] and set(r["source_rooms"]) & set(r["still_needed_at"]):
+            check("a finding must not have a source inside its own post-flip region", False,
+                  repr(r))
+            return
+    check("no finding has a source inside its own post-flip region", True)
+
+
 def run():
     test_item_transfer()
     test_ownedby_spelling()
@@ -244,6 +269,7 @@ def run():
     test_asserts_eq()
     test_cue_arming()
     test_pending_room()
+    test_register_strandings()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 

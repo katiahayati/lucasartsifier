@@ -790,6 +790,62 @@ class IrSccReach(SccReach):
                 break          # one witness room is enough to condemn the site
         return out
 
+    def register_strandings(self):
+        """Softlocks caused by a REGISTER flipping, not by walking through a one-way door.
+
+        The second class in the taxonomy, and one `edge_strandings` structurally cannot see: it
+        reasons about crossing an edge, and here nothing is crossed. A plot flag advances -- you
+        finish Lolotte's first errand, the sun goes down -- and a region that was open closes
+        behind you while something you still need is inside it.
+
+        Same shape as an edge stranding otherwise, so the same three conjuncts:
+          1. the flip is a POINT OF NO RETURN: from every state at the new value, no state at any
+             other value is reachable. (Nightfall in KQ4 is NOT one -- Room82 brings the dawn --
+             which is why it correctly reports nothing.)
+          2. the goal is still reachable afterwards, or this is a dead end rather than a softlock;
+          3. every source of the item is outside the post-flip region, and a use is inside it.
+
+        Runs on the projections `_build_product` already made, so it costs a walk per (register,
+        value) and no new model."""
+        out = []
+        goal = self.goal_rooms_set()
+        for R in self.regs:
+            states = self._pstates[R]
+            vals = {v for (_r, v) in states}
+            if len(vals) < 2:
+                continue
+            for w in sorted(vals):
+                # Seed where the flip ITSELF can happen -- rooms that write w, and edges that set
+                # it on the way out -- not every room already seen at w. Seeding a room with its
+                # own post-flip state is how a first attempt at this "proved" that KQ4's start
+                # room was sealed by nightfall.
+                seeds = {(r, w) for r, vs in self._inroom[R].items() if w in vs}
+                for (_a, b), metas in self._emeta.items():
+                    for (_req, sets, _alts) in metas:
+                        if sets.get(R) == w:
+                            seeds.add((b, w))
+                seeds &= states
+                if not seeds:
+                    continue
+                after = self._walk(R, frozenset(), starts=seeds)
+                if any(v != w for (_r, v) in after):
+                    continue                        # you can get back out; not a point of no return
+                rooms_after = {r for (r, _v) in after}
+                if goal and not (goal & rooms_after):
+                    continue                        # already unwinnable: a dead end, not a softlock
+                for it in sorted(self.required):
+                    srcs = self.sources.get(it, set())
+                    if not srcs or (srcs & rooms_after):
+                        continue                    # obtainable after the flip, or never obtainable
+                    ahead = self.required[it] & rooms_after
+                    if ahead:
+                        out.append({"pattern": "register-flip-point-of-no-return",
+                                    "register": R, "value": w, "item": it,
+                                    "item_name": self.g.item_name(it),
+                                    "source_rooms": sorted(srcs),
+                                    "still_needed_at": sorted(ahead)})
+        return out
+
     def requirement_units(self):
         """Every unit that must be satisfied to win: single items, plus disjunctive GROUPS.
 
