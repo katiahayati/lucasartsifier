@@ -1,16 +1,22 @@
 """Unit tests for the two EXTRACTION SCOPES that were silently empty, using synthetic AST
 fragments so each part is checked without an end-to-end run. Run: python3 test_scopes.py
 
-Parts under test:
-  1. item_transfer  -- the item-LOCATION store has two spellings and we read only one.
-                       `gEgo get:/put:` (LSL2) and `(Inv at: N) moveTo: D` (KQ4) are ONE
-                       operation. KQ4 contains no `get: 24` at all, so the Dead_Fish did not
-                       exist in our model; LSL2 destroys the Soap with `moveTo: -1` twice.
-  2. region scope   -- SCI dispatches at three scopes (Main / Rgn / room) and we had the
-                       middle one keyed off the `rm<N>` decompiler naming convention, so KQ4
-                       mapped 0 of its 26 regions. Region MACHINES were dropped too.
+Every part here fixes something that was silently EMPTY rather than wrong -- the failure mode
+this project keeps hitting, where an LSL2 spelling is the only one implemented and a second game
+produces a confident wrong answer instead of an error.
 
-Part 2 needs a real IR and skips cleanly without one; part 1 is pure.
+  1  item_transfer  -- the item-LOCATION store has two spellings and we read one. `gEgo get:/put:`
+                       (LSL2) and `(Inv at: N) moveTo: D` (KQ4) are ONE operation. KQ4 contains no
+                       `get: 24` at all, so the Dead_Fish did not exist in our model; LSL2 destroys
+                       the Soap with `moveTo: -1` twice and we never saw that either.
+  1b ownedBy         -- "is it still lying there": `ownedBy: gCurRoomNum` vs `ownedBy: 78`.
+  2  region scope   -- SCI dispatches at three scopes (Main / Rgn / room); the middle one was keyed
+                       off the `rm<N>` naming convention, so KQ4 mapped 0 of its 26 regions.
+  3  Main scope     -- script 0 is a scope, not a room, and only LSL2's happened to be walked.
+  4  asserts_eq     -- `(if (not gX) ...)` IS an equality test, in both copies of the rule.
+  5  cue arming     -- an edge fired from a Prop's `cue` inherits the guard that armed it.
+
+Parts 2-5 need a real IR and skip cleanly without one; 1, 1b and 4 are pure.
 """
 import sys
 sys.path.insert(0, ".")
@@ -174,11 +180,46 @@ def test_main_scope():
         check(f"{which}: Main (script 0) contributes handler effects", n > 0, f"{n} effects")
 
 
+def test_asserts_eq():
+    print("\nPart 4: asserts_eq -- `(if (not gX) ...)` is an equality test")
+    import missability as M
+    check("x == v  asserts equality", M.asserts_eq("==", True) is True)
+    check("not (x != v)  asserts equality (SCI's `(if (not gX) ...)`)",
+          M.asserts_eq("!=", False) is True)
+    check("x != v  does not", M.asserts_eq("!=", True) is False)
+    check("not (x == v)  does not (a negative requirement; deliberately permissive)",
+          M.asserts_eq("==", False) is False)
+
+
+def test_cue_arming():
+    print("\nPart 5: cue-armed edges inherit their arming guard")
+    em = real_em("KQ4")
+    if em is None:
+        return
+    import missability as M
+    # KQ4's dwarves' house: `(Said 'open/door')` opens it only `(if (not global100)` -- daytime --
+    # while the `newRoom: 54` itself lives in the door Prop's `cue`, an object away. Without the
+    # inheritance the edge is guarded by the opaque cel test alone, i.e. free.
+    door = [e for e in em.ts.edges if e.src == 22 and e.dst == 54]
+    check("rm22 -> rm54 (the dwarves' door) exists", len(door) == 1, f"{len(door)} edges")
+    if door:
+        check("...and requires global100 == 0, i.e. daytime",
+              M.required_values(door[0].guard, 100) == {0},
+              repr(M.required_values(door[0].guard, 100)))
+    # and the gate must survive into the movement model, not just the guard tree -- these were
+    # two separate copies of the same equality test, and only one of them got fixed at first.
+    s = M.load(cfg=__import__("config").KQ4)
+    reqs = [req.get(100) for (req, sets, alts) in s._emeta.get((22, 54), [])]
+    check("...and edge_meta agrees (no second copy of the rule)", reqs == [{0}], repr(reqs))
+
+
 def run():
     test_item_transfer()
     test_ownedby_spelling()
     test_region_scope()
     test_main_scope()
+    test_asserts_eq()
+    test_cue_arming()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 

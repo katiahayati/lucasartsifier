@@ -203,6 +203,7 @@ class Edge:
     src: int
     dst: int
     guard: object = None       # guard tree; None = free
+    via: str = ""              # object whose method emitted it -- see Extractor._inherit_arming
 
 
 @dataclass
@@ -276,6 +277,8 @@ class Extractor:
     def __init__(self, ir):
         self.ir = ir
         self.ts = TS()
+        self._cur_obj = ""                  # object whose method is being walked
+        self._armed = {}                    # room -> {object name: [guard, ...]}
         self.procs_by = {}
         for rn, s in ir.scripts.items():
             for name, body in s.procs.items():
@@ -289,16 +292,64 @@ class Extractor:
         for n, s in room_scripts.items():
             self._nav_edges(n, s)
             for o in s.objects:
+                self._cur_obj = o.name
                 for mname, meth_ast in o.methods.items():
                     # changeState newRoom exits belong to the MACHINE (gated); don't
                     # duplicate them as free flat edges. Items still captured. Procedures
                     # are FOLLOWED in-context (below), not walked standalone -- a proc
                     # walked context-free would emit its newRoom as a free bypass.
                     self._walk(n, meth_ast, [], n, set(), movement=(mname != "changeState"))
+            self._cur_obj = ""
+            self._inherit_arming(n)
         # add any newRoom target we saw as a room
         for e in self.ts.edges:
             self.ts.rooms.add(e.dst)
         return self.ts
+
+    # selectors that make an object animate/move/run, i.e. that end in a `cue` back to it
+    ARMING = ("setCycle", "setMotion", "setScript", "cue", "setReal", "setTimer")
+
+    def _inherit_arming(self, room):
+        """A cue-driven edge inherits the guard of whatever ARMED it.
+
+        SCI's door idiom splits one player action across two objects:
+
+            ((Said 'open/door')                          ; Room22.handleEvent
+              (cond ((not global100)                     ; <-- the gate: daytime only
+                     (doorSound number: 300 play: door)  ; arms the door (sound cues its client)
+                     (door setCycle: End))               ; ...and animates it
+                    (else (proc255_0 22 9))))            ; "We're all asleep here!"
+
+            (instance door of Prop                       ; and, separately:
+              (method (cue)
+                (if (!= (door cel:) (door lastCel:)) (self setCycle: End self)
+                  else (global2 newRoom: 54))))          ; <-- the edge
+
+        Walked object-by-object, the edge carries only the cel test -- opaque, so free -- and
+        `not global100` is nowhere near it. In KQ4 that is the difference between seeing and not
+        seeing that the dwarves' house and the fisherman's shanty LOCK AT NIGHTFALL, with the
+        Diamond_Pouch and the Fishing_Pole behind them.
+
+        Same principle as the existing setScript capture: an object that only runs when something
+        starts it cannot be freer than its starter. The arming guards are OR-ed, since any of them
+        will do, and a single unguarded arming site makes the disjunction vacuous -- which is the
+        permissive answer, and the right one.
+
+        Deliberately narrow, because adding a guard REMOVES movement and that is the unsafe
+        direction: applied only to objects that emitted an edge, only from arming sends found in
+        OTHER objects' methods (an object re-arming itself is the animation loop, not a gate), and
+        never when no arming site was found at all."""
+        armed = self._armed.get(room)
+        if not armed:
+            return
+        for e in self.ts.edges + self.ts.cs_edges:
+            if e.src != room or not e.via:
+                continue
+            gs = armed.get(e.via)
+            if not gs:
+                continue
+            starter = gs[0] if len(gs) == 1 else GOr(list(gs))
+            e.guard = starter if e.guard is None else GAnd([e.guard, starter])
 
     def _nav_edges(self, room_num, script):
         obj = _room_object(script, self.ir)
@@ -383,7 +434,25 @@ class Extractor:
             return                      # 0 CLOSES the exit; it does not open one
         self.ts.edges.append(Edge(room, dst, _conj(pc)))
 
+    def _record_arming(self, room, node, pc):
+        """Note that this send ARMS some object, and under what condition. Two spellings:
+        `(door setCycle: End)` -- the object is the receiver -- and `(doorSound play: door)`,
+        where the object is handed to something that will cue it when it finishes."""
+        recv, msgs = I.send_pairs(node)
+        rname = recv.get("name") if isinstance(recv, dict) else None
+        targets = set()
+        for sel, params in msgs:
+            if sel in self.ARMING and rname:
+                targets.add(rname)
+            for p in params:
+                if isinstance(p, dict) and p.get("t") == "Object" and p.get("name"):
+                    targets.add(p["name"])
+        for t in targets:
+            if t and t != self._cur_obj:      # self-arming is the animation loop, not a gate
+                self._armed.setdefault(room, {}).setdefault(t, []).append(_conj(pc))
+
     def _send_effect(self, room, node, pc, movement=True):
+        self._record_arming(room, node, pc)
         recv, msgs = I.send_pairs(node)
         for sel, params in msgs:
             if sel in ("newRoom", "entranceTo") and params:
@@ -397,7 +466,7 @@ class Extractor:
                 for dst in dsts:
                     if dst is not None:
                         (self.ts.edges if movement else self.ts.cs_edges).append(
-                            Edge(room, dst, _conj(pc)))
+                            Edge(room, dst, _conj(pc), self._cur_obj))
             elif sel == "get" and I.is_global(recv, G_EGO) and params:
                 it = I.as_int(params[0])
                 if it is not None:

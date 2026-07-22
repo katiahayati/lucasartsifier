@@ -358,17 +358,34 @@ def gating_registers(em):
     return sorted(compared & written)
 
 
+def asserts_eq(op, pol):
+    """Does a `(reg, op, value, polarity)` atom assert `reg == value`?
+
+    Both spellings do: `x == v`, and `not (x != v)`. The second matters because `(if (not gX)
+    ...)` is SCI's way of writing "gX is 0" and `atom()` renders a bare global's truthiness as
+    `CMP(gX, !=, 0)` -- which is how KQ4's day-only doors are gated.
+
+    Shared deliberately: this test used to be spelled out separately in `required_values` and in
+    `edge_meta.reqs`, and fixing one and not the other left the night gate parsed but toothless."""
+    return (op == "==" and pol) or (op == "!=" and not pol)
+
+
 def required_values(guard, reg):
     """Values of `reg` this guard REQUIRES (positive `== v`), or None if it doesn't constrain it.
 
     Only positive equalities are used. `!=` and the relational ops are deliberately ignored: they
     would need the value-partition abstraction to stay exact, and ignoring them is the PERMISSIVE
-    direction (we never block movement the game allows)."""
+    direction (we never block movement the game allows).
+
+    A NEGATED `!=` is a positive equality, though, and that is not a technicality: `(if (not gX)
+    ...)` is how SCI writes "gX is 0", and `atom()` turns bare-global truthiness into
+    `CMP(gX, !=, 0)`. KQ4's day-only doors are guarded exactly that way -- `(if (not global100)
+    <open the door>)` -- so without this the night gate parsed fine and then constrained nothing."""
     vals = set()
     atoms = []
     _cmp_atoms(guard, atoms)
     for (r, op, v, pol) in atoms:
-        if r == reg and op == "==" and pol:
+        if r == reg and asserts_eq(op, pol):
             vals.add(v)
     return vals or None
 
@@ -433,7 +450,7 @@ def edge_meta(em, regs):
         _cmp_atoms(guard, atoms)
         out = {}
         for (r, op, v, pol) in atoms:
-            if r in regset and op == "==" and pol:
+            if r in regset and asserts_eq(op, pol):
                 out.setdefault(r, set()).add(v)
         return out
     meta = defaultdict(list)

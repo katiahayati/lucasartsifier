@@ -171,6 +171,7 @@ class OpEmitter:
                         self._hwalk(room, rn, body, [], set())
                 for pbody in s.procs.values():
                     self._hwalk(room, rn, pbody, [], set())
+        self._walk_game_newroom(ir)
         for room, script, gi, v, g in self.handler_writes:
             self.reg_vals.setdefault(gi, {0}).add(v)
             self._scan_domains_guard(g, script)      # CTR-local values in the guard
@@ -422,6 +423,36 @@ class OpEmitter:
                 for e in self.ts.edges:
                     if e.src == room and e.dst == dst:
                         e.guard = safe if e.guard is None else GAnd([e.guard, safe])
+
+    def _walk_game_newroom(self, ir):
+        """`Game::newRoom` runs on EVERY room change, so its effects belong in every room.
+
+        This is the one method whose scope is neither "this room" nor "pseudo-room 0": the engine
+        calls it as the player leaves anywhere for anywhere. KQ4's nightfall lives here and
+        nowhere else --
+
+            (method (newRoom param1)                              ; Main.sc:924
+              (if (and (== global100 0) (== global101 0) ... (< 20 global160 30))
+                  (= global100 1) ...))                           ; NIGHT
+
+        -- so recorded against room 0 it could never gate anything, and night simply never fell in
+        the model. Recorded in every room it becomes what it actually is: a transition available
+        wherever you are, whose trigger (the wall clock) the player does not control. The product
+        already treats in-room register writes as unguarded and free, which is exactly the right
+        reading for an adversarial one -- see missability._psucc.
+
+        LSL2's `Main::newRoom` does the same thing with `(= global127 0)`, a real gating register
+        it clears on every transition; modelling it only in room 0 was wrong there too."""
+        main = ir.script(MAIN_SCRIPT)
+        if main is None:
+            return
+        rooms = sorted(self.ts.rooms)
+        for o in main.objects:
+            body = o.methods.get("newRoom")
+            if body is None:
+                continue
+            for room in rooms:
+                self._hwalk(room, MAIN_SCRIPT, body, [], set())
 
     def _hwalk(self, room, script, node, pc, seen):
         """Path-condition walk of a handler; record global + local writes + item gets,
