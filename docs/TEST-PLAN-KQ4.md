@@ -71,7 +71,7 @@ region scope in `extract` should flip the direction to unicorn → Lolotte.
 
 ---
 
-## 2b. Is the fishing pole REALLY re-baitable?  ← and our reason for saying so is weak
+## 2b. Fishing pole / worm — ANSWERED by the user 2026-07-22: NOT a softlock
 
 The pole is EXCLUDED from `resource_exhaustion` because its `loop` property is written to both 0
 and 1, which the one-way test reads as "restorable". That test is SYNTACTIC -- it asks whether the
@@ -91,9 +91,11 @@ Whether that is a SOFTLOCK depends on whether a baited pole is ever needed twice
 one Dead_Fish, so probably not. But the reason we excluded it is wrong either way, and if the cast
 can fail (worm consumed, no fish) it becomes a real one.
 
-- [ ] Cast and MISS, if missing is possible. Is the worm gone? Can you get another?
-- [ ] After catching the fish, check the pole: does it still say baited? Try `put worm on hook`.
-- [ ] Confirm the robin never returns once the worm has been used.
+**"You don't need the fishing pole or the worm after getting the fish."** So whether the pole can
+be re-baited is moot: nothing downstream wants a baited pole. Our EXCLUSION of the pole was reached
+by a weak argument (the syntactic one-way test, TODO A0m) but the conclusion is correct.
+
+- [x] Answered. No play-test needed.
 
 **What the answer changes.** If a cast can consume the worm without producing the fish, the Worm
 belongs in `resource_exhaustion` and the pole's exclusion is a false negative. See TODO A0m:
@@ -101,20 +103,26 @@ the one-way test needs to ask whether the restoring write is REACHABLE, not mere
 
 ---
 
-## 2c. The Gold Ball -- is rm21 a real second source?
+## 2c. The Gold Ball — ANSWERED by the user 2026-07-22: RE-OBTAINABLE, not a softlock
 
 `drops[5] = [15]` (throwing it in the pond) and `sources[5] = [15, 21]`. The second source is why
 it is NOT flagged as a softlock: the model thinks you can get another. The user's recollection is
 that you cannot -- *"if you throw the ball in the pond and don't get the crown from the frog you
 can't try again. There's definitely ways to lose that gold ball."*
 
-- [ ] Throw the ball in the pond (rm15) and DO NOT take the crown from the frog. Can you retrieve
-      the ball, at rm15 or anywhere else?
-- [ ] What is rm21's ball source -- the initial pickup, or a genuine second chance?
+**"The frog brings it back. If you leave the room and come back the ball is still there and you can
+still throw it in the pond."** So rm15 is a genuine, repeatable source and the ball cannot be lost.
 
-**What the answer changes.** If rm21 is only the initial placement, then losing the ball at rm15 is
-a true stranding we are missing, and the same one-time-pickup question applies as to the fishing
-pole in 2b -- a source that exists syntactically but is unreachable once used.
+This supersedes the user's earlier uncertainty ("pretty sure that if you throw the ball in the pond
+and don't get the crown from the frog you can't try again"). Their later statement is the ground
+truth; do not re-open it from source.
+
+Our model already says re-obtainable, and for a defensible reason: rm15's `get: 5` is guarded on
+`ownedBy: 15`, and the frog returning the ball is what makes that true again. (rm21 IS a dead
+source once the ball leaves -- gated on `ownedBy: 21` -- but that does not matter, because rm15
+is alive.)
+
+- [x] Answered. No play-test needed.
 
 ---
 
