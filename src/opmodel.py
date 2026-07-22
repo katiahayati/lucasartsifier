@@ -80,6 +80,10 @@ class OpEmitter:
         #   `if gIslandStatus==2`; flattening forced g101=11 always -> every win edge (needs
         #   g101==0) sealed. Emitted as ordered guarded cases (last source wins where guard holds).
         self.deaths = []            # (room, guard) flat/machine deaths
+        self.dropped_entries = []   # (room, guard) -- entry guards of machines we do NOT model.
+        #   Requirement evidence only: the machine does nothing we track, but you still had to be
+        #   holding something to start it. LSL2 has 66 such machines and NONE with an own() guard;
+        #   KQ4 has 101 and four that matter (doBread/1, witchEye+witchMoan/6, shootLolotte/14).
         self.procs_by = {}          # (script, proc-name) -> body AST, for call-following
         for rn, s in ir.scripts.items():
             for name, body in s.procs.items():
@@ -126,6 +130,16 @@ class OpEmitter:
                     info = self._machine_info(room, m)
                     if info:
                         self.machines.append(info)
+                    else:
+                        # A machine with no effect WE TRACK is not modelled -- but being ENTERED
+                        # under a guard is still evidence about what the player must be carrying.
+                        # rm82's `shootLolotte` writes no global, gets no item and exits nowhere;
+                        # all it does is start `lolotteDead`. Dropping it took the `has: 14` on
+                        # its entry with it, so the Cupid's Bow had no recorded use at rm82 at
+                        # all and `resource_exhaustion` could only report the unicorn rooms.
+                        for K, eg in list(m.entries) + list(m.init_entries):
+                            if eg is not None:
+                                self.dropped_entries.append((room, eg))
         # player-action effects in handleEvent/doit: register writes + item get/put that
         # the game does NOT do via a changeState machine (e.g. `(= gLoweredLifeboats 1)`
         # when the player says "lower lifeboats"). Guard = the path condition (Said/opaque

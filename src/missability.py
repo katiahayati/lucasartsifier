@@ -284,6 +284,9 @@ def build_maps(em):
         req(g, room)
     for room, script, gi, v, g in em.handler_writes:
         req(g, room)
+    # entry guards of machines we chose not to model -- see opmodel.dropped_entries
+    for room, eg in getattr(em, "dropped_entries", ()):
+        req(eg, room)
     # consuming an item in a HANDLER -- the Pamphlet handed to the bore on the plane (rm62) is a
     # Said-handler `put: 26 -1`, which the machine-body scan never sees. Held back; see below.
     for room, script, it, g in getattr(em, "handler_drops", ()):
