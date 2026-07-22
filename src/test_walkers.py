@@ -70,10 +70,14 @@ ACCEPTED = {
                    "in the machine walkers and not at all in extract2, and never for GLOBALS "
                    "anywhere -- which is why KQ4's dig counter and its clock are invisible.",
     "Increment":   "as Decrement -- TODO A0g(1).",
-    "Loop":        "KNOWN BUG, tracked as TODO A0i: compile2._paths_of falls through to "
-                   "[[('D', node)]] for any node type it does not name, so a Loop inside a "
-                   "changeState body is one opaque item and its contents are DROPPED. 16 such "
-                   "loops in each game, holding 45 (LSL2) and 161 (KQ4) effects.",
+    "Loop":        "FIXED (was TODO A0i, found by this very sweep). compile2._paths_of used to "
+                   "fall through to [[('D', node)]] for any node type it did not name, so a Loop "
+                   "inside a changeState body became one opaque item and its contents were "
+                   "dropped -- 16 such loops per game, holding 45 (LSL2) and 161 (KQ4) effects. "
+                   "compile2 now names it. machine2 still does not, and does not need to: its "
+                   "_ops ends in a generic `for k in node.get('kids', ())`, so it already walks "
+                   "loop bodies. That distinction -- explicit case vs generic recursion -- is "
+                   "exactly what this matrix cannot see, so check it before trusting a row.",
 }
 
 PASS, FAIL = [], []

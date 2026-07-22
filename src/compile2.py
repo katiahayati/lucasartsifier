@@ -56,6 +56,22 @@ def _paths_of(node):
             body = c["kids"][1] if c["t"] == "Case" else c["kids"][0]
             out += _paths_of(body)
         return out or [[]]
+    if tp == "Loop":
+        # kids are [init, test, increment, BODY]. Without this the fall-through below turned the
+        # whole loop into ONE opaque ("D", node) item, and `_interp` -- which only inspects such
+        # an item for Send/Assignment/Increment -- dropped everything inside it. 16 loops sit in
+        # changeState bodies in each game, holding 45 (LSL2) and 161 (KQ4) effects.
+        # The body may run or not, so it fans out exactly like an `If` with no else: one path
+        # where the loop is skipped, one where it runs. Not modelling N iterations is deliberate
+        # -- effects here are monotone (a get is a get however many times it happens) and the
+        # alternative is unbounded.
+        ks = node["kids"]
+        init = ks[0] if len(ks) > 0 else None
+        incr = ks[2] if len(ks) > 2 else None
+        body = ks[3] if len(ks) > 3 else None
+        if body is None:
+            return _seq([init])
+        return _seq([init]) + _seq([init, body, incr])
     return [[("D", node)]]
 
 
