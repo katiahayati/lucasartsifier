@@ -20,6 +20,8 @@ produces a confident wrong answer instead of an error.
   8  goal discovery -- victory when the game ends wins and losses through one flag.
   9  derived constants -- death and debug read out of the game, not declared.
  10  resource exhaustion -- a finite item degraded one-way by ordinary use.
+ 11  item names    -- the number -> name map derives from the game's own class table, not one
+                       hardcoded LSL2 dict applied to every game (KQ4's Shovel was "Bikini_Top").
 
 Parts 2-7 need a real IR and skip cleanly without one; 1, 1b and 4 are pure.
 """
@@ -342,13 +344,36 @@ def test_resource_exhaustion():
         check(f"{which}: resource-exhaustion findings {'exist' if want else 'are empty'}",
               bool(rows) == want, repr([(r["item_name"], r["at_room"]) for r in rows]))
         if which == "KQ4":
-            # by NUMBER, not name: missability._NAMES is LSL2's map and is applied to any game,
-            # so KQ4's item 15 (the Shovel) prints as "Bikini_Top". Reporting hazard, logged.
+            # item 15 is the Shovel: it snaps after five wrong digs (Room16:589) and global113 is a
+            # GLOBAL, so holes dug in the graveyard count against the crypt -- needed in both. Names
+            # now DERIVE per game (vocab.item_names), so the NAME is checked too (was "Bikini_Top").
             shovel = [r for r in rows if r["item"] == 15]
-            # the Shovel snaps after five wrong digs (Room16:589) and global113 is a GLOBAL, so
-            # holes dug in the graveyard count against the crypt -- it is needed in both.
             check("KQ4: the Shovel is flagged in both digging rooms",
                   {r["at_room"] for r in shovel} == {16, 18}, repr(shovel))
+            check("KQ4: item 15 is named the Shovel, not LSL2's table",
+                  all(r["item_name"] == "Shovel" for r in shovel),
+                  repr([r["item_name"] for r in shovel]))
+
+
+def test_item_names():
+    print("\nPart 11: item names DERIVE per game (vocab.item_names), not one LSL2 table for all")
+    import os, config, vocab, ir as I
+    # LSL2: the derivation must reproduce the old hand-written _NAMES table on every real item;
+    # item 0 is the NoInv placeholder, which was never in _NAMES and is never a real softlock.
+    if os.path.exists(config.LSL2.ir_path):
+        m = vocab.item_names(I.load_ir(config.LSL2.ir_path))
+        want = {0: "NoInv", 1: "Dollar_Bill", 5: "Swimsuit", 6: "Wad_O_Dough",
+                15: "Bikini_Top", 17: "Knife", 24: "Parachute", 30: "Ashes", 31: "Sand"}
+        check("LSL2: derived names reproduce the curated table",
+              all(m.get(i) == n for i, n in want.items()), repr({i: m.get(i) for i in want}))
+    # KQ4: the names every report used to hand-resolve from Main.sc, now derived. The Shovel (15)
+    # used to print as LSL2's "Bikini_Top" -- the reporting hazard A0h closes.
+    if os.path.exists(config.KQ4.ir_path):
+        m = vocab.item_names(I.load_ir(config.KQ4.ir_path))
+        want = {0: "Silver_Flute", 7: "Obsidian_Scarab", 14: "Cupid_s_Bow", 15: "Shovel",
+                17: "Fishing_Pole", 19: "Worm", 25: "Magic_Fruit", 33: "Magic_Hen"}
+        check("KQ4: names derived from its own class table",
+              all(m.get(i) == n for i, n in want.items()), repr({i: m.get(i) for i in want}))
 
 
 def run():
@@ -363,6 +388,7 @@ def run():
     test_goal_discovery()
     test_derived_constants()
     test_resource_exhaustion()
+    test_item_names()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 

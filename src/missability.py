@@ -16,22 +16,21 @@ from collections import defaultdict, deque
 import ir as I
 import config
 import opmodel as E
+import vocab
 from guard_ast import GAnd, GOr, GNot, Pred
 from scc_core import tarjan_scc, reachable, SccReach
 
-# item names are a reporting nicety; the IR JSON carries none, so keep a local map (LSL2). The
-# ANALYSIS is fully on JSON-IR -- only these labels are game-specific.
-_NAMES = {1:"Dollar_Bill",2:"Lottery_Ticket",3:"Cruise_Ticket",4:"Million_Dollar_Bill",
-    5:"Swimsuit",6:"Wad_O_Dough",7:"Passport",8:"Grotesque_Gulp",9:"Sunscreen",10:"Onklunk",
-    11:"Fruit",12:"Sewing_Kit",13:"Spinach_Dip",14:"Wig",15:"Bikini_Top",16:"Bikini_Bottom",
-    17:"Knife",18:"Soap",19:"Matches",20:"Flower",21:"Hair_Rejuvenator",22:"Suitcase",
-    23:"Airline_Ticket",24:"Parachute",25:"Bobby_Pin",26:"Pamphlet",27:"Airsick_Bag",
-    28:"Stout_Stick",29:"Vine",30:"Ashes",31:"Sand"}
+# Item names are a reporting nicety; the IR JSON carries only the raw instance name, so derive the
+# number -> name map from the game's own class table (vocab.item_names). Previously this was a
+# hardcoded LSL2 dict applied to EVERY game, so KQ4's Shovel printed as "Bikini_Top" -- the last
+# game-specific catalogue, now gone. The ANALYSIS was always fully on JSON-IR; only these labels
+# were game-specific, and now they derive too.
+class _ItemNames:
+    def __init__(self, names):
+        self._names = names        # {number: name}, derived per game
 
-
-class _NameShim:
     def item_name(self, it):
-        return _NAMES.get(it, f"item{it}")
+        return self._names.get(it, f"item{it}")
 
 
 def _own_positive(guard):
@@ -532,7 +531,7 @@ class IrSccReach(SccReach):
     """SccReach fed from the JSON-IR model instead of model.Game (same algorithm)."""
     def __init__(self, em):
         self.em = em
-        self.g = _NameShim()
+        self.g = _ItemNames(vocab.item_names(em.ir))
         (self.edges, self.edge_kind, self.sources, self.drops, self.required,
          self.guard_required) = build_maps(em)
         self.rooms = list(em.rooms)

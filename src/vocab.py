@@ -24,6 +24,8 @@ Run standalone to see what it derives:  python3 vocab.py
 """
 from __future__ import annotations
 
+import re
+
 import ir as I
 
 
@@ -499,3 +501,43 @@ def derive_debug(ir):
     return out
 
 
+def item_names(ir):
+    """Item NUMBER -> readable name, derived per game (the last game-specific catalogue).
+
+    An item's number is its 0-indexed position in DECLARATION ORDER among instances of the
+    game's inventory-item class -- `InvI` or any subclass the game defines for its items
+    (LSL2 `Iitem`, KQ4 `newInvItem`). The base class comes from the same class-table derivation
+    the location store uses (`Vocabulary.store_class`), so no class name is assumed; membership
+    is by the species hierarchy, so a game's own subclass is included without naming it.
+
+    The JSON IR carries raw display names with spaces and punctuation (`Wad O' Dough`); runs of
+    non-alphanumerics collapse to a single underscore. On LSL2 this reproduces the old
+    hand-written `_NAMES` table bit-for-bit -- item 0 is the `NoInv` placeholder, which is never
+    a real inventory item -- and on KQ4 it yields Obsidian_Scarab (7), Magic_Fruit (25),
+    Magic_Hen (33), the Shovel (15): the names every KQ4 report used to hand-resolve from Main.sc.
+
+    Numbering assumes item instances declare in one script in inventory order, as both known
+    games do (all in script 0); scripts are visited in number order so this is deterministic."""
+    voc = Vocabulary.from_ir(ir)
+    if voc is None:
+        return {}
+    base = ir.find_class(voc.store_class)
+    if base is None:
+        return {}
+    sup = {o.species: o.super for s in ir.scripts.values() for o in s.objects if o.is_class}
+
+    def is_item(sp, seen=()):
+        if sp == base.species:
+            return True
+        if sp in seen or sp not in sup:
+            return False
+        return is_item(sup[sp], seen + (sp,))
+
+    fam = {sp for sp in sup if is_item(sp)} | {base.species}
+    names, n = {}, 0
+    for sn in sorted(ir.scripts):
+        for o in ir.scripts[sn].objects:
+            if not o.is_class and o.species in fam:
+                names[n] = re.sub(r"[^0-9A-Za-z]+", "_", o.name).strip("_")
+                n += 1
+    return names
