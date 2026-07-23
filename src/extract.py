@@ -787,7 +787,10 @@ class Extractor:
                 if v is None and any(y.get("t") in ("Add", "Sub") for y in I.walk(params[0])):
                     v = "inc"
                 if v is not None:
-                    self.ts.item_prop_writes.append((room, it, sel, v, _conj(pc)))
+                    # carry the OBJECT name too: a Main-scope write (KQ4's shootBow spends an arrow
+                    # from a ScriptID-loaded script) is attributed to room 0, but its SOURCE lives in
+                    # shootBow.sc, not Main.sc -- the object name is the file title the patcher edits.
+                    self.ts.item_prop_writes.append((room, it, sel, v, _conj(pc), self._cur_obj))
             # The store property written DIRECTLY, bypassing its own accessor -- and inside a
             # list walk, so it means the whole inventory at once: KQ4's Room92 confiscates
             # everything to room 89 and Room89's cupboard hands it all back. The property name

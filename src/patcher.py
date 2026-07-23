@@ -277,6 +277,45 @@ def guard_edgehit_clause(text, direction, cond):
     return text[:m.end()] + wrapped + text[i - 1:], 1
 
 
+def apply_resource_remedies(dest, remedies, titles_by_num):
+    """Delete the WASTEFUL degradation write -- the fourth-store analogue of apply_sink_remedies.
+
+    The write is a standalone statement, so the line is replaced with a comment (structure kept). A
+    counter increment (the bow shot into the air) or a single 'dead' write (the shovel break) stops
+    firing on that use, so the item no longer depletes/breaks there. The file is the write's room,
+    except a Main-scope write (room 0) whose source lives in its OWN file -- carried on `object`.
+
+    NOTE for play-test: the shovel's break CLAUSE also prints a 'broke' line and plays a break
+    animation; removing only the `loop: 1` leaves those cosmetics saying it broke when it did not.
+    Harmless (no softlock), flagged for a later polish pass."""
+    out, seen = [], set()
+    for r in remedies:
+        it, prop, room = r["item"], r["property"], r["room"]
+        title = r["object"] if room == 0 else titles_by_num.get(room)
+        key = (title, it, prop, r["value"])
+        if title is None or key in seen:
+            continue
+        seen.add(key)
+        path = os.path.join(dest, "src", title + ".sc")
+        try:
+            lines = open(path, errors="replace").read().splitlines(True)
+        except Exception as e:
+            out.append({**r, "applied": False, "why": "no file %s: %s" % (title, e)})
+            continue
+        valpat = r"\(\+" if r["counter"] else r"%d\b" % r["value"]     # increment vs literal dead value
+        pat = re.compile(r"\(\([^()]*\bat:\s*%d\s*\)\s*%s:\s*%s" % (it, re.escape(prop), valpat))
+        hits = [i for i, l in enumerate(lines) if pat.search(l)]
+        if not hits:
+            out.append({**r, "applied": False, "why": "write not found in %s" % title})
+            continue
+        for i in hits:
+            indent = re.match(r"[ \t]*", lines[i]).group(0)
+            lines[i] = "%s; [softlock-guard] %s no longer wasted here\n" % (indent, r["item_name"])
+        open(path, "w").write("".join(lines))
+        out.append({**r, "applied": True, "title": title, "sites": len(hits)})
+    return out
+
+
 def guard_edge_exit(text, inst_name, to_room, cond):
     """Guard a ROOM-PROPERTY exit (`east 48`), which no `newRoom:` call can be wrapped around.
 
@@ -540,6 +579,12 @@ def main():
         extra = ("  (also dropped the %d penalty)" % e["score_removed"]
                  if e.get("score_removed") else "")
         print("  [%s] %-10s %s%s" % (mark, where, e["why"], extra))
+    resedits = apply_resource_remedies(dest, G.resource_remedies(s), titles_by_num)
+    if resedits:
+        print("\napplying %d resource remedies:" % len(resedits))
+        for e in resedits:
+            print("  [%s] %-10s %s" % ("ok " if e["applied"] else "SKIP",
+                                       e.get("title", "?"), e["why"]))
     specs = G.guard_specs(s)
     print("\napplying %d guard specs:" % sum(1 for x in specs if x["site"] == "edge"))
     gedits = apply_guards(dest, specs, titles_by_num, nums,
@@ -555,7 +600,7 @@ def main():
         print("  [%s] %-16s %s" % (mark, loc, how))
         if e["applied"]:
             print("        %s" % to_source_syntax(e["condition"]))
-    touched = sorted({e["title"] for e in edits + gedits if e["applied"]})
+    touched = sorted({e["title"] for e in edits + resedits + gedits if e["applied"]})
 
     print("\ncompiling...")
     r = compile_project(dest)

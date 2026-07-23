@@ -357,6 +357,42 @@ def sink_remedies(s):
     return out
 
 
+def resource_remedies(s):
+    """Prevent RESOURCE-EXHAUSTION softlocks by deleting the WASTEFUL degradation write -- the
+    fourth store's analogue of `sink_remedies` (which deletes a wasteful item DROP).
+
+    A degradation is wasteful when its clause arms nothing (the pure-sink test, per CLAUSE). KQ4's
+    bow spends an arrow shooting into the air (`shootBow`, which arms nothing), while the unicorn and
+    Lolotte shots ARM their machines -- so ONLY the into-air increment is removed and the two-arrow
+    puzzle stays intact. A single-valued 'dead' property (the shovel's broken flag `loop:=1`) IS the
+    degradation itself -- breaking a tool is never productive -- so it is removed outright and the
+    shovel never snaps. Only items `resource_exhaustion` actually FLAGS are touched; LSL2 has none,
+    so this returns []. The object name rides along because a Main-scope write (`shootBow`) lives in
+    its own file, not Main.sc."""
+    flagged = {r["item"] for r in s.resource_exhaustion()}
+    if not flagged:
+        return []
+    out = []
+    for tup in getattr(s.em.ts, "item_prop_writes", ()):
+        room, it, prop, val, g, *rest = tup
+        if it not in flagged:
+            continue
+        sp = M._IPROP_SPEC.get((it, prop), {})
+        if sp.get("counter"):
+            if val != "inc" or s._clause_productive(room, g):
+                continue                       # keep productive shots; drop only the arms-nothing waste
+            why = f"spends an arrow while arming nothing -- {s.g.item_name(it)} needed later"
+        elif val in sp.get("values", ()) and len(sp.get("values", ())) == 1:
+            why = f"degrades {s.g.item_name(it)} to an unusable state, still needed elsewhere"
+        else:
+            continue                           # re-settable property (the re-baitable pole) -- no
+        out.append({"site": "resource", "item": it, "item_name": s.g.item_name(it),
+                    "property": prop, "value": val, "room": room,
+                    "object": rest[0] if rest else None, "counter": bool(sp.get("counter")),
+                    "op": "remove_degradation", "why": why})
+    return out
+
+
 def guard_specs(s):
     """ONE spec per placement site, merging both derivations.
 

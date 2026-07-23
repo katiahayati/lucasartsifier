@@ -226,7 +226,7 @@ def build_maps(em):
     # `loop`: a property written to exactly one value, or incremented with no reset, cannot be put
     # back. KQ4's fishing pole writes BOTH 0 and 1 -- you can re-bait it -- so it is excluded, and
     # excluded for a reason rather than by name.
-    for room, it, prop, val, _g in getattr(em.ts, "item_prop_writes", ()):
+    for room, it, prop, val, _g, *_rest in getattr(em.ts, "item_prop_writes", ()):
         spec = getattr(E.X, "_IPROPS", {}).get((it, prop)) if hasattr(E, "X") else None
         spec = spec or _IPROP_SPEC.get((it, prop))
         if spec and (spec.get("counter") or len(spec.get("values", ())) == 1):
@@ -753,6 +753,30 @@ class IrSccReach(SccReach):
         positive item preconditions, which a clause and the state it arms necessarily share."""
         return (room, frozenset(_own_positive(guard)))
 
+    def _armed_wrote(self):
+        """(armed clause-keys, wrote-map): the clauses that DO something -- arm a machine state,
+        get an item, or write a register. Cached; the shared core of the arms-nothing test."""
+        if getattr(self, "_aw", None) is None:
+            armed, wrote = set(), defaultdict(list)
+            for info in self.em.machines:
+                for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+                    armed.add(self._clause_key(info["room"], eg))
+            for room, script, gi, v, g in self.em.handler_writes:
+                wrote[self._clause_key(room, g)].append(gi)
+            for room, script, it, g in self.em.handler_gets:
+                armed.add(self._clause_key(room, g))
+            self._aw = (armed, wrote)
+        return self._aw
+
+    def _clause_productive(self, room, guard):
+        """Does the clause at (room, guard) ARM something -- a machine state, a get, or a gating
+        register? The per-CLAUSE version of `real_uses` (which is per-room and too coarse: it calls
+        the Lolotte shot wasteful and the shovel break productive). Tells a wasteful resource drain
+        (KQ4's shoot-into-the-air) from a productive one (taming the unicorn, killing Lolotte)."""
+        armed, wrote = self._armed_wrote()
+        k = self._clause_key(room, guard)
+        return k in armed or any(gi in set(self.regs) for gi in wrote.get(k, ()))
+
     def pure_sinks(self):
         """Consumptions that ACCOMPLISH NOTHING: a handler clause that removes an item from
         inventory while arming no machine state and writing no register any guard reads.
@@ -985,7 +1009,7 @@ class IrSccReach(SccReach):
         # narrower "arms something" the SINK test wants; see real_uses on why the two differ.
         uses = self.guard_required
         out = []
-        for room, it, prop, val, g in getattr(self.em.ts, "item_prop_writes", ()):
+        for room, it, prop, val, g, *_rest in getattr(self.em.ts, "item_prop_writes", ()):
             if it not in oneway:
                 continue
             # ...and this particular write must BE the degradation. For a counter only the
