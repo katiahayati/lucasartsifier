@@ -333,6 +333,38 @@ def guard_edge_exit(text, inst_name, to_room, cond):
     return text[:at] + ins + text[at:], 1, "+".join(directions)
 
 
+def guard_register_write(text, register, trap, cond):
+    """Hold a free-running TRAP register's flip until the player is safe.
+
+    The pervasive write lives in the game class's ALWAYS-LIVE dispatch (KQ4::newRoom writes
+    global100:=1 -- nightfall, on every qualifying room change); wrap that one so it only fires when
+    the guard holds -- the sunset waits for the day-list items. The copy in handleEvent (a scripted
+    or debug event, not free-running) is deliberately left alone: only the newRoom/doit write is the
+    adversary the player cannot refuse."""
+    for meth in ("newRoom", "doit"):
+        for mm in re.finditer(r"\(method\s+\(%s\b" % meth, text):
+            bs, be = _block_span(text, mm.start())
+            region = text[bs:be]
+            wm = re.search(r"\(=\s+global%d\s+%d\s*\)" % (register, trap), region)
+            if not wm:
+                continue
+            # Wrap the WHOLE enclosing `(if <clock> ...)` -- nightfall sets the flag AND stashes the
+            # destination AND diverts to the darkness room; holding only the flag write would divert
+            # you into night with the doors still open. Gate the entire clause atomically.
+            encl = None
+            for im in re.finditer(r"\(if\b", region):
+                es, ee = _block_span(region, im.start())
+                if es <= wm.start() < ee and (encl is None or es > encl[0]):
+                    encl = (es, ee)
+            if not encl:
+                continue
+            es, ee = encl
+            wrapped = ("(if %s\n\t\t\t%s\n\t\t)  ; softlock-guard: hold the flip until survivable"
+                       % (cond, region[es:ee]))
+            return text[:bs] + region[:es] + wrapped + region[ee:] + text[be:], 1
+    return text, 0
+
+
 def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set()):
     """Place each EDGE guard at its CONTROLLABLE TRIGGER.
 
@@ -386,6 +418,22 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set()):
         host.setdefault("merged", []).append(sp["condition"])
 
     out = out_unplaced
+    # register-flip guards edit the game class's always-live method (script 0 = Main), not a room.
+    for sp in specs:
+        if sp["site"] != "register-write" or sp["refused"]:
+            continue
+        title = titles_by_num.get(0, "Main")
+        path = os.path.join(dest, "src", title + ".sc")
+        text = open(path, errors="replace").read()
+        new_text, n = guard_register_write(text, sp["register"], sp["trap"],
+                                           to_source_syntax(sp["condition"]))
+        if n:
+            open(path, "w").write(new_text)
+            out.append({**sp, "applied": True, "title": title, "sites": n,
+                        "placement": {"kind": "register-write", "instance": title}})
+        else:
+            out.append({**sp, "applied": False, "why": "no free-running trap write found",
+                        "from_room": None, "to_room": None})
     for title, group in sorted((k, v) for k, v in by_title.items() if k):
         path = os.path.join(dest, "src", title + ".sc")
         for sp in group:

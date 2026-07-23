@@ -401,6 +401,21 @@ def guard_specs(s):
                               "condition": f"(not (gEgo has: {it}))", "items": [], "forbid": [it],
                               "refused": [f"{s.g.item_name(it)} cannot be dropped anywhere -- "
                                           f"guarding this would wall the game"]})
+    # register-flip strandings: HOLD the free-running trap's flip until every item it would seal is
+    # in hand. KQ4's nightfall (global100:=1) shuts the day-only doors to the Diamond_Pouch and
+    # Fishing_Pole; gate that one write on holding both, so the sunset waits for the day list. One
+    # spec per trap register, conjoining its sealed items. LSL2 has no trap -> nothing.
+    byreg = defaultdict(set)
+    trap_of = {}
+    for r in s.register_flip_strandings():
+        byreg[r["register"]].add(r["item"])
+        trap_of[r["register"]] = r["trap"]
+    for R in sorted(byreg):
+        items = sorted(byreg[R])
+        cond = ("(and %s)" % " ".join(f"(gEgo has: {i})" for i in items)
+                if len(items) > 1 else f"(gEgo has: {items[0]})")
+        specs.append({"site": "register-write", "register": R, "trap": trap_of[R],
+                      "condition": cond, "items": items, "refused": []})
     return specs
 
 
