@@ -297,10 +297,12 @@ def sink_remedies(s):
         refused = ([f"{s.g.item_name(it)} is fatal to CARRY -- keeping it would trade one "
                     f"softlock for another"] if it in forbidden else [])
         score = scores.get((d["script"], it))
+        dest = d.get("dest", -1)              # the game's disposal destination (LSL2 -1, KQ4 999),
+        #                                       DERIVED from the actual put/moveTo, not assumed.
         out.append({"site": "consumption", "room": d["room"], "script": d["script"],
                     "corroboration": (None if score is None else f"designer_score={score}"),
-                    "item": it, "op": "remove_consumption",
-                    "edit": f"delete `(gEgo put: {it} -1)`",
+                    "item": it, "op": "remove_consumption", "dest": dest,
+                    "edit": f"delete `(gEgo put: {it} {dest})`",
                     "why": f"wastes {s.g.item_name(it)}, still needed at "
                            f"rm{d['still_needed_at']} and not re-obtainable",
                     "refused": refused})

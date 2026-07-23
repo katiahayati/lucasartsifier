@@ -179,7 +179,9 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
             continue
         path = os.path.join(dest, "src", title + ".sc")
         lines = open(path, errors="replace").read().splitlines(True)
-        pat = re.compile(r"^\s*\(global%d\s+put:\s*%d\s+-1\)\s*$" % (_EGO, sk["item"]))
+        # The disposal DESTINATION is derived per game (LSL2 -1, KQ4 999), carried on the sink spec.
+        disposal = sk.get("dest", -1)
+        pat = re.compile(r"^\s*\(global%d\s+put:\s*%d\s+%d\)\s*$" % (_EGO, sk["item"], disposal))
         hits = [i for i, l in enumerate(lines) if pat.match(l)]
         if len(hits) != 1:
             edits.append({**sk, "applied": False,

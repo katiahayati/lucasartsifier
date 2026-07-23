@@ -118,7 +118,7 @@ class OpEmitter:
         # seeds too, and it runs first.
         self.handler_writes = []       # (room, script, gi, val, guard)  -- script for CTR-local resolve
         self.handler_gets = []         # (room, script, item, guard)
-        self.handler_drops = []        # (room, script, item, guard) -- `gEgo put: N -1` in a
+        self.handler_drops = []        # (room, script, item, guard, dest) -- `gEgo put: N <dest>`
         #   handler. Consuming an item requires owning it; the Pamphlet handed to the bore on
         #   the plane (rm62) is a Said-handler consumption, invisible to the machine-body scan.
         self.handler_moves = []        # (room, script, item, dest, guard) -- the same transfers as
@@ -472,7 +472,7 @@ class OpEmitter:
                 if dest == EGO:
                     self.handler_gets.append((room, script, it, g))
                 else:
-                    self.handler_drops.append((room, script, it, g))
+                    self.handler_drops.append((room, script, it, g, dest))
         elif tp in ("PublicCall", "LocalCall"):
             self._follow_call(room, script, node, pc, seen)
 

@@ -236,7 +236,7 @@ def build_maps(em):
     # never populated. Needed to place NEGATIVE guard literals: `!own(Spinach_Dip)` may only be
     # demanded where the dip can still be got rid of (rm131, `throw bread overboard`, +2 score).
     # Guarding it later would convert a death into a permanent wall.
-    for room, script, it, g in getattr(em, "handler_drops", ()):
+    for room, script, it, g, _dest in getattr(em, "handler_drops", ()):
         drops[it].add(room)
     for info in em.machines:
         for it in info.get("drops", ()):
@@ -289,7 +289,7 @@ def build_maps(em):
         req(eg, room)
     # consuming an item in a HANDLER -- the Pamphlet handed to the bore on the plane (rm62) is a
     # Said-handler `put: 26 -1`, which the machine-body scan never sees. Held back; see below.
-    for room, script, it, g in getattr(em, "handler_drops", ()):
+    for room, script, it, g, _dest in getattr(em, "handler_drops", ()):
         consumed_at[it].add(room)
     for i, info in enumerate(em.machines):
         gr = gr_maps[i]
@@ -746,7 +746,7 @@ class IrSccReach(SccReach):
             armed.add(self._clause_key(room, g))
         gate = set(self.regs)
         out = []
-        for room, script, it, g in self.em.handler_drops:
+        for room, script, it, g, dest in self.em.handler_drops:
             if script in self.GLOBAL_SCRIPTS:
                 # Clause identity is (room, positive-owns), which pins a clause inside a small
                 # room but COLLIDES badly in Main -- one giant script where unrelated clauses
@@ -754,12 +754,12 @@ class IrSccReach(SccReach):
                 # attribute reliably, so assume the worst and let the danger test decide. That is
                 # the over-require direction, and it is how "open parachute" (Main destroys the
                 # chute needed for the rm63 jump) surfaced at all.
-                out.append({"room": room, "script": script, "item": it})
+                out.append({"room": room, "script": script, "item": it, "dest": dest})
                 continue
             k = self._clause_key(room, g)
             if k in armed or any(gi in gate for gi in wrote.get(k, ())):
                 continue                          # the clause DOES something -> a real use
-            out.append({"room": room, "script": script, "item": it})
+            out.append({"room": room, "script": script, "item": it, "dest": dest})
         return out
 
     def real_uses(self):
