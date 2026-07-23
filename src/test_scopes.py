@@ -353,9 +353,17 @@ def test_resource_exhaustion():
             shovel = [r for r in rows if r["item"] == 15]
             check("KQ4: the Shovel is flagged in both digging rooms",
                   {r["at_room"] for r in shovel} == {16, 18}, repr(shovel))
+            check("KQ4: the Shovel is NOT collapsed (its rooms are a fixed region, not roaming)",
+                  len(shovel) == 2 and not any("at_rooms" in r for r in shovel), repr(shovel))
             check("KQ4: item 15 is named the Shovel, not LSL2's table",
                   all(r["item_name"] == "Shovel" for r in shovel),
                   repr([r["item_name"] for r in shovel]))
+            # A0n(2): the unicorn ROAMS (regUnicorn writes global124 to 20/26/27), so the bow's
+            # arrow-spend there is ONE encounter, not three -- collapsed to a single roaming row.
+            bow_roam = [r for r in rows if r["item"] == 14 and "at_rooms" in r]
+            check("KQ4: the roaming unicorn collapses to one Cupid's Bow row",
+                  len(bow_roam) == 1 and bow_roam[0]["at_rooms"] == [20, 26, 27]
+                  and bow_roam[0]["still_needed_at"] == [82], repr(bow_roam))
 
 
 def test_item_names():

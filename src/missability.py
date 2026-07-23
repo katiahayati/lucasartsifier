@@ -985,6 +985,58 @@ class IrSccReach(SccReach):
                             "still_needed_at": sorted(ahead)})
                 if room == 0:
                     break        # one witness room is enough to condemn a global-scope site
+        return self._collapse_roaming(out)
+
+    def _roaming_regions(self):
+        """`{region-script: frozenset(member rooms)}` for regions that ROAM -- whose script writes
+        a global to two or more of its OWN member rooms. That global is the encounter's location
+        register (KQ4's regUnicorn sets `global124` to 20/26/27), so the region's rooms are where
+        ONE moving thing may appear, not distinct places. The graveyard and crypt (a fixed region)
+        write no such register and are correctly NOT roaming, so the shovel -- needed in both -- is
+        left as two findings."""
+        out = {}
+        for rgn, rooms in self.em.region_rooms.items():
+            sc = self.em.ir.script(rgn)
+            if sc is None:
+                continue
+            writes = defaultdict(set)
+            bodies = [b for o in sc.objects for b in o.methods.values()] + list(sc.procs.values())
+            for body in bodies:
+                for n in I.walk(body):
+                    if n.get("t") == "Assignment":
+                        ks = n.get("kids") or []
+                        if len(ks) >= 2 and I.is_global(ks[0]) and ks[1].get("t") == "Number":
+                            writes[ks[0]["index"]].add(ks[1]["value"])
+            if any(len(vals & rooms) >= 2 for vals in writes.values()):
+                out[rgn] = frozenset(rooms)
+        return out
+
+    def _collapse_roaming(self, rows):
+        """Collapse exhaustion rows for one item whose sites are all within a single ROAMING region
+        into one finding -- the roaming encounter is one thing, not three. `still_needed_at` drops
+        the region's own rooms (they are the same encounter). Non-roaming multi-room findings (the
+        shovel across graveyard and crypt) and out-of-region sites (rm1 ANYWHERE, rm82 Lolotte) are
+        untouched. See TODO A0n(2): the unicorn ROAMS, its rooms are one shot from three positions."""
+        roam = self._roaming_regions()
+        if not roam:
+            return rows
+        by_item = defaultdict(list)
+        for r in rows:
+            by_item[(r["item"], r["property"])].append(r)
+        out = []
+        for _key, group in by_item.items():
+            used = set()
+            for rgn, members in roam.items():
+                inside = [r for r in group if r["at_room"] in members and id(r) not in used]
+                if len(inside) < 2:
+                    continue
+                for r in inside:
+                    used.add(id(r))
+                sites = sorted({r["at_room"] for r in inside})
+                need = sorted(set().union(*(set(r["still_needed_at"]) for r in inside)) - members)
+                out.append({**inside[0], "at_room": sites[0], "at_rooms": sites,
+                            "still_needed_at": need, "roaming_region": rgn})
+            out.extend(r for r in group if id(r) not in used)
         return out
 
     def joint_strandings(self):
@@ -1224,8 +1276,10 @@ if __name__ == "__main__":
     print(f"softlock candidates ({len(flagged)} items):",
           [s.g.item_name(i) for i in flagged])
     for row in s.resource_exhaustion():
+        where = (f"the roaming region {sorted(row['at_rooms'])}" if "at_rooms" in row
+                 else f"rm{row['at_room']}")
         print(f"  + resource exhaustion: {row['item_name']} ({row['property']}) becomes unusable "
-              f"at rm{row['at_room']}, still needed at {row['still_needed_at']}")
+              f"at {where}, still needed at {row['still_needed_at']}")
     for row in s.group_strandings():
         print(f"  + disjunctive group {row['item_names']} needed at rm{row['need_room']}, "
               f"all sources {row['source_rooms']} unreachable from there")
