@@ -550,7 +550,9 @@ def main():
         how = ("%s @ %s.%s state %s" % (pl.get("kind"), pl.get("instance"),
                                         pl.get("trigger_method", pl.get("method")),
                                         pl.get("trigger_state", "-"))) if e["applied"] else e["why"]
-        print("  [%s] rm%s->rm%s  %s" % (mark, e["from_room"], e["to_room"], how))
+        loc = ("rm%s->rm%s" % (e["from_room"], e["to_room"]) if e.get("from_room") is not None
+               else "%s g%s" % (e.get("title", "?"), e.get("register", "?")))  # register-write spec
+        print("  [%s] %-16s %s" % (mark, loc, how))
         if e["applied"]:
             print("        %s" % to_source_syntax(e["condition"]))
     touched = sorted({e["title"] for e in edits + gedits if e["applied"]})
