@@ -6,20 +6,21 @@ numbers before the analysis could run at all.
 
 Both turn out to be structural:
 
-  START  the engine's first `newRoom:` target and the rooms one step past it are the candidates;
-         take the one whose forward reachability covers the most of the game -- a free-roam anchor
-         should see the whole map. LSL2 lands on rm10 (the copy-protection screen: the widest-reach
-         entry at 89 rooms), KQ4 on rm99.
+  START  the free-roam world the engine's entry paths funnel into. The entries (the graph ROOTS)
+         include copy-protection and intro screens that reach the whole game, so widest-reach alone
+         picks one of those; instead prefer the room reached by the MOST entries -- a pass-through
+         root is reached only by itself. LSL2 lands in the LA cluster (rm11), KQ4 on rm99. See
+         discover_start.
 
   GOAL   the ending is the room you can reach, cannot leave, and do not die in: TERMINAL (no
          outgoing edges) + reachable + never raises the death signal. Deaths are terminal too, so
          excluding them is what makes the rule work. LSL2 yields rm86, entered from the rm178
          wedding cutscene.
 
-Validated on LSL2: the derived pair (start rm10, goal rm86) yields the SAME findings as the old
+Validated on LSL2: the derived pair (start rm11, goal rm86) yields the SAME findings as the old
 hand-set pair (start rm21, goal rm178) -- 15 stranded items plus the Ashes/Sand group -- though the
-anchor ROOMS differ (discovery lands on the copy-protection screen and the ending's terminal, not
-the human-tidy rm21/rm178). Confirmed identical 2026-07-22 by emptying the config fields.
+anchor ROOMS differ (discovery lands on a free-roam LA room and the ending's terminal, not the
+human-tidy rm21/rm178). Confirmed identical 2026-07-22 by diffing the full output surface (snapshot.py).
 """
 from __future__ import annotations
 
@@ -87,19 +88,34 @@ def engine_entry(em, edges=None):
 
 
 def discover_start(em, edges=None, entries=None):
-    """First room the player can ACT in, preferring the one that sees the most of the game."""
+    """First room the player can ACT in -- the free-roam world the engine entries funnel into.
+
+    The engine entries (`engine_entry`, the graph ROOTS) include copy-protection and intro screens
+    you pass through once and never return to. Widest-reach alone picks one of those, because it
+    reaches the whole game (LSL2's copy-protection rm10 reaches 89 rooms) -- and that pulls the
+    intro into the analysed graph, inventing guard specs on edges out of it.
+
+    So prefer the rooms reached by the MOST engine entries. A pass-through root is reached only by
+    ITSELF; the free-roam world every entry path leads into is reached by all of them, so it wins
+    and the roots drop out. When a game's real start simply IS a single root (KQ4's rm99, with no
+    second entry converging elsewhere) nothing is excluded and this degrades to widest-reach, which
+    is right. Tie broken by widest reach, so the anchor still sees the most of the game. On LSL2
+    this lands in the free-roam LA cluster (identical findings to the old hand-set rm21, and no
+    intro-tangle guard); on KQ4, rm99."""
     edges = edges if edges is not None else movement_edges(em)
     entries = entries or engine_entry(em, edges)
     if not entries:
         entries = set(edges)                       # degenerate graph: consider everywhere
-    # An engine entry and the rooms one step past it are the candidates for "first room the player
-    # can act in"; the one whose component sees the most of the game wins.
-    candidates = set(entries)
-    for u in list(entries):
-        candidates.update(edges.get(u, ()))
-    if not candidates:
+    from collections import Counter
+    reached_by = Counter()
+    for r in entries:
+        for room in reachable(edges, {r}):
+            reached_by[room] += 1
+    if not reached_by:
         return None
-    return max(sorted(candidates), key=lambda r: len(reachable(edges, {r})))
+    most = max(reached_by.values())
+    pool = [room for room, c in reached_by.items() if c == most]
+    return max(sorted(pool), key=lambda r: len(reachable(edges, {r})))
 
 
 def _tests_achievement(em, rooms):

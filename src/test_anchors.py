@@ -16,19 +16,15 @@ def check(name, cond):
 
 
 class _Em:
-    """Minimal emitter stand-in: a room graph, a cutscene set, and death rooms."""
-    def __init__(self, edges, cutscenes=(), deaths=(), rooms=None):
+    """Minimal emitter stand-in: a room graph and death rooms."""
+    def __init__(self, edges, deaths=(), rooms=None):
         self._edges = {a: set(b) for a, b in edges.items()}
-        self._cut = set(cutscenes)
         self._deaths = set(deaths)
         self.rooms = list(rooms if rooms is not None else
                           set(self._edges) | {b for bs in self._edges.values() for b in bs})
         self.ts = type("ts", (), {"edges": [], "cs_edges": []})()
         self.machines = []
         self.handler_writes = []
-
-    def _cutscene_room_set(self):
-        return self._cut
 
     def is_death(self, gi, v):
         return False
@@ -47,21 +43,25 @@ def test_engine_entry():
 
 
 def test_discover_start():
-    print("\n-- discover_start(): first room the player can ACT in --")
-    # 1 (cutscene) -> 2 (cutscene) -> 3 (playable)
-    em = _Em({1: {2}, 2: {3}, 3: {4}, 4: {5}}, cutscenes={1, 2})
-    check("walks THROUGH the intro cutscenes to the first playable room",
+    print("\n-- discover_start(): the free-roam world the engine entries funnel into --")
+    # Two pass-through roots (copy-protection screen, intro) both lead into room 3. Room 3 and its
+    # downstream are reached by BOTH entries; each root only by itself -- so the roots drop out and
+    # the convergent free-roam room wins. (LSL2: rm10 copy-protection + rm99 intro both -> the LA
+    # cluster; without this the wider-reaching copy-protection root would win and drag the intro in.)
+    em = _Em({1: {3}, 2: {3}, 3: {4}, 4: {5}})
+    check("drops the pass-through roots for the room every entry funnels into",
           A.discover_start(em, _edges(em)) == 3)
 
-    # two candidates: 3 sees the whole map, 9 is a dead-end pocket
-    em2 = _Em({1: {2}, 2: {3, 9}, 3: {4}, 4: {5}, 9: {10}}, cutscenes={1, 2})
-    check("prefers the candidate with the WIDEST forward reach (not a pocket)",
-          A.discover_start(em2, _edges(em2)) == 3)
+    # When the real start simply IS a single root -- no second entry converging elsewhere -- keep
+    # it; this degrades to widest-reach (KQ4's rm99).
+    em2 = _Em({1: {2}, 2: {3}})
+    check("a lone entry that is itself the start is kept",
+          A.discover_start(em2, _edges(em2)) == 1)
 
-    # an interactive entry is itself a candidate
-    em3 = _Em({1: {2}, 2: {3}}, cutscenes=set())
-    check("an entry that is already playable is eligible",
-          A.discover_start(em3, _edges(em3)) == 1)
+    # Among the convergent rooms, the tie is broken by WIDEST forward reach, not a dead-end pocket.
+    em3 = _Em({1: {3}, 2: {3}, 3: {4, 9}, 4: {5}, 9: {}})
+    check("ties broken by widest forward reach",
+          A.discover_start(em3, _edges(em3)) == 3)
 
 
 def test_discover_goal():

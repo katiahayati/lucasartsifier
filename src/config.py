@@ -27,7 +27,7 @@ class GameConfig:
     resource_dir: str               # dir with RESOURCE.MAP + RESOURCE.00x (PIC/VIEW control-map oracle)
     # Both anchors are DISCOVERED -- leave start_room 0 / goal_rooms empty; anchors.discover()
     # derives them from the game (see anchors.py). The derived rooms may DIFFER from a human's
-    # hand-pick (LSL2 discovers start rm10 / goal rm86, not the old rm21 / rm178) while yielding
+    # hand-pick (LSL2 discovers start rm11 / goal rm86, not the old rm21 / rm178) while yielding
     # the SAME findings, so we derive rather than hand-pick. Both games leave these empty.
     start_room: int                 # free-roam entry point for reachability (0 = discover)
     goal_rooms: frozenset           # winning-terminal rooms (victory; empty = discover)
@@ -78,12 +78,12 @@ LSL2 = GameConfig(
     resource_dir="/mnt/i/sierra/lsl2",   # PRISTINE game. Never point this at a patched
     #   build: `out/lsl2_playable` used to live here and was the previous (broken) patcher
     #   output, so the control-map oracle was reading resources of our own making.
-    # DISCOVERED (anchors.discover) -- left empty so the derivation runs. It lands on start rm10
-    # (the copy-protection screen: the widest-reach entry, 89 rooms) and goal rm86 (the terminal
-    # entered from the rm178 wedding cutscene). Those ROOMS differ from the old hand-set rm21 /
-    # rm178 -- a human would call rm23 "the first real screen" and rm178 "the ending" -- but the
-    # derived pair yields the SAME 15 stranded items + the Ashes/Sand group (verified 2026-07-22
-    # by emptying these fields), so we derive rather than hand-pick.
+    # DISCOVERED (anchors.discover) -- left empty so the derivation runs. It lands on a room in the
+    # free-roam LA cluster (rm11) and goal rm86 (the terminal entered from the rm178 wedding
+    # cutscene). discover_start drops the copy-protection/intro ROOTS (rm10/rm99) by preferring the
+    # room every engine entry funnels into. Those ROOMS differ from the old hand-set rm21 / rm178 --
+    # a human would name rm21 and rm178 -- but the derived pair yields the SAME 15 stranded items +
+    # the Ashes/Sand group (verified 2026-07-22 by emptying these fields), so we derive.
     start_room=0,
     goal_rooms=frozenset(),
     # BOTH DERIVED (vocab.derive_death / derive_debug); left empty so the derivation runs.
