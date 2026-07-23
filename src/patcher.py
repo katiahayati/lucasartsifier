@@ -324,6 +324,18 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
                        if j != i and "proc255_0" in lines[j] and "softlock-guard" not in lines[j]),
                       key=lambda j: abs(j - i), default=None)
             tgt = i if ann is None else ann
+            # If the announcement's state ENDS with an animation-wait self-cue (the bow's shot balloon
+            # then `(Timer setReal: self 4)`), a retraction printed here pops mid-animation -- clunky.
+            # Defer it to the start of the NEXT state clause, so it fires after the animation settles.
+            # A clause with no such delay (the shovel's break) keeps the retraction after its message.
+            if ann is not None:
+                for j in range(ann + 1, min(len(lines), ann + 6)):
+                    if re.search(r"(Timer|setReal:|setCycle:|setMotion:).*\bself\b", lines[j]):
+                        nxt = next((k for k in range(j + 1, min(len(lines), j + 6))
+                                    if re.match(r"\s*\(\d+\s*$", lines[k])), None)
+                        if nxt is not None:
+                            tgt = nxt
+                        break
             aind = re.match(r"[ \t]*", lines[tgt]).group(0)
             lines[tgt] = lines[tgt].rstrip("\n") + "\n%s%s  ; [softlock-guard]\n" % (aind, msg)
         open(path, "w").write("".join(lines))
