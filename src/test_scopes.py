@@ -341,11 +341,20 @@ def test_resource_exhaustion():
         if not os.path.exists(cfg.ir_path):
             print(f"  (skip {which}: no IR)")
             continue
-        rows = M.load(cfg=cfg).resource_exhaustion()
+        s = M.load(cfg=cfg)
+        rows = s.resource_exhaustion()
         # LSL2 has no item-property writes at all, so this class cannot fire there -- which is
         # also why the whole fourth store went unnoticed until a second game.
         check(f"{which}: resource-exhaustion findings {'exist' if want else 'are empty'}",
               bool(rows) == want, repr([(r["item_name"], r["at_room"]) for r in rows]))
+        if which == "LSL2":
+            # dangerous_sinks must NOT flag a consumption that KILLS you (drink the Grotesque_Gulp
+            # or the Fruit -> die -> reload with the item). Matches the v1.0-lsl2 tag exactly; the
+            # regression was folding guard_required into real_uses (guard_required feeds
+            # resource_exhaustion instead). See real_uses.
+            ds = {s.g.item_name(x["item"]) for x in s.dangerous_sinks()}
+            check("LSL2: dangerous_sinks = the tag's four (no death-consumed Grotesque_Gulp/Fruit)",
+                  ds == {"Matches", "Hair_Rejuvenator", "Parachute", "Airsick_Bag"}, repr(sorted(ds)))
         if which == "KQ4":
             # item 15 is the Shovel: it snaps after five wrong digs (Room16:589) and global113 is a
             # GLOBAL, so holes dug in the graveyard count against the crypt -- needed in both. Names

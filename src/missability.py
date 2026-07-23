@@ -763,13 +763,21 @@ class IrSccReach(SccReach):
         return out
 
     def real_uses(self):
-        """item -> rooms where holding it ARMS something: the uses that are not sinks.
+        """item -> rooms where holding it ARMS something -- the uses `dangerous_sinks` weighs a
+        consumption against. EXACTLY the two halves of what `pure_sinks` calls "doing something",
+        so the two stay consistent: a machine state armed by own(item), and a GATING REGISTER
+        written from a handler guarded by own(item). Wearing the parachute at rm63 is the second --
+        it sets global142 from a handler, arming no machine state -- so destroying the chute
+        elsewhere looked harmless until this counted it.
 
-        Both halves of what `pure_sinks` calls "doing something" must count here, or the two
-        disagree: a use that writes a GATING REGISTER from a handler was treated as real by
-        pure_sinks but invisible to the danger test. Wearing the parachute at rm63 is exactly
-        that -- it sets global142 from a handler, arming no machine state -- so destroying the
-        chute elsewhere looked harmless."""
+        Deliberately NOT `guard_required` (where the game merely TESTS has: X). That is broader than
+        "the clause armed something", and folding it in re-classified a pure sink as a use: LSL2's
+        Grotesque_Gulp and Fruit are consumed inside a clause that KILLS you (`drink -> die`), so
+        their `has: X` tests elsewhere made the drink itself look like a dangerous waste -- when in
+        fact you die and reload with the item. The v1.0-lsl2 tag flagged neither, and this matches
+        it (Matches / Hair_Rejuvenator / Parachute / Airsick_Bag only). `resource_exhaustion` asks a
+        different question ("is the item's property still NEEDED?") and uses `guard_required`, so the
+        Cupid's Bow still knows it is needed at Lolotte."""
         out = defaultdict(set)
         for info in self.em.machines:
             for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
@@ -780,14 +788,6 @@ class IrSccReach(SccReach):
             if gi in gate:
                 for it in _own_positive(g):
                     out[it].add(room)
-        # ...and the THIRD half: an own()-guarded machine STATE path. `(if (gEgo has: 25)
-        # (self changeState: 20))` at KQ4's Room690 is what makes the Magic Fruit matter -- it
-        # arms the good ending -- but it is neither a machine ENTRY nor a register write, so the
-        # danger test could not see it and eating the fruit looked free. `guard_required` is
-        # already exactly this evidence, filtered for goal-reachability and traps by build_maps,
-        # so take it from there rather than re-deriving (and re-deciding) it here.
-        for it, rooms in self.guard_required.items():
-            out[it] |= rooms
         return out
 
     def _loc_required(self, guard, item, room=None):
@@ -955,7 +955,11 @@ class IrSccReach(SccReach):
         spec = _IPROP_SPEC
         oneway = {it for (it, _p), sp in spec.items()
                   if sp.get("counter") or len(sp.get("values", ())) == 1}
-        uses = self.real_uses()
+        # "still NEEDED" here means the game tests `has: X` at a room the player can still reach --
+        # `guard_required` is exactly that, and it is the RIGHT notion for a degraded item (the bow
+        # is needed at Lolotte rm82 because rm82 tests has: bow). NOT `real_uses`, which is the
+        # narrower "arms something" the SINK test wants; see real_uses on why the two differ.
+        uses = self.guard_required
         out = []
         for room, it, prop, val, g in getattr(self.em.ts, "item_prop_writes", ()):
             if it not in oneway:
