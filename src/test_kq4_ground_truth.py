@@ -22,29 +22,31 @@ import missability as M
 
 # --- The oracle -------------------------------------------------------------------------------
 
-# Confirmed ground-truth softlock items the model catches TODAY. A drop here = regression.
+# Confirmed ground-truth softlock items the model catches TODAY (across ALL detectors: edge/joint
+# strandings, resource exhaustion, dangerous sinks). A drop here = regression.
 EXPECTED_CAUGHT = {
     "Peacock_Feather",   # tickle the whale to escape; caught at edge rm31->rm44 (has:8)
     "Golden_Bridle",     # island behind the one-time whale; caught via joint (g12 x g183)
     "Obsidian_Scarab",   # crypt/graveyard required items; user-confirmed enumerated GT
     "Magic_Hen",         # carried into the ending; rm45->rm690 + joint
     "Magic_Fruit",       # required for the victory ending; rm45->rm690 + joint (+ sink)
+    "Cupid_s_Bow",       # waste the arrows -> can't kill Lolotte; caught via resource_exhaustion
+    "Shovel",            # breaks after wrong digs; caught via resource_exhaustion
 }
 
 # Confirmed/firmly-stated ground truth we do NOT yet catch. Listed so a NEW catch of one of these is
 # recognised as a WIN (promote it into EXPECTED_CAUGHT with the user's OK), not flagged as suspicious.
 KNOWN_GAPS = {
     "Dead_Fish",         # user fact #4: needed on the island past the whale; free rm31->43 gap
+    "Diamond_Pouch",     # user: gated by NIGHTFALL. The dwarves' door rm22->54 is day-only; the
+                         # trap is sequencing (dawn only comes when Lolotte dies, which needs the
+                         # pouch-chain) -- a register-flip point-of-no-return we do not model.
 }
 
-# The user's uncertain candidates + the item-property/resource class. Not enforced, but allowed to
-# appear without tripping the suspicion alarm -- they are on the user's radar already.
-SUSPECTED_OR_RESOURCE = {
-    "Wiggly_Worm", "Gold_Ball", "Small_Crown", "Frog", "Diamond_Pouch", "Talisman",
-    "Cupid_s_Bow", "Shovel",
-}
-
-ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS | SUSPECTED_OR_RESOURCE
+# The user (2026-07-22) assessed the remaining candidates from their old list as NOT gated -- i.e.
+# probably NOT softlocks: Wiggly_Worm, Gold_Ball, Small_Crown, Frog, Talisman. They are deliberately
+# NOT in ALLOWED, so if the model ever flags one it trips the suspicion alarm (confirm with the user).
+ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS
 
 PASS, FAIL = [], []
 
@@ -60,8 +62,10 @@ def run():
         print("  (skip: no KQ4 IR)")
         return True
     s = M.load(cfg=config.KQ4)
-    caught = {s.g.item_name(i)
-              for i in ({c["item"] for c in s.analyze()} | {j["item"] for j in s.joint_strandings()})}
+    # "caught" = flagged by ANY detector: edge/joint strandings, resource exhaustion, dangerous sinks.
+    ids = ({c["item"] for c in s.analyze()} | {j["item"] for j in s.joint_strandings()}
+           | {r["item"] for r in s.resource_exhaustion()} | {d["item"] for d in s.dangerous_sinks()})
+    caught = {s.g.item_name(i) for i in ids}
 
     missing = EXPECTED_CAUGHT - caught
     check("no confirmed softlock has DROPPED (regression)", not missing,
