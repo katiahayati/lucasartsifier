@@ -144,6 +144,7 @@ def main(argv=None):
 
     step(4, "PATCH")
     import patcher as P
+    P.configure(s.em.ir)      # derive this game's object-global layout (ego/game/room)
     dest = os.path.join(a.out, "patch_project")
     out_dir = os.path.join(a.out, "patch")
     nums = P.assemble(dest, cfg)

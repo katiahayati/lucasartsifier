@@ -30,6 +30,7 @@ import sys
 
 import config
 import guards as G
+import ir as I
 import missability as M
 from sexpr import read_file
 from trigger import find_trigger, wrap_trigger_in_source
@@ -38,6 +39,47 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 SCICOMPILE = os.path.join(_ROOT, "tools", "scicompile", "build", "scicompile")
 RES_TYPE_SCRIPT = 2
+
+# The SCI object globals the emitted patches reference, DERIVED per game by configure():
+#   ego  -- the get/put/has receiver (the store wrapper's holder global)
+#   game -- the changeScore receiver (the score object; drops a penalty)
+#   room -- the newRoom receiver (the current room object; closes a property exit)
+# LSL2 and KQ4 both use 0 / 1 / 2 -- the SCI template layout, kept as the defaults below -- but a
+# game that laid its object globals out differently would still get correct patches.
+_EGO, _GAME, _ROOM = 0, 1, 2
+
+
+def configure(ir):
+    """Derive this game's object-global layout so the patcher emits its real indices, not the
+    template's 0/1/2. Call once before apply_*()."""
+    global _EGO, _GAME, _ROOM
+    import extract as X
+    X.install_vocabulary(ir)                       # sets X._EGO = the ego holder global(s)
+    _EGO = min(X._EGO) if X._EGO else 0
+    _GAME = _dominant_receiver(ir, "changeScore", 1)
+    _ROOM = _dominant_receiver(ir, "newRoom", 2)
+
+
+def _dominant_receiver(ir, selector, default):
+    """The global most often used as the RECEIVER of `selector` -- e.g. `changeScore:` identifies
+    the score object, `newRoom:` the room object. Falls back to the SCI template index."""
+    from collections import Counter
+    c = Counter()
+    for s in ir.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for n in I.walk(body):
+                if n.get("t") != "Send":
+                    continue
+                try:
+                    recv, msgs = I.send_pairs(n)
+                except Exception:                  # noqa: BLE001 -- malformed send
+                    continue
+                if I.is_global(recv):
+                    for sel, _ in msgs:
+                        if sel == selector:
+                            c[recv["index"]] += 1
+    return c.most_common(1)[0][0] if c else default
 
 
 def _script_numbers(src_dir):
@@ -137,7 +179,7 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
             continue
         path = os.path.join(dest, "src", title + ".sc")
         lines = open(path, errors="replace").read().splitlines(True)
-        pat = re.compile(r"^\s*\(global0\s+put:\s*%d\s+-1\)\s*$" % sk["item"])
+        pat = re.compile(r"^\s*\(global%d\s+put:\s*%d\s+-1\)\s*$" % (_EGO, sk["item"]))
         hits = [i for i, l in enumerate(lines) if pat.match(l)]
         if len(hits) != 1:
             edits.append({**sk, "applied": False,
@@ -162,7 +204,7 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
         # NEGATIVE score adjacent to the consumption; a positive one rewards something legitimate.
         dropped_score = None
         if i + 1 < len(lines):
-            sm = re.match(r"\s*\(global1\s+changeScore:\s*(-\d+)\)\s*$", lines[i + 1])
+            sm = re.match(r"\s*\(global%d\s+changeScore:\s*(-\d+)\)\s*$" % _GAME, lines[i + 1])
             if sm:
                 dropped_score = int(sm.group(1))
                 del lines[i + 1]
@@ -182,8 +224,8 @@ REFUSE = "(proc255_0 {Not yet!})"
 # single quote opens a Said spec.
 
 def to_source_syntax(cond):
-    """Our specs say `gEgo`; this decompilation names the ego `global0`."""
-    return cond.replace("(gEgo has:", "(global0 has:")
+    """Our specs say `gEgo`; this decompilation names the ego by its global index (derived)."""
+    return cond.replace("(gEgo has:", "(global%d has:" % _EGO)
 
 
 DIRECTIONS = ("north", "south", "east", "west")
@@ -207,7 +249,7 @@ def guard_edgehit_clause(text, direction, cond):
     n = EDGEHIT.get(direction)
     if n is None:
         return text, 0
-    m = re.search(r"\(\(==\s*%d\s*\(global0\s+edgeHit:\)\)" % n, text)
+    m = re.search(r"\(\(==\s*%d\s*\(global%d\s+edgeHit:\)\)" % (n, _EGO), text)
     if not m:
         return text, 0
     # body = everything between the clause condition and the clause's closing paren
@@ -219,11 +261,13 @@ def guard_edgehit_clause(text, direction, cond):
             depth -= 1
         i += 1
     body = text[m.end():i - 1]
+    ego = "global%d" % _EGO
     wrapped = ("\n\t\t\t\t(if %s%s\n\t\t\t\telse\n"
-               "\t\t\t\t\t(global0 setMotion: 0)\n"
-               "\t\t\t\t\t(global0 x: (- (global0 x:) 12))\n"
-               "\t\t\t\t\t(global0 edgeHit: 0)   ; else the clause re-fires every cycle\n"
-               "\t\t\t\t\t%s  ; softlock-guard\n\t\t\t\t)\n\t\t\t" % (cond, body, REFUSE))
+               "\t\t\t\t\t(%s setMotion: 0)\n"
+               "\t\t\t\t\t(%s x: (- (%s x:) 12))\n"
+               "\t\t\t\t\t(%s edgeHit: 0)   ; else the clause re-fires every cycle\n"
+               "\t\t\t\t\t%s  ; softlock-guard\n\t\t\t\t)\n\t\t\t"
+               % (cond, body, ego, ego, ego, ego, REFUSE))
     return text[:m.end()] + wrapped + text[i - 1:], 1
 
 
@@ -265,7 +309,8 @@ def guard_edge_exit(text, inst_name, to_room, cond):
     at = m.start() + init.start() + sup.end()
     indent = sup.group(1)
     ins = ("\n%s; [softlock-guard] close this exit until the player can survive past it\n"
-           "%s(if (not %s)\n%s\t(global2 %s: 0)\n%s)" % (indent, indent, cond, indent, direction, indent))
+           "%s(if (not %s)\n%s\t(global%d %s: 0)\n%s)"
+           % (indent, indent, cond, indent, _ROOM, direction, indent))
     return text[:at] + ins + text[at:], 1, direction
 
 

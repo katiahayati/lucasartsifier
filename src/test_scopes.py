@@ -434,6 +434,19 @@ def test_grid_and_joint():
         check("KQ4: joint sweep adds exactly the Golden Bridle", net == {21}, repr(sorted(net)))
 
 
+def test_patcher_layout():
+    print("\nPart 13: the patcher derives the object-global layout (ego/game/room), not 0/1/2")
+    import os, config, ir as I, patcher as P
+    for which, cfg in (("LSL2", config.LSL2), ("KQ4", config.KQ4)):
+        if not os.path.exists(cfg.ir_path):
+            continue
+        P.configure(I.load_ir(cfg.ir_path))
+        # ego = store holder, game = changeScore receiver, room = newRoom receiver. Both games use
+        # the SCI template 0/1/2, so emitted patches are unchanged -- but they are now DERIVED.
+        check(f"{which}: patcher layout derives ego=0 game=1 room=2",
+              (P._EGO, P._GAME, P._ROOM) == (0, 1, 2), f"{(P._EGO, P._GAME, P._ROOM)}")
+
+
 def run():
     test_item_transfer()
     test_ownedby_spelling()
@@ -448,6 +461,7 @@ def run():
     test_resource_exhaustion()
     test_item_names()
     test_grid_and_joint()
+    test_patcher_layout()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 
