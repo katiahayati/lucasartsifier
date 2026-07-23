@@ -355,7 +355,10 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
     out, seen = [], set()
     for r in remedies:
         it, prop, room = r["item"], r["property"], r["room"]
-        title = r["object"] if room == 0 else titles_by_num.get(room)
+        # The write's OWNING script names the file to edit (its source lives there even when the
+        # write is attributed to room 0 -- KQ4's shootBow). Resolve the number to a title; fall
+        # back to the room only if no script was carried (finding B#7).
+        title = titles_by_num.get(r.get("script")) or (titles_by_num.get(room) if room else None)
         key = (title, it, prop, r["value"])
         if title is None or key in seen:
             continue
@@ -395,7 +398,14 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
             # it" / "you shot it away" message), like the airsick-bag sink, so the game does not
             # claim a loss that no longer happens. Embed the new line in the target string so the
             # list indices do not shift.
-            ann = min((j for j in range(max(0, i - 8), min(len(lines), i + 9))
+            # Search the write's OWN state clause -- from its `(N` label to the next one -- not a
+            # fixed +/-8-line window, which can reach into a neighbour clause and retract the wrong
+            # message (finding B#6). Fall back to the window only if the write is not inside a case.
+            cstart = next((j for j in range(i, -1, -1) if re.match(r"\s*\(\d+\s*$", lines[j])), None)
+            lo = cstart if cstart is not None else max(0, i - 8)
+            hi = (next((j for j in range(i + 1, len(lines)) if re.match(r"\s*\(\d+\s*$", lines[j])),
+                       len(lines)) if cstart is not None else min(len(lines), i + 9))
+            ann = min((j for j in range(lo, hi)
                        if j != i and "proc255_0" in lines[j] and "softlock-guard" not in lines[j]),
                       key=lambda j: abs(j - i), default=None)
             tgt = i if ann is None else ann

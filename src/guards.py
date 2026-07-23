@@ -233,32 +233,37 @@ def joint_frontier(s):
     import grid
     grid_edges = {(r, ex) for r, exits in grid.analyze(s.em, s._prev_room_global()).items()
                   for ex in exits}
-    flip_rooms = set()
-    for F in {F for j in js for F in j["flags"]}:
-        for room, vals in s._inroom.get(F, {}).items():
-            if any(v != 0 for v in vals):
-                flip_rooms.add(room)
-        for room, vs in s.em.init_writes.items():
-            if F in vs and vs[F] != 0:
-                flip_rooms.add(room)
-    pruned = {a: {b for b in bs if (a, b) not in grid_edges and b not in flip_rooms}
-              for a, bs in s.edges.items()}
-    shallow = M.reachable(pruned, {s.em.cfg.start_room})
     edge_items = {c["item"] for c in s.analyze()}
-    flip_ins = {(a, b) for b in flip_rooms for a, bs in s.edges.items() if b in bs}
     out = defaultdict(lambda: {"items": set(), "groups": []})
     for j in js:
         it = j["item"]
         if it in edge_items:
             continue
+        # flip rooms for THIS finding's OWN flags -- not a global union over every joint finding,
+        # which stamps this item's guard on an unrelated gate's entries and skews `shallow` (B#5).
+        flip_rooms = set()
+        for F in j["flags"]:
+            for room, vals in s._inroom.get(F, {}).items():
+                if any(v != 0 for v in vals):
+                    flip_rooms.add(room)
+            for room, vs in s.em.init_writes.items():
+                if F in vs and vs[F] != 0:
+                    flip_rooms.add(room)
+        pruned = {a: {b for b in bs if (a, b) not in grid_edges and b not in flip_rooms}
+                  for a, bs in s.edges.items()}
+        shallow = M.reachable(pruned, {s.em.cfg.start_room})
         src, need = set(j["source_rooms"]), set(s.required.get(it, set()))
-        if not (src & shallow):                       # source deep -> carry it OUT
-            for r in src:
-                for b in s.edges.get(r, ()):
-                    out[(r, b)]["items"].add(it)
-        elif not (need & shallow):                    # need deep -> carry it IN
+        src_deep, need_deep = not (src & shallow), not (need & shallow)
+        if need_deep and not src_deep:                # need deep -> carry IN: gate the flip entries
+            flip_ins = {(a, b) for b in flip_rooms for a, bs in s.edges.items() if b in bs}
             for (a, b) in flip_ins:
                 out[(a, b)]["items"].add(it)
+        elif src_deep:                                # source deep (incl. BOTH deep) -> carry OUT:
+            for r in src:                             # gate the source exits. Both-deep is a narrow
+                for b in s.edges.get(r, ()):          # window that MAY wall -- placed, not dropped.
+                    out[(r, b)]["items"].add(it)
+        # else NEITHER deep: no one-time seal lies on the source->need path -- nothing to gate.
+        # (Was silently skipped by a non-exhaustive if/elif; now an explicit, documented no-op.)
     return dict(out)
 
 
@@ -388,7 +393,7 @@ def resource_remedies(s):
             continue                           # re-settable property (the re-baitable pole) -- no
         out.append({"site": "resource", "item": it, "item_name": s.g.item_name(it),
                     "property": prop, "value": val, "room": room,
-                    "object": rest[0] if rest else None, "counter": bool(sp.get("counter")),
+                    "script": rest[0] if rest else None, "counter": bool(sp.get("counter")),
                     "op": "remove_degradation", "why": why})
     return out
 

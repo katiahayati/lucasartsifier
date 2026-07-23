@@ -692,7 +692,7 @@ class Extractor:
         def leaf(n, p):
             tp = n["t"]
             if tp == "Send":
-                self._send_effect(room, n, p, movement)
+                self._send_effect(room, n, p, movement, script)
             elif tp == "Assignment" and movement:
                 self._nav_assignment(room, n, p)
                 self._pending_room_assignment(room, n, p)
@@ -773,7 +773,7 @@ class Extractor:
             if t and t != self._cur_obj:      # self-arming is the animation loop, not a gate
                 self._armed.setdefault(room, {}).setdefault(t, []).append(_conj(pc))
 
-    def _send_effect(self, room, node, pc, movement=True):
+    def _send_effect(self, room, node, pc, movement=True, script=None):
         self._record_arming(room, node, pc)
         recv, msgs = I.send_pairs(node)
         for sel, params in msgs:
@@ -787,10 +787,12 @@ class Extractor:
                 if v is None and any(y.get("t") in ("Add", "Sub") for y in I.walk(params[0])):
                     v = "inc"
                 if v is not None:
-                    # carry the OBJECT name too: a Main-scope write (KQ4's shootBow spends an arrow
-                    # from a ScriptID-loaded script) is attributed to room 0, but its SOURCE lives in
-                    # shootBow.sc, not Main.sc -- the object name is the file title the patcher edits.
-                    self.ts.item_prop_writes.append((room, it, sel, v, _conj(pc), self._cur_obj))
+                    # carry the owning SCRIPT NUMBER: a Main-scope write (KQ4's shootBow spends an
+                    # arrow from a ScriptID-loaded script) is attributed to room 0, but its SOURCE
+                    # lives in shootBow.sc -- the patcher resolves the number to that file's title
+                    # via titles_by_num. (Was the object NAME, which matched shootBow only by
+                    # coincidence and was "" for a proc-hosted write -- finding B#7.)
+                    self.ts.item_prop_writes.append((room, it, sel, v, _conj(pc), script))
             # The store property written DIRECTLY, bypassing its own accessor -- and inside a
             # list walk, so it means the whole inventory at once: KQ4's Room92 confiscates
             # everything to room 89 and Room89's cupboard hands it all back. The property name
