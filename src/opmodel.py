@@ -274,55 +274,7 @@ class OpEmitter:
         new["kids"] = [self._inline_calls(k, script, seen, depth) for k in node.get("kids", [])]
         return new
 
-    def _cutscene_room_set(self):
-        """Rooms with NO player input (HandsOff + no `Said` handler) -- pure cutscenes we can
-        collapse to net-effect edges to remove their depth (rm84's 82-state volcano, the
-        gIslandStatus endgame chain). Definition keyed on the decompiled source."""
-        if getattr(self, "_cutscenes", None) is None:
-            import re
-            out, d = set(), getattr(self.cfg, "src_dir", "")
-            try:
-                for f in os.listdir(d):
-                    mm = re.match(r"rm(\d+)\.sc$", f)
-                    if mm:
-                        t = open(os.path.join(d, f), errors="ignore").read()
-                        if "HandsOff" in t and "Said" not in t:
-                            out.add(int(mm.group(1)))
-            except OSError:
-                pass
-            self._cutscenes = out
-        return self._cutscenes
-
-    def _collapse_cutscene(self, room, m):
-        """Collapse a cutscene machine to its net-effect SUMMARIES: one hop per (entry, exit
-        path), carrying accumulated writes+gets, replacing the internal state sequence. Summarize
-        from every entry state (rm92 enters at 16/23/... by gIslandStatus), not just start."""
-        entry_ks = {m.start} | {k for k, _ in m.entries} | {k for k, _ in m.init_entries}
-        states, has_effect, drops = {}, False, set()
-        for K in entry_ks:
-            paths = []
-            for (X, gtree, writes, gets, sdrops, dead) in C.summarize_machine(m, self.is_death, from_state=K):
-                trans = ("DEATH",) if dead else ("EXIT", X)
-                paths.append(([gtree] if gtree is not None else [], list(writes.items()), gets, [], trans))
-                if not dead:
-                    drops |= set(sdrops)   # consumed on a SURVIVABLE path -> a real requirement
-                has_effect = True
-            if paths:
-                states[K] = paths
-        if not has_effect:
-            return None
-        try:
-            exits, _d = C.compile_machine(m, self.is_death)
-            delivered = set(r for r, g, w in exits)
-        except Exception:
-            delivered = set()
-        return {"room": room, "inst": m.inst, "script": m.script, "states": states,
-                "entries": m.entries, "init_entries": m.init_entries, "start": m.start,
-                "delivered": delivered, "cutscene": True, "drops": drops}
-
     def _machine_info(self, room, m):
-        if room in self._cutscene_room_set():
-            return self._collapse_cutscene(room, m)
         states = {}
         has_effect = False
         steps_by_state = {}
@@ -927,8 +879,8 @@ class OpEmitter:
                 if isinstance(v, str) and v.lstrip("-").isdigit():
                     cand.append(int(v))
             lo, hi = min(cand), max(cand)
-            if hi == lo:                # a collapsed cutscene has one state -> 0..0, which nuXmv
-                hi = lo + 1             # rejects; widen to a valid 2-value range (extra value unreachable)
+            if hi == lo:                # a single-state machine gives 0..0, which nuXmv rejects;
+                hi = lo + 1             # widen to a valid 2-value range (extra value unreachable)
             L.append(f"  {ms} : {lo} .. {hi};")
 
         L.append("ASSIGN")

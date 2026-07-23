@@ -1034,6 +1034,14 @@ class IrSccReach(SccReach):
                     used.add(id(r))
                 sites = sorted({r["at_room"] for r in inside})
                 need = sorted(set().union(*(set(r["still_needed_at"]) for r in inside)) - members)
+                if not need:
+                    # every use is INSIDE the one roaming encounter -- degrading the item where it
+                    # is used is not a softlock. The per-site rows only looked like findings because
+                    # a roaming region attributes the same encounter to each of its rooms, so each
+                    # site is "still needed at" the OTHERS; once collapsed they cancel. Drop the
+                    # whole group (rows stay consumed, nothing emitted) -- the same net judgement as
+                    # `resource_exhaustion`'s `if not ahead: continue`, applied after the merge.
+                    continue
                 out.append({**inside[0], "at_room": sites[0], "at_rooms": sites,
                             "still_needed_at": need, "roaming_region": rgn})
             out.extend(r for r in group if id(r) not in used)

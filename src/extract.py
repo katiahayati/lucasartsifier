@@ -24,7 +24,6 @@ import vocab as V
 from guard_ast import GAnd, GOr, GNot, Pred
 
 G_EGO = 0        # gEgo   (get:/put:/has: receiver)  -- confirmed by IR survey
-G_ROOMOBJ = 2    # gCurRoom, the room OBJECT (the `newRoom:` receiver) -- not the room NUMBER
 
 NAV_SELECTORS = ("north", "south", "east", "west")
 

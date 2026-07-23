@@ -93,24 +93,13 @@ def discover_start(em, edges=None, entries=None):
     entries = entries or engine_entry(em, edges)
     if not entries:
         entries = set(edges)                       # degenerate graph: consider everywhere
-    cutscenes = em._cutscene_room_set()
-    seen, q, candidates = set(entries), deque(entries), set()
-    for r in list(entries):
-        if r not in cutscenes:
-            candidates.add(r)
-    while q:
-        u = q.popleft()
-        for v in edges.get(u, ()):
-            if v in seen:
-                continue
-            seen.add(v)
-            if v in cutscenes:
-                q.append(v)                        # keep walking through the intro
-            else:
-                candidates.add(v)                  # first room with player input
+    # An engine entry and the rooms one step past it are the candidates for "first room the player
+    # can act in"; the one whose component sees the most of the game wins.
+    candidates = set(entries)
+    for u in list(entries):
+        candidates.update(edges.get(u, ()))
     if not candidates:
         return None
-    # widest forward reach wins; rm90 (an intro-cutscene tangle) sees 42 rooms, rm23 sees 88
     return max(sorted(candidates), key=lambda r: len(reachable(edges, {r})))
 
 
