@@ -26,7 +26,7 @@ import config
 from dataclasses import dataclass, field
 
 import ir as I
-from extract import atom, _conj, G_EGO, G_CURROOM, item_transfer, EGO
+from extract import atom, _conj, item_transfer, EGO
 
 
 @dataclass

@@ -23,7 +23,19 @@ import ir as I
 import vocab as V
 from guard_ast import GAnd, GOr, GNot, Pred
 
-G_EGO = 0        # gEgo   (get:/put:/has: receiver)  -- confirmed by IR survey
+# The ego global(s) (gEgo -- the get/put/has/edgeHit receiver) and the current-room global
+# (gCurRoomNum). DERIVED per game in install_vocabulary: ego from the store wrapper's holder
+# globals (`(= global0 ego)`), current-room from the Game loop. The values below are the SCI
+# template DEFAULTS, used only if a game has no derivable store/Game-loop (never for LSL2/KQ4,
+# both of which derive ego={0}, current-room=11).
+_EGO = frozenset({0})
+_CURROOM = 11
+
+
+def _is_ego(node):
+    """Is `node` a reference to one of the derived ego globals?"""
+    return any(I.is_global(node, g) for g in _EGO)
+
 
 NAV_SELECTORS = ("north", "south", "east", "west")
 
@@ -100,12 +112,9 @@ def _is_ego_edgehit(n):
     """`(gEgo edgeHit:)` -- returns which screen edge the ego is at."""
     if isinstance(n, dict) and n.get("t") == "Send":
         recv, msgs = I.send_pairs(n)
-        if I.is_global(recv, G_EGO):
+        if _is_ego(recv):
             return any(sel == "edgeHit" for sel, _ in msgs)
     return False
-
-
-G_CURROOM = 11   # gCurRoomNum -- compared against room numbers all over the scripts
 
 
 def item_prop_read(n):
@@ -159,12 +168,23 @@ _IPROPS = {}     # (item, property) -> values written -- the FOURTH store, disco
 
 
 def install_vocabulary(ir):
-    """Derive this game's item-location vocabulary. Returns it, or None if the game has no
-    recognisable store -- which is a finding, not something to paper over with a default."""
-    global _VOCAB, _IPROPS
+    """Derive this game's item-location vocabulary AND its ego / current-room globals. Returns the
+    vocabulary, or None if the game has no recognisable store -- which is a finding, not something
+    to paper over with a default.
+
+    The ego global(s) and the current-room global are derived here too (into `_EGO`/`_CURROOM`),
+    from the store wrapper's holder globals and the Game loop respectively, so the extraction reads
+    the game's own layout instead of assuming the SCI template's 0/11. Both fall back to the
+    template default only when a game has no derivable store or Game loop."""
+    global _VOCAB, _IPROPS, _EGO, _CURROOM
     _VOCAB = V.Vocabulary.from_ir(ir)
     _IPROPS = (V.item_property_registers(ir, _VOCAB.store_class, _VOCAB.prop, _at_item)
                if _VOCAB else {})
+    holders = frozenset().union(*_VOCAB.holders.values()) if _VOCAB and _VOCAB.holders else frozenset()
+    _EGO = holders or frozenset({0})
+    _CURROOM = current_room_global(ir)
+    if _CURROOM is None:
+        _CURROOM = 11
     return _VOCAB
 
 
@@ -227,7 +247,7 @@ def _send_atom(n):
         return Pred("IPROP", var=ip, op="!=", value=0)
     recv, msgs = I.send_pairs(n)
     for sel, params in msgs:
-        if sel == "has" and I.is_global(recv, G_EGO):
+        if sel == "has" and _is_ego(recv):
             it = I.as_int(params[0]) if params else None
             if it is not None:
                 return Pred("OWN", var=it)
@@ -246,7 +266,7 @@ def _send_atom(n):
             it = _at_item(recv)
             if it is not None:
                 where = "other"
-                if params and I.is_global(params[0], G_CURROOM):
+                if params and I.is_global(params[0], _CURROOM):
                     where = "room"
                 elif params and I.as_int(params[0]) is not None:
                     where = I.as_int(params[0])
@@ -254,7 +274,7 @@ def _send_atom(n):
         # `(gEgo inRect: a b c d)` -> a POSITION guard over the ego's (x,y). Coordinates are
         # in the AST, so this is derivable; ONE consistent (x,y) is what makes "cross east =>
         # inRect" unavoidable: one consistent (x,y) per step, not a fresh choice per guard.
-        if sel == "inRect" and I.is_global(recv, G_EGO) and len(params) >= 4:
+        if sel == "inRect" and _is_ego(recv) and len(params) >= 4:
             cs = [I.as_int(p) for p in params[:4]]
             if all(c is not None for c in cs):
                 return ("POS", "rect", tuple(cs))
@@ -367,19 +387,16 @@ def pending_room_global(ir):
     return None
 
 
-def prev_room_global(ir):
-    """The global that holds the PREVIOUS room, or None.
+def current_room_global(ir):
+    """The global that holds the CURRENT room number, or None.
 
-    DISCOVERED from the same Game-loop shape as `pending_room_global`. The loop saves the current
-    room before switching -- `(= <previous> <current>)` -- where `<current>` is the current-room
-    global, i.e. the member of the `(!= pending current)` comparison that is NOT handed to
-    `newRoom:`. Both LSL2 and KQ4 land on global12 (current global11, pending global13), by
-    derivation. It is what a virtual-map room reads to seed its entry cell, so `grid.analyze`
-    gates a grid exit on it -- "you can only reach the island if you arrived from the whale"."""
+    DISCOVERED from the Game loop's `(if (!= pending current) (self newRoom: pending))` shape: the
+    current-room global is the member of that comparison that is NOT the one handed to `newRoom:`
+    (that one is the pending-room global). Both LSL2 and KQ4 derive global11. This is what the
+    scripts compare room numbers against (`(== gCurRoomNum N)`, `ownedBy: gCurRoomNum`)."""
     pending = pending_room_global(ir)
     if pending is None:
         return None
-    current = None
     for s in ir.scripts.values():
         for o in s.objects:
             for body in o.methods.values():
@@ -403,7 +420,19 @@ def prev_room_global(ir):
                         for sel, params in msgs:
                             if (sel == "newRoom" and params and I.is_global(params[0])
                                     and params[0]["index"] in pair):
-                                current = (pair - {pending}).pop()
+                                return (pair - {pending}).pop()
+    return None
+
+
+def prev_room_global(ir):
+    """The global that holds the PREVIOUS room, or None.
+
+    DISCOVERED from the same Game-loop shape as `pending_room_global`. The loop saves the current
+    room before switching -- `(= <previous> <current>)` -- where `<current>` is `current_room_global`.
+    Both LSL2 and KQ4 land on global12 (current global11, pending global13), by derivation. It is
+    what a virtual-map room reads to seed its entry cell, so `grid.analyze` gates a grid exit on it
+    -- "you can only reach the island if you arrived from the whale"."""
+    current = current_room_global(ir)
     if current is None:
         return None
     # previous = the global assigned FROM the current-room global (saved before the update)
@@ -766,7 +795,7 @@ class Extractor:
             # (`(trollMusic owner: self)`), which the destination test excludes.
             if _VOCAB is not None and sel == _VOCAB.prop and params and self._list_loop:
                 d = params[0]
-                dest = (EGO if I.is_global(d, G_EGO)
+                dest = (EGO if _is_ego(d)
                         else I.as_int(d) if I.as_int(d) is not None else None)
                 if dest is not None:
                     self.ts.bulk_moves.append((room, dest, _conj(pc)))

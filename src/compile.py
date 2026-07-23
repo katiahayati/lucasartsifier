@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import ir as I
 from guard_ast import GAnd, GNot, Pred
-from extract import atom, _conj, G_EGO, item_transfer, EGO
+from extract import atom, _conj, item_transfer, EGO
 import machine as M
 
 COUNTER_CAP = 40          # loop/unroll bound

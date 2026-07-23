@@ -391,12 +391,19 @@ def test_grid_and_joint():
     print("\nPart 12: the ocean grid + the joint-window softlock (KQ4 Golden Bridle)")
     import os, config, missability as M, grid, extract as X, ir as I
 
-    # (a) the previous-room global derives from the Game loop, both games -> global12
+    # (a) the room globals derive from the Game loop; ego from the store wrapper's holders. Both
+    #     games -> previous 12, current 11, ego {0} -- no longer the old hardcoded G_EGO/G_CURROOM.
     for which, cfg in (("LSL2", config.LSL2), ("KQ4", config.KQ4)):
         if not os.path.exists(cfg.ir_path):
             continue
-        prg = X.prev_room_global(I.load_ir(cfg.ir_path))
-        check(f"{which}: previous-room global derives as 12", prg == 12, repr(prg))
+        ird = I.load_ir(cfg.ir_path)
+        check(f"{which}: previous-room global derives as 12", X.prev_room_global(ird) == 12,
+              repr(X.prev_room_global(ird)))
+        check(f"{which}: current-room global derives as 11", X.current_room_global(ird) == 11,
+              repr(X.current_room_global(ird)))
+        X.install_vocabulary(ird)   # sets _EGO / _CURROOM from derivation, not the template default
+        check(f"{which}: ego global derives as {{0}}, current-room as 11 (not hardcoded)",
+              X._EGO == frozenset({0}) and X._CURROOM == 11, f"ego={sorted(X._EGO)} cur={X._CURROOM}")
 
     # (b) the ocean summarises to an edge gate: the island (rm43) is reachable ONLY from the whale
     #     (44) or the island itself (43). LSL2 has no virtual-map room and yields nothing.
