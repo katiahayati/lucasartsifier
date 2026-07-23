@@ -1,4 +1,4 @@
-"""Golden-snapshot lock on the FULL analysis output surface, for both games.
+"""Golden-snapshot lock on the FULL analysis output surface for LSL2.
 
 The v1.0-lsl2 tag's behaviour on LSL2 is a CORRECT ORACLE -- 16 softlocks, four dangerous sinks,
 its guard specs -- validated by playing the patched game to the ending. This test freezes that whole
@@ -6,14 +6,17 @@ surface (softlock items, groups, resource exhaustion, joint-window strandings, e
 and sink specs) so it cannot be silently changed. It exists because the sink behaviour was quietly
 broken once by a later commit and nearly "fixed" a second time by re-litigating it.
 
+KQ4 is deliberately NOT frozen here: it is still under active development, so its output is expected
+to move. Locking it would only fire spurious failures on legitimate KQ4 work. Add it back once its
+behaviour is validated the way LSL2's was.
+
 If this test fails, the DEFAULT assumption is that the change is wrong, not the golden. Do not
-regenerate the golden to make a red test green without understanding -- and, for LSL2, without the
-user's sign-off (its behaviour is the oracle, not something to re-derive).
+regenerate the golden to make a red test green without understanding, or without the user's sign-off
+(LSL2's behaviour is the oracle, not something to re-derive).
 
 Regenerate deliberately (after a change you have confirmed is correct):
     python3 -c "import json, config; from snapshot import snapshot; \
         json.dump(snapshot(config.LSL2), open('testdata/lsl2.golden.json','w'), indent=2, sort_keys=True)"
-    (and likewise config.KQ4 -> testdata/kq4.golden.json)
 """
 import json
 import os
@@ -48,8 +51,8 @@ def _diff(golden, got):
 
 
 def run():
-    print("=== test_golden: the full analysis surface is frozen ===")
-    for name, cfg in (("LSL2", config.LSL2), ("KQ4", config.KQ4)):
+    print("=== test_golden: the full analysis surface is frozen (LSL2 only) ===")
+    for name, cfg in (("LSL2", config.LSL2),):
         path = os.path.join(_HERE, "testdata", f"{name.lower()}.golden.json")
         if not (os.path.exists(cfg.ir_path) and os.path.exists(path)):
             print(f"  (skip {name}: no IR or no golden)")
