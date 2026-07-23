@@ -281,6 +281,66 @@ def guard_edgehit_clause(text, direction, cond):
     return text[:m.end()] + wrapped + text[i - 1:], 1
 
 
+def _recycle_counter_break(text, write_start, msg):
+    """Neutralize a COUNTER-GATED break whose counter also indexes a bounded store.
+
+    Some degradations are not a standalone write but a break clause `(if (>= C L) <then> else <E>)`
+    where <then> degrades the item AND aborts the action, and <E> is the productive continuation.
+    Deleting only the write (KQ4 shovel: `(Inv at:15) loop:1`) leaves the abort, so once the counter
+    C latches at the limit the action is permanently blocked (the shovel "breaks" on every later dig).
+    But C here also indexes a bounded store -- global113 counts holes AND indexes the global138 hole
+    array (consecutive globals, 3 per hole), and the >=5 cap is what stops the 6th hole overrunning
+    global153+ -- so simply lifting the cap corrupts memory.
+
+    Recycle instead: when C hits the limit, pin it one under (reuse the last slot, no overflow) and
+    always run the productive branch, so the tool never degrades and the store stays bounded:
+        (if (>= C L) <then: msg + degrade + abort> else <E>)  ->  (if (>= C L) <msgs> <retract> (= C L-1)) <E>
+    Returns (new_text, True) on success; (text, False) if the write is not in this shape (e.g. the
+    bow's standalone increment, which the caller then simply deletes)."""
+    best = None
+    for m in re.finditer(r"\(if\b", text):
+        if m.start() > write_start:
+            break
+        s, e = _block_span(text, m.start())
+        if not (s <= write_start < e):
+            continue
+        depth, elp, i = 0, None, s
+        while i < e:                                  # first `else` at the if's own top level
+            ch = text[i]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            elif (depth == 1 and text.startswith("else", i)
+                  and not (text[i - 1].isalnum() or text[i - 1] in "_-")):
+                elp = i
+                break
+            i += 1
+        if elp is not None and s < write_start < elp and (best is None or s > best[0]):
+            best = (s, e, elp)                        # innermost if whose THEN holds the write
+    if best is None:
+        return text, False
+    s, e, elp = best
+    cs = s + re.match(r"\(if\s+", text[s:]).end()
+    if text[cs] != "(":                               # need a parenthesized comparison condition
+        return text, False
+    cond_s, cond_e = _block_span(text, cs)
+    cond = text[cond_s:cond_e]
+    cmp = re.match(r"\(\s*[<>]=?\s+(global\d+)\s+(\d+)\s*\)\s*$", cond)
+    if not cmp:                                       # only a `(>= counter limit)` gate is recyclable
+        return text, False
+    counter, limit = cmp.group(1), int(cmp.group(2))
+    anns = re.findall(r"\(proc255_0[^()]*\)", text[cond_e:elp])   # keep the clause's own announcements
+    else_body = text[elp + 4:e - 1].strip()
+    ind = text[text.rfind("\n", 0, s) + 1:s]
+    body = "".join("\n%s\t%s" % (ind, a) for a in anns)
+    body += "\n%s\t%s  ; softlock-guard: retract the break" % (ind, msg)
+    body += ("\n%s\t(= %s %d)  ; softlock-guard: recycle the bounded store, never exhaust"
+             % (ind, counter, limit - 1))
+    rebuilt = "(if %s%s\n%s)\n%s%s" % (cond, body, ind, ind, else_body)
+    return text[:s] + rebuilt + text[e:], True
+
+
 def apply_resource_remedies(dest, remedies, titles_by_num):
     """Delete the WASTEFUL degradation write -- the fourth-store analogue of apply_sink_remedies.
 
@@ -312,6 +372,21 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
         if not hits:
             out.append({**r, "applied": False, "why": "write not found in %s" % title})
             continue
+        # Shape split: a COUNTER-GATED break (the write in the THEN of `(if (>= C L) ... else <E>)`,
+        # C indexing a bounded store) is recycled -- deleting the write alone leaves the abort and
+        # would need the cap lifted, overrunning the store (the KQ4 shovel). A standalone wasteful
+        # write (the bow's shot bump) has no such clause and falls through to the delete below.
+        text = "".join(lines)
+        recycled = 0
+        for m in reversed(list(pat.finditer(text))):
+            nt, ok = _recycle_counter_break(text, m.start(), _JUST_KIDDING)
+            if ok:
+                text, recycled = nt, recycled + 1
+        if recycled:
+            open(path, "w").write(text)
+            out.append({**r, "applied": True, "title": title, "sites": recycled,
+                        "why": "counter-gated break recycled (tool never breaks, store bounded)"})
+            continue
         msg = _JUST_KIDDING
         for i in hits:
             indent = re.match(r"[ \t]*", lines[i]).group(0)
@@ -334,7 +409,30 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
                         nxt = next((k for k in range(j + 1, min(len(lines), j + 6))
                                     if re.match(r"\s*\(\d+\s*$", lines[k])), None)
                         if nxt is not None:
-                            tgt = nxt
+                            # Anchor AFTER the deferred state's OWN message send, not at its start.
+                            # The animation state left a PERSISTENT balloon up (a proc255_0 carrying
+                            # the keep-on-screen code, stashed in a global); the deferred state
+                            # disposes it partway through, and a modal retraction printed BEFORE that
+                            # disposal cannot take focus -- it flashes and never shows. The state's
+                            # last proc255_0 runs after the balloon is gone, so put it there; else
+                            # just before the script teardown; else the state start.
+                            sind = len(re.match(r"[ \t]*", lines[nxt]).group(0))
+                            end = len(lines)
+                            for k in range(nxt + 1, len(lines)):
+                                if re.match(r"\s*\(\d+\s*$", lines[k]):
+                                    end = k; break
+                                if (lines[k].strip() == ")"
+                                        and len(re.match(r"[ \t]*", lines[k]).group(0)) <= sind):
+                                    end = k; break
+                            cand = [k for k in range(nxt + 1, end)
+                                    if "proc255_0" in lines[k] and "softlock-guard" not in lines[k]]
+                            if cand:
+                                tgt = cand[-1]
+                            else:
+                                tear = next((k for k in range(nxt + 1, end)
+                                             if re.search(r"\b(DisposeScript|dispose:)", lines[k])),
+                                            None)
+                                tgt = tear - 1 if tear is not None else nxt
                         break
             aind = re.match(r"[ \t]*", lines[tgt]).group(0)
             lines[tgt] = lines[tgt].rstrip("\n") + "\n%s%s  ; [softlock-guard]\n" % (aind, msg)
@@ -598,7 +696,13 @@ def compile_one(dest, title, out_bin):
 
 
 def emit_patches(dest, titles, nums, out_dir):
-    """Compile each edited script and wrap it as a ScummVM loose patch `script.NNN`."""
+    """Compile each edited script and wrap it as a ScummVM loose patch `script.NNN`.
+
+    The output dir is CLEARED first: a build must never leave a previous run's patches (or another
+    game's) sitting alongside this one's -- a stale script.NNN silently overrides the game just as a
+    fresh one does. Both entry points (pipeline, patcher.main) call this once with the full set."""
+    if os.path.isdir(out_dir):
+        shutil.rmtree(out_dir)
     os.makedirs(out_dir, exist_ok=True)
     written = []
     for title in sorted(titles):

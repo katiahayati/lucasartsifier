@@ -57,6 +57,36 @@ def _own_positive(guard):
     return out
 
 
+def _own_required(guard):
+    """Items NECESSARILY held whenever `guard` is true -- the REQUIREMENT semantics, stricter than
+    `_own_positive`. An item inside an OR-branch is NOT required (another branch may satisfy the
+    guard), so GOr INTERSECTS its kids while GAnd UNIONS them (and negation swaps the two, De
+    Morgan). This is why KQ4's Obsidian Scarab is NOT required by the nightfall guard `(or (clock)
+    (and (>= g109 3) (has:7) (has:25)))`: it is one WAY night falls, not a thing you must hold. A
+    disjunctive requirement (ash OR sand) correctly contributes nothing here -- it is caught by
+    `disjunctive_groups`, not by per-item `required`."""
+    def walk(g, pol):
+        if g is None:
+            return set()
+        if isinstance(g, list):
+            out = set()
+            for x in g:
+                out |= walk(x, pol)
+            return out
+        if isinstance(g, Pred):
+            return {g.var} if (g.kind == "OWN" and pol) else set()
+        if isinstance(g, GNot):
+            return walk(g.kid, not pol)
+        if isinstance(g, (GAnd, GOr)):
+            union = pol == isinstance(g, GAnd)     # AND&true or OR&false -> union; else intersect
+            sets = [walk(k, pol) for k in g.kids]
+            if not sets:
+                return set()
+            return set().union(*sets) if union else set.intersection(*sets)
+        return set()
+    return walk(guard, True)
+
+
 def _after(info, tr, gr, goal_ok):
     """Can the goal still be reached AFTER taking this transition?"""
     if tr[0] == "DEATH":
@@ -272,7 +302,7 @@ def build_maps(em):
         if it not in trap_items:
             required[it].add(room)
     def req(guard, room):
-        for it in _own_positive(guard):
+        for it in _own_required(guard):     # OR-branch items are NOT required -- see _own_required
             req_item(it, room)
     for e in em.ts.edges:
         req(e.guard, e.src)

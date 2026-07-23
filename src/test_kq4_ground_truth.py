@@ -28,7 +28,12 @@ import missability as M
 EXPECTED_CAUGHT = {
     "Peacock_Feather",   # tickle the whale to escape; caught at edge rm31->rm44 (has:8)
     "Golden_Bridle",     # island behind the one-time whale; caught via joint (g12 x g183)
-    "Obsidian_Scarab",   # crypt/graveyard required items; user-confirmed enumerated GT
+    # Obsidian_Scarab: RECLASSIFIED 2026-07-23 (user-confirmed via play-test). It is REQUIRED (dig
+    # the cemeteries) but freely REOBTAINABLE -- a fresh scarab is tossed by the witch at rm57
+    # (g109>2, holding the glass-eye, not owning the scarab). So it is missable-but-not-stranding,
+    # NOT a softlock. Its earlier "catch" was a phantom: has:7 leaked out of the nightfall trigger's
+    # OR-branch and gated the endgame gate (fixed by _own_required). Do NOT re-add without evidence
+    # the reobtainment is gone. See memory kq4-stranding-ground-truth.
     "Magic_Hen",         # carried into the ending; rm45->rm690 + joint
     "Magic_Fruit",       # required for the victory ending; rm45->rm690 + joint (+ sink)
     "Cupid_s_Bow",       # waste the arrows -> can't kill Lolotte; caught via resource_exhaustion
