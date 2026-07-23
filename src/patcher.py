@@ -217,6 +217,10 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
 
 
 REFUSE = "(proc255_0 {Not yet!})"
+# Retraction for a resource remedy, printed after the game's own "you broke/spent it" line so the
+# announcement is not left lying. Generic on PURPOSE -- it must fit any wasted item, counter or
+# flag, so it says nothing about what the item does. No apostrophes -- a single quote opens a Said.
+_JUST_KIDDING = "(proc255_0 {Just kidding! You still need it.})"
 # NOT the stock refusals. proc0_20 ("You don't have it.") LIES -- reported from live play at rm26,
 # where the player was holding the very item they had just used; what they lacked was something
 # else, needed later. proc0_15 ("Not now!") is honest but misleads in a different way: it reads as
@@ -308,9 +312,20 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
         if not hits:
             out.append({**r, "applied": False, "why": "write not found in %s" % title})
             continue
+        msg = _JUST_KIDDING
         for i in hits:
             indent = re.match(r"[ \t]*", lines[i]).group(0)
             lines[i] = "%s; [softlock-guard] %s no longer wasted here\n" % (indent, r["item_name"])
+            # Print a JUST-KIDDING line right after the clause's OWN announcement (the "you broke
+            # it" / "you shot it away" message), like the airsick-bag sink, so the game does not
+            # claim a loss that no longer happens. Embed the new line in the target string so the
+            # list indices do not shift.
+            ann = min((j for j in range(max(0, i - 8), min(len(lines), i + 9))
+                       if j != i and "proc255_0" in lines[j] and "softlock-guard" not in lines[j]),
+                      key=lambda j: abs(j - i), default=None)
+            tgt = i if ann is None else ann
+            aind = re.match(r"[ \t]*", lines[tgt]).group(0)
+            lines[tgt] = lines[tgt].rstrip("\n") + "\n%s%s  ; [softlock-guard]\n" % (aind, msg)
         open(path, "w").write("".join(lines))
         out.append({**r, "applied": True, "title": title, "sites": len(hits)})
     return out
