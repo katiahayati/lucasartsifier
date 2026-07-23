@@ -1193,9 +1193,20 @@ class IrSccReach(SccReach):
             need = self.required[it]
             if not srcs or not need:
                 continue
-            can_get = backward({s for s in F if s[0] in srcs})
-            # a reachable state at a required room, from which no source is reachable (cannot get
-            # the item) but the goal still is (so it is the item that is missing, not a dead end).
+            # DELIVERABILITY, not mere obtainability. A source only helps if a need-room is still
+            # reachable AFTER visiting it -- otherwise you can obtain the item but never carry it to
+            # where it is used. `can_get` demands you can still reach a source FROM WHICH a need is
+            # reachable. This is a strict generalisation of the old "can still reach a source":
+            #   * Golden_Bridle -- its source (island rm43) can always reach its need (unicorn), so
+            #     every source is "good" and the test is unchanged.
+            #   * Dead_Fish -- its source (rm95) can NOT reach its need (island rm43) once the
+            #     one-time whale is spent, so a fishless island state is correctly stranded. The old
+            #     test called rm95 reachable and stopped, missing that you cannot get back to rm43.
+            need_reachers = backward({s for s in F if s[0] in need})
+            good_sources = {s for s in F if s[0] in srcs} & need_reachers
+            can_get = backward(good_sources)
+            # a reachable state at a required room, from which no DELIVERABLE source is reachable but
+            # the goal still is (so it is the item that is missing, not a dead end).
             stuck = sorted({s[0] for s in F
                             if s[0] in need and s not in can_get and s in can_win})
             if stuck:

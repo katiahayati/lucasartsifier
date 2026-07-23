@@ -32,12 +32,13 @@ EXPECTED_CAUGHT = {
     "Magic_Fruit",       # required for the victory ending; rm45->rm690 + joint (+ sink)
     "Cupid_s_Bow",       # waste the arrows -> can't kill Lolotte; caught via resource_exhaustion
     "Shovel",            # breaks after wrong digs; caught via resource_exhaustion
+    "Dead_Fish",         # needed on the island past the one-time whale; caught via joint
+                         # (deliverability: source rm95 can't reach need rm43 once the whale is spent)
 }
 
 # Confirmed/firmly-stated ground truth we do NOT yet catch. Listed so a NEW catch of one of these is
 # recognised as a WIN (promote it into EXPECTED_CAUGHT with the user's OK), not flagged as suspicious.
 KNOWN_GAPS = {
-    "Dead_Fish",         # user fact #4: needed on the island past the whale; free rm31->43 gap
     "Diamond_Pouch",     # user: gated by NIGHTFALL. The dwarves' door rm22->54 is day-only; the
                          # trap is sequencing (dawn only comes when Lolotte dies, which needs the
                          # pouch-chain) -- a register-flip point-of-no-return we do not model.
