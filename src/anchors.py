@@ -6,21 +6,20 @@ numbers before the analysis could run at all.
 
 Both turn out to be structural:
 
-  START  the engine enters at Main's own `newRoom:` call, but that is the copy-protection screen
-         and the intro, which are CUTSCENES. Walk forward through rooms with no player input until
-         the first one the player can actually act in. Several may qualify (LSL2: rm23 and rm90),
-         so take the one whose forward reachability covers the most of the game -- a free-roam
-         anchor should see the whole map, whereas rm90 is an intro-cutscene tangle that reaches
-         only 42 of 88 rooms and would silently analyse half a game.
+  START  the engine's first `newRoom:` target and the rooms one step past it are the candidates;
+         take the one whose forward reachability covers the most of the game -- a free-roam anchor
+         should see the whole map. LSL2 lands on rm10 (the copy-protection screen: the widest-reach
+         entry at 89 rooms), KQ4 on rm99.
 
   GOAL   the ending is the room you can reach, cannot leave, and do not die in: TERMINAL (no
          outgoing edges) + reachable + never raises the death signal. Deaths are terminal too, so
          excluding them is what makes the rule work. LSL2 yields rm86, entered from the rm178
          wedding cutscene.
 
-Validated on LSL2: the derived pair (start rm23, goal rm86) reproduces the hand-tuned pair
-(start rm21, goal rm178) EXACTLY -- 15 stranded items plus the Ashes/Sand group. The user
-independently confirmed rm23 is "the first real screen".
+Validated on LSL2: the derived pair (start rm10, goal rm86) yields the SAME findings as the old
+hand-set pair (start rm21, goal rm178) -- 15 stranded items plus the Ashes/Sand group -- though the
+anchor ROOMS differ (discovery lands on the copy-protection screen and the ending's terminal, not
+the human-tidy rm21/rm178). Confirmed identical 2026-07-22 by emptying the config fields.
 """
 from __future__ import annotations
 

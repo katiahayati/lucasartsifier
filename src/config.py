@@ -6,8 +6,9 @@ handful of things that are *specific to a title* live here so the same pipeline
 can point at another SCI0 game by swapping the config.
 
 Which of these could be auto-discovered instead of configured is discussed in the
-README ("Auto-discovering the config"). Today they are set once per game; the
-winning terminal in particular is the plan's one intended human-confirmation step.
+README ("Auto-discovering the config"). Start, goal, death and debug are now ALL
+DERIVED (this config leaves them empty and the pipeline discovers them); what remains
+here is paths, the game's display name, and the promote_registers knob -- no game logic.
 """
 
 from __future__ import annotations
@@ -24,11 +25,12 @@ class GameConfig:
     name: str
     src_dir: str                    # directory of decompiled .sc scripts (OURS -- see ir_path)
     resource_dir: str               # dir with RESOURCE.MAP + RESOURCE.00x (PIC/VIEW control-map oracle)
-    # Both anchors are DISCOVERABLE -- leave start_room 0 / goal_rooms empty and
-    # anchors.discover() derives them from the game (see anchors.py). The values below are
-    # kept because they are hand-verified; the derived pair reproduces them exactly.
-    start_room: int                 # free-roam entry point for reachability
-    goal_rooms: frozenset           # winning-terminal rooms (victory)
+    # Both anchors are DISCOVERED -- leave start_room 0 / goal_rooms empty; anchors.discover()
+    # derives them from the game (see anchors.py). The derived rooms may DIFFER from a human's
+    # hand-pick (LSL2 discovers start rm10 / goal rm86, not the old rm21 / rm178) while yielding
+    # the SAME findings, so we derive rather than hand-pick. Both games leave these empty.
+    start_room: int                 # free-roam entry point for reachability (0 = discover)
+    goal_rooms: frozenset           # winning-terminal rooms (victory; empty = discover)
     ir_path: str = ""               # JSON IR our sci-tools fork emits alongside src_dir
     # (global, value) whose assignment IS death. Both games raise death from Main's
     # doit via a plain global write, so the IR already carries these as SET effects
@@ -76,18 +78,14 @@ LSL2 = GameConfig(
     resource_dir="/mnt/i/sierra/lsl2",   # PRISTINE game. Never point this at a patched
     #   build: `out/lsl2_playable` used to live here and was the previous (broken) patcher
     #   output, so the control-map oracle was reading resources of our own making.
-    # Free-roam begins in the Los Angeles act. rm10 (copy-protection) and rm90-93
-    # (intro cutscenes, reused as island cutscenes) are tangled into the island SCC,
-    # so we anchor at a core LA room whose component reaches every act.
-    start_room=21,
-    # Victory = the ENDING (rm178), reached only via the rm78 wedding ceremony (which needs
-    # gIslandStatus==105 <- 104 <- 103 <- rm92 <- the volcano <- the bomb). The approach rooms
-    # rm75/76/77 and rm78-the-room are walk-reachable BEFORE the wedding (rm74->75 is a free
-    # positional exit; rm77 has `east 78`), so counting them as victory lets the endgame be
-    # bypassed. Tightened 2026-07-20 to require the wedding. NOTE: the volcano is still
-    # bypassable via the rm90-93 intro-cutscene tangle (rm92 <- rm91 <- rm90) -- see
-    # docs/NOTES / the endgame-cluster memory; that untangling is separate open work.
-    goal_rooms=frozenset({178}),
+    # DISCOVERED (anchors.discover) -- left empty so the derivation runs. It lands on start rm10
+    # (the copy-protection screen: the widest-reach entry, 89 rooms) and goal rm86 (the terminal
+    # entered from the rm178 wedding cutscene). Those ROOMS differ from the old hand-set rm21 /
+    # rm178 -- a human would call rm23 "the first real screen" and rm178 "the ending" -- but the
+    # derived pair yields the SAME 15 stranded items + the Ashes/Sand group (verified 2026-07-22
+    # by emptying these fields), so we derive rather than hand-pick.
+    start_room=0,
+    goal_rooms=frozenset(),
     # BOTH DERIVED (vocab.derive_death / derive_debug); left empty so the derivation runs.
     # Kept as override fields only. Derivation reproduces the hand-declared (101, 1001) exactly,
     # and derives debug {14, 100} where {100, 111} was declared -- behaviourally identical
