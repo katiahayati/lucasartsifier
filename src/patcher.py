@@ -33,7 +33,7 @@ import guards as G
 import ir as I
 import missability as M
 from sexpr import read_file
-from trigger import find_trigger, wrap_trigger_in_source, _block_span
+from trigger import find_trigger, wrap_trigger_in_source, _block_span, _enclosing_clause_body
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
@@ -331,6 +331,31 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
     return out
 
 
+def guard_board_commit(text, cond):
+    """Gate the controllable action that BOARDS the scripted vehicle leaving a property-exit room.
+
+    Some rooms have no `newRoom` and no edgeHit reaction: leaving is a scripted vehicle that `MoveTo`s
+    the ego off-screen, and the engine reads the direction property at the boundary (KQ4 rm43: mount
+    the dolphin -> it rides you off the right edge -> the `east 31` property). Zeroing that property
+    HANGS -- the vehicle loops against the closed edge. The real commit is the player action that
+    boards the vehicle, and it surrenders control (`(User canControl: 0)`) inside a handleEvent Said
+    clause. Wrap that whole clause so it refuses without the item: the ride never starts, no hang.
+    Distinct from guard_edgehit_clause, which guards an edge REACTION; here nothing reacts, the
+    vehicle drives into the edge."""
+    if not re.search(r"\(method\s+\(handleEvent\b", text):
+        return text, 0
+    m = re.search(r"\(User\s+canControl:\s*0\b", text)
+    if not m:
+        return text, 0
+    clause = _enclosing_clause_body(text, m.start())
+    if not clause:
+        return text, 0
+    bs, be = clause
+    wrapped = ("(if %s\n\t\t\t\t%s\n\t\t\telse\n\t\t\t\t%s  ; softlock-guard: cannot board without it"
+               "\n\t\t\t)" % (cond, text[bs:be], REFUSE))
+    return text[:bs] + wrapped + text[be:], 1
+
+
 def guard_edge_exit(text, inst_name, to_room, cond):
     """Guard a ROOM-PROPERTY exit (`east 48`), which no `newRoom:` call can be wrapped around.
 
@@ -372,6 +397,14 @@ def guard_edge_exit(text, inst_name, to_room, cond):
         new_text, n = guard_edgehit_clause(text, d, cond)
         if n:
             return new_text, n, d + " (edgeHit clause)"
+    # A room that leaves via a scripted VEHICLE (KQ4's rm43 dolphin `MoveTo`s the ego off-screen and
+    # the engine reads the direction property at the boundary) has no `newRoom` and no edgeHit
+    # reaction. Zeroing the property then HANGS -- the vehicle loops at the closed edge (reported in
+    # play-test, the same shape as LSL2 rm47 but a different cause). Gate the board-the-vehicle commit
+    # instead, so the ride never starts.
+    bt, bn = guard_board_commit(text, cond)
+    if bn:
+        return bt, bn, "board-commit"
     init = re.search(r"\(method\s+\(init\)", text[m.start():])
     if not init:
         return text, 0, None
