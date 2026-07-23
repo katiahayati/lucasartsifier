@@ -445,6 +445,15 @@ def test_patcher_layout():
         # the SCI template 0/1/2, so emitted patches are unchanged -- but they are now DERIVED.
         check(f"{which}: patcher layout derives ego=0 game=1 room=2",
               (P._EGO, P._GAME, P._ROOM) == (0, 1, 2), f"{(P._EGO, P._GAME, P._ROOM)}")
+    # setScript triggers: KQ4's rm45 amulet handover starts the endgame via `(self setScript: closer)`,
+    # and `closer` does `newRoom: 690`. trigger.py must find THAT (not just the changeState idiom).
+    import trigger as T
+    from sexpr import read_file
+    r45 = os.path.join(config.KQ4.src_dir, "Room45.sc")
+    if os.path.exists(r45):
+        pl = T.find_trigger(read_file(r45), 690)
+        check("KQ4: rm45->690 endgame guard finds the setScript trigger",
+              pl.get("kind") == "setscript" and pl.get("target_script") == "closer", repr(pl))
 
 
 def run():

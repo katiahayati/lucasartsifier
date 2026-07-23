@@ -53,10 +53,13 @@ def _message_send(form):
 
 
 def analyze_room(forms):
-    """newRoom sites and changeState-call sites, tagged with (instance, method,
-    switch-state)."""
+    """newRoom sites, changeState-call sites and setScript-call sites, tagged with (instance,
+    method, ...). setScript is the OTHER way a controllable handler starts an uncontrollable
+    sequence: `(self setScript: closer)` where the `closer` Script does the frontier newRoom --
+    KQ4's rm45 amulet handover. Same shape as changeState, a different selector."""
     newroom_sites = []   # (instance, method, state, room)
     cs_calls = []        # (instance, method, state_target, receiver)
+    ss_calls = []        # (instance, method, target_script_name, receiver)
 
     def walk(form, inst, meth, state):
         if not isinstance(form, list) or not form:
@@ -96,6 +99,8 @@ def analyze_room(forms):
                     newroom_sites.append((inst, meth, state, a0))
                 elif sel == "changeState" and isinstance(a0, int):
                     cs_calls.append((inst, meth, a0, recv))
+                elif sel == "setScript" and isinstance(a0, Sym):
+                    ss_calls.append((inst, meth, a0.name, recv))
                 for a in args:
                     walk(a, inst, meth, state)
             walk(form[0], inst, meth, state)
@@ -105,12 +110,12 @@ def analyze_room(forms):
 
     for f in forms:
         walk(f, None, None, None)
-    return newroom_sites, cs_calls
+    return newroom_sites, cs_calls, ss_calls
 
 
 def find_trigger(forms, target_room):
     """Return the guard placement for a frontier newRoom into `target_room`."""
-    nr, cs = analyze_room(forms)
+    nr, cs, ss = analyze_room(forms)
     sites = [s for s in nr if s[3] == target_room]
     if not sites:
         return {"kind": "not-found", "target_room": target_room}
@@ -122,12 +127,21 @@ def find_trigger(forms, target_room):
     cands = [(k, m) for (i, m, k, recv) in cs
              if i == inst and m in CONTROLLABLE_METHODS and recv == "self"
              and (state is None or k <= state)]
-    if not cands:
-        return {"kind": "no-trigger", "instance": inst, "cutscene_state": state,
-                "target_room": target_room}
-    kstar, trig_meth = max(cands, key=lambda km: km[0])
-    return {"kind": "trigger", "instance": inst, "trigger_method": trig_meth,
-            "trigger_state": kstar, "cutscene_state": state, "target_room": target_room}
+    if cands:
+        kstar, trig_meth = max(cands, key=lambda km: km[0])
+        return {"kind": "trigger", "instance": inst, "trigger_method": trig_meth,
+                "trigger_state": kstar, "cutscene_state": state, "target_room": target_room}
+    # ...or the newRoom lives in a Script `inst` that a controllable handler STARTS with
+    # `(self setScript: inst)` -- KQ4's rm45 amulet handover (`(self setScript: closer)`, and
+    # `closer` does `newRoom: 690`). Guard that setScript call.
+    ss_cands = [(i2, m2) for (i2, m2, target, recv) in ss
+                if target == inst and m2 in CONTROLLABLE_METHODS]
+    if ss_cands:
+        i2, m2 = ss_cands[0]
+        return {"kind": "setscript", "trigger_instance": i2, "trigger_method": m2,
+                "target_script": inst, "target_room": target_room}
+    return {"kind": "no-trigger", "instance": inst, "cutscene_state": state,
+            "target_room": target_room}
 
 
 # --------------------------------------------------------------------------
@@ -174,6 +188,34 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
     if placement["kind"] == "direct":
         pat = re.compile(r"\([^()]*newRoom:\s*%d\b[^()]*\)" % placement["target_room"])
         return _wrap_matches_in(text, None, pat, guard_sexpr, refuse)
+    if placement["kind"] == "setscript":
+        # Guard `(<recv> setScript: <target>)` in the controllable handler (its whole cond-clause,
+        # so score/sound siblings cannot fire before the refusal -- same care as the changeState case).
+        inst, meth = placement["trigger_instance"], placement["trigger_method"]
+        target = placement["target_script"]
+        inst_span = _find_region(text, r"\(instance\s+%s\b" % re.escape(inst))
+        if not inst_span:
+            return text, 0
+        i0, i1 = inst_span
+        meth_rel = _find_region(text[i0:i1], r"\(method\s+\(%s\b" % re.escape(meth))
+        if not meth_rel:
+            return text, 0
+        m0, m1 = i0 + meth_rel[0], i0 + meth_rel[1]
+        region = text[m0:m1]
+        ssm = re.search(r"\([^()]*setScript:\s*%s\b[^()]*\)" % re.escape(target), region)
+        if not ssm:
+            return text, 0
+        clause = _enclosing_clause_body(region, ssm.start())
+        if clause:
+            bs, be = clause
+            wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
+                       f"\t\t\t\t{refuse}  ; softlock-guard\n\t\t\t)")
+            new_meth = region[:bs] + wrapped + region[be:]
+        else:
+            new_meth, _ = _wrap_matches_in(
+                region, None, re.compile(r"\([^()]*setScript:\s*%s\b[^()]*\)" % re.escape(target)),
+                guard_sexpr, refuse)
+        return text[:m0] + new_meth + text[m1:], 1
     if placement["kind"] != "trigger":
         return text, 0
     inst, meth, k = placement["instance"], placement["trigger_method"], placement["trigger_state"]
