@@ -122,6 +122,16 @@ class SccReach:
     def goal_rooms_set(self):
         return {r for r in GOAL_ROOMS if r in self.comp_of}
 
+    def _freely_reversible(self, a, b):
+        """Whether you can walk b->a back for FREE, which makes the forward a->b not a commit.
+
+        The base graph has no gate information, so any return edge counts as a free walk -- the
+        original behaviour. A gate-aware subclass refines this: an item-gated return (KQ4's whale
+        sneeze 44->31 needs the Peacock Feather) is NOT a free walk, so the forward swallow 31->44
+        stays a one-way commit for that item. Counting an item-gated return as free is the same
+        over-merge that once hid the parachute stranding."""
+        return a in self.edges.get(b, set())
+
     def edge_strandings(self):
         """For every guardable one-way `newRoom` edge a->b, the requirement UNITS obtainable
         before the edge but LOST after it (gate-aware) and still needed on a path that reaches
@@ -140,8 +150,8 @@ class SccReach:
             for b in sorted(bs):
                 if "goto" not in self.edge_kind.get((a, b), set()):
                     continue                             # only code-guardable newRoom edges
-                if a in self.edges.get(b, set()):
-                    continue                             # reversible walk -> not a commit
+                if self._freely_reversible(a, b):
+                    continue                             # free walk back -> not a commit
                 cb = self.comp_of.get(b)
                 if cb is None:
                     continue

@@ -589,17 +589,26 @@ class IrSccReach(SccReach):
         # (2 lotTalk4) (3 lotTalk5))`, and each writes the next value -- so lotTalk4 is a
         # transition 2 -> 3, not "3 becomes available". Collapsing it to a free value is what let
         # the model walk back from task 3 to task 1 and made every flip look reversible.
+        #
+        # But this ordering is only sound when EVERY entry establishes the from-value. If any entry
+        # leaves R unconstrained, the machine can be entered with R at any value, so a write reached
+        # from that entry is a transition FROM anything -- pinning it to the OTHER entries' values
+        # deletes real movement. KQ4's uniActions writes global123:=1 from its arrow-taming entry
+        # (which constrains nothing on 123) yet also has a bit-placement entry needing 123==1;
+        # unioning to {1} lost the 0->1 step, so global123 never reached 2, the unicorn-ride room
+        # (entered at 123==2) vanished from the projection, and reobtainability read that absence as
+        # a seal -- fabricating a 32-item "carry your whole inventory" guard. When the entries
+        # DISAGREE (some constrain R, some do not), we cannot pin the from-value, so we honour the
+        # permissive default above and leave the write unguarded. This is a no-op for the Lolotte
+        # counter (lotTalk3/4/5 each have a single 109-constraining entry, so they still order).
         self._rstep = {R: defaultdict(set) for R in self.regs}
         for info in em.machines:
+            entries = list(info.get("entries", ())) + list(info.get("init_entries", ()))
             gates = {}
             for R in self.regs:
-                need = set()
-                for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
-                    rv = required_values(eg, R)
-                    if rv:
-                        need |= rv
-                if need:
-                    gates[R] = need
+                rvs = [required_values(eg, R) for _, eg in entries]
+                if rvs and all(rv for rv in rvs):        # every entry pins R -> ordering is sound
+                    gates[R] = set().union(*rvs)
             for K, paths in info["states"].items():
                 for (g, w, gg, c, tr) in paths:
                     for (gi, v) in w:
@@ -703,6 +712,20 @@ class IrSccReach(SccReach):
             out = rooms if out is None else (out & rooms)
         self._reob[ban] = out if out is not None else set()
         return self._reob[ban]
+
+    def _freely_reversible(self, a, b):
+        """Gate-aware override: b->a is a FREE walk only if some DNF alternative on it needs no
+        item. An item-gated return -- the whale sneeze rm44->rm31 needs the Peacock Feather
+        (alts={8}) -- is not free, so the forward swallow rm31->rm44 stays a one-way commit and the
+        feather it demands is correctly stranded. Register gates are left alone here: the stranding
+        test bans ITEMS, so an item-free-but-flag-gated return is still a walk you can make."""
+        if a not in self.edges.get(b, set()):
+            return False
+        metas = self._emeta.get((b, a))
+        if not metas:
+            return True                          # return edge exists but carries no gate -> free
+        return any(not alts or any(not alt for alt in alts)     # some alternative needs no item
+                   for (req, sets, alts) in metas)
 
     def rooms_after(self, b):
         """Rooms still reachable after crossing into `b` -- GATE-AWARE, intersected over
