@@ -33,7 +33,7 @@ import guards as G
 import ir as I
 import missability as M
 from sexpr import read_file
-from trigger import find_trigger, wrap_trigger_in_source
+from trigger import find_trigger, wrap_trigger_in_source, _block_span
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
@@ -293,19 +293,31 @@ def guard_edge_exit(text, inst_name, to_room, cond):
     props = re.search(r"\(properties(.*?)\)", text[m.start():], re.S)
     if not props:
         return text, 0, None
-    direction = None
-    for d in DIRECTIONS:
-        pm = re.search(r"\b%s\s+(\d+)\b" % d, props.group(1))
-        if pm and int(pm.group(1)) == to_room:
-            direction = d
-            break
-    if direction is None:
+    directions = [d for d in DIRECTIONS
+                  if (pm := re.search(r"\b%s\s+(\d+)\b" % d, props.group(1)))
+                  and int(pm.group(1)) == to_room]
+    if not directions:
+        # KQ4 idiom: exits set by ASSIGNMENT in init, e.g. (= south (= north (= west (= east 31)))).
+        # A direction's resolved value is the innermost literal of its (chained) assignment, so all
+        # four directions in that chain lead to rm31 and all must be closed. LSL2 declares exits in
+        # the properties block instead (handled above); each game uses exactly one idiom.
+        body = text[m.start():]
+        for d in DIRECTIONS:
+            am = re.search(r"\(=\s+%s\b" % d, body)
+            if not am:
+                continue
+            bs, be = _block_span(body, am.start())
+            nums = re.findall(r"\b(\d+)\b", body[bs:be])
+            if nums and int(nums[-1]) == to_room:
+                directions.append(d)
+    if not directions:
         return text, 0, None
     # If the room's script reacts to this edge, guard THAT clause instead: closing the property
     # would let the reaction fire on a loop (see guard_edgehit_clause).
-    new_text, n = guard_edgehit_clause(text, direction, cond)
-    if n:
-        return new_text, n, direction + " (edgeHit clause)"
+    for d in directions:
+        new_text, n = guard_edgehit_clause(text, d, cond)
+        if n:
+            return new_text, n, d + " (edgeHit clause)"
     init = re.search(r"\(method\s+\(init\)", text[m.start():])
     if not init:
         return text, 0, None
@@ -314,10 +326,11 @@ def guard_edge_exit(text, inst_name, to_room, cond):
         return text, 0, None
     at = m.start() + init.start() + sup.end()
     indent = sup.group(1)
+    closes = "".join("\n%s\t(global%d %s: 0)" % (indent, _ROOM, d) for d in directions)
     ins = ("\n%s; [softlock-guard] close this exit until the player can survive past it\n"
-           "%s(if (not %s)\n%s\t(global%d %s: 0)\n%s)"
-           % (indent, indent, cond, indent, _ROOM, direction, indent))
-    return text[:at] + ins + text[at:], 1, direction
+           "%s(if (not %s)%s\n%s)"
+           % (indent, indent, cond, closes, indent))
+    return text[:at] + ins + text[at:], 1, "+".join(directions)
 
 
 def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set()):

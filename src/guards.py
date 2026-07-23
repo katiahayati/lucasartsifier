@@ -214,6 +214,54 @@ def frontier_guards(s):
     return out
 
 
+def joint_frontier(s):
+    """Commit edges for the JOINT-window strandings -- the grid / one-time-flag softlocks that
+    `edge_strandings` structurally cannot see, so `frontier_guards` misses them.
+
+    Each joint-only item crosses a one-time gate exactly once. Which edge to guard depends on which
+    side of the gate is DEEP (reachable only after the flag flips, past the grid gate):
+      * NEED deep  -> the item must be carried IN: gate the ENTRY to the flip room.
+        KQ4's Dead_Fish is used on the island (rm43), so gate the whale swallow rm31->44.
+      * SOURCE deep -> the item must be carried OUT: gate the source room's EXITS.
+        KQ4's Golden_Bridle is found on the island (rm43), so gate the island exit rm43->rm31.
+    Items the edge detector already covers (the endgame Scarab/Fruit/Hen the joint re-sees) are
+    skipped -- they keep their rm45->690 guard. LSL2 has no joint findings, so this returns {} and
+    cannot touch its guard specs."""
+    js = s.joint_strandings()
+    if not js:
+        return {}
+    import grid
+    grid_edges = {(r, ex) for r, exits in grid.analyze(s.em, s._prev_room_global()).items()
+                  for ex in exits}
+    flip_rooms = set()
+    for F in {F for j in js for F in j["flags"]}:
+        for room, vals in s._inroom.get(F, {}).items():
+            if any(v != 0 for v in vals):
+                flip_rooms.add(room)
+        for room, vs in s.em.init_writes.items():
+            if F in vs and vs[F] != 0:
+                flip_rooms.add(room)
+    pruned = {a: {b for b in bs if (a, b) not in grid_edges and b not in flip_rooms}
+              for a, bs in s.edges.items()}
+    shallow = M.reachable(pruned, {s.em.cfg.start_room})
+    edge_items = {c["item"] for c in s.analyze()}
+    flip_ins = {(a, b) for b in flip_rooms for a, bs in s.edges.items() if b in bs}
+    out = defaultdict(lambda: {"items": set(), "groups": []})
+    for j in js:
+        it = j["item"]
+        if it in edge_items:
+            continue
+        src, need = set(j["source_rooms"]), set(s.required.get(it, set()))
+        if not (src & shallow):                       # source deep -> carry it OUT
+            for r in src:
+                for b in s.edges.get(r, ()):
+                    out[(r, b)]["items"].add(it)
+        elif not (need & shallow):                    # need deep -> carry it IN
+            for (a, b) in flip_ins:
+                out[(a, b)]["items"].add(it)
+    return dict(out)
+
+
 def unsatisfiable(s, a, b, rec):
     """Which parts of this guard CANNOT be satisfied before crossing a->b.
 
@@ -318,7 +366,17 @@ def guard_specs(s):
     gate to the last edge where the item is still droppable -- enforcing them at the gate is the
     permanent-wall bug."""
     specs = []
-    for (a, b), rec in sorted(frontier_guards(s).items()):
+    # frontier_guards (edge strandings) + joint_frontier (grid/one-time-flag strandings), unioning
+    # items on a shared commit -- KQ4's whale swallow rm31->44 gets the feather (edge) AND the fish
+    # (joint), so one guard demands both before you are swallowed.
+    frontier = frontier_guards(s)
+    for (a, b), rec in joint_frontier(s).items():
+        if (a, b) in frontier:
+            frontier[(a, b)] = {"items": set(frontier[(a, b)]["items"]) | rec["items"],
+                                "groups": frontier[(a, b)]["groups"] + rec.get("groups", [])}
+        else:
+            frontier[(a, b)] = rec
+    for (a, b), rec in sorted(frontier.items()):
         bad = unsatisfiable(s, a, b, rec)
         specs.append({"site": "edge", "from_room": a, "to_room": b,
                       "condition": render_frontier(rec),
