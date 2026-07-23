@@ -545,17 +545,28 @@ def guard_register_write(text, register, trap, cond):
             wm = re.search(r"\(=\s+global%d\s+%d\s*\)" % (register, trap), region)
             if not wm:
                 continue
-            # Wrap the WHOLE enclosing `(if <clock> ...)` -- nightfall sets the flag AND stashes the
-            # destination AND diverts to the darkness room; holding only the flag write would divert
-            # you into night with the doors still open. Gate the entire clause atomically.
-            encl = None
+            # Wrap the enclosing `(if ...)` whose CONDITION names the trap register -- that IS the
+            # clock clause that sets the flag AND stashes the destination AND diverts to the darkness
+            # room; holding only the flag write would divert you into night with the doors still open.
+            # Gate the entire clause atomically. (Was: the INNERMOST enclosing if, which under a nested
+            # nightfall would be a sub-branch and leak the divert/stash -- finding B#2.) If nothing
+            # names the register, fall back to the OUTERMOST enclosing if.
+            encls = []
             for im in re.finditer(r"\(if\b", region):
                 es, ee = _block_span(region, im.start())
-                if es <= wm.start() < ee and (encl is None or es > encl[0]):
-                    encl = (es, ee)
-            if not encl:
+                if es <= wm.start() < ee:
+                    encls.append((es, ee))
+            if not encls:
                 continue
-            es, ee = encl
+
+            def _cond_names_reg(es):
+                cs = es + re.match(r"\(if\s+", region[es:]).end()
+                cond = (region[cs:_block_span(region, cs)[1]] if region[cs] == "("
+                        else re.match(r"\S+", region[cs:]).group(0))
+                return bool(re.search(r"\bglobal%d\b" % register, cond))
+
+            named = [e for e in encls if _cond_names_reg(e[0])]
+            es, ee = named[0] if named else min(encls, key=lambda e: e[0])
             wrapped = ("(if %s\n\t\t\t%s\n\t\t)  ; softlock-guard: hold the flip until survivable"
                        % (cond, region[es:ee]))
             return text[:bs] + region[:es] + wrapped + region[ee:] + text[be:], 1

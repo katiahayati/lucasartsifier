@@ -1345,26 +1345,32 @@ class IrSccReach(SccReach):
         reset guard recovered -- the dawn write's Lolotte-dead condition -- and a joint over
         (R x possession), the remaining Phase-1b build)."""
         out = {}
+        SAFE = 0     # SCI globals default-init to 0 and the opmodel seeds every register {0}; that
+                     # start value is the SAFE baseline. Being FORCED to it is never a trap. (A game
+                     # whose register has a non-zero start would need that init read from Main -- a
+                     # documented limit, not a silent fudge.)
         for R in self.regs:
-            dom = self.em.reg_vals.get(R, set())
-            if 0 not in dom or dom == {0}:
-                continue                       # need a 0-based register; 0 = the start/safe value
-            if not any(script in self.GLOBAL_SCRIPTS      # free-running source = the always-live
-                       for (room, script, gi, v, g) in self.em.handler_writes if gi == R):
-                continue                                  # Game loop (Main/script 0), not a room
+            loop_vals = {v for (room, script, gi, v, g) in self.em.handler_writes
+                         if gi == R and script in self.GLOBAL_SCRIPTS}   # the always-live forcing
+            if not loop_vals:
+                continue                        # not written by the Game loop (script 0), so no trap
             byval = defaultdict(set)
             for r, vs in self._inroom.get(R, {}).items():
                 for v in vs:
                     byval[v].add(r)
-            reset_rooms = byval.get(0, set())
-            if not (0 < len(reset_rooms) <= 3):
-                continue                       # RESET must be LOCALIZED (a handful of escape rooms)
-            for v in sorted(byval):
-                if v == 0:
+            # The trap value is one the Game loop FORCES that is NOT the safe baseline, and that
+            # DOMINATES the room set -- so the reset to safety is the minority, i.e. localized. That
+            # shape is what separates KQ4 g100 (loop forces 1=night, reset 0=day confined to rm82)
+            # from LSL2 g127 (loop forces 0=safe -- forcing you to stay safe is no trap). The old
+            # code baked reset<=3 and trap>=10x; here it is a derived dominance, no magic constant.
+            for T in sorted(loop_vals):
+                if T == SAFE:
                     continue
-                if len(byval[v]) >= 10 * len(reset_rooms):   # TRAP pervasive vs. the localized reset
-                    out[R] = {"trap": v, "safe": 0, "reset_rooms": sorted(reset_rooms),
-                              "set_in": len(byval[v])}
+                forced = byval.get(T, set())
+                reset = set().union(*(byval[v] for v in byval if v != T)) if byval else set()
+                if forced and len(forced) > len(reset):
+                    out[R] = {"trap": T, "safe": SAFE, "reset_rooms": sorted(reset),
+                              "set_in": len(forced)}
                     break
         return out
 
