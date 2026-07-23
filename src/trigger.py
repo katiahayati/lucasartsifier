@@ -140,6 +140,16 @@ def find_trigger(forms, target_room):
         i2, m2 = ss_cands[0]
         return {"kind": "setscript", "trigger_instance": i2, "trigger_method": m2,
                 "target_script": inst, "target_room": target_room}
+    # ...or the Script is armed by a setScript in an UNCONTROLLABLE method -- an ADVERSARIAL event
+    # the player cannot refuse (KQ4's whale swallow: `Room31::init` does `(global0 setScript:
+    # whaleActions)` on a Random roll; nightfall is the same shape in `KQ4::newRoom`). There is no
+    # player action to guard, so we gate the ARMING itself: the event fires only when the survival
+    # item is held. If it is missing the event simply does not arm -- exactly the prevention.
+    arm_cands = [(i2, m2) for (i2, m2, target, recv) in ss if target == inst]
+    if arm_cands:
+        i2, m2 = arm_cands[0]
+        return {"kind": "arm-event", "trigger_instance": i2, "trigger_method": m2,
+                "target_script": inst, "target_room": target_room}
     return {"kind": "no-trigger", "instance": inst, "cutscene_state": state,
             "target_room": target_room}
 
@@ -216,6 +226,34 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
                 region, None, re.compile(r"\([^()]*setScript:\s*%s\b[^()]*\)" % re.escape(target)),
                 guard_sexpr, refuse)
         return text[:m0] + new_meth + text[m1:], 1
+    if placement["kind"] == "arm-event":
+        # Gate the ARMING of an adversarial event: wrap `(<recv> setScript: <target>)` so it fires
+        # only when the guard holds. NO `else` -- if the item is missing the event just does not arm
+        # (you are never swallowed without the feather), which is the prevention itself. The refuse
+        # branch of the controllable cases makes no sense here: there is no player to tell "not now".
+        inst, meth = placement["trigger_instance"], placement["trigger_method"]
+        target = placement["target_script"]
+        inst_span = _find_region(text, r"\(instance\s+%s\b" % re.escape(inst))
+        if not inst_span:
+            return text, 0
+        i0, i1 = inst_span
+        meth_rel = _find_region(text[i0:i1], r"\(method\s+\(%s\b" % re.escape(meth))
+        if not meth_rel:
+            return text, 0
+        m0, m1 = i0 + meth_rel[0], i0 + meth_rel[1]
+        region = text[m0:m1]
+        # Gate EVERY arming site for this event -- KQ4's Room31::init both STARTS the swallow (the
+        # Random roll) and RESUMES it on re-entry (global105==14); both must require the item, so
+        # the whale is never active without the feather. No `else`: a missing item just doesn't arm.
+        pat = re.compile(r"\([^()]*setScript:\s*%s\b[^()]*\)" % re.escape(target))
+        n = [0]
+
+        def repl(m):
+            n[0] += 1
+            return (f"(if {guard_sexpr}\n\t\t\t\t{m.group(0)}\n\t\t\t)"
+                    f"  ; softlock-guard: arm only when survivable")
+        new_meth = pat.sub(repl, region)
+        return text[:m0] + new_meth + text[m1:], n[0]
     if placement["kind"] != "trigger":
         return text, 0
     inst, meth, k = placement["instance"], placement["trigger_method"], placement["trigger_state"]

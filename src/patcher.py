@@ -237,7 +237,7 @@ EDGEHIT = {"north": 1, "east": 2, "south": 3, "west": 4}   # Game.sc Rm.doit swi
 
 # Placements find_trigger can actually wrap in a controllable handler: a direct newRoom, a
 # changeState cutscene, or a setScript-started Script. Anything else falls back to the exit idiom.
-_PLACED_KINDS = ("trigger", "direct", "setscript")
+_PLACED_KINDS = ("trigger", "direct", "setscript", "arm-event")
 
 
 def guard_edgehit_clause(text, direction, cond):
@@ -347,7 +347,12 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set()):
         for sp in group:
             if sp.get("forbid") and title:
                 forms = read_file(os.path.join(dest, "src", title + ".sc"))
-                if find_trigger(forms, sp["to_room"])["kind"] not in _PLACED_KINDS:
+                k = find_trigger(forms, sp["to_room"])["kind"]
+                # arm-event gates an uncontrollable event on HAVING a survival item; a PROHIBITION
+                # enforced by refusing to arm an automatic cutscene would hang the game (the
+                # Spinach_Dip -> rm138 raft). So a forbid spec that resolves to arm-event is deferred
+                # to a droppability-frontier commit, exactly as when there is no trigger at all.
+                if k not in _PLACED_KINDS or k == "arm-event":
                     deferred.append(sp)
                     continue
             keep.append(sp)
