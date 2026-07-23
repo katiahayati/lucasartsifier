@@ -1,0 +1,52 @@
+{
+  "death_signal": [
+    127,
+    null
+  ],
+  "debug_globals": [
+    215
+  ],
+  "edge_specs": [
+    "rm20->rm333: (and (gEgo has: 0) (gEgo has: 1) (gEgo has: 2) (gEgo has: 4) (gEgo has: 5) (gEgo has: 6) (gEgo has: 7) (gEgo has: 8) (gEgo has: 9) (gEgo has: 10) (gEgo has: 11) (gEgo has: 12) (gEgo has: 13) (gEgo has: 14) (gEgo has: 15) (gEgo has: 16) (gEgo has: 17) (gEgo has: 18) (gEgo has: 19) (gEgo has: 20) (gEgo has: 21) (gEgo has: 22) (gEgo has: 23) (gEgo has: 24) (gEgo has: 25) (gEgo has: 26) (gEgo has: 27) (gEgo has: 28) (gEgo has: 29) (gEgo has: 30) (gEgo has: 33) (gEgo has: 34))",
+    "rm26->rm333: (and (gEgo has: 0) (gEgo has: 1) (gEgo has: 2) (gEgo has: 4) (gEgo has: 5) (gEgo has: 6) (gEgo has: 7) (gEgo has: 8) (gEgo has: 9) (gEgo has: 10) (gEgo has: 11) (gEgo has: 12) (gEgo has: 13) (gEgo has: 14) (gEgo has: 15) (gEgo has: 16) (gEgo has: 17) (gEgo has: 18) (gEgo has: 19) (gEgo has: 20) (gEgo has: 21) (gEgo has: 22) (gEgo has: 23) (gEgo has: 24) (gEgo has: 25) (gEgo has: 26) (gEgo has: 27) (gEgo has: 28) (gEgo has: 29) (gEgo has: 30) (gEgo has: 33) (gEgo has: 34))",
+    "rm27->rm333: (and (gEgo has: 0) (gEgo has: 1) (gEgo has: 2) (gEgo has: 4) (gEgo has: 5) (gEgo has: 6) (gEgo has: 7) (gEgo has: 8) (gEgo has: 9) (gEgo has: 10) (gEgo has: 11) (gEgo has: 12) (gEgo has: 13) (gEgo has: 14) (gEgo has: 15) (gEgo has: 16) (gEgo has: 17) (gEgo has: 18) (gEgo has: 19) (gEgo has: 20) (gEgo has: 21) (gEgo has: 22) (gEgo has: 23) (gEgo has: 24) (gEgo has: 25) (gEgo has: 26) (gEgo has: 27) (gEgo has: 28) (gEgo has: 29) (gEgo has: 30) (gEgo has: 33) (gEgo has: 34))",
+    "rm45->rm690: (and (gEgo has: 7) (gEgo has: 25) (gEgo has: 33))"
+  ],
+  "exhaustion": [
+    "Cupid_s_Bow@1->[20, 26, 27, 82]",
+    "Cupid_s_Bow@82->[20, 26, 27]",
+    "Cupid_s_Bow@[20, 26, 27]->[82]",
+    "Shovel@16->[18]",
+    "Shovel@18->[16]"
+  ],
+  "gate_specs": [
+    "rm16/3: (gEgo has: 7)",
+    "rm16/3: (gEgo has: 7)",
+    "rm16/3: (gEgo has: 7)",
+    "rm18/3: (gEgo has: 7)",
+    "rm18/3: (gEgo has: 7)",
+    "rm18/3: (gEgo has: 7)",
+    "rm69/3: (gEgo has: 7)"
+  ],
+  "goal_rooms": [
+    694
+  ],
+  "groups": [],
+  "joint": [
+    "Golden_Bridle@[20, 26, 27]",
+    "Magic_Fruit@[690, 693, 694]",
+    "Magic_Hen@[690]",
+    "Obsidian_Scarab@[690, 693, 694]"
+  ],
+  "sinks": [
+    "Magic_Fruit dest=999 refused=False"
+  ],
+  "softlock_items": [
+    "Obsidian_Scarab",
+    "Peacock_Feather",
+    "Golden_Bridle",
+    "Magic_Fruit",
+    "Magic_Hen"
+  ],
+  "start_room": 99
+}

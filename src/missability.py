@@ -764,20 +764,21 @@ class IrSccReach(SccReach):
 
     def real_uses(self):
         """item -> rooms where holding it ARMS something -- the uses `dangerous_sinks` weighs a
-        consumption against. EXACTLY the two halves of what `pure_sinks` calls "doing something",
-        so the two stay consistent: a machine state armed by own(item), and a GATING REGISTER
-        written from a handler guarded by own(item). Wearing the parachute at rm63 is the second --
-        it sets global142 from a handler, arming no machine state -- so destroying the chute
-        elsewhere looked harmless until this counted it.
+        consumption against: a machine state armed by own(item), and a GATING REGISTER written from
+        a handler guarded by own(item). Wearing the parachute at rm63 is the second -- it sets
+        global142, arming no machine state -- so destroying the chute elsewhere looked harmless
+        until this counted it.
 
-        Deliberately NOT `guard_required` (where the game merely TESTS has: X). That is broader than
-        "the clause armed something", and folding it in re-classified a pure sink as a use: LSL2's
-        Grotesque_Gulp and Fruit are consumed inside a clause that KILLS you (`drink -> die`), so
-        their `has: X` tests elsewhere made the drink itself look like a dangerous waste -- when in
-        fact you die and reload with the item. The v1.0-lsl2 tag flagged neither, and this matches
-        it (Matches / Hair_Rejuvenator / Parachute / Airsick_Bag only). `resource_exhaustion` asks a
-        different question ("is the item's property still NEEDED?") and uses `guard_required`, so the
-        Cupid's Bow still knows it is needed at Lolotte."""
+        NOT `guard_required` (the broader "the game TESTS has: X"). This split -- sinks weigh
+        against `real_uses`, `resource_exhaustion` weighs against `guard_required` -- is what makes
+        LSL2's `dangerous_sinks` reproduce the v1.0-lsl2 tag EXACTLY (Matches / Hair_Rejuvenator /
+        Parachute / Airsick_Bag; NOT the Grotesque_Gulp, which is drunk to death, NOR the Fruit).
+
+        THAT TAG BEHAVIOUR IS A CORRECT ORACLE, frozen in test_golden.py. It was broken once by a
+        later commit folding guard_required in here, and I nearly broke it again "fixing the smell"
+        of the split. So: the split is load-bearing, not a mistake to derive away. Do NOT change it
+        (or anything that moves LSL2's golden) without re-running test_golden AND checking with the
+        user first -- the tag is the oracle, not something to re-litigate."""
         out = defaultdict(set)
         for info in self.em.machines:
             for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
