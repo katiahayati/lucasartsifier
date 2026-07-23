@@ -15,6 +15,7 @@ Two rules, from the user (2026-07-22):
 So: update EXPECTED_CAUGHT only deliberately, with the user's sign-off -- never to make a red test
 green on your own. See memory `kq4-stranding-ground-truth`.
 """
+import os
 import sys
 
 import config
@@ -34,15 +35,13 @@ EXPECTED_CAUGHT = {
     "Shovel",            # breaks after wrong digs; caught via resource_exhaustion
     "Dead_Fish",         # needed on the island past the one-time whale; caught via joint
                          # (deliverability: source rm95 can't reach need rm43 once the whale is spent)
+    "Diamond_Pouch",     # dwarves' door rm22->54 shuts at night; caught via register_flip_strandings
+    "Fishing_Pole",      # shanty door rm7->42 shuts at night (same class-2 trap); user-confirmed GT
 }
 
-# Confirmed/firmly-stated ground truth we do NOT yet catch. Listed so a NEW catch of one of these is
-# recognised as a WIN (promote it into EXPECTED_CAUGHT with the user's OK), not flagged as suspicious.
-KNOWN_GAPS = {
-    "Diamond_Pouch",     # user: gated by NIGHTFALL. The dwarves' door rm22->54 is day-only; the
-                         # trap is sequencing (dawn only comes when Lolotte dies, which needs the
-                         # pouch-chain) -- a register-flip point-of-no-return we do not model.
-}
+# Confirmed/firmly-stated ground truth we do NOT yet catch. (Empty -- all known KQ4 ground truth is
+# now caught; Diamond_Pouch + Fishing_Pole promoted 2026-07-22 via the class-2 nightfall detector.)
+KNOWN_GAPS = set()
 
 # The user (2026-07-22) assessed the remaining candidates from their old list as NOT gated -- i.e.
 # probably NOT softlocks: Wiggly_Worm, Gold_Ball, Small_Crown, Frog, Talisman. They are deliberately
@@ -59,13 +58,14 @@ def check(name, cond, detail=""):
 
 def run():
     print("=== test_kq4_ground_truth: the user's enumerated stranding oracle ===")
-    if not (config.KQ4.ir_path and __import__("os").path.exists(config.KQ4.ir_path)):
+    if not (config.KQ4.ir_path and os.path.exists(config.KQ4.ir_path)):
         print("  (skip: no KQ4 IR)")
         return True
     s = M.load(cfg=config.KQ4)
     # "caught" = flagged by ANY detector: edge/joint strandings, resource exhaustion, dangerous sinks.
     ids = ({c["item"] for c in s.analyze()} | {j["item"] for j in s.joint_strandings()}
-           | {r["item"] for r in s.resource_exhaustion()} | {d["item"] for d in s.dangerous_sinks()})
+           | {r["item"] for r in s.resource_exhaustion()} | {d["item"] for d in s.dangerous_sinks()}
+           | {r["item"] for r in s.register_flip_strandings()})
     caught = {s.g.item_name(i) for i in ids}
 
     missing = EXPECTED_CAUGHT - caught
@@ -79,6 +79,16 @@ def run():
           f"NEW: {sorted(surprises)} -- an item not on the ground-truth list is being flagged. "
           f"Treat with suspicion: if it is a real catch, add it to EXPECTED_CAUGHT with the user's "
           f"OK; if not, it may be a false positive. Either way, confirm with the user.")
+
+    # The class-2 nightfall detector must be LSL2-safe BY DERIVATION, not by luck: LSL2's g127 has
+    # the opposite shape (its safe value 0 is the pervasive one), so it is not a free-running trap
+    # and seals nothing. Pin that here so the derivation can't silently start firing on LSL2.
+    if os.path.exists(config.LSL2.ir_path):
+        lsl2 = M.load(cfg=config.LSL2)
+        check("class-2 detector is empty on LSL2 (g127 is not a trap -- derived, not dodged)",
+              lsl2.free_running_traps() == {} and lsl2.register_flip_strandings() == [],
+              f"free_running_traps={lsl2.free_running_traps()} register_flips="
+              f"{[r['item_name'] for r in lsl2.register_flip_strandings()]}")
 
     promoted = caught & KNOWN_GAPS
     if promoted:

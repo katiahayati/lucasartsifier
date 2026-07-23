@@ -437,10 +437,13 @@ def test_grid_and_joint():
         check("KQ4: Golden Bridle (21) is a joint-window softlock",
               len(bridle) == 1 and bridle[0]["source_rooms"] == [43]
               and 183 in bridle[0]["flags"], repr(bridle))
-        # the net effect on the reported set is EXACTLY +Golden_Bridle over the base sweep
+        # the joint adds the Golden_Bridle (21) AND, since the deliverability generalisation
+        # (2026-07-22), the Dead_Fish (24) -- both behind the one-time whale: the bridle's SOURCE is
+        # on the island, the fish's NEED is, and a source only counts if a need is reachable after it.
         base = {c["item"] for c in s.analyze()}
         net = {f["item"] for f in js} - base
-        check("KQ4: joint sweep adds exactly the Golden Bridle", net == {21}, repr(sorted(net)))
+        check("KQ4: joint sweep adds the Golden Bridle and the Dead_Fish", net == {21, 24},
+              repr(sorted(net)))
 
 
 def test_patcher_layout():

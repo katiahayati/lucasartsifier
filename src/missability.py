@@ -1273,6 +1273,85 @@ class IrSccReach(SccReach):
                              "need_room": R, "source_rooms": sorted(srcs)})
         return rows
 
+    def free_running_traps(self):
+        """Free-running POINT-OF-NO-RETURN registers -- softlock class 2, the register-flip trap.
+
+        A register the player CANNOT keep at a safe value: written pervasively by the always-live
+        Game loop (KQ4's `KQ4::newRoom` sets global100:=1 -- nightfall -- in ~every room, driven by
+        the wall clock), whose SAFE value (0, the start value) is restored in only a FEW rooms.
+        Night falls everywhere and lifts nowhere but dawn (rm82, itself gated behind Lolotte's
+        death). That asymmetry -- TRAP value pervasive, RESET localized -- IS the point-of-no-return
+        signature, and it is exactly what separates KQ4's g100 from LSL2's g127: g127 is also
+        Game-written across ~100 rooms, but its SAFE value 0 is the pervasive one and the trap 1 is
+        written in just rm34/35 -- reset everywhere, so it can never trap you. Derived, not fitted:
+        the rule reads the shape (which value is pervasive vs. localized), and LSL2's g127 fails it.
+
+        Returns {R: {trap, safe, reset_rooms, set_in}}. This only CLASSIFIES the register; whether
+        an item is actually sealed by the flip is a separate stranding query (which still needs the
+        reset guard recovered -- the dawn write's Lolotte-dead condition -- and a joint over
+        (R x possession), the remaining Phase-1b build)."""
+        out = {}
+        for R in self.regs:
+            dom = self.em.reg_vals.get(R, set())
+            if 0 not in dom or dom == {0}:
+                continue                       # need a 0-based register; 0 = the start/safe value
+            if not any(script in self.GLOBAL_SCRIPTS      # free-running source = the always-live
+                       for (room, script, gi, v, g) in self.em.handler_writes if gi == R):
+                continue                                  # Game loop (Main/script 0), not a room
+            byval = defaultdict(set)
+            for r, vs in self._inroom.get(R, {}).items():
+                for v in vs:
+                    byval[v].add(r)
+            reset_rooms = byval.get(0, set())
+            if not (0 < len(reset_rooms) <= 3):
+                continue                       # RESET must be LOCALIZED (a handful of escape rooms)
+            for v in sorted(byval):
+                if v == 0:
+                    continue
+                if len(byval[v]) >= 10 * len(reset_rooms):   # TRAP pervasive vs. the localized reset
+                    out[R] = {"trap": v, "safe": 0, "reset_rooms": sorted(reset_rooms),
+                              "set_in": len(byval[v])}
+                    break
+        return out
+
+    def register_flip_strandings(self):
+        """Items sealed by a free-running TRAP register's flip -- softlock class 2.
+
+        For each classified trap R (`free_running_traps`: safe value 0, an adversarial value written
+        pervasively by the Game loop, reset confined to a few rooms), a door gated on `R == safe`
+        SHUTS when the flip fires -- and the player cannot prevent the flip (it is the wall clock,
+        not a choice). So there is a reachable state, R flipped and the item not yet taken, from
+        which the item -- now behind a closed door whose reset is localized and downstream -- is no
+        longer obtainable. By the one rule (is what you need still obtainable from here?) that is a
+        softlock. KQ4: night (g100) shuts the dwarves' door rm22->54 (Diamond_Pouch) and the
+        shanty door rm7->42 (Fishing_Pole); dawn is only at rm82, behind Lolotte's death.
+
+        We flag an item only when EVERY one of its sources sits behind a trap-gated door (removing
+        those doors makes the source unreachable) -- otherwise there is a trap-free way in and no
+        seal. LSL2 has no trap register, so this returns [] and cannot move its golden."""
+        traps = self.free_running_traps()
+        if not traps:
+            return []
+        out = []
+        for R, info in sorted(traps.items()):
+            safe = info["safe"]
+            doors = {(a, b) for (a, b), metas in self._emeta.items()
+                     for (req, sets, alts) in metas if req.get(R) == {safe}}
+            if not doors:
+                continue
+            # rooms still reachable if every trap-gated door is shut (the flipped world)
+            shut = {x: (set(y) - {b for (a, b) in doors if a == x}) for x, y in self.edges.items()}
+            reach_shut = reachable(shut, {self.em.cfg.start_room})
+            for it in sorted(self.required):
+                srcs = self.sources.get(it, set())
+                if not srcs or (srcs & reach_shut):
+                    continue                 # no source, or a source reachable without the door
+                out.append({"pattern": "free-running-trap-seal", "item": it,
+                            "item_name": self.g.item_name(it), "register": R,
+                            "trap": info["trap"], "reset_rooms": info["reset_rooms"],
+                            "source_rooms": sorted(srcs), "doors": sorted(doors)})
+        return out
+
 
 def load(cfg=None, ir_path=None):
     cfg = cfg or config.ACTIVE

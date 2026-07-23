@@ -20,7 +20,8 @@ import guards as G
 
 def snapshot(cfg, with_placements=False):
     s = M.load(cfg=cfg)
-    items = sorted({c["item"] for c in s.analyze()} | {j["item"] for j in s.joint_strandings()})
+    items = sorted({c["item"] for c in s.analyze()} | {j["item"] for j in s.joint_strandings()}
+                   | {r["item"] for r in s.register_flip_strandings()})
     snap = {
         "start_room": s.em.cfg.start_room,
         "goal_rooms": sorted(s.em.cfg.goal_rooms),
