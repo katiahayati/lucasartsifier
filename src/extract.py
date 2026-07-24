@@ -350,6 +350,33 @@ def _room_species(ir):
     return species
 
 
+_ROOM_CLOSURE = {}
+
+
+def _room_species_closure(ir):
+    """Every species that IS or DESCENDS FROM the Room base class, transitively.
+
+    A room declared through an INTERMEDIATE base -- QFG2's `Stage of Rm`, `RasPlaza of Stage`,
+    `AlleyRoom of Rm`, with instances `cityRoom of Stage` / `alleyRas of AlleyRoom` -- is still a
+    room. The old one-level `super == Rm` check dropped all of them (and QFG2's whole Raseir
+    endgame with it). Same transitive-closure shape `derive_death` uses for Game subclasses."""
+    key = id(ir)
+    if key in _ROOM_CLOSURE:
+        return _ROOM_CLOSURE[key]
+    base = _room_species(ir)
+    closure = {base} if base is not None else set()
+    changed = bool(closure)
+    while changed:
+        changed = False
+        for s in ir.scripts.values():
+            for o in s.objects:
+                if o.is_class and o.super in closure and o.species not in closure:
+                    closure.add(o.species)
+                    changed = True
+    _ROOM_CLOSURE[key] = closure
+    return closure
+
+
 def pending_room_global(ir):
     """The global that IS `newRoom:` at the engine level, or None.
 
@@ -475,10 +502,10 @@ def _walks_a_list(loop):
 def _room_object(script, ir=None):
     """The Room instance of a room script: an instance of the Rm/Room class, else named rm<N>."""
     if ir is not None:
-        sp = _room_species(ir)
-        if sp is not None:
+        closure = _room_species_closure(ir)
+        if closure:
             for o in script.objects:
-                if not o.is_class and o.super == sp:
+                if not o.is_class and o.super in closure:
                     return o
     want = f"rm{script.number}"
     for o in script.objects:
