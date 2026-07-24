@@ -115,7 +115,18 @@ def discover_start(em, edges=None, entries=None):
         return None
     most = max(reached_by.values())
     pool = [room for room, c in reached_by.items() if c == most]
-    return max(sorted(pool), key=lambda r: len(reachable(edges, {r})))
+    candidate = max(sorted(pool), key=lambda r: len(reachable(edges, {r})))
+    # Fragmentation guard. When the entries funnel into a small cluster that is a DISJOINT component
+    # from the free-roam world -- Camelot's intro reaches rm51's 3-room cluster, while the overland
+    # map hub is a separate 24-room component the graph joins only through a Main `newRoom:` it never
+    # sees -- the candidate reaches almost none of the game. Swap to the widest-reaching room ONLY
+    # when the two reaches share NO room, i.e. they are genuinely different components. Any overlap
+    # means the same region and the candidate stays right: SQ3 rm900 shares 36 rooms with the wider
+    # rm40; LSL2 rm11 lies inside rm10's reach. (A pure subset test would wrongly swap SQ3.)
+    widest = max(sorted(em.rooms), key=lambda r: len(reachable(edges, {r})), default=candidate)
+    if reachable(edges, {candidate}) & reachable(edges, {widest}):
+        return candidate
+    return widest
 
 
 def _tests_achievement(em, rooms):
