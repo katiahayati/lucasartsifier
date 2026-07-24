@@ -377,6 +377,49 @@ def _room_species_closure(ir):
     return closure
 
 
+_ROOM_NUMS = {}
+
+
+def _room_numbers(ir):
+    """Script numbers that ARE rooms (have a Room instance). Used to validate the destinations of an
+    overland-map `newRoom:[array]`: an array slot is a real exit only if a room script exists for
+    that number, which also bounds the table (the first non-zero non-room is past its end)."""
+    key = id(ir)
+    if key not in _ROOM_NUMS:
+        _ROOM_NUMS[key] = {s.number for s in ir.scripts.values()
+                           if _room_object(s, ir) is not None}
+    return _ROOM_NUMS[key]
+
+
+def _array_room_values(ir, script_num, node):
+    """Resolve `newRoom: [localBase][index]` -- overland-map / PIC-control-map travel, where the
+    destination is read from a room table indexed by the clicked control region (Camelot rm1:
+    `[local9 local7]` over an 18-slot region->room array). The array values are the script's flat
+    locals from the base; the source `[localN size]` grouping is NOT in the IR, so scan from the
+    base, take non-zero values that are REAL rooms, and stop at the first non-zero value that is not
+    (past the table). Only a LOCAL base is handled; a windowed scan caps any over-read."""
+    kids = node.get("kids") or []
+    base = kids[0] if kids else None
+    if not (base and base.get("t") == "Variable" and base.get("vtype") == "Local"):
+        return [None]
+    s = ir.scripts.get(script_num)
+    if s is None:
+        return [None]
+    vals = {l["index"]: l["value"] for l in s.locals}
+    rooms = _room_numbers(ir)
+    out, i = [], base["index"]
+    while i in vals and i < base["index"] + 64:
+        v = vals[i]
+        if v == 0:
+            i += 1
+        elif v in rooms:
+            out.append(v)
+            i += 1
+        else:
+            break                                      # first non-zero non-room = past the table
+    return out or [None]
+
+
 def pending_room_global(ir):
     """The global that IS `newRoom:` at the engine level, or None.
 
@@ -839,6 +882,11 @@ class Extractor:
                     # 42..45). Resolve to the room numbers that global can hold; dropping it
                     # made rm43 (the Knife) and its cluster unreachable -> endgame sealed.
                     dsts = self._global_room_values(room, params[0]["index"])
+                elif dsts[0] is None and params[0].get("t") == "ComplexVariable":
+                    # `newRoom: [array][region]` -- overland-map travel keyed by the PIC control
+                    # map (Camelot rm1 is the whole world's hub). Dropping it severed the hub and
+                    # collapsed every location out of reachability.
+                    dsts = _array_room_values(self.ir, script, params[0])
                 for dst in dsts:
                     if dst is not None:
                         (self.ts.edges if movement else self.ts.cs_edges).append(
