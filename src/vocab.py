@@ -476,6 +476,55 @@ def derive_death(ir):
     return hits
 
 
+def derive_death_proc(ir):
+    """Imperative death -- a FREE PROCEDURE that shows Restore/Restart/Quit, invoked as a bare
+    statement at each hazard site (Camelot `proc128_0`, TCB `proc0_19`, QFG2 `proc1_24`, KQ5 too).
+
+    Distinct from the global-flag shape `derive_death` finds: there is no "you died" global at all;
+    death is a control-flow event -- a call to the death dialog. We detect the dialog PROCEDURE
+    (a script-level proc whose body offers restart:/restore:), and the caller lowers each call to it
+    into a synthetic death-flag write so the existing `is_death` machinery applies unchanged. Only
+    FREE procedures are considered, which is what separates the death routine from the menu-bar's
+    own Restore/Restart/Quit (those live in Menu/Title OBJECT methods, not a proc). Returns the set
+    of procedure names whose calls are deaths."""
+    out = set()
+    for s in ir.scripts.values():
+        for name, body in s.procs.items():
+            # the game-wide death routine is a PUBLIC proc -- it is called cross-script from every
+            # hazard, which requires an export. A script-LOCAL restart-offering proc (`localproc_*`)
+            # is the menu/title's own dialog code or an internal helper, not a death edge.
+            if name.startswith("localproc"):
+                continue
+            if _offers_restart(ir, body, depth=0):
+                out.add(name)
+    return out
+
+
+def lower_death_procs(ir, proc_names, death_value=1):
+    """Rewrite every call to a death PROCEDURE into a synthetic death-flag global write, IN PLACE,
+    so the (global,value)-based death machinery (`is_death`, death_rooms, the winnable filter)
+    applies to imperative death with no other change. The synthetic global is one past the highest
+    global the game references, so it cannot collide; it is only ever written the death value and
+    that write is death, so `is_death` filters it out of the gating registers -- no state blow-up.
+    A `(proc128_0 …)` becomes `(= gSYNTH 1)`. Returns (synth_index, sites_lowered)."""
+    max_gi, targets = 0, []
+    for s in ir.scripts.values():
+        bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for node in I.walk(body):
+                if I.is_global(node):
+                    max_gi = max(max_gi, node["index"])
+                elif node.get("t") in ("PublicCall", "LocalCall") and node.get("name") in proc_names:
+                    targets.append(node)
+    synth = max_gi + 1
+    for node in targets:                                   # nodes are the AST dicts the parent holds
+        node.clear()
+        node["t"] = "Assignment"
+        node["kids"] = [{"t": "Variable", "vtype": "Global", "index": synth},
+                        {"t": "Number", "value": death_value}]
+    return synth, len(targets)
+
+
 def derive_debug(ir):
     """Globals TOGGLED with `^=` -- what a debug menu checkbox compiles to.
 

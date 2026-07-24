@@ -1426,13 +1426,22 @@ def load(cfg=None, ir_path=None):
     import vocab as V
     sig = tuple(cfg.death_signal) if cfg.death_signal else ()
     if not sig:
-        found = V.derive_death(ir)
+        found = V.derive_death(ir)          # the global-flag shape (LSL2 gCurrentStatus, KQ4 g127)
         if found:
             sig = found[0][0]
     if not sig:
+        # Imperative death: no "you died" global -- death is a call to a dialog PROCEDURE (Camelot
+        # proc128_0, TCB proc0_19, KQ5 proc0_26). Lower each call to a synthetic death-flag write so
+        # the (gi, v) machinery below applies unchanged. Only reached when the global shape is absent,
+        # so LSL2/KQ4/SQ3 never take this path.
+        dprocs = V.derive_death_proc(ir)
+        if dprocs:
+            synth, _n = V.lower_death_procs(ir, dprocs)
+            sig = (synth, 1)
+    if not sig:
         raise SystemExit("could not derive a death signal, and config.death_signal is unset. "
-                         "Expected the Game subclass to test a global on the way to "
-                         "restart:/restore:.")
+                         "Expected the Game subclass to test a global on the way to restart:/"
+                         "restore:, or a public death procedure that offers it.")
     import dataclasses
     if not cfg.debug_globals:
         cfg = dataclasses.replace(cfg, debug_globals=frozenset(V.derive_debug(ir)))
