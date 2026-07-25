@@ -1038,6 +1038,153 @@ def lower_prop_flags(ir, accessors):
     return synth_base, lowered, len(index)
 
 
+def derive_oneof(ir):
+    """Names of procedures that are MEMBERSHIP TESTS -- `f(x, a, b, c)` = "is x one of a,b,c?".
+
+    SCI's system script ships one (KQ6 `proc999_5`), and games lean on it for both room-set
+    dispatch and ordinary guards. Recognised STRUCTURALLY, never by name or number, because the
+    proc's index differs per game: the body loops over the variadic argument list comparing the
+    FIRST parameter against successive elements of the SECOND (`[param2 temp]`, the &rest block)
+    and returns from inside the loop.
+
+        (procedure (proc999_5 param1 param2 &tmp temp0)
+            (for ((= temp0 0)) (< temp0 (- argc 1)) ((++ temp0))
+                (if (== param1 [param2 temp0]) (return (or param1 1))))
+            (return 0))
+    """
+    out = set()
+    for s in ir.scripts.values():
+        for name, body in s.procs.items():
+            for lp in (n for n in I.walk(body) if I.control_shape(n)[0] == "loop"):
+                inner = list(I.walk(lp))
+                if not any(n.get("t") == "Return" for n in inner):
+                    continue
+                for n in inner:
+                    if n.get("t") != "Eq":
+                        continue
+                    ks = n.get("kids") or []
+                    if len(ks) < 2:
+                        continue
+                    sides = {0: None, 1: None}
+                    for i, k in enumerate(ks[:2]):
+                        if not isinstance(k, dict):
+                            continue
+                        if k.get("t") == "Variable" and k.get("vtype") == "Parameter":
+                            sides[i] = ("param", k.get("index"))
+                        elif k.get("t") == "ComplexVariable":
+                            b = (k.get("kids") or [None])[0]
+                            if (isinstance(b, dict) and b.get("t") == "Variable"
+                                    and b.get("vtype") == "Parameter"):
+                                sides[i] = ("rest", b.get("index"))
+                    kinds = {v[0] for v in sides.values() if v}
+                    if kinds == {"param", "rest"}:
+                        out.add(name)
+                        break
+    return out
+
+
+def oneof_terms(node, oneof):
+    """`f(x, a, b, c)` with f a membership proc -> (x_node, [a, b, c]) of LITERAL values, else None."""
+    if not (isinstance(node, dict) and node.get("t") in ("PublicCall", "LocalCall", "Call")):
+        return None
+    if node.get("name") not in oneof:
+        return None
+    ks = node.get("kids") or []
+    if len(ks) < 2:
+        return None
+    vals = [I.as_int(k) for k in ks[1:]]
+    if not vals or any(v is None for v in vals):
+        return None
+    return ks[0], vals
+
+
+def derive_region_map(ir, room_object_of):
+    """region-script -> {rooms that activate it}, covering BOTH spellings of `setRegions:`.
+
+    SCI0 puts it in each room: `(self setRegions: 7)` inside room N means region 7 covers {N}.
+    SCI1.1 hoists it into ONE central dispatcher keyed on the room being entered --
+
+        ((proc999_5 param1 600 605 615 ... 690)      ; is the new room one of these?
+            ((ScriptID param1) setRegions: 70))      ; then it is in the realm-of-the-dead region
+
+    -- so the room set lives in the guard's membership test, not in the enclosing object. Both
+    are the same fact; only the indirection differs. Detected by shape: a `setRegions:` whose
+    receiver is selected by a VARIABLE takes its rooms from a membership test on that same
+    variable in the path condition. `room_object_of(script)` supplies the SCI0 fallback.
+
+    Without this KQ6 derives ZERO regions and every region script goes unlifted -- 17 machines,
+    18 `newRoom` calls and 13 flag ops, including the whole `rLab` catacombs controller."""
+    oneof = derive_oneof(ir)
+    out = {}
+
+    def var_key(n):
+        """Identity of the variable selecting the room, so guard and receiver can be matched."""
+        if isinstance(n, dict) and n.get("t") == "Variable":
+            return (n.get("vtype"), n.get("index"))
+        return None
+
+    def receiver_var(recv):
+        if not (isinstance(recv, dict) and recv.get("t") in
+                ("KernelCall", "PublicCall", "LocalCall", "Call")):
+            return None
+        if recv.get("name") != "ScriptID":
+            return None
+        ks = recv.get("kids") or []
+        return var_key(ks[0]) if ks else None
+
+    def visit(node, tests, home):
+        """Walk carrying the RAW condition nodes. `walk_stream` cannot serve here: it converts
+        each test through `atom()`, which renders the membership call OPAQUE and throws away the
+        very argument list we need."""
+        shape = I.control_shape(node)
+        kind = shape[0]
+        if kind == "seq":
+            for k in shape[1]:
+                visit(k, tests, home)
+            return
+        if kind == "branch":
+            for conds, body in shape[1]:
+                visit(body, tests + [t for (t, pol) in conds if pol], home)
+            return
+        if kind == "loop":
+            for k in shape[1:]:
+                visit(k, tests, home)
+            return
+        if node is None:
+            return
+        if node.get("t") == "Send":
+            recv, msgs = I.send_pairs(node)
+            regs = [v for sel, ps in msgs if sel == "setRegions"
+                    for v in (I.as_int(p) for p in ps) if v is not None]
+            if regs:
+                rv = receiver_var(recv)
+                if rv is None:
+                    # SCO0: the region covers the room this code lives in.
+                    if home is not None:
+                        for r in regs:
+                            out.setdefault(r, set()).add(home)
+                else:
+                    # SCI1.1: the room set is in the membership test guarding this call.
+                    rooms = set()
+                    for t in tests:
+                        for sub in I.walk(t):
+                            got = oneof_terms(sub, oneof)
+                            if got and var_key(got[0]) == rv:
+                                rooms |= set(got[1])
+                    for r in regs:
+                        if rooms:
+                            out.setdefault(r, set()).update(rooms)
+        for k in node.get("kids", ()) or ():
+            visit(k, tests, home)
+
+    for snum, s in ir.scripts.items():
+        home = snum if room_object_of(s) is not None else None
+        for o in s.objects:
+            for _mn, body in o.methods.items():
+                visit(body, [], home)
+    return out
+
+
 def derive_debug(ir):
     """Globals TOGGLED with `^=` -- what a debug menu checkbox compiles to.
 

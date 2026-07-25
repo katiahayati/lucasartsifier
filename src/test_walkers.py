@@ -82,6 +82,11 @@ ACCEPTED = {
                    "reads class-table comparisons.",
     "Ne":          "as Eq.",
     "Assignment":  "every walker records writes in its own vocabulary.",
+    "Variable":    "the walkers that BUILD guard atoms (extract, machine, compile) and vocab, "
+                   "which matches variable IDENTITY to derive vocabulary -- the room-selecting "
+                   "variable behind SCI1.1's central `setRegions` dispatch, so the guard's "
+                   "membership test can be tied to the receiver. opmodel consumes finished atoms "
+                   "and never inspects operand nodes itself.",
     "Send":        "as Cond -- vocab matches sends by selector via ir.send_pairs, not by node type.",
     "Switch":      "extract._global_room_values reads switch CASE LABELS as data (the room "
                    "numbers a revolving-door global can hold) and machine._top_switch finds the "

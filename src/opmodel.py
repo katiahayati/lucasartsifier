@@ -24,6 +24,7 @@ import subprocess
 import ir as I
 import machine as M
 import compile as C
+import vocab
 from extract import extract, atom, item_transfer, _room_object, EGO
 from guard_ast import GAnd, GOr, GNot, Pred
 
@@ -99,21 +100,13 @@ class OpEmitter:
         # scripts and every one of its 26 regions was dropped whole (LSL2: 9 regions over 62
         # rooms). SCI dispatches at three scopes -- Main, region, room -- and this is the
         # middle one; losing it silently loses every guard and effect that lives there.
-        self.region_rooms = {}
-        for rn, s in ir.scripts.items():
-            room = _room_object(s, ir)
-            if room is None:
-                continue
-            for _mn, a in room.methods.items():
-                for n in I.walk(a):
-                    if n["t"] == "Send":
-                        recv, msgs = I.send_pairs(n)
-                        for sel, params in msgs:
-                            if sel == "setRegions":
-                                for p in params:
-                                    v = _int(p.get("value"))
-                                    if v is not None:
-                                        self.region_rooms.setdefault(v, set()).add(rn)
+        #
+        # SCI1.1 hoists the whole map into ONE dispatcher in Main, keyed on the room being
+        # entered (`(proc999_5 param1 600 605 ...) -> ((ScriptID param1) setRegions: 70)`), so
+        # the per-room scan below found NOTHING on KQ6 -- zero regions, and with them the entire
+        # `rLab` catacombs controller, `rgDead` and `rgCastle` went unlifted. Both spellings now
+        # derive in vocab.derive_region_map, which reproduces LSL2's 9 and KQ4's 25 exactly.
+        self.region_rooms = vocab.derive_region_map(ir, lambda s: _room_object(s, ir))
         # Hoisted above the init/machine pass: `_init_writes` records room-LOCAL
         # seeds too, and it runs first.
         self.handler_writes = []       # (room, script, gi, val, guard)  -- script for CTR-local resolve
