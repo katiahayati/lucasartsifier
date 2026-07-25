@@ -69,7 +69,39 @@ def atom(n):
         return ("CTR", (n["vtype"][0], n["index"]), "!=", 0)
     if tp == "Number":
         return None if n["value"] != 0 else Pred("OPAQUE")       # constant test
+    if tp in ("PublicCall", "LocalCall"):
+        m = _oneof_atom(n)
+        if m is not None:
+            return m
     return Pred("OPAQUE")
+
+
+def _oneof_atom(n):
+    """`(oneOf x a b c)` -> `x==a OR x==b OR x==c`, else None.
+
+    SCI's system script provides a variadic membership test, and SCI1.1 games use it wherever
+    SCO0 would have written a chain of `or`s -- KQ6 gates 18 room transitions on one. Lowering it
+    to the disjunction it already means costs nothing new: each disjunct goes through the SAME
+    `_cmp_atom` path as a written-out compare, so a membership test on a global becomes an
+    ordinary register gate and one on anything else stays opaque, exactly as the spelled-out form
+    would. `derive_oneof` supplies the proc names structurally, so this is inert on games without
+    one."""
+    if not _ONEOF or n.get("name") not in _ONEOF:
+        return None
+    ks = n.get("kids") or []
+    if len(ks) < 2:
+        return None
+    subject, vals = ks[0], [I.as_int(k) for k in ks[1:]]
+    if not vals or any(v is None for v in vals):
+        return None                       # a non-literal candidate list decides nothing here
+    kids = [_cmp_atom({"t": "Eq", "kids": [subject, {"t": "Number", "value": v}]}, "Eq")
+            for v in vals]
+    # Bail (-> the caller's opaque, which is satisfiable) if any disjunct is undecidable or
+    # unconstrained: an opaque subject decides nothing, and a free disjunct makes the whole OR
+    # free. Both are the permissive reading, which is the safe direction for a guard.
+    if any(k is None or (isinstance(k, Pred) and k.kind == "OPAQUE") for k in kids):
+        return None
+    return GOr(kids) if len(kids) > 1 else kids[0]
 
 
 _OPS = {"Eq": "==", "Ne": "!=", "Gt": ">", "Ge": ">=", "Lt": "<", "Le": "<=",
@@ -236,6 +268,9 @@ _VERB_PARAM = None   # while walking a `doVerb` body, the Parameter index of its
 #   compared in any other method is never misread as an item. Cleared when following a call.
 _DOVERB_PARAM = 1    # `(method (doVerb param1) ...)` -- param1 is Parameter index 1 in the IR
 #   (uniformly, across every SCI1/1.1 doVerb: it is the method's single argument, the clicked verb).
+_ONEOF = frozenset()   # membership procedures: `f(x, a, b, c)` == "is x one of a,b,c?" -- derived
+#   structurally by vocab.derive_oneof, since the proc's number differs per game. Empty on SCO0
+#   (LSL2/KQ4 have none), so the recognizer below is inert there.
 
 
 @contextlib.contextmanager
@@ -264,11 +299,12 @@ def install_vocabulary(ir):
     from the store wrapper's holder globals and the Game loop respectively, so the extraction reads
     the game's own layout instead of assuming the SCI template's 0/11. Both fall back to the
     template default only when a game has no derivable store or Game loop."""
-    global _VOCAB, _IPROPS, _EGO, _CURROOM, _ITEM_MSG
+    global _VOCAB, _IPROPS, _EGO, _CURROOM, _ITEM_MSG, _ONEOF
     _VOCAB = V.Vocabulary.from_ir(ir)
     _IPROPS = (V.item_property_registers(ir, _VOCAB.store_class, _VOCAB.prop, _at_item)
                if _VOCAB else {})
     _ITEM_MSG = V.doverb_item_messages(ir)
+    _ONEOF = frozenset(V.derive_oneof(ir))
     holders = frozenset().union(*_VOCAB.holders.values()) if _VOCAB and _VOCAB.holders else frozenset()
     _EGO = holders or frozenset({0})
     _CURROOM = current_room_global(ir)

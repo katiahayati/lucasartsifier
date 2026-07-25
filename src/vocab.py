@@ -956,7 +956,7 @@ def _flag_receiver_id(recv):
     untested. An unpinned receiver is skipped, which can only miss a gate, never invent one."""
     if not isinstance(recv, dict):
         return None
-    if (recv.get("t") in ("KernelCall", "PublicCall", "LocalCall", "Call")
+    if (recv.get("t") in ("KernelCall", "PublicCall", "LocalCall")
             and recv.get("name") == "ScriptID"):
         a = [I.as_int(k) for k in (recv.get("kids") or [])]
         if a and a[0] is not None:
@@ -1085,7 +1085,7 @@ def derive_oneof(ir):
 
 def oneof_terms(node, oneof):
     """`f(x, a, b, c)` with f a membership proc -> (x_node, [a, b, c]) of LITERAL values, else None."""
-    if not (isinstance(node, dict) and node.get("t") in ("PublicCall", "LocalCall", "Call")):
+    if not (isinstance(node, dict) and node.get("t") in ("PublicCall", "LocalCall")):
         return None
     if node.get("name") not in oneof:
         return None
@@ -1125,7 +1125,7 @@ def derive_region_map(ir, room_object_of):
 
     def receiver_var(recv):
         if not (isinstance(recv, dict) and recv.get("t") in
-                ("KernelCall", "PublicCall", "LocalCall", "Call")):
+                ("KernelCall", "PublicCall", "LocalCall")):
             return None
         if recv.get("name") != "ScriptID":
             return None
