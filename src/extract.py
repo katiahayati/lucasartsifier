@@ -778,10 +778,56 @@ class Extractor:
                                verb_param=(_DOVERB_PARAM if mname == "doVerb" else None))
             self._cur_obj = ""
             self._inherit_arming(n)
+        self._nav_hubs()
         # add any newRoom target we saw as a room
         for e in self.ts.edges:
             self.ts.rooms.add(e.dst)
         return self.ts
+
+    def _nav_hubs(self):
+        """Destination-TABLE travel: `newRoom: (<var> <sel>:)` where <sel> is a room-valued property
+        on a small set of dedicated objects -- KQ6's magic map does `(global2 newRoom: (local8
+        tpRoom:))`, local8 being the map location the player picked and `tpRoom` each island's
+        arrival room (crown 200, sacred 300, wonder 450, beast 500, mists 550). The item lets you
+        travel between those rooms, so they form a HUB; dropping the read (the destination is not a
+        literal) severed every island from the others, collapsing reachability. Modelled as a clique
+        among the table's rooms -- the analogue of the Camelot `newRoom:[array]` overland hub, for a
+        property table instead of a local array.
+
+        Guarded so it is inert unless the pattern exists: the receiver must be a VARIABLE (a runtime
+        choice, not a fixed object), `<sel>` is NOT a per-room direction (n/s/e/w -- those are
+        walk-off edges handled by _nav_edges, and every room carries them), and the table must be
+        small (<=16 rooms), i.e. a menu and not a pervasive attribute. LSL2/KQ4 have no such site
+        (their newRooms are literal/global/array), so nothing is added and they stay byte-identical."""
+        rooms = _room_numbers(self.ir)
+        table_sels = set()
+        for s in self.ir.scripts.values():
+            for o in s.objects:
+                for body in o.methods.values():
+                    for n in I.walk(body):
+                        if n.get("t") != "Send":
+                            continue
+                        _r, msgs = I.send_pairs(n)
+                        for sel, params in msgs:
+                            if sel != "newRoom" or not params:
+                                continue
+                            a = params[0]
+                            if not (isinstance(a, dict) and a.get("t") == "Send"):
+                                continue
+                            arecv, amsgs = I.send_pairs(a)
+                            if (len(amsgs) == 1 and not amsgs[0][1] and amsgs[0][0]
+                                    and amsgs[0][0] not in NAV_SELECTORS
+                                    and isinstance(arecv, dict) and arecv.get("t") == "Variable"):
+                                table_sels.add(amsgs[0][0])
+        for sel in table_sels:
+            dests = sorted({o.props.get(sel) for s in self.ir.scripts.values()
+                            for o in s.objects if not o.is_class and o.props.get(sel) in rooms})
+            if not (2 <= len(dests) <= 16):        # a menu, not a per-room attribute or a singleton
+                continue
+            for a in dests:
+                for b in dests:
+                    if a != b:
+                        self.ts.edges.append(Edge(a, b))    # hub: item-travel between destinations
 
     # selectors that make an object animate/move/run, i.e. that end in a `cue` back to it
     ARMING = ("setCycle", "setMotion", "setScript", "cue", "setReal", "setTimer")
