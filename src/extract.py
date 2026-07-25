@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import config
 
+import contextlib
 import os
 from dataclasses import dataclass, field
 
@@ -235,6 +236,23 @@ _VERB_PARAM = None   # while walking a `doVerb` body, the Parameter index of its
 #   compared in any other method is never misread as an item. Cleared when following a call.
 _DOVERB_PARAM = 1    # `(method (doVerb param1) ...)` -- param1 is Parameter index 1 in the IR
 #   (uniformly, across every SCI1/1.1 doVerb: it is the method's single argument, the clicked verb).
+
+
+@contextlib.contextmanager
+def verb_param_scope(method_name):
+    """Set the doVerb verb-param context for the duration of walking `method_name`'s body, so
+    `atom` recognizes `(== param1 <item.message>)` as OWN inside a doVerb in ANY walker -- not just
+    extract._walk, but the machine lift too. That is what carries an item-use requirement onto a
+    cutscene the doVerb ARMS with `setScript:` (the catacombs/dagger class), where the exit is
+    machine-owned rather than a flat edge. No-op for any other method, so it never widens capture
+    outside a doVerb."""
+    global _VERB_PARAM
+    saved = _VERB_PARAM
+    _VERB_PARAM = _DOVERB_PARAM if method_name == "doVerb" else None
+    try:
+        yield
+    finally:
+        _VERB_PARAM = saved
 
 
 def install_vocabulary(ir):

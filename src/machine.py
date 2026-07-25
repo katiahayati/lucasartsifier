@@ -156,7 +156,7 @@ class MachineBuilder:
         machine reads its own script's locals, so a local the arming branch set gates the machine's
         internal flow -- rm214 sets `local1:=1` in the same branch that arms knockDoor, and knockDoor
         only reaches `newRoom: 18` while local1==1. Control flow is shared (walk_stream)."""
-        from extract import walk_stream
+        from extract import walk_stream, verb_param_scope
         events = []                               # ordered: ("w",(vt,idx),val,pc) | ("a",pc)
         def leaf(n, p):
             t = n.get("t")
@@ -171,7 +171,11 @@ class MachineBuilder:
                 if any(sel == "setScript" and params and _setscript_target(params[0]) == m.inst
                        for sel, params in msgs):
                     events.append(("a", list(p)))
-        walk_stream(node, pc, leaf)
+        # A doVerb that arms this machine with `setScript:` gates it on the item the player used --
+        # `(== param1 <item.message>)` -> OWN. verb_param_scope makes `atom` see that inside the
+        # arming path condition (the machine lift shares extract.atom but does not set the context).
+        with verb_param_scope(source):
+            walk_stream(node, pc, leaf)
         for i, ev in enumerate(events):
             if ev[0] != "a":
                 continue
