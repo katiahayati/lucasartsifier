@@ -124,7 +124,17 @@ def discover_start(em, edges=None, entries=None):
     # means the same region and the candidate stays right: SQ3 rm900 shares 36 rooms with the wider
     # rm40; LSL2 rm11 lies inside rm10's reach. (A pure subset test would wrongly swap SQ3.)
     widest = max(sorted(em.rooms), key=lambda r: len(reachable(edges, {r})), default=candidate)
-    if reachable(edges, {candidate}) & reachable(edges, {widest}):
+    cand_reach = reachable(edges, {candidate})
+    wide_reach = reachable(edges, {widest})
+    # Swap to the widest room in two cases. (a) DISJOINT component -- Camelot's intro reaches a
+    # 3-room cluster while the overland hub is a separate component (no shared room). (b) SINK --
+    # the candidate is reached by the most entries yet itself reaches almost nothing, so it is a
+    # dead-end the entries funnel into, not the free-roam world. KQ6's uncaptured labyrinth rooms
+    # are spurious roots that all flow to rm400 (a maze dead-end), making it "reached by most"
+    # while it reaches only itself. A genuine free-roam start reaches about as much as the widest
+    # room does (LSL2 ratio .99, KQ4 1.0); a sink is a small fraction. Any overlap with a candidate
+    # that reaches a comparable amount keeps the candidate (SQ3 rm900 shares 36 rooms with rm40).
+    if (cand_reach & wide_reach) and len(cand_reach) * 2 >= len(wide_reach):
         return candidate
     return widest
 
