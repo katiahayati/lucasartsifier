@@ -1572,33 +1572,37 @@ def load(cfg=None, ir_path=None):
     # derived; LSL2 and KQ4 disagree on both index and shape" -- true only if you guess the shape
     # instead of reading it out of the test.
     import vocab as V
+    # Death detection is DISPATCHED on the engine generation (vocab.is_sci11), a sharp and principled
+    # divide: SCI0/SCI1 offer Restart/Restore ONLY on death, so any reachable Restart offer IS a
+    # death; SCI1.1 also surfaces it from an always-available control panel, so that assumption breaks
+    # and death must be recognised at the hazard instead. The signal is normalised to one (global,
+    # value) either way, so nothing downstream knows which path ran.
     sig = tuple(cfg.death_signal) if cfg.death_signal else ()
-    if not sig:
+    if not sig and V.is_sci11(ir):
+        # SCI1.1: death = reaching a death DIALOG (a non-menu object offering both restart: and
+        # restore:), either inline in a hazard script or via a proc that newRooms into a death room
+        # (KQ6 proc0_1 -> rm640, called from the archer/minotaur/... hazards). See derive_death_sci11.
+        dialogs, dprocs = V.derive_death_sci11(ir)
+        if dialogs or dprocs:
+            synth, _n = V.lower_death_sci11(ir, dialogs, dprocs)
+            sig = (synth, 1)
+    if not sig and not V.is_sci11(ir):
         found = V.derive_death(ir)          # the global-flag shape (LSL2 gCurrentStatus, KQ4 g127)
         if found:
             sig = found[0][0]
-    if not sig:
-        # Imperative death: no "you died" global -- death is a call to a dialog PROCEDURE (Camelot
-        # proc128_0, TCB proc0_19, KQ5 proc0_26). Lower each call to a synthetic death-flag write so
-        # the (gi, v) machinery below applies unchanged. Only reached when the global shape is absent,
-        # so LSL2/KQ4/SQ3 never take this path.
-        dprocs = V.derive_death_proc(ir)
-        if dprocs:
-            synth, _n = V.lower_death_procs(ir, dprocs)
-            sig = (synth, 1)
-    if not sig:
-        # SCI1.1 inline death: no death global and no death proc, because Restart/Restore live in the
-        # always-available control panel -- a real death offers the dialog INLINE at the hazard (KQ6
-        # egoBeastScript etc.). Inject a synthetic death write into each such dialog. Only reached
-        # when both earlier shapes are absent, so LSL2/KQ4 (global) and KQ5 (proc) never take it.
-        dsends = V.derive_death_send(ir)
-        if dsends:
-            synth, _n = V.lower_death_sends(ir, dsends)
-            sig = (synth, 1)
+        if not sig:
+            # Imperative death: no "you died" global -- death is a call to a dialog PROCEDURE
+            # (Camelot proc128_0, TCB proc0_19, KQ5 proc0_26). Lower each call to a synthetic
+            # death-flag write so the (gi, v) machinery below applies unchanged.
+            dprocs = V.derive_death_proc(ir)
+            if dprocs:
+                synth, _n = V.lower_death_procs(ir, dprocs)
+                sig = (synth, 1)
     if not sig:
         raise SystemExit("could not derive a death signal, and config.death_signal is unset. "
                          "Expected the Game subclass to test a global on the way to restart:/"
-                         "restore:, or a public death procedure that offers it.")
+                         "restore:, a public death procedure that offers it, or (SCI1.1) a death "
+                         "dialog offering both restart: and restore:.")
     import dataclasses
     if not cfg.debug_globals:
         cfg = dataclasses.replace(cfg, debug_globals=frozenset(V.derive_debug(ir)))

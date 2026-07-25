@@ -428,7 +428,7 @@ def _script_named(ir, name):
     return None
 
 
-def _offers_restart(ir, node, depth, in_current=True):
+def _offers_restart(ir, node, depth):
     """Does this branch reach Restore/Restart/Quit -- directly, or through a script it starts?
 
     LSL2 hands off: `(if (== gCurrentStatus 1001) (gCurRoom setScript: dyingScript))`, and it is
@@ -436,23 +436,17 @@ def _offers_restart(ir, node, depth, in_current=True):
     the same thing the machine lift already does, so the anchor is shared even though the shape
     of the hand-off is not.
 
-    Does NOT descend into a `Switch` while still IN THE CURRENT method (`in_current`). A death offer
-    in a Game object is DIRECT -- KQ4's inline `(if dead ... (restart:))`, LSL2's `setScript:
-    dyingScript` -- never nested behind a dispatch. SCI1.1 puts Restart/Restore in an
-    always-available control panel that the Game's `handleEvent` reaches through a switch on EVENT
-    TYPE; descending into that switch made `derive_death` match the input handler and pick a config
-    flag (KQ6 global100) as "death". A `setScript` hands off to ANOTHER script whose own changeState
-    switch IS walked (`in_current=False`) -- that is where LSL2's dyingScript offers the dialog."""
-    if not isinstance(node, dict):
-        return False
-    t = node.get("t")
-    if t == "Switch" and in_current:
-        return False
-    if t == "Send":
+    Used only by the SCI0/SCI1 death path (`derive_death` / `derive_death_proc`), where Restart is
+    offered ONLY on death -- so any reachable Restart offer is a death. SCI1.1 games surface Restart
+    from an always-available control panel too, which would make this match the input handler; those
+    are dispatched to `derive_death_sci11` in load() and never reach here (see is_sci11)."""
+    for m in I.walk(node):
+        if m.get("t") != "Send":
+            continue
         try:
-            _r, msgs = I.send_pairs(node)
+            _r, msgs = I.send_pairs(m)
         except Exception:                      # noqa: BLE001
-            msgs = []
+            continue
         for pair in msgs:
             if not pair:
                 continue
@@ -463,12 +457,8 @@ def _offers_restart(ir, node, depth, in_current=True):
                 if isinstance(tgt, dict) and tgt.get("t") == "Object":
                     obj = _script_named(ir, tgt.get("name"))
                     if obj is not None and any(
-                            _offers_restart(ir, b, depth + 1, in_current=False)
-                            for b in obj.methods.values()):
+                            _offers_restart(ir, b, depth + 1) for b in obj.methods.values()):
                         return True
-    for k in node.get("kids", ()) or []:
-        if _offers_restart(ir, k, depth, in_current):
-            return True
     return False
 
 
@@ -510,10 +500,7 @@ def derive_death_proc(ir):
             # is the menu/title's own dialog code or an internal helper, not a death edge.
             if name.startswith("localproc"):
                 continue
-            # in_current=False: a public death PROC is itself the dedicated dialog routine (it may
-            # switch on the player's Restore/Restart/Quit choice), so its OWN switch is walked --
-            # unlike the Game object's event handler, where a switch is the always-available menu.
-            if _offers_restart(ir, body, depth=0, in_current=False):
+            if _offers_restart(ir, body, depth=0):
                 out.add(name)
     return out
 
@@ -622,6 +609,106 @@ def lower_death_sends(ir, sites, death_value=1):
             cs["t"] = "List"
             cs["kids"] = [write(), old]
         n += 1
+    return synth, n
+
+
+def is_sci11(ir):
+    """Is this a SCI1.1 (heap-format) game? Instances carry the 0xffff species sentinel with the
+    class species in `super`, where SCO0 and SCI1 put the class species directly in `species`. Same
+    encoding `item_names` keys on. It selects the DEATH model, because SCI1.1 surfaces Restart/Restore
+    from an always-available control panel, so "a reachable Restart offer" no longer means "a death"
+    -- the SCO0/SCI1 assumption behind `derive_death`."""
+    insts = [o for s in ir.scripts.values() for o in s.objects if not o.is_class]
+    return bool(insts) and sum(1 for o in insts if o.species == 65535) * 2 > len(insts)
+
+
+def derive_death_sci11(ir):
+    """SCI1.1 death = reaching a DEATH DIALOG, with the always-available control panel excluded.
+
+    Two mechanisms, both keyed on the death dialog (a non-Game object offering BOTH restart: and
+    restore: -- `derive_death_send`; "both" excludes the single-button menu icons and Window-restore):
+      (1) the dialog runs inline in a hazard script -- inject a death write (KQ6 egoBeastScript,
+          deathCartoonScr, deadInHereScript, noWayOut);
+      (2) a public PROC that `newRoom`s into a death-dialog's script (a death room) -- KQ6 `proc0_1`
+          transports to rm640 (deathCartoonScr) from ~10 hazards. Its call sites keep their guards,
+          so an item-gated hazard death (`(if (not (has shield)) (proc0_1 ...))`) becomes the
+          requirement it is. `localproc` is menu/helper code, excluded.
+
+    Returns (inline_dialogs, death_procs)."""
+    dialogs = derive_death_send(ir)
+    death_rooms = {sn for (sn, _o) in dialogs}
+    # A SCI1.1 game may ALSO use the imperative-proc shape (QFG-VGA proc1_0 offers restart inline);
+    # the control-panel Restart is a Game METHOD reached via a `#restart` selector reference, never a
+    # public proc, so a public restart-offering proc is a death here just as in SCO0.
+    death_procs = set(derive_death_proc(ir))
+    for s in ir.scripts.values():
+        for pname, body in s.procs.items():
+            if pname.startswith("localproc"):
+                continue
+            for n in I.walk(body):
+                if n.get("t") != "Send":
+                    continue
+                try:
+                    _r, msgs = I.send_pairs(n)
+                except Exception:                      # noqa: BLE001
+                    continue
+                for sel, params in msgs:
+                    if sel == "newRoom" and params and I.as_int(params[0]) in death_rooms:
+                        death_procs.add(pname)
+    return dialogs, death_procs
+
+
+def lower_death_sci11(ir, dialogs, death_procs, death_value=1):
+    """Both SCI1.1 death mechanisms lowered onto ONE synthetic death global (computed once, before
+    any injection so the two passes agree): a death write into each inline dialog's state 0, and a
+    death write in place of each call to a death proc."""
+    max_gi = 0
+    for s in ir.scripts.values():
+        bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for n in I.walk(body):
+                if I.is_global(n):
+                    max_gi = max(max_gi, n["index"])
+    synth = max_gi + 1
+
+    def write():
+        return {"t": "Assignment", "kids": [
+            {"t": "Variable", "vtype": "Global", "index": synth},
+            {"t": "Number", "value": death_value}]}
+
+    n = 0
+    for (sn, obj_name) in dialogs:                     # (1) inline dialogs -> death write at state 0
+        obj = ir.scripts[sn].by_name.get(obj_name)
+        cs = obj.methods.get("changeState") if obj else None
+        if cs is None:
+            continue
+        injected = False
+        for node in I.walk(cs):
+            if node.get("t") != "Switch":
+                continue
+            for c in (node.get("kids") or [])[1:]:
+                ck = c.get("kids") or []
+                if c.get("t") == "Case" and ck and I.as_int(ck[0]) == 0 and len(ck) > 1:
+                    body0 = ck[1]
+                    if body0.get("t") == "List":
+                        body0.setdefault("kids", []).insert(0, write())
+                    else:
+                        ck[1] = {"t": "List", "kids": [write(), body0]}
+                    injected = True
+            break
+        if not injected:
+            old = dict(cs); cs.clear(); cs["t"] = "List"; cs["kids"] = [write(), old]
+        n += 1
+    for s in ir.scripts.values():                      # (2) death-proc calls -> death write
+        bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for node in I.walk(body):
+                if node.get("t") in ("PublicCall", "LocalCall") and node.get("name") in death_procs:
+                    node.clear()
+                    node["t"] = "Assignment"
+                    node["kids"] = [{"t": "Variable", "vtype": "Global", "index": synth},
+                                    {"t": "Number", "value": death_value}]
+                    n += 1
     return synth, n
 
 
