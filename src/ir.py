@@ -153,6 +153,25 @@ LEAF_NODES = frozenset({
 })
 
 
+def is_selected_item(n):
+    """`(<inv> indexOf: (<iconbar> curInvIcon:))` -> True: the NUMBER of the inventory item the
+    player has selected in the icon bar. The SCI1 "which item am I using" expression -- a switch or
+    compare on it dispatches by item exactly as SCI0's `has:` gates by item (KQ5's rm214 gates the
+    temple door on `== 7`, the staff). Keyed on the selectors `indexOf`/`curInvIcon`, so no game
+    global is assumed; absent entirely in SCI0 (no icon bar), so it never fires there."""
+    if not (isinstance(n, dict) and n.get("t") == "Send"):
+        return False
+    _recv, msgs = send_pairs(n)
+    for sel, params in msgs:
+        if sel == "indexOf" and params:
+            inner = params[0]
+            if isinstance(inner, dict) and inner.get("t") == "Send":
+                _r2, imsgs = send_pairs(inner)
+                if any(s == "curInvIcon" for s, _ in imsgs):
+                    return True
+    return False
+
+
 def control_shape(node):
     """How a node composes CONTROL FLOW. The single place SCI's statement forms are named.
 
@@ -199,15 +218,22 @@ def control_shape(node):
         # Assignment, and synthesising `state == K` guards there would be noise -- machine.py
         # consumes that switch structurally, via _top_switch.
         head = ks[0] if ks else None
-        valued = bool(head) and head.get("t") == "Variable" and head.get("vtype") == "Global"
+        glob = bool(head) and head.get("t") == "Variable" and head.get("vtype") == "Global"
+        # A curInvIcon dispatch -- `(switch (inv indexOf: (bar curInvIcon:)) (N <body>) ...)` -- guards
+        # each case by "the selected item is N", i.e. OWN(N) (see _cmp_atom). Unlike a counter switch
+        # its cases do NOT accumulate `!= earlier` priors: selecting item N says nothing about owning
+        # the others, so a later case must not inherit a spurious "you lack the earlier items".
+        dispatch = bool(head) and is_selected_item(head)
+        valued = glob or dispatch
         arms, priors = [], []
         for c in ks[1:]:
             ck = c.get("kids") or []
             if c.get("t") == "Case" and len(ck) > 1:
                 if valued and isinstance(ck[0], dict) and ck[0].get("t") == "Number":
                     test = {"t": "Eq", "kids": [head, ck[0]]}
-                    arms.append((priors + [(test, True)], ck[1]))
-                    priors = priors + [(test, False)]
+                    arms.append(([(test, True)] if dispatch else priors + [(test, True)], ck[1]))
+                    if not dispatch:
+                        priors = priors + [(test, False)]
                 else:
                     arms.append(([], ck[1]))
             elif c.get("t") == "Else" and ck:

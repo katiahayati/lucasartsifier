@@ -264,6 +264,12 @@ class OpEmitter:
         if node is None or depth > 6:
             return node
         if node["t"] in ("PublicCall", "LocalCall"):
+            kids = node.get("kids") or []
+            if kids and isinstance(kids[-1], dict) and kids[-1].get("t") == "Self":
+                # a CUE call `(procN ... self)` -- its meaning is "run, then cue -> ADVANCE" (SCI1
+                # prints messages via a proc), NOT "splice the proc's effects here". Inlining it
+                # would erase the cue and PARK the state, so `_interp`'s proc-cue rule never fires.
+                return node
             tgt = node.get("script", script)
             name = node.get("name")
             body = self.procs_by.get((tgt, name))
@@ -343,6 +349,7 @@ class OpEmitter:
             delivered = set()
         return {"room": room, "inst": m.inst, "script": m.script, "states": states,
                 "entries": m.entries, "init_entries": m.init_entries,
+                "entry_locals": m.entry_locals, "init_entry_locals": m.init_entry_locals,
                 "start": m.start, "delivered": delivered, "drops": drops}
 
     def _apply_control_gates(self):

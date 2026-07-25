@@ -50,6 +50,12 @@ class Machine:
     #   init sets gIslandStatus:=3, the `changeState 1` cutscene guard is gIslandStatus==2)
     #   makes the standalone one-step-later entry never fire. Player-triggered entries
     #   (handleEvent/doit) stay in `entries` (evaluated in-room, post-init).
+    entry_locals: list = field(default_factory=list)   # PARALLEL to entries: {(vt,idx): val} the
+    #   arming context wrote before setScript'ing us. A machine's internal local branches read
+    #   these -- rm214 sets local1:=1 (guarded by using the staff) and knockDoor only reaches
+    #   `newRoom: 18` when local1==1, so the coin/bottle inside are reachable ONLY with the staff.
+    #   Kept parallel (not a 3-tuple) so every consumer that unpacks `(state, guard)` is untouched.
+    init_entry_locals: list = field(default_factory=list)   # PARALLEL to init_entries.
     start: int = 0
 
     def __repr__(self):
@@ -83,6 +89,14 @@ def _setscript_target(param):
         if isinstance(recv, dict) and recv.get("t") == "Object":
             return recv.get("name")
     return None
+
+
+def _pc_covers(wpc, apc):
+    """The write's path condition is a PREFIX of the arm's -- so whenever the arm fires, the write
+    has already run and its value holds at machine start. Sibling leaves in one branch share the
+    same atom OBJECTS (walk_stream passes one `pc + ext` list per branch), so identity comparison
+    is exact and cheap; a shallower unconditional write also covers a deeper guarded arm."""
+    return len(wpc) <= len(apc) and all(wpc[i] is apc[i] for i in range(len(wpc)))
 
 
 class MachineBuilder:
@@ -137,22 +151,45 @@ class MachineBuilder:
         return m
 
     def _scan_setscript(self, node, pc, m, source):
-        """Find `(x setScript: <ref>)` where <ref> is m, and record an entry to m at state 0 with
-        the path condition. Control flow is shared -- this used to hand-roll If and Cond."""
+        """Find `(x setScript: <ref>)` where <ref> is m, record an entry to m at state 0 with the
+        path condition, AND carry the LOCAL WRITES the arming context made before the setScript. A
+        machine reads its own script's locals, so a local the arming branch set gates the machine's
+        internal flow -- rm214 sets `local1:=1` in the same branch that arms knockDoor, and knockDoor
+        only reaches `newRoom: 18` while local1==1. Control flow is shared (walk_stream)."""
         from extract import walk_stream
-        walk_stream(node, pc, lambda n, p: self._setscript_leaf(n, p, m, source))
+        events = []                               # ordered: ("w",(vt,idx),val,pc) | ("a",pc)
+        def leaf(n, p):
+            t = n.get("t")
+            if t == "Assignment":
+                ks = n.get("kids") or []
+                d = ks[0] if ks else None
+                if (d and d.get("t") == "Variable" and d.get("vtype") in ("Local", "Temp")
+                        and len(ks) > 1 and I.as_int(ks[1]) is not None):
+                    events.append(("w", (d["vtype"][0], d["index"]), I.as_int(ks[1]), list(p)))
+            elif t == "Send":
+                _r, msgs = I.send_pairs(n)
+                if any(sel == "setScript" and params and _setscript_target(params[0]) == m.inst
+                       for sel, params in msgs):
+                    events.append(("a", list(p)))
+        walk_stream(node, pc, leaf)
+        for i, ev in enumerate(events):
+            if ev[0] != "a":
+                continue
+            apc = ev[1]
+            loc = {}
+            for e in events[:i]:                  # writes that RAN before this arm, on its path
+                if e[0] == "w" and _pc_covers(e[3], apc):
+                    loc[e[1]] = e[2]
+            self._add_entry(m, 0, _conj(apc), loc, source == "init")   # init entries are ADDITIONALLY
+            #   bundled onto room arrival, not instead -- still normal entries too
 
-    def _setscript_leaf(self, node, pc, m, source):
-        if node["t"] != "Send":
-            return
-        recv, msgs = I.send_pairs(node)
-        for sel, params in msgs:
-            if sel == "setScript" and params and _setscript_target(params[0]) == m.inst:
-                g = _conj(pc)
-                m.entries.append((0, g))
-                if source == "init":
-                    m.init_entries.append((0, g))   # ADDITIONALLY, not instead -- an init-sourced
-                    #   entry is bundled onto room arrival AND is still a normal entry
+    def _add_entry(self, m, state, guard, locals_, is_init):
+        """Append an entry AND its carried locals, keeping the two parallel lists in lockstep."""
+        m.entries.append((state, guard))
+        m.entry_locals.append(dict(locals_))
+        if is_init:
+            m.init_entries.append((state, guard))
+            m.init_entry_locals.append(dict(locals_))
 
     def _top_switch(self, cs):
         """The `(switch (= state param1) ...)` that IS the machine -- identified by its head
@@ -194,9 +231,7 @@ class MachineBuilder:
                 if sel == "changeState" and params:
                     k = I.as_int(params[0])
                     if k is not None:
-                        m.entries.append((k, _conj(pc)))
-                        if source == "init":
-                            m.init_entries.append((k, _conj(pc)))
+                        self._add_entry(m, k, _conj(pc), {}, source == "init")
         elif tp in ("PublicCall", "LocalCall"):
             tgt = node.get("script", script)
             name = node.get("name")

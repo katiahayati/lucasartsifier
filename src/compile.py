@@ -156,6 +156,15 @@ def _interp(path, is_death):
         elif tp == "Decrement" and I.is_local_or_temp(node["kids"][0]):
             d = node["kids"][0]
             st.counters.append(((d["vtype"][0], d["index"]), "dec", None))
+        elif tp in ("PublicCall", "LocalCall"):
+            # a proc-call CUE: `(procN ... self)`. SCI1 prints messages through a proc, so the
+            # "message dismissed -> cue -> changeState:+1" completion is a proc call ending in
+            # `self`, not a Send -- same cue semantics as `(x setMotion: ... self)`. rm214's
+            # knockDoor advances its door-opening states this way.
+            kids = node.get("kids") or []
+            if kids and isinstance(kids[-1], dict) and kids[-1].get("t") == "Self":
+                armed = True
+                st.cues += 1
     if not fixed and armed:
         st.trans = ("ADVANCE",)
     return st
@@ -321,8 +330,12 @@ def compile_machine(machine, is_death):
             # PARK: dead end (no exit from this path)
 
     walk(machine.start, {}, [], [], 0, frozenset())
-    for k, eg in machine.entries:
-        walk(k, {}, [eg] if eg is not None else [], [], 0, frozenset())
+    for i, (k, eg) in enumerate(machine.entries):
+        # Seed the counters with the locals the arming context wrote (machine.entry_locals, parallel
+        # to entries) -- knockDoor entered via the staff-use starts with local1==1 and can reach
+        # newRoom:18; entered via "open the door" it starts with local1==0 and parks. See machine.py.
+        loc = machine.entry_locals[i] if i < len(machine.entry_locals) else {}
+        walk(k, dict(loc), [eg] if eg is not None else [], [], 0, frozenset())
     return exits, deaths
 
 

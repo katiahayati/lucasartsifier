@@ -104,7 +104,9 @@ def main(argv=None):
           f"{len(s.regs)} gating registers")
     cands = s.analyze()
     joints = s.joint_strandings()
-    items = sorted({c["item"] for c in cands} | {j["item"] for j in joints})
+    tolls = s.toll_strandings()
+    items = sorted({c["item"] for c in cands} | {j["item"] for j in joints}
+                   | {t["item"] for t in tolls})
     groups = s.group_strandings()
     print(f"    softlocks: {len(items)} items"
           + (f" + {len(groups)} disjunctive group(s)" if groups else ""))
@@ -115,6 +117,9 @@ def main(argv=None):
     for j in joints:
         if j["item"] not in {c["item"] for c in cands}:
             print(f"      - {j['item_name']}  (behind a one-time window: {j['flags']})")
+    for t in tolls:
+        print(f"      - {t['item_name']}  (one-visit pocket rm{t['pocket']}, "
+              f"toll {t['toll_item_name']} spent at rm{t['toll_edge'][0]})")
 
     step(3, "DERIVE")
     specs = G.guard_specs(s)

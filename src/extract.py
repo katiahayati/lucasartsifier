@@ -61,6 +61,11 @@ def atom(n):
         return _cmp_atom(n, tp)
     if tp == "Variable" and n["vtype"] == "Global":
         return Pred("CMP", var=n["index"], op="!=", value="0")   # truthiness of a global
+    if tp == "Variable" and n["vtype"] in ("Local", "Temp"):
+        # truthiness of a tracked local -- `(if local1 ...)` is `local1 != 0`, the same CTR a
+        # `(== local1 N)` compare yields, so the machine compiler can resolve it against the
+        # carried counter value. rm214's knockDoor gates its door-opens states on exactly this.
+        return ("CTR", (n["vtype"][0], n["index"]), "!=", 0)
     if tp == "Number":
         return None if n["value"] != 0 else Pred("OPAQUE")       # constant test
     return Pred("OPAQUE")
@@ -91,6 +96,32 @@ def _cmp_atom(n, tp):
         return ("CTR", (a["vtype"][0], a["index"]), op, I.as_int(b))
     if I.is_local_or_temp(b) and I.as_int(a) is not None:
         return ("CTR", (b["vtype"][0], b["index"]), _REV[op], I.as_int(a))
+    # `(<inv> indexOf: (<iconbar> curInvIcon:)) == N` -- SCI1 "use item N": N is the number of the
+    # item selected in the icon bar. Requires holding N, the same requirement SCO writes `has: N`
+    # (rm214 gates the temple door on `== 7`, the staff). `!=` carries no ownership info -- you
+    # selected something else but may still hold N -- so only `==` is a gate.
+    for x, y in ((a, b), (b, a)):
+        if I.is_selected_item(x) and I.as_int(y) is not None:
+            return Pred("OWN", var=I.as_int(y)) if op == "==" else None
+    # `(<iconbar> curInvIcon:) == (<inv> at: N)` -- the KQ6/QFG/Dagger spelling of the same "use item
+    # N": the selected item OBJECT compared to inventory slot N.
+    for x, y in ((a, b), (b, a)):
+        if _is_curinvicon(x):
+            it = _at_item(y)
+            if it is not None:
+                return Pred("OWN", var=it) if op == "==" else None
+    # `((Inv at: N) owner:) == <room>` -- the direct-property-read spelling of `ownedBy:`. The
+    # location property is DERIVED (owner), and `ownedBy:` IS `(== owner param1)`, so this is the
+    # SAME location store and the SAME LOC pred: KQ5/KQ6/Dagger gate the yeti and doors on an item's
+    # owner where LSL2 wrote `(item ownedBy: room)`. `==` means "item is there", `!=` its negation;
+    # a relational op on a location is meaningless, so only == / != are recognised (else opaque).
+    for x, y in ((a, b), (b, a)):
+        it = _item_loc_read(x)
+        if it is not None and op in ("==", "!="):
+            where = ("room" if I.is_global(y, _CURROOM)
+                     else I.as_int(y) if I.as_int(y) is not None else "other")
+            loc = Pred("LOC", var=it, op="ownedBy", value=where)
+            return loc if op == "==" else GNot(loc)
     # `(== ((Inv at: 17) loop:) 1)` -- the FOURTH store: state living in an item's own property.
     # Went to OPAQUE, which threw the fact away; carried as IPROP it is at least preserved.
     ip = item_prop_read(a)
@@ -104,6 +135,16 @@ def _cmp_atom(n, tp):
         return ("POS", "edge", I.as_int(b))
     if _is_ego_edgehit(b) and I.as_int(a) is not None and op == "==":
         return ("POS", "edge", I.as_int(a))
+    # SCI1 doVerb item-use: `(== param1 <msg>)` where param1 is the clicked icon's message (see
+    # vocab.doverb_item_messages) and <msg> is an inventory item's message -> the player is USING
+    # that item, i.e. OWN(item index). Only inside a doVerb body (_VERB_PARAM set) so a parameter
+    # compared elsewhere is never misread; _ITEM_MSG excludes base verbs, so a verb number falls
+    # through to opaque = free player choice. `!=` carries no ownership info (like curInvIcon).
+    if _VERB_PARAM is not None and _ITEM_MSG:
+        for x, y in ((a, b), (b, a)):
+            if (isinstance(x, dict) and x.get("t") == "Variable" and x.get("vtype") == "Parameter"
+                    and x.get("index") == _VERB_PARAM and I.as_int(y) in _ITEM_MSG):
+                return Pred("OWN", var=_ITEM_MSG[I.as_int(y)]) if op == "==" else None
     # property / onControl / distance compares -> opaque (control-map / undecidable)
     return Pred("OPAQUE")
 
@@ -133,6 +174,28 @@ def item_prop_read(n):
         if not params and (it, sel) in _IPROPS:
             return (it, sel)
     return None
+
+
+def _item_loc_read(n):
+    """`((Inv at: N) <locationprop>:)` -> item N, else None. The location property is derived per
+    game (`owner`), so this is the direct-read form of `ownedBy:` -- same store, same LOC pred.
+    Returns None before the vocabulary is installed or on a non-item send."""
+    if _VOCAB is None or not (isinstance(n, dict) and n.get("t") == "Send"):
+        return None
+    recv, msgs = I.send_pairs(n)
+    it = _at_item(recv)
+    if it is None:
+        return None
+    return it if any(sel == _VOCAB.prop and not params for sel, params in msgs) else None
+
+
+def _is_curinvicon(n):
+    """`(<iconbar> curInvIcon:)` -- the inventory item OBJECT the player has selected. KQ6/QFG/Dagger
+    compare it directly to `(inv at: N)`; KQ5 wraps it in `indexOf` (see ir.is_selected_item)."""
+    if not (isinstance(n, dict) and n.get("t") == "Send"):
+        return False
+    _recv, msgs = I.send_pairs(n)
+    return any(sel == "curInvIcon" for sel, _params in msgs)
 
 
 def _at_item(n):
@@ -165,6 +228,13 @@ EGO = V.EGO      # destination sentinel: the item is now HELD
 _VOCAB = None    # installed by extract(); one game per process
 _IPROPS = {}     # (item, property) -> values written -- the FOURTH store, discovered
 #   the same way gating registers are: written AND read. See vocab.item_property_registers.
+_ITEM_MSG = {}   # SCI1 doVerb: item message-number -> inventory index (vocab.doverb_item_messages).
+#   Empty on SCO0, so the doVerb item-use recognizer below is inert on LSL2/KQ4/KQ5.
+_VERB_PARAM = None   # while walking a `doVerb` body, the Parameter index of its verb-or-item arg
+#   (SCI1 param1); None everywhere else. Scopes the item-use recognition to doVerb, so a parameter
+#   compared in any other method is never misread as an item. Cleared when following a call.
+_DOVERB_PARAM = 1    # `(method (doVerb param1) ...)` -- param1 is Parameter index 1 in the IR
+#   (uniformly, across every SCI1/1.1 doVerb: it is the method's single argument, the clicked verb).
 
 
 def install_vocabulary(ir):
@@ -176,10 +246,11 @@ def install_vocabulary(ir):
     from the store wrapper's holder globals and the Game loop respectively, so the extraction reads
     the game's own layout instead of assuming the SCI template's 0/11. Both fall back to the
     template default only when a game has no derivable store or Game loop."""
-    global _VOCAB, _IPROPS, _EGO, _CURROOM
+    global _VOCAB, _IPROPS, _EGO, _CURROOM, _ITEM_MSG
     _VOCAB = V.Vocabulary.from_ir(ir)
     _IPROPS = (V.item_property_registers(ir, _VOCAB.store_class, _VOCAB.prop, _at_item)
                if _VOCAB else {})
+    _ITEM_MSG = V.doverb_item_messages(ir)
     holders = frozenset().union(*_VOCAB.holders.values()) if _VOCAB and _VOCAB.holders else frozenset()
     _EGO = holders or frozenset({0})
     _CURROOM = current_room_global(ir)
@@ -315,6 +386,12 @@ class TS:
     #   value is an int or "inc". The FOURTH store -- state living in an item's own property.
     #   Breaking the shovel and spending an arrow are written here, and they mean the same thing
     #   as losing the item: its uses stop accepting it.
+    placed: dict = field(default_factory=dict)  # item -> {room, ...}: rooms the item's owner is
+    #   WRITTEN to (a `put`/`moveTo` to a room, not to the ego). These are the owner STATE's
+    #   transitions to a location: an owner-gate `owner == R` is a real item requirement only when R
+    #   is a room the item is PLACED at, versus R being its initial resting spot (the pie is thrown
+    #   to room 36 -- `put: 2 36` -- so the yeti's `owner == 36` needs the pie; KQ4's fruit is only
+    #   ever at owner 78 because it STARTS on the tree, never `put` there, so it is not a placement).
 
 
 def _conj(pc):
@@ -651,7 +728,8 @@ class Extractor:
                     self._cur_obj = o.name
                     for mname, meth_ast in o.methods.items():
                         self._walk(room, meth_ast, [], rgn, set(),
-                                   movement=(mname != "changeState"))
+                                   movement=(mname != "changeState"),
+                                   verb_param=(_DOVERB_PARAM if mname == "doVerb" else None))
                 self._cur_obj = ""
         # SCRIPTS LOADED BY `ScriptID` -- see scriptid_refs. Walked with the referencing site's
         # path condition, in the scope that loaded them.
@@ -666,7 +744,8 @@ class Extractor:
                 self._cur_obj = o.name
                 for mname, meth_ast in o.methods.items():
                     self._walk(room, meth_ast, list(pc), tgt, set(),
-                               movement=(mname != "changeState"))
+                               movement=(mname != "changeState"),
+                               verb_param=(_DOVERB_PARAM if mname == "doVerb" else None))
             self._cur_obj = ""
         for n, s in room_scripts.items():
             self._nav_edges(n, s)
@@ -677,7 +756,8 @@ class Extractor:
                     # duplicate them as free flat edges. Items still captured. Procedures
                     # are FOLLOWED in-context (below), not walked standalone -- a proc
                     # walked context-free would emit its newRoom as a free bypass.
-                    self._walk(n, meth_ast, [], n, set(), movement=(mname != "changeState"))
+                    self._walk(n, meth_ast, [], n, set(), movement=(mname != "changeState"),
+                               verb_param=(_DOVERB_PARAM if mname == "doVerb" else None))
             self._cur_obj = ""
             self._inherit_arming(n)
         # add any newRoom target we saw as a room
@@ -743,15 +823,24 @@ class Extractor:
             if et and et != 0xffff:
                 self.ts.edges.append(Edge(room_num, et))
 
-    def _walk(self, room, node, pc, script, seen, movement=True):
+    def _walk(self, room, node, pc, script, seen, movement=True, verb_param=None):
         """Compose path conditions and record effects (newRoom, item transfers), FOLLOWING calls
         in context. `movement=False` for a changeState body: the MACHINE owns those newRoom exits,
         so a free flat duplicate would bypass the gate. Items are always captured (duplicate
         acquisition is monotone).
 
+        `verb_param` is the Parameter index of a `doVerb` method's verb-or-item arg (SCI1's param1),
+        or None. It scopes the doVerb item-use recognition (see _cmp_atom) to the doVerb body itself:
+        set on entry, and cleared while FOLLOWING a call, so a followed proc's own param1 is never
+        mistaken for the clicked item.
+
         Control flow comes from `walk_stream` / `ir.control_shape`. This used to re-implement
         If/Cond/Switch/Loop itself, in code all but identical to opmodel's and machine's --
         which is how `Loop` came to be missing from two of the three."""
+        global _VERB_PARAM
+        saved_verb_param = _VERB_PARAM
+        _VERB_PARAM = verb_param
+
         def enter_loop(n):
             prev = self._list_loop
             self._list_loop = prev or _walks_a_list(n)
@@ -771,9 +860,14 @@ class Extractor:
                 name = n.get("name")
                 body = self.procs_by.get((tgt, name))
                 if tgt != 255 and body is not None and name not in seen:
+                    # verb_param defaults to None: a followed proc is not a doVerb body, so its own
+                    # param1 must not be read as the clicked item.
                     self._walk(room, body, p, tgt, seen | {name}, movement)
 
-        walk_stream(node, pc, leaf, enter_loop)
+        try:
+            walk_stream(node, pc, leaf, enter_loop)
+        finally:
+            _VERB_PARAM = saved_verb_param
 
     def _pending_room_assignment(self, room, node, pc):
         """`(= gNewRoomNum 57)` -- a room change written at the engine level instead of as
@@ -899,6 +993,10 @@ class Extractor:
                 if tr is not None and tr[1] == EGO:
                     self.ts.items.add(tr[0])
                     self.ts.acqs.append(Acq(tr[0], room, _conj(pc)))
+                elif tr is not None and isinstance(tr[1], int) and tr[1] > 0:
+                    # a transfer to a ROOM (not the ego, not -1/nowhere): the item is PLACED there.
+                    # This is the owner state's transition to a location -- see TS.placed.
+                    self.ts.placed.setdefault(tr[0], set()).add(tr[1])
 
     def _global_room_values(self, room, gi):
         """Room numbers a `newRoom:` global can hold, from switch-on-G case labels and

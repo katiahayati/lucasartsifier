@@ -525,6 +525,185 @@ def lower_death_procs(ir, proc_names, death_value=1):
     return synth, len(targets)
 
 
+# ---- the game-flag store: a bit-array of booleans, DERIVED like every other store -------------
+# Later Sierra games keep hundreds of one-bit progress flags packed into a global array and reach
+# them through a tiny accessor: `[globalBASE (/ n 16)]` masked by a single bit `(<< 1 (mod n 16))`
+# (or the mirror `(>> $8000 (mod n 16))`). This is NOT "the SCI1 flag system" to be gated behind a
+# version check -- it is a STORE, recognised by its shape exactly as gating registers and the
+# item-location store are. A game that has it yields one; a game that does not (LSL2, KQ4) yields
+# nothing and nothing downstream changes. The single-bit shift-by-`(mod _ 16)` is the signature:
+# nothing else in a game shifts 1 (or $8000) by a value mod 16.
+#
+# The accessor's PACKAGING varies and must not be assumed: KQ5 has ONE op-dispatched proc
+# `localproc(op, n)` with thin public wrappers (`proc0_12(n) = localproc(1, n)`), while KQ6, Dagger
+# and QFG1 expose THREE standalone procs (test/set/clear, no toggle). `derive_flags` classifies each
+# touching proc by the OPERATOR it applies to the array word -- `&` reads (test), `|=` sets, `&= ~`
+# clears, `^=` toggles -- and, for a dispatcher, follows its wrappers to fix each one's op.
+_FLAG_WRITE_OPS = {"AssignmentBinOr": "set", "AssignmentBinAnd": "clear", "AssignmentXor": "toggle"}
+
+
+def _single_bit_mask(n):
+    """`(<< 1 (mod X 16))` or `(>> $8000 (mod X 16))` -- one bit selected within a 16-bit word."""
+    if not isinstance(n, dict):
+        return False
+    t, ks = n.get("t"), n.get("kids") or []
+    if t == "Shl" and len(ks) == 2 and I.as_int(ks[0]) == 1:
+        m = ks[1]
+    elif t == "Shr" and len(ks) == 2 and I.as_int(ks[0]) in (-32768, 32768):
+        m = ks[1]
+    else:
+        return False
+    return isinstance(m, dict) and m.get("t") == "Mod" and I.as_int((m.get("kids") or [0, 0])[1]) == 16
+
+
+def _flag_word_base(n):
+    """`[globalBASE <wordindex>]` -> BASE, else None. The word of the flag array being addressed."""
+    if isinstance(n, dict) and n.get("t") == "ComplexVariable":
+        ks = n.get("kids") or []
+        if ks and I.is_global(ks[0]):
+            return ks[0]["index"]
+    return None
+
+
+def _flag_write_op(node, base):
+    """This node writes the flag word of `base` in place -> 'set'/'clear'/'toggle', else None."""
+    op = _FLAG_WRITE_OPS.get(node.get("t"))
+    if op and any(_flag_word_base(k) == base for k in (node.get("kids") or [])):
+        return op
+    return None
+
+
+def _proc_touches_flags(body):
+    """(base, write_ops, reads) if `body` masks a global array word with a single bit, else None."""
+    if not any(_single_bit_mask(n) for n in I.walk(body)):
+        return None
+    base = next((_flag_word_base(n) for n in I.walk(body) if _flag_word_base(n) is not None), None)
+    if base is None:
+        return None
+    wops = {_flag_write_op(n, base) for n in I.walk(body)} - {None}
+    reads = any(n.get("t") == "BinAnd" and any(_flag_word_base(k) == base for k in (n.get("kids") or []))
+                for n in I.walk(body))
+    return base, wops, reads
+
+
+def _flag_switch_map(body, base):
+    """A dispatcher's `(switch op ...)` -> {op-value: op-kind}. The op is the switched PARAMETER;
+    each case's kind is read from the write it performs on the flag word (a break/read case is a
+    test). KQ5's `localproc` dispatches op 0->set, 1->test, 2->clear, 3->toggle exactly this way."""
+    for n in I.walk(body):
+        if n.get("t") != "Switch":
+            continue
+        ks = n.get("kids") or []
+        head = ks[0] if ks else None
+        if not (head and head.get("t") == "Variable" and head.get("vtype") == "Parameter"):
+            continue
+        m = {}
+        for c in ks[1:]:
+            if c.get("t") != "Case":
+                continue
+            ck = c.get("kids") or []
+            if len(ck) < 2 or I.as_int(ck[0]) is None:
+                continue
+            m[I.as_int(ck[0])] = next((_flag_write_op(x, base) for x in I.walk(ck[1])
+                                       if _flag_write_op(x, base)), "test")
+        return m
+    return None
+
+
+def _localproc_offset(name):
+    """A local proc's registry key is `localproc_<hexoffset>`; a LocalCall targets it by that same
+    offset (as a decimal `offset` field), NOT by the index name it also carries. Return the offset."""
+    if name.startswith("localproc_"):
+        try:
+            return int(name.split("_", 1)[1], 16)
+        except ValueError:
+            return None
+    return None
+
+
+def derive_flags(ir):
+    """The game's boolean-flag store: (base_global, {proc_name: op}) with op in
+    test/set/clear/toggle, or None if the game keeps no bit-array flags (LSL2/KQ4).
+
+    `proc_name` is a proc whose calls carry flag NUMBERS as arguments -- a standalone test/set/clear
+    proc, or a public wrapper over an op-dispatched accessor. The caller (`lower_flags`) rewrites
+    those calls into synthetic per-flag globals so the register machinery models each flag as an
+    ordinary gating register, with no notion of 'flags' anywhere downstream."""
+    acc = {}
+    for s in ir.scripts.values():
+        for name, body in s.procs.items():
+            tr = _proc_touches_flags(body)
+            if tr:
+                acc[name] = (tr, body)
+    if not acc:
+        return None
+    from collections import Counter
+    base = Counter(v[0][0] for v in acc.values()).most_common(1)[0][0]
+    procs, dispatchers = {}, {}
+    for name, ((b, wops, reads), body) in acc.items():
+        if b != base:
+            continue
+        if len(wops) > 1:               # applies several ops -> an op-dispatched accessor
+            dispatchers[name] = body
+        elif len(wops) == 1:            # a single-op writer: set / clear / toggle
+            procs[name] = next(iter(wops))
+        elif reads:                     # reads only: a test
+            procs[name] = "test"
+    for dname, dbody in dispatchers.items():
+        sm = _flag_switch_map(dbody, base) or {}
+        doff = _localproc_offset(dname)
+        for s in ir.scripts.values():
+            for name, body in s.procs.items():
+                calls = [n for n in I.walk(body) if n.get("t") == "LocalCall"]
+                if len(calls) != 1 or calls[0].get("offset") != doff:
+                    continue
+                a = calls[0].get("kids") or []
+                if a and I.as_int(a[0]) in sm:
+                    procs[name] = sm[I.as_int(a[0])]
+    return base, procs
+
+
+def lower_flags(ir, base_global, flag_procs):
+    """Rewrite every call to a test/set/clear flag proc with LITERAL flag arguments into a
+    synthetic per-flag global read or write, IN PLACE, so a flag becomes an ordinary global the
+    gating-register machinery already promotes. Flag N maps to `synth_base + N`, one contiguous
+    block past the highest global in use (so it clears both the real globals and any synthetic
+    death flag lowered earlier). A `(proc0_12 15)` test becomes a read of that global; `(proc0_9 15)`
+    set becomes `(= gSYNTH15 1)`; clear writes 0.
+
+    Toggle calls and non-literal flag arguments are left unlowered -- a bounded, SOUND gap: an
+    unmodelled write cannot invent a stranding, only miss one. Returns (synth_base, lowered, skipped)."""
+    max_gi, calls = 0, []
+    for s in ir.scripts.values():
+        bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for node in I.walk(body):
+                if I.is_global(node):
+                    max_gi = max(max_gi, node["index"])
+                elif node.get("t") in ("PublicCall", "LocalCall") and node.get("name") in flag_procs:
+                    calls.append(node)
+    synth_base = max_gi + 1
+    lowered = skipped = 0
+    for node in calls:
+        op = flag_procs[node["name"]]
+        flags = [I.as_int(k) for k in (node.get("kids") or []) if I.as_int(k) is not None]
+        if op == "toggle" or not flags:
+            skipped += 1
+            continue
+        if op == "test":
+            node.clear()
+            node.update({"t": "Variable", "vtype": "Global", "index": synth_base + flags[0]})
+        else:
+            val = 1 if op == "set" else 0
+            assigns = [{"t": "Assignment",
+                        "kids": [{"t": "Variable", "vtype": "Global", "index": synth_base + f},
+                                 {"t": "Number", "value": val}]} for f in flags]
+            node.clear()
+            node.update(assigns[0] if len(assigns) == 1 else {"t": "List", "kids": assigns})
+        lowered += 1
+    return synth_base, lowered, skipped
+
+
 def derive_debug(ir):
     """Globals TOGGLED with `^=` -- what a debug menu checkbox compiles to.
 
@@ -586,7 +765,78 @@ def item_names(ir):
     names, n = {}, 0
     for sn in sorted(ir.scripts):
         for o in ir.scripts[sn].objects:
-            if not o.is_class and o.species in fam:
+            # An INSTANCE resolves its class via `super`: SCI1.1 (heap format) encodes an instance's
+            # own `species` as 0xffff and puts the class species in `super`, while SCO0/SCI1(KQ5) put
+            # the class species in BOTH. So `species` alone matched nothing on KQ6/QFG-VGA/Dagger.
+            # Checking both mirrors the store-family resolver above (Vocabulary.find_stores) and is
+            # byte-identical on LSL2/KQ4/KQ5 (there species==super for every item instance).
+            if not o.is_class and (o.super in fam or o.species in fam):
                 names[n] = re.sub(r"[^0-9A-Za-z]+", "_", o.name).strip("_")
                 n += 1
     return names
+
+
+def _instance_class_species(o):
+    """The species of the class an INSTANCE instantiates. SCI1.1 (heap format) stores 0xffff in an
+    instance's own `species` and the class species in `super`; SCO0/SCI1 store the class species in
+    both. So `super` is the class for a sentinel instance, `species` otherwise -- and they agree on
+    SCO0 (see item_names)."""
+    return o.super if o.species == 65535 else o.species
+
+
+def doverb_item_messages(ir):
+    """message-number -> inventory INDEX, for SCI1's `doVerb` item-use dispatch.
+
+    SCI1 replaced SCO0's parser with a point-and-click icon bar: `(feature doVerb: (curIcon
+    message:))`, so `doVerb`'s param1 is the SELECTED ICON's `message`. For a verb icon that message
+    is a base verb (look / do / talk -- a free player choice); for an inventory item used AS the verb
+    it is the item's own `message` property. So `(== param1 <item.message>)` inside a doVerb means the
+    player is USING that item -- an OWN requirement, the same one `curInvIcon == N` yields, but keyed
+    on the item's message instead of read from curInvIcon. In KQ6 this, not curInvIcon, is where the
+    room puzzles express "use item X"; the guard was going OPAQUE (param1 is a method Parameter), so
+    every such requirement was invisible.
+
+    Returns message -> inventory index (the OWN key, = item_names declaration order). Only messages
+    that UNIQUELY identify one inventory item and are NOT also a base-verb-icon message are kept, so a
+    verb is never misread as an item (the two spaces do not overlap in KQ6, but the exclusion makes
+    that a checked fact rather than an assumption). Empty on SCO0 -- no icon bar, items carry no
+    `message` -- so the whole mechanism is inert on LSL2/KQ4/KQ5 (verified: 0 messages mapped)."""
+    voc = Vocabulary.from_ir(ir)
+    if voc is None:
+        return {}
+    invbase = ir.find_class(voc.store_class)
+    if invbase is None:
+        return {}
+    sup = {o.species: o.super for s in ir.scripts.values() for o in s.objects if o.is_class}
+
+    def descends(sp, target, seen=()):
+        if target is None:
+            return False
+        if sp == target:
+            return True
+        if sp in seen or sp not in sup:
+            return False
+        return descends(sup[sp], target, seen + (sp,))
+
+    invfam = {sp for sp in sup if descends(sp, invbase.species)} | {invbase.species}
+    iconI = ir.find_class("IconI")   # the icon-bar base; a verb icon is an IconI that is NOT an item
+    iconsp = iconI.species if iconI else None
+    iconfam = {sp for sp in sup if descends(sp, iconsp)} | ({iconsp} if iconsp else set())
+
+    base_verbs, counts, msg_idx, idx = set(), {}, {}, 0
+    for sn in sorted(ir.scripts):
+        for o in ir.scripts[sn].objects:
+            if o.is_class:
+                continue
+            cls = _instance_class_species(o)
+            if cls in invfam:
+                m = o.props.get("message")
+                if m is not None:
+                    counts[m] = counts.get(m, 0) + 1
+                    msg_idx.setdefault(m, idx)
+                idx += 1              # inventory index tracks item_names' declaration order
+            elif cls in iconfam:
+                m = o.props.get("message")
+                if m is not None and m != 65535:
+                    base_verbs.add(m)
+    return {m: i for m, i in msg_idx.items() if counts[m] == 1 and m not in base_verbs}

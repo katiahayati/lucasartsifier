@@ -87,6 +87,41 @@ def _own_required(guard):
     return walk(guard, True)
 
 
+def _loc_placed_required(guard, placed):
+    """Items required by a POSITIVE owner-gate `owner == R` where R is a room the item is PLACED at
+    (a `put`/`moveTo` writes its owner to R -- see extract.TS.placed). Reaching `owner == R` for a
+    placed room means the item was actively put there, which required holding it, so the item is
+    required wherever the gate is. A gate on the item's INITIAL resting room -- never written, so
+    not in `placed` -- is the 'is it still there?' check (KQ4's fruit `owner == 78`) and contributes
+    nothing. Same De Morgan polarity as `_own_required`: an owner-gate inside an OR-branch is not
+    required, because another branch may satisfy the guard. This is the state-grounded reading of
+    the owner-gate the source heuristic could not give: the writes ARE the owner's transitions, so
+    'use it in the room you got it' is a placement like any other and correctly requires the item."""
+    def walk(g, pol):
+        if g is None:
+            return set()
+        if isinstance(g, list):
+            out = set()
+            for x in g:
+                out |= walk(x, pol)
+            return out
+        if isinstance(g, Pred):
+            if (g.kind == "LOC" and pol and isinstance(g.value, int)
+                    and g.value in placed.get(g.var, ())):
+                return {g.var}
+            return set()
+        if isinstance(g, GNot):
+            return walk(g.kid, not pol)
+        if isinstance(g, (GAnd, GOr)):
+            union = pol == isinstance(g, GAnd)
+            sets = [walk(k, pol) for k in g.kids]
+            if not sets:
+                return set()
+            return set().union(*sets) if union else set.intersection(*sets)
+        return set()
+    return walk(guard, True)
+
+
 def _after(info, tr, gr, goal_ok):
     """Can the goal still be reached AFTER taking this transition?"""
     if tr[0] == "DEATH":
@@ -304,6 +339,8 @@ def build_maps(em):
     def req(guard, room):
         for it in _own_required(guard):     # OR-branch items are NOT required -- see _own_required
             req_item(it, room)
+        for it in _loc_placed_required(guard, em.ts.placed):   # owner-gate on a PLACED room
+            req_item(it, room)
     for e in em.ts.edges:
         req(e.guard, e.src)
     for e in em.ts.cs_edges:
@@ -483,24 +520,67 @@ def entry_alts(info):
     losing EITHER is survivable while losing BOTH strands you. An empty tuple means no entry
     reaches K (treat as ungated); an alternative that is itself empty means K can be armed with
     no items at all, so the gate is free."""
-    succ = defaultdict(set)
-    for K, paths in info["states"].items():
-        for (g, w, gg, c, tr) in paths:
-            if tr[0] == "ADVANCE":
-                succ[K].add(K + 1)
-            elif tr[0] == "JUMP":
-                succ[K].add(tr[1])
-            elif tr[0] == "SETSTATE":
-                succ[K].add(tr[1] + 1)
+    # Which states each entry reaches -- CARRIED-LOCAL aware. The successor walk threads the locals
+    # the arming context wrote (info["entry_locals"], parallel to entries) and prunes an ADVANCE
+    # whose guard tests a CARRIED local the entry does not satisfy. knockDoor's "open the door" entry
+    # carries no local1, so at the door state its only advancing path (the `if local1` branch) is
+    # pruned and no other path advances -- a genuine ABORT -- so it never reaches the newRoom:18
+    # state to dilute the staff requirement. Crucially this prunes only on a FULL abort (no path
+    # advances): a machine that merely branches on a carried local still advances via its other
+    # path. A machine with NO carried locals (the common case, ~all of LSL2/KQ4) threads {} and takes
+    # every advance exactly as the old guard-ignoring graph did -- byte-for-byte identical.
+    from compile import _ctr_holds
+    def _paired(es_key, loc_key):
+        # Pad locals to the entry count with {} rather than zip-truncating: a machine whose entries
+        # carry no recorded locals (every synthetic test, and any entry opmodel didn't annotate)
+        # must still contribute its entry, threading no carried local -- the old behaviour. A bare
+        # zip silently DROPPED such entries, emptying entry_alts and ungating the EXIT.
+        es = list(info.get(es_key, ()))
+        locs = list(info.get(loc_key, ()))
+        locs += [{}] * (len(es) - len(locs))
+        return list(zip(es, locs))
+    ents = _paired("entries", "entry_locals") + _paired("init_entries", "init_entry_locals")
+    carried = set().union(*[set(loc) for _ke, loc in ents]) if ents else set()
+
+    def _ctr_ok(g, counters):
+        for a in g:                                # g is a path's atom list (a conjunction)
+            if isinstance(a, tuple) and a and a[0] == "CTR" and a[1] in carried and not _ctr_holds(a, counters):
+                return False
+        return True
+
+    def _apply(counters, cw):
+        c = dict(counters)
+        for (name, kind, val) in cw:
+            if name not in carried:
+                continue                           # track only carried locals -> bounded state space
+            c[name] = val if kind == "set" and val is not None else \
+                c.get(name, 0) + (1 if kind == "inc" else -1 if kind == "dec" else 0)
+        return c
+
     per_entry = []
-    for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
-        seen, q = {K}, [K]
-        while q:
-            u = q.pop()
-            for v in succ.get(u, ()):
-                if v not in seen:
-                    seen.add(v)
-                    q.append(v)
+    for (K, eg), loc in ents:
+        seen, visited = set(), set()
+        stack = [(K, {n: v for n, v in loc.items() if n in carried})]
+        while stack:
+            if len(visited) > 4000:                # a carried local inc'd in a loop can blow up the
+                seen |= set(info["states"])         # (state, counters) space; fall back to permissive
+                break                               # (all states reachable) rather than under-report
+            u, counters = stack.pop()
+            key = (u, tuple(sorted(counters.items())))
+            if key in visited:
+                continue
+            visited.add(key)
+            seen.add(u)
+            for (g, w, gg, c, tr) in info["states"].get(u, ()):
+                if not _ctr_ok(g, counters):
+                    continue
+                nc = _apply(counters, c)
+                if tr[0] == "ADVANCE":
+                    stack.append((u + 1, nc))
+                elif tr[0] == "JUMP":
+                    stack.append((tr[1], nc))
+                elif tr[0] == "SETSTATE":
+                    stack.append((tr[1] + 1, nc))
         per_entry.append((seen, frozenset(_own_positive(eg))))
     out = {}
     for K in info["states"]:
@@ -1412,6 +1492,74 @@ class IrSccReach(SccReach):
                             "source_rooms": sorted(srcs), "doors": sorted(doors)})
         return out
 
+    def _pocket_leavable(self, pocket, Y):
+        """Can you exit `pocket` to an outside room WITHOUT owning Y? False only if every
+        pocket-exit edge REQUIRES Y in all its alternatives (Y forced, so not missable)."""
+        for p in pocket:
+            for q in self.edges.get(p, set()):
+                if q in pocket:
+                    continue
+                metas = self._emeta.get((p, q))
+                if not metas:
+                    return True                  # ungated exit -> leavable
+                if any(any(Y not in alt for alt in alts) for (req, sets, alts) in metas):
+                    return True                  # some alternative needs no Y
+        return False
+
+    def toll_strandings(self):
+        """One-visit-pocket strandings -- the consumed-gate class (softlock class 4).
+
+        An edge a->b whose LONE item-gate X is SPENT crossing it (X dropped or one-way placed at a,
+        and no longer re-acquirable from a) is a TOLL: it can be paid once. Cutting the toll edge
+        leaves a POCKET of rooms reachable ONLY through it (b is dominated by the toll -- a pure
+        room-graph fact, so the desert grid that walls off the gate-aware projections cannot
+        confound it). A required item whose every source sits in that pocket, still needed outside
+        it, and leavable without taking it, is stranded: you can walk out empty-handed and the toll
+        is already spent.
+
+        KQ5's temple: the Staff(7) breaks opening rm18 (`put: 7 214`), so rm18 is a one-visit
+        pocket and the Brass_Bottle(6)/Gold_Coin(11) inside become unreachable once you leave
+        without them. The reobtainable(X) filter keeps this silent on LSL2/KQ4 -- every candidate
+        gate item there (Vine, Ashes, Sand, Lottery_Ticket, Talisman) is re-obtainable, so neither
+        game has a one-way toll and this returns [] for both."""
+        placed = getattr(self.em.ts, "placed", {})
+        start = self.em.cfg.start_room
+        full = self.reach_rooms
+        out, seen = [], set()
+        for (a, b), metas in sorted(self._emeta.items()):
+            if a not in full:
+                continue
+            gates = {next(iter(alt)) for (req, sets, alts) in metas
+                     for alt in alts if len(alt) == 1}
+            for X in sorted(gates):
+                spent = a in self.drops.get(X, set()) or a in placed.get(X, set())
+                if not spent or a in self.reobtainable_rooms(X):
+                    continue                     # not spent here, or spent but re-gettable -> benign
+                cut = {u: (v - {b} if u == a else v) for u, v in self.edges.items()}
+                pocket = full - reachable(cut, {start})
+                if b not in pocket:
+                    continue                     # b reachable another way -> not a sealed pocket
+                for Y in sorted(self.required):
+                    if Y == X:
+                        continue
+                    srcs = self.sources.get(Y, set())
+                    if not srcs or not (srcs <= pocket):
+                        continue                 # obtainable outside the pocket
+                    if not (self.required.get(Y, set()) - pocket):
+                        continue                 # only needed inside -> taking it there suffices
+                    if not self._pocket_leavable(pocket, Y):
+                        continue                 # every exit demands Y -> forced, not missable
+                    k = (Y, a, b)
+                    if k in seen:
+                        continue
+                    seen.add(k)
+                    out.append({"pattern": "one-visit-toll-pocket", "item": Y,
+                                "item_name": self.g.item_name(Y), "toll_item": X,
+                                "toll_item_name": self.g.item_name(X),
+                                "toll_edge": [a, b], "pocket": sorted(pocket),
+                                "source_rooms": sorted(srcs)})
+        return out
+
 
 def load(cfg=None, ir_path=None):
     cfg = cfg or config.ACTIVE
@@ -1447,6 +1595,13 @@ def load(cfg=None, ir_path=None):
         cfg = dataclasses.replace(cfg, debug_globals=frozenset(V.derive_debug(ir)))
     if not cfg.death_signal:
         cfg = dataclasses.replace(cfg, death_signal=sig)   # so reports show what was derived
+    # Flag store: lower the game's boolean-flag bit-array into synthetic per-flag globals, so each
+    # flag becomes an ordinary gating register with nothing downstream aware of "flags" (see
+    # vocab.derive_flags). Runs after death lowering so the synthetic block clears the death flag
+    # too. A no-op on games with no bit-array store -- LSL2/KQ4 have none, so they are untouched.
+    flags = V.derive_flags(ir)
+    if flags:
+        V.lower_flags(ir, flags[0], flags[1])
     d_gi, d_val = sig[0], (sig[1] if len(sig) > 1 else None)
     is_death = (lambda gi, v: gi == d_gi and v == d_val) if d_val is not None else \
                (lambda gi, v: gi == d_gi and bool(v))
