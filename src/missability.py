@@ -557,6 +557,22 @@ def entry_alts(info):
                 c.get(name, 0) + (1 if kind == "inc" else -1 if kind == "dec" else 0)
         return c
 
+    per_entry = _entry_reach_walk(info, ents, carried, _ctr_ok, _apply)
+    out = {}
+    for K in info["states"]:
+        out[K] = tuple({frozenset(_own_positive(eg)) for (seen, eg) in per_entry if K in seen})
+    return out
+
+
+def _entry_reach_walk(info, ents, carried, _ctr_ok, _apply):
+    """[(states this entry can reach, its guard)] -- the ONE entry-reachability walk.
+
+    Factored out because two views need it: `entry_alts` (which items arm a state) and
+    `entry_reqs` (which registers every arming establishes). An entry-reachability rule
+    implemented in two places is this project's most-repeated bug -- see test_walkers."""
+    cached = info.get("_entry_reach")
+    if cached is not None:
+        return cached
     per_entry = []
     for (K, eg), loc in ents:
         seen, visited = set(), set()
@@ -581,11 +597,45 @@ def entry_alts(info):
                     stack.append((tr[1], nc))
                 elif tr[0] == "SETSTATE":
                     stack.append((tr[1] + 1, nc))
-        per_entry.append((seen, frozenset(_own_positive(eg))))
+        per_entry.append((seen, eg))
+    info["_entry_reach"] = per_entry
+    return per_entry
+
+
+def entry_reqs(info, regs):
+    """State K -> {register: allowed values} that EVERY entry reaching K establishes.
+
+    The REGISTER twin of `entry_alts`, and deliberately the opposite composition. Items are a
+    DISJUNCTION -- arm the machine any way you can, so holding one alternative suffices. A
+    register requirement is a MUST: it may be carried onto the exit only if every way of arming
+    the machine pins it, because a single unconstrained entry means the machine can be reached
+    with the register at any value (the same soundness rule `_build_product` applies to ordered
+    writes).
+
+    Without this the exit edge inherited its entry's ITEM gates but silently dropped its FLAG
+    gates -- so a cutscene armed only while a flag is clear (KQ6's sacred-water rm350->rm370,
+    armed only when flag 174 is still 0) came out a free walk."""
+    reach = _entry_reach_walk_of(info)
+    per = []
+    for (seen, eg) in reach:
+        per.append((seen, {R: v for R, v in ((R, required_values(eg, R)) for R in regs) if v}))
     out = {}
     for K in info["states"]:
-        out[K] = tuple({owns for (seen, owns) in per_entry if K in seen})
+        ds = [d for (seen, d) in per if K in seen]
+        if not ds:
+            continue
+        common = {R: set().union(*(d[R] for d in ds))
+                  for R in set(ds[0]).intersection(*(set(d) for d in ds))}
+        if common:
+            out[K] = common
     return out
+
+
+def _entry_reach_walk_of(info):
+    """`entry_alts` populates the cache; call it if nothing has yet."""
+    if info.get("_entry_reach") is None:
+        entry_alts(info)
+    return info.get("_entry_reach") or []
 
 
 def blocked(alts, banned):
@@ -627,14 +677,20 @@ def edge_meta(em, regs):
         meta[(e.src, e.dst)].append((reqs(e.guard), {}, (frozenset(_own_positive(e.guard)),)))
     for info in em.machines:
         eo = entry_alts(info)
+        er = entry_reqs(info, regs)
         for K, paths in info["states"].items():
             for (g, w, gg, c, tr) in paths:
                 if tr and tr[0] == "EXIT":
                     exit_own = frozenset(_own_positive(g))
                     alts = eo.get(K) or (frozenset(),)
                     sets = {gi: v for (gi, v) in w if gi in regset}
+                    # The exit inherits its ENTRY's register requirements as well as its item
+                    # ones. Both must hold, so a register constrained in both places INTERSECTS.
+                    rq = reqs(g)
+                    for R, vals in er.get(K, {}).items():
+                        rq[R] = (rq[R] & vals) if R in rq else set(vals)
                     meta[(info["room"], tr[1])].append(
-                        (reqs(g), sets, tuple(exit_own | a for a in alts)))
+                        (rq, sets, tuple(exit_own | a for a in alts)))
     return meta
 
 
@@ -1615,6 +1671,11 @@ def load(cfg=None, ir_path=None):
     flags = V.derive_flags(ir)
     if flags:
         V.lower_flags(ir, flags[0], flags[1])
+    # SECOND flag store: the same bit-in-a-word abstraction kept in an object's PROPERTY words
+    # instead of a global array (SCI1.1 regions do this). Lowered to the same synthetic globals,
+    # after lower_flags so the two synthetic blocks cannot overlap. Games without it are
+    # untouched -- LSL2/KQ4/KQ5/QFG-VGA/Dagger have zero sites, KQ6 has 329.
+    V.lower_prop_flags(ir, V.derive_prop_flags(ir))
     d_gi, d_val = sig[0], (sig[1] if len(sig) > 1 else None)
     is_death = (lambda gi, v: gi == d_gi and v == d_val) if d_val is not None else \
                (lambda gi, v: gi == d_gi and bool(v))

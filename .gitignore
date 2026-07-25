@@ -22,6 +22,9 @@ KATIA_README
 # one-off probes and the control-oracle proof-of-concept (incl. rendered game art)
 tools/probe_*.py
 tools/pic-oracle/
+
+# GPL ScummVM SCI engine — local read-only reference for semantics study; NEVER commit
+tools/scummvm-ref/
 docs/ROADMAP.md
 docs/NOTES-control-oracle-integration.md
 docs/DESIGN-positional-model.md

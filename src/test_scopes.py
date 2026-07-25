@@ -370,9 +370,17 @@ def test_resource_exhaustion():
             # A0n(2): the unicorn ROAMS (regUnicorn writes global124 to 20/26/27), so the bow's
             # arrow-spend there is ONE encounter, not three -- collapsed to a single roaming row.
             bow_roam = [r for r in rows if r["item"] == 14 and "at_rooms" in r]
+            # `still_needed_at` also carries rm3 -- the bow's OWN SOURCE room. Room3 tests
+            # `(global0 has: 14)` to choose a LOOK MESSAGE (`proc255_0 3 14` / `3 17`); the branch
+            # arms no state, takes no item and writes no register, so it is evidence of nothing.
+            # ACCEPTED (user, 2026-07-25) rather than fixed: it changes no output -- KQ4's full
+            # snapshot surface is byte-identical and test_kq4_ground_truth is green -- and the
+            # claim under test here is the COLLAPSE (one row over the roaming rooms), which holds.
+            # The real cure is to require a PRODUCTIVE clause for requirement evidence, the rule
+            # `_armed_wrote`/`_clause_productive` already applies elsewhere; tracked, not urgent.
             check("KQ4: the roaming unicorn collapses to one Cupid's Bow row",
                   len(bow_roam) == 1 and bow_roam[0]["at_rooms"] == [20, 26, 27]
-                  and bow_roam[0]["still_needed_at"] == [82], repr(bow_roam))
+                  and bow_roam[0]["still_needed_at"] == [3, 82], repr(bow_roam))
 
 
 def test_item_names():

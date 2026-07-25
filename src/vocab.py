@@ -891,6 +891,153 @@ def lower_flags(ir, base_global, flag_procs):
     return synth_base, lowered, skipped
 
 
+def _dyn_self_prop(node):
+    """`(self <var>:)` -- a property access whose SELECTOR comes from a variable, so the property
+    is chosen by the CALLER. Returns the SendMessage node, else None.
+
+    This is the tell for a generic accessor: a method that manipulates whichever property its
+    argument names. `send_pairs` reports such a selector as None (it is not a `Selector` node)."""
+    if not (isinstance(node, dict) and node.get("t") == "Send"):
+        return None
+    ks = node.get("kids") or []
+    if not (ks and isinstance(ks[0], dict) and ks[0].get("t") == "Self"):
+        return None
+    msgs = [m for m in ks[1:] if isinstance(m, dict) and m.get("t") == "SendMessage"]
+    if len(msgs) != 1:
+        return None
+    sel = (msgs[0].get("kids") or [None])[0]
+    return msgs[0] if isinstance(sel, dict) and sel.get("t") == "Variable" else None
+
+
+def _prop_flag_op(body):
+    """'test' / 'set' / 'clear' if `body` is a BIT ACCESSOR over a property named by its own
+    parameter, else None.
+
+    The identical store `derive_flags` finds in a global array, kept in an object's property
+    WORDS instead -- `(self <sel>: (| (self <sel>:) <mask>))` sets, `(& (self <sel>:) (~ <mask>))`
+    clears, a bare `(& (self <sel>:) <mask>)` tests. Discovered STRUCTURALLY, exactly as
+    `_proc_touches_flags` discovers the proc-based spelling: no selector NAME is assumed, so a
+    game that calls these something other than tstFlag/setFlag/clrFlag is still recognised."""
+    ops, saw = set(), False
+    for n in I.walk(body):
+        m = _dyn_self_prop(n)
+        if m is None:
+            continue
+        saw = True
+        kids = m.get("kids") or []
+        if len(kids) < 2:
+            continue                                  # a READ: `(self <sel>:)`
+        val = kids[1]                                 # a WRITE: `(self <sel>: <val>)`
+        t = val.get("t") if isinstance(val, dict) else None
+        if t == "BinOr":
+            ops.add("set")
+        elif t == "BinAnd":
+            ops.add("clear" if any(isinstance(k, dict) and k.get("t") == "BinNot"
+                                   for k in (val.get("kids") or [])) else "set")
+    if not saw:
+        return None
+    if ops:
+        return next(iter(ops)) if len(ops) == 1 else None    # mixed writer -> cannot classify
+    return "test" if any(n.get("t") == "BinAnd" and any(_dyn_self_prop(k)
+                                                        for k in (n.get("kids") or []))
+                         for n in I.walk(body)) else None
+
+
+def _flag_receiver_id(recv):
+    """A STATIC identity for a flag-accessor receiver, or None when it cannot be pinned.
+
+    `(ScriptID N M)` names script N's Mth object -- the SCI way to reach a singleton (a region)
+    from another script, and the only receiver form that actually occurs in the corpus. `self`
+    inside the accessor's own class is deliberately NOT pinned: it could be any instance, and
+    guessing would merge distinct regions' flag words into one.
+
+    A direct object reference (`(rgCastle setFlag: ...)`) would be equally resolvable and is the
+    obvious extension point, but no game we have writes it, so it is left out rather than shipped
+    untested. An unpinned receiver is skipped, which can only miss a gate, never invent one."""
+    if not isinstance(recv, dict):
+        return None
+    if (recv.get("t") in ("KernelCall", "PublicCall", "LocalCall", "Call")
+            and recv.get("name") == "ScriptID"):
+        a = [I.as_int(k) for k in (recv.get("kids") or [])]
+        if a and a[0] is not None:
+            return (a[0], a[1] if len(a) > 1 and a[1] is not None else 0)
+    return None
+
+
+def derive_prop_flags(ir):
+    """{selector_name: op} for the game's PROPERTY-word bit-flag store, or {} if it has none.
+
+    A second, independent flag store from the one `derive_flags` finds: SCI1.1 regions keep their
+    flags in their own property words rather than a global array. Same abstraction (a bit in a
+    word), different container -- so it lowers to the same synthetic per-flag globals and nothing
+    downstream learns a new concept. LSL2/KQ4/KQ5/QFG-VGA/Dagger have none; KQ6 has 329 sites."""
+    out = {}
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for mname, body in o.methods.items():
+                op = _prop_flag_op(body)
+                if op and out.get(mname, op) == op:
+                    out[mname] = op
+    return out
+
+
+def lower_prop_flags(ir, accessors):
+    """Rewrite `(<recv> tstFlag: <word> <mask>...)` calls into synthetic per-flag globals, in
+    place -- the property-store twin of `lower_flags`, so both stores reach the register
+    machinery as ordinary globals.
+
+    A flag's identity is the triple (receiver, word-selector, BIT). Masks are decomposed to
+    single bits so a multi-bit `setFlag` and a single-bit `tstFlag` agree on identity; a
+    multi-bit TEST becomes an `Or` over the bits, which `atom` already understands. Unresolvable
+    receivers (bare `self`), non-literal arguments and chained sends are left alone -- a sound
+    gap, since an unmodelled condition can only miss a stranding, never invent one."""
+    if not accessors:
+        return 0, 0, 0
+    max_gi, sites = 0, []
+    for s in ir.scripts.values():
+        bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for node in I.walk(body):
+                if I.is_global(node):
+                    max_gi = max(max_gi, node["index"])
+                    continue
+                if node.get("t") != "Send":
+                    continue
+                recv, msgs = I.send_pairs(node)
+                if len(msgs) != 1:
+                    continue                          # chained send -- rewriting it would drop the rest
+                sel, params = msgs[0]
+                if sel not in accessors:
+                    continue
+                rid = _flag_receiver_id(recv)
+                args = [I.as_int(p) for p in params]
+                if rid is None or len(args) < 2 or any(a is None for a in args):
+                    continue
+                bits = [(args[0], b) for m in args[1:] for b in range(16) if (m & 0xFFFF) >> b & 1]
+                if bits:
+                    sites.append((node, accessors[sel], [(rid, w, b) for (w, b) in bits]))
+    synth_base, index = max_gi + 1, {}
+    for _n, _op, keys in sites:
+        for k in keys:
+            index.setdefault(k, synth_base + len(index))
+    lowered = 0
+    for node, op, keys in sites:
+        gis = [index[k] for k in keys]
+        if op == "test":
+            reads = [{"t": "Variable", "vtype": "Global", "index": g} for g in gis]
+            new = reads[0] if len(reads) == 1 else {"t": "Or", "kids": reads}
+        else:
+            val = 1 if op == "set" else 0
+            asg = [{"t": "Assignment",
+                    "kids": [{"t": "Variable", "vtype": "Global", "index": g},
+                             {"t": "Number", "value": val}]} for g in gis]
+            new = asg[0] if len(asg) == 1 else {"t": "List", "kids": asg}
+        node.clear()
+        node.update(new)
+        lowered += 1
+    return synth_base, lowered, len(index)
+
+
 def derive_debug(ir):
     """Globals TOGGLED with `^=` -- what a debug menu checkbox compiles to.
 
