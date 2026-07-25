@@ -428,20 +428,31 @@ def _script_named(ir, name):
     return None
 
 
-def _offers_restart(ir, node, depth):
+def _offers_restart(ir, node, depth, in_current=True):
     """Does this branch reach Restore/Restart/Quit -- directly, or through a script it starts?
 
     LSL2 hands off: `(if (== gCurrentStatus 1001) (gCurRoom setScript: dyingScript))`, and it is
     dyingScript that offers the dialog. KQ4 offers it inline. Following `setScript:` one hop is
     the same thing the machine lift already does, so the anchor is shared even though the shape
-    of the hand-off is not."""
-    for m in I.walk(node):
-        if m.get("t") != "Send":
-            continue
+    of the hand-off is not.
+
+    Does NOT descend into a `Switch` while still IN THE CURRENT method (`in_current`). A death offer
+    in a Game object is DIRECT -- KQ4's inline `(if dead ... (restart:))`, LSL2's `setScript:
+    dyingScript` -- never nested behind a dispatch. SCI1.1 puts Restart/Restore in an
+    always-available control panel that the Game's `handleEvent` reaches through a switch on EVENT
+    TYPE; descending into that switch made `derive_death` match the input handler and pick a config
+    flag (KQ6 global100) as "death". A `setScript` hands off to ANOTHER script whose own changeState
+    switch IS walked (`in_current=False`) -- that is where LSL2's dyingScript offers the dialog."""
+    if not isinstance(node, dict):
+        return False
+    t = node.get("t")
+    if t == "Switch" and in_current:
+        return False
+    if t == "Send":
         try:
-            _r, msgs = I.send_pairs(m)
+            _r, msgs = I.send_pairs(node)
         except Exception:                      # noqa: BLE001
-            continue
+            msgs = []
         for pair in msgs:
             if not pair:
                 continue
@@ -452,8 +463,12 @@ def _offers_restart(ir, node, depth):
                 if isinstance(tgt, dict) and tgt.get("t") == "Object":
                     obj = _script_named(ir, tgt.get("name"))
                     if obj is not None and any(
-                            _offers_restart(ir, b, depth + 1) for b in obj.methods.values()):
+                            _offers_restart(ir, b, depth + 1, in_current=False)
+                            for b in obj.methods.values()):
                         return True
+    for k in node.get("kids", ()) or []:
+        if _offers_restart(ir, k, depth, in_current):
+            return True
     return False
 
 
@@ -495,7 +510,10 @@ def derive_death_proc(ir):
             # is the menu/title's own dialog code or an internal helper, not a death edge.
             if name.startswith("localproc"):
                 continue
-            if _offers_restart(ir, body, depth=0):
+            # in_current=False: a public death PROC is itself the dedicated dialog routine (it may
+            # switch on the player's Restore/Restart/Quit choice), so its OWN switch is walked --
+            # unlike the Game object's event handler, where a switch is the always-available menu.
+            if _offers_restart(ir, body, depth=0, in_current=False):
                 out.add(name)
     return out
 
@@ -523,6 +541,88 @@ def lower_death_procs(ir, proc_names, death_value=1):
         node["kids"] = [{"t": "Variable", "vtype": "Global", "index": synth},
                         {"t": "Number", "value": death_value}]
     return synth, len(targets)
+
+
+def derive_death_send(ir):
+    """SCI1.1 INLINE death: a non-Game object whose method offers BOTH restart: and restore: -- the
+    death dialog a hazard shows (KQ6 `egoBeastScript`, `deathCartoonScr`, `deadInHereScript`,
+    `noWayOut`). A third shape after `derive_death` (a Game-object global) and `derive_death_proc`
+    (a free proc): SCI1.1 puts Restart/Restore in an ALWAYS-available control panel, so there is no
+    "you died" global and no death proc -- a real death offers the dialog inline at the hazard.
+
+    Requiring BOTH selectors is the discriminator: the control-panel/menu offers each through a
+    SEPARATE button (`restartBut`/`restoreBut` -- one selector each), and a Window's own `restore:`
+    is window-restore, a different meaning; only a death dialog sends both together. The Game object
+    is skipped (its handleEvent reaches the menu). Returns [(script_num, object_name), ...]."""
+    game = {o.name for o in game_objects(ir)}
+    out = []
+    for s in ir.scripts.values():
+        for o in s.objects:
+            if o.is_class or o.name in game:
+                continue
+            for body in o.methods.values():
+                sels = set()
+                for n in I.walk(body):
+                    if n.get("t") == "Send":
+                        try:
+                            _r, msgs = I.send_pairs(n)
+                        except Exception:              # noqa: BLE001
+                            continue
+                        for sel, _p in msgs:
+                            if sel in RESTART_SELECTORS:
+                                sels.add(sel)
+                if all(x in sels for x in RESTART_SELECTORS):
+                    out.append((s.number, o.name))
+                    break
+    return out
+
+
+def lower_death_sends(ir, sites, death_value=1):
+    """Inject a synthetic death-flag write into each death dialog's `changeState` so that RUNNING the
+    script means death, regardless of how it was armed. The write goes into state 0 (the entry), so
+    the machine lift reads the machine as fatal from its start. Synthetic global one past the highest,
+    exactly as `lower_death_procs`. Returns (synth_index, count)."""
+    max_gi = 0
+    for s in ir.scripts.values():
+        bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for n in I.walk(body):
+                if I.is_global(n):
+                    max_gi = max(max_gi, n["index"])
+    synth = max_gi + 1
+
+    def write():
+        return {"t": "Assignment", "kids": [
+            {"t": "Variable", "vtype": "Global", "index": synth},
+            {"t": "Number", "value": death_value}]}
+
+    n = 0
+    for (script_num, obj_name) in sites:
+        obj = ir.scripts[script_num].by_name.get(obj_name)
+        cs = obj.methods.get("changeState") if obj else None
+        if cs is None:
+            continue
+        injected = False
+        for node in I.walk(cs):
+            if node.get("t") != "Switch":
+                continue
+            for c in (node.get("kids") or [])[1:]:
+                ck = c.get("kids") or []
+                if c.get("t") == "Case" and ck and I.as_int(ck[0]) == 0 and len(ck) > 1:
+                    body0 = ck[1]
+                    if body0.get("t") == "List":
+                        body0.setdefault("kids", []).insert(0, write())
+                    else:
+                        ck[1] = {"t": "List", "kids": [write(), body0]}
+                    injected = True
+            break
+        if not injected:                               # no state-0 case: run on every entry
+            old = dict(cs)
+            cs.clear()
+            cs["t"] = "List"
+            cs["kids"] = [write(), old]
+        n += 1
+    return synth, n
 
 
 # ---- the game-flag store: a bit-array of booleans, DERIVED like every other store -------------

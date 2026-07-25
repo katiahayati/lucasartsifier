@@ -1587,6 +1587,15 @@ def load(cfg=None, ir_path=None):
             synth, _n = V.lower_death_procs(ir, dprocs)
             sig = (synth, 1)
     if not sig:
+        # SCI1.1 inline death: no death global and no death proc, because Restart/Restore live in the
+        # always-available control panel -- a real death offers the dialog INLINE at the hazard (KQ6
+        # egoBeastScript etc.). Inject a synthetic death write into each such dialog. Only reached
+        # when both earlier shapes are absent, so LSL2/KQ4 (global) and KQ5 (proc) never take it.
+        dsends = V.derive_death_send(ir)
+        if dsends:
+            synth, _n = V.lower_death_sends(ir, dsends)
+            sig = (synth, 1)
+    if not sig:
         raise SystemExit("could not derive a death signal, and config.death_signal is unset. "
                          "Expected the Game subclass to test a global on the way to restart:/"
                          "restore:, or a public death procedure that offers it.")
