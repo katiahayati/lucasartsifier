@@ -1243,6 +1243,13 @@ def item_names(ir):
         return is_item(sup[sp], seen + (sp,))
 
     fam = {sp for sp in sup if is_item(sp)} | {base.species}
+    # AUTHORITATIVE when present: the order the game ADDS items to its inventory list. `get:`/
+    # `has:`/`at:` index THAT list, and it need not match declaration order -- KQ6 declares `map`
+    # 22nd but adds it FIRST, so every item before it was named one place off. That mislabels the
+    # OUTPUT while every number stays right, which is the worst kind of wrong: `get: 10` is the
+    # egg the White Queen hands over, and we called it the skull. Declaration order remains the
+    # fallback for games whose list is built some other way (LSL2/KQ4 build theirs by declaring
+    # in order, so both agree there).
     names, n = {}, 0
     for sn in sorted(ir.scripts):
         for o in ir.scripts[sn].objects:
@@ -1254,7 +1261,72 @@ def item_names(ir):
             if not o.is_class and (o.super in fam or o.species in fam):
                 names[n] = re.sub(r"[^0-9A-Za-z]+", "_", o.name).strip("_")
                 n += 1
+    # AUTHORITATIVE when the game builds its inventory list explicitly: `get:`/`has:`/`at:` index
+    # THAT list, and it need not match declaration order -- KQ6 declares `map` 22nd but adds it
+    # FIRST, so every earlier item was named one place off. That mislabels the OUTPUT while every
+    # number stays right, which is the worst kind of wrong: `get: 10` is the egg the White Queen
+    # hands over, and we reported the skull.
+    #
+    # Only accepted when it accounts for EVERY item, since a partial `add:` is some other list --
+    # a shop's stock, a sub-window's icons -- not the inventory. LSL2 and KQ4 both have such a
+    # partial list (17 and 12 of their items), and both build the real inventory by declaring in
+    # order, so they keep the fallback and stay byte-identical.
+    ordered = _inv_list_order(ir, fam)
+    if len(ordered) == len(names) and len(ordered) > 1:
+        return {i: re.sub(r"[^0-9A-Za-z]+", "_", nm).strip("_") for i, nm in enumerate(ordered)}
     return names
+
+
+def _inv_list_order(ir, fam):
+    """The item names in the order the game ADDS them to its inventory list, or [] if no such
+    list is built. This is the order `get:`/`has:`/`at:` index by.
+
+    The idiom is one `(<inv> add: <item> <item> ...)` send -- often with each item wrapped in a
+    configuring send that returns it (`(brick setCursor: 990 0 1 yourself:)`), so the item is the
+    RECEIVER of that inner send rather than a bare reference. Only items of the inventory family
+    count, so the trailing non-item arguments some games pass are ignored."""
+    best = []
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for body in o.methods.values():
+                for n in I.walk(body):
+                    if n.get("t") != "Send":
+                        continue
+                    try:
+                        _recv, msgs = I.send_pairs(n)
+                    except Exception:                       # noqa: BLE001
+                        continue
+                    for sel, params in msgs:
+                        if sel != "add":
+                            continue
+                        got = []
+                        for p in params:
+                            nm = _item_ref_name(p, ir, fam)
+                            if nm:
+                                got.append(nm)
+                        if len(got) > len(best):
+                            best = got
+    return best
+
+
+def _item_ref_name(p, ir, fam):
+    """An `add:` argument -> the inventory-item instance it denotes, else None."""
+    if not isinstance(p, dict):
+        return None
+    if p.get("t") == "Object":
+        nm = p.get("name")
+    elif p.get("t") == "Send":
+        recv = (p.get("kids") or [None])[0]
+        nm = recv.get("name") if isinstance(recv, dict) and recv.get("t") == "Object" else None
+    else:
+        return None
+    if not nm:
+        return None
+    for s in ir.scripts.values():
+        o = s.by_name.get(nm)
+        if o is not None and not o.is_class and (o.super in fam or o.species in fam):
+            return nm
+    return None
 
 
 def _instance_class_species(o):
