@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import config
 
+import collections
 import contextlib
 import os
 from dataclasses import dataclass, field
@@ -433,6 +434,11 @@ class TS:
     #   guard). The MACHINE owns these; used as a GATED fallback only where the machine
     #   walk can't deliver the exit (control_exits) -- avoids a false dead-end without
     #   reintroducing a free bypass.
+    maze_reach: dict = field(default_factory=dict)  # room -> rooms it can WALK to, for a maze
+    #   whose grid we recovered (see Extractor._maze_reach). Its DISPATCHER room is spliced out,
+    #   but a machine EXIT to that dispatcher is built downstream, so the map is published here
+    #   and `missability.build_maps` applies the same substitution to those.
+    dispatchers: set = field(default_factory=set)   # rooms that only compute where you come out
     bulk_moves: list = field(default_factory=list)  # (room, dest, guard) -- a transfer of the
     #   WHOLE inventory at once, written as a walk of the Inv list. No item number appears
     #   anywhere, so this is the one case where "no constant" must mean "all of them".
@@ -927,9 +933,113 @@ class Extractor:
                     dests.add(-v)
             if len(dests) < 2:                 # a lone negative is a sentinel, not a table
                 continue
-            for d in sorted(dests):
-                self.ts.edges.append(Edge(s.number, d))
-                self.ts.rooms.add(d)
+            cell = {}                          # room -> its grid coordinate
+            i = 0
+            locs = sorted(s.locals, key=lambda l: l["index"])
+            for a, b in zip(locs, locs[1:]):
+                v = a["value"]
+                v = v - 65536 if v > 32767 else v
+                if v < 0 and -v in dests:
+                    cell.setdefault(-v, b["value"])
+            reach = self._maze_reach(s, cell)
+            if reach:
+                self._splice_dispatcher(s.number, reach, dests)
+            else:
+                for d in sorted(dests):        # no grid recovered: dispatcher reaches them all
+                    self.ts.edges.append(Edge(s.number, d))
+                    self.ts.rooms.add(d)
+
+    def _maze_reach(self, script, cell):
+        """room -> the rooms it can WALK to, from the maze's own wall data. `{}` if not recovered.
+
+        The table alone says which rooms exist, not which are mutually reachable, and assuming a
+        freely-walkable grid is WRONG: KQ6's catacombs are two levels joined by a one-way drop, so
+        a room-to-every-room model asserts you can climb back and would hide any item you must
+        carry down. The adjacency is real data -- the room paints a door per direction, each
+        guarded by a membership test listing the cells open that way.
+
+        The direction each list means is DERIVED, not read off door names: a door is shared by the
+        two cells it joins, so the true pairing is the one under which the relation is symmetric
+        (`c open toward +d` iff `c+d` open toward -d). Searching pairs and offsets for the highest
+        agreement recovers KQ6's at 0.985 with no name anywhere -- and the grid WIDTH falls out as
+        the winning offset rather than being assumed. Only 2 of its 146 edges are asymmetric, which
+        is the whole point: symmetrise them and the one-way vanishes, so the walk stays DIRECTED."""
+        cand = []
+        for o in script.objects:
+            for body in o.methods.values():
+                for n in I.walk(body):
+                    if n.get("t") == "Not" and n.get("kids"):
+                        n = n["kids"][0]
+                    if not (isinstance(n, dict) and n.get("t") in ("PublicCall", "LocalCall")
+                            and n.get("name") in _ONEOF):
+                        continue
+                    ks = n.get("kids") or []
+                    vals = [I.as_int(k) for k in ks[1:]]
+                    if len(vals) >= 8 and all(v is not None for v in vals):
+                        cand.append(frozenset(vals))
+        cand = list(dict.fromkeys(cand))
+        if len(cand) < 4:
+            return {}
+
+        def agree(a, b, d):
+            return sum(1 for c in a if c + d in b) / len(a) if a else 0.0
+
+        best = {}                              # |offset| -> (score, listA, listB, offset)
+        for a in cand:
+            for b in cand:
+                if a is b:
+                    continue
+                for d in (1, -1, 16, -16, 8, -8, 32, -32):
+                    sc = (agree(a, b, d) + agree(b, a, -d)) / 2
+                    key = abs(d)
+                    if sc > best.get(key, (0,))[0]:
+                        best[key] = (sc, a, b, d)
+        pairs = sorted((v for v in best.values() if v[0] >= 0.9), key=lambda v: -v[0])
+        # two axes, and their offsets must differ in magnitude (a row step and a column step)
+        axes = []
+        for p in pairs:
+            if all(abs(p[3]) != abs(q[3]) for q in axes):
+                axes.append(p)
+        if len(axes) < 2:
+            return {}
+        adj = collections.defaultdict(set)
+        for (_sc, a, b, d) in axes:
+            for c in a:
+                adj[c].add(c + d)
+            for c in b:
+                adj[c].add(c - d)
+        room_at = {c: r for r, c in cell.items()}
+        out = {}
+        for r, c in cell.items():
+            seen, q = {c}, [c]
+            while q:
+                u = q.pop()
+                for v in adj.get(u, ()):
+                    if v not in seen:
+                        seen.add(v)
+                        q.append(v)
+            out[r] = {room_at[x] for x in seen if x in room_at} - {r}
+        return out
+
+    def _splice_dispatcher(self, disp, reach, dests):
+        """Replace `room -> dispatcher -> computed` with the direct walks the grid allows.
+
+        The dispatcher is not somewhere the player stays -- it is the code that works out where
+        they came out. Left in the graph it is a hub every maze room enters and leaves, which
+        reconnects the levels the grid separates. So route each of its in-edges to that room's own
+        reachable set and drop the dispatcher itself. A room with no cell (the pit, reached by
+        falling rather than walking) keeps the permissive union: we do not know where it puts you."""
+        srcs = {e.src for e in self.ts.edges + self.ts.cs_edges if e.dst == disp}
+        kept = [e for e in self.ts.edges if e.src != disp and e.dst != disp]
+        for r in sorted(srcs):
+            for d in sorted(reach.get(r, set(dests) - {r})):
+                kept.append(Edge(r, d))
+        self.ts.edges[:] = kept
+        self.ts.cs_edges[:] = [e for e in self.ts.cs_edges
+                               if e.src != disp and e.dst != disp]
+        self.ts.rooms.discard(disp)
+        self.ts.dispatchers.add(disp)
+        self.ts.maze_reach.update(reach)
 
     # selectors that make an object animate/move/run, i.e. that end in a `cue` back to it
     ARMING = ("setCycle", "setMotion", "setScript", "cue", "setReal", "setTimer")

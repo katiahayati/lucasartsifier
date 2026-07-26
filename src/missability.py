@@ -220,11 +220,22 @@ def build_maps(em):
     for e in em.ts.cs_edges:
         if (e.src, e.dst) not in md:
             add(e.src, e.dst)
+    # A machine EXIT to a spliced-out MAZE DISPATCHER means "walk out of this cell", so it
+    # resolves to the rooms the grid says you can walk to -- not to the dispatcher, which is only
+    # the code that computes where you come out and would otherwise reconnect the levels the maze
+    # keeps apart. The flat and cutscene edges were substituted in `extract`; these are built here,
+    # so the same rule is applied here rather than left as the one path that leaks.
+    disp = getattr(em.ts, "dispatchers", set())
+    mreach = getattr(em.ts, "maze_reach", {})
     for info in em.machines:
         for K, paths in info["states"].items():
             for (g, w, gg, c, tr) in paths:
                 if tr and tr[0] == "EXIT":
-                    add(info["room"], tr[1])
+                    if tr[1] in disp:
+                        for d in sorted(mreach.get(info["room"], ())):
+                            add(info["room"], d)
+                    else:
+                        add(info["room"], tr[1])
 
     # sources: skip DEAD debug-gated acquires (rm82's `(if gDebugging (get 19 21 27))` bomb
     # hand-out). The JSON-IR TRACKS gDebugging rather than const-pinning it, so gexpr won't
