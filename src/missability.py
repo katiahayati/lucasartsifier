@@ -944,7 +944,116 @@ class IrSccReach(SccReach):
                         else:
                             self._inroom[gi][info["room"]].add(v)
                             self._inroom_own[(gi, info["room"], v)] = frozenset(_own_positive(g))
+        self._own_fixpoint()
         self._pstates = {R: self._walk(R, frozenset()) for R in self.regs}
+
+    def _reg_cost(self, R, vals):
+        """Items you must hold to make register R take any of `vals` -- the cheapest route."""
+        best = None
+        for v in sorted(vals):
+            if v == 0:
+                return frozenset()               # registers start at 0
+            ways = [own for k, own in self._inroom_own.items() if k[0] == R and k[2] == v]
+            if not ways:
+                return frozenset()               # nothing writes it -> initial value -> free
+            cost = ways[0]
+            for w in ways[1:]:
+                cost &= w
+            best = cost if best is None else (best & cost)
+        return best or frozenset()
+
+    def _reg_unreachable(self, req, banned):
+        """Is some register requirement on this edge impossible while `banned` items are held back?
+
+        Projections are per-register, so an edge with two ways through -- KQ6's lair exit opens
+        once the minotaur is dead OR once the victory cutscene has run, testing two DIFFERENT
+        registers -- looks free in BOTH projections: each sees its own register unconstrained on
+        the other alternative and lets it by. Item bans are global, so ask the question here
+        instead, where every register on the edge is visible at once.
+
+        Deliberately NOT folded into the edge's item set. `alts` means "items you must be HOLDING
+        to cross", while a register's cost is "items you needed EARLIER" -- conflating them made
+        LSL2 demand you still carry the Vine long after spending it."""
+        if not banned:
+            return False
+        return any(self._reg_cost(R, vals) & banned for R, vals in req.items())
+
+    def _own_fixpoint(self):
+        """Let item requirements flow ALONG register chains.
+
+        A write is often gated not on an item but on another register, and that register only
+        became what it is because you used an item. KQ6's catacombs are the case: showing the
+        minotaur the red scarf sets `scarfOnMino`, the path that guards opens the state that sets
+        "minotaur defeated", and THAT is what every exit tests. Each link we already had; the chain
+        we did not, because projections are built one per REGISTER (a joint product over LSL2's 19
+        explodes past 4,000,000 states, while the projections cost 3,679) so `scarfOnMino` and
+        "minotaur defeated" never meet.
+
+        So propagate instead of joining: if a write is guarded by `S == v`, it inherits whatever
+        every way of making S equal v requires. Repeated to a fixpoint, that carries an item
+        requirement as far along the chain as the chain goes, and projections stay independent.
+
+        Both compositions are the conservative one. A register value costs the INTERSECTION over
+        the writes that produce it -- you may use whichever is cheapest -- and a value that no
+        write produces is free, because it is the value the register starts at."""
+        # (R, room, val) -> {other register: allowed values} the write depends on. For a machine
+        # write that means the path guard AND everything every route to that state established --
+        # a cutscene decides early and pays off late, so the constraint that matters is usually in
+        # an earlier state (KQ6 branches on the scarf at state 8 and sets the flag at 14).
+        regs = set(self.regs)
+        guards = {}
+        for room, script, gi, v, g in self.em.handler_writes:
+            if gi in regs:
+                d = {S: vs for S in self.regs if (vs := required_values(g, S))}
+                if d:
+                    guards[(gi, room, v)] = d
+        for info in self.em.machines:
+            sm = state_musts(info, self.regs)
+            for K, paths in info["states"].items():
+                for (g, w, gg, c, tr) in paths:
+                    for (gi, v) in w:
+                        if gi not in regs or (gi, info["room"], v) not in self._inroom_own:
+                            continue
+                        d = dict(sm.get(K, {}))
+                        for S in self.regs:
+                            vs = required_values(g, S)
+                            if vs:
+                                d[S] = (d[S] & vs) if S in d else set(vs)
+                        if d:
+                            guards[(gi, info["room"], v)] = d
+
+        def value_cost(R, val, own):
+            """Items needed to make R == val: the cheapest write, or free if none writes it."""
+            if val == 0:
+                return frozenset()        # registers start at 0; no action needed
+            ways = [own.get(k, frozenset()) for k in own if k[0] == R and k[2] == val]
+            if not ways:
+                return frozenset()        # nothing writes it -> initial value -> free
+            out = ways[0]
+            for w in ways[1:]:
+                out &= w
+            return out
+
+        own = dict(self._inroom_own)
+        for _round in range(6):           # chains in practice are 2-3 links; bound the walk
+            changed = False
+            for key, deps in guards.items():
+                extra = set(own.get(key, frozenset()))
+                for S, vals in deps.items():
+                    if S == key[0] or not vals:
+                        continue          # a write ordering itself is _rstep's business
+                    # reaching ANY allowed value suffices, so take the cheapest
+                    costs = [value_cost(S, v, own) for v in sorted(vals)]
+                    need = costs[0]
+                    for c in costs[1:]:
+                        need &= c
+                    extra |= need
+                if frozenset(extra) != own.get(key, frozenset()):
+                    own[key] = frozenset(extra)
+                    changed = True
+            if not changed:
+                break
+        self._inroom_own = own
 
     _FREE = ({}, {}, (frozenset(),))
 
@@ -965,6 +1074,8 @@ class IrSccReach(SccReach):
                     continue                      # guard forbids this move at this value of R
                 if banned and blocked(alts, banned):
                     continue                      # every way through needs a banned item
+                if self._reg_unreachable(req, banned):
+                    continue                      # a register it needs can never reach that value
                 out.add((b, sets.get(R, st)))
         return out
 
@@ -1049,7 +1160,12 @@ class IrSccReach(SccReach):
         metas = self._emeta.get((b, a))
         if not metas:
             return True                          # return edge exists but carries no gate -> free
-        return any(not alts or any(not alt for alt in alts)     # some alternative needs no item
+        # A register gate whose VALUE costs an item is not a free walk either. The docstring's
+        # "flag-gated returns are still walkable" holds only while the flag is free to set: KQ6's
+        # way back out of the catacombs tests "minotaur defeated", and the only thing that sets it
+        # is showing him the red scarf, so the walk back is not free to someone who never had one.
+        return any((not alts or any(not alt for alt in alts))
+                   and not any(self._reg_cost(R, vals) for R, vals in req.items())
                    for (req, sets, alts) in metas)
 
     def rooms_after(self, b):
