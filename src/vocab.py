@@ -1486,7 +1486,14 @@ def doverb_item_messages(ir):
     iconsp = iconI.species if iconI else None
     iconfam = {sp for sp in sup if descends(sp, iconsp)} | ({iconsp} if iconsp else set())
 
-    base_verbs, counts, msg_idx, idx = set(), {}, {}, 0
+    # The index MUST be the one `get:`/`has:`/`at:` use, so take it from `item_names` by NAME
+    # rather than counting declarations again here. Counting was this function's own copy of the
+    # ordering rule, and it went stale the moment item_names started reading the game's inventory
+    # LIST: KQ6 adds `map` first though it is declared 22nd, so every item before it came out one
+    # place off -- `placeHoleScr` demanded the handkerchief instead of the hole-in-the-wall, and
+    # `giveDagger` the old coins instead of the dagger.
+    by_name = {nm: i for i, nm in item_names(ir).items()}
+    base_verbs, counts, msg_idx = set(), {}, {}
     for sn in sorted(ir.scripts):
         for o in ir.scripts[sn].objects:
             if o.is_class:
@@ -1494,10 +1501,10 @@ def doverb_item_messages(ir):
             cls = _instance_class_species(o)
             if cls in invfam:
                 m = o.props.get("message")
-                if m is not None:
+                i = by_name.get(re.sub(r"[^0-9A-Za-z]+", "_", o.name).strip("_"))
+                if m is not None and i is not None:
                     counts[m] = counts.get(m, 0) + 1
-                    msg_idx.setdefault(m, idx)
-                idx += 1              # inventory index tracks item_names' declaration order
+                    msg_idx.setdefault(m, i)
             elif cls in iconfam:
                 m = o.props.get("message")
                 if m is not None and m != 65535:
