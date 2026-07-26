@@ -24,6 +24,7 @@ Run standalone to see what it derives:  python3 vocab.py
 """
 from __future__ import annotations
 
+import collections
 import re
 
 import ir as I
@@ -1192,6 +1193,97 @@ def derive_region_map(ir, room_object_of):
             for _mn, body in o.methods.items():
                 visit(body, [], home)
     return out
+
+
+def derive_obj_props(ir):
+    """`{(script, export, selector)}` for object PROPERTIES the game uses as state.
+
+    The third container for the same idea. We already model state kept in globals
+    (`gating_registers`), in a bit-array (`derive_flags` / `derive_prop_flags`) and in an item's
+    own property (`item_property_registers`); this is state kept in an ORDINARY object's property,
+    which SCI1.1 leans on because a region object outlives the rooms inside it. KQ6's catacombs
+    decide the minotaur fight entirely this way -- `(ScriptID 30 0) scarfOnMino: 1` when you show
+    the scarf, `((ScriptID 30 0) seenByMino:)` to branch on it.
+
+    Discovered by the SAME rule the other three use: a property is state if the game both WRITES
+    it with a constant and READS it back. Nothing here names a selector, so a game's own property
+    names need no catalogue. Only receivers that resolve statically -- `(ScriptID s n)`, a
+    singleton reached from another script -- are eligible, because two instances of a class would
+    otherwise be merged into one register."""
+    reads, writes = collections.Counter(), collections.Counter()
+    for s in ir.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for n in I.walk(body):
+                if n.get("t") != "Send":
+                    continue
+                try:
+                    recv, msgs = I.send_pairs(n)
+                except Exception:                          # noqa: BLE001
+                    continue
+                tgt = ir.script_id_target(recv)
+                if not tgt:
+                    continue
+                for sel, ps in msgs:
+                    if sel is None:
+                        continue
+                    if ps and I.as_int(ps[0]) is not None:
+                        writes[(tgt[0], sel)] += 1
+                    elif not ps:
+                        reads[(tgt[0], sel)] += 1
+    return set(reads) & set(writes)
+
+
+def lower_obj_props(ir, pairs):
+    """Rewrite resolved `(ScriptID s n) <prop>:` reads and constant writes into synthetic globals,
+    so object-property state reaches the register machinery as ordinary registers.
+
+    Same shape as `lower_flags` / `lower_prop_flags`, and deliberately so: every store we model
+    ends up as a global, and nothing downstream learns a new concept. Chained sends and
+    non-constant writes are left alone -- an unmodelled write can only miss a stranding, never
+    invent one."""
+    if not pairs:
+        return 0, 0
+    max_gi, sites = 0, []
+    for s in ir.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for node in I.walk(body):
+                if I.is_global(node):
+                    max_gi = max(max_gi, node["index"])
+                    continue
+                if node.get("t") != "Send":
+                    continue
+                try:
+                    recv, msgs = I.send_pairs(node)
+                except Exception:                          # noqa: BLE001
+                    continue
+                if len(msgs) != 1:
+                    continue                               # chained: rewriting drops the rest
+                tgt = ir.script_id_target(recv)
+                if not tgt:
+                    continue
+                sel, ps = msgs[0]
+                key = (tgt[0], sel)
+                if key not in pairs:
+                    continue
+                if not ps:
+                    sites.append((node, key, None))
+                elif I.as_int(ps[0]) is not None:
+                    sites.append((node, key, I.as_int(ps[0])))
+    base, index = max_gi + 1, {}
+    for _n, key, _v in sites:
+        index.setdefault(key, base + len(index))
+    for node, key, val in sites:
+        gi = index[key]
+        node.clear()
+        if val is None:
+            node.update({"t": "Variable", "vtype": "Global", "index": gi})
+        else:
+            node.update({"t": "Assignment",
+                         "kids": [{"t": "Variable", "vtype": "Global", "index": gi},
+                                  {"t": "Number", "value": val}]})
+    return len(sites), len(index)
 
 
 def derive_debug(ir):

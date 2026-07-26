@@ -26,6 +26,7 @@ import config
 from dataclasses import dataclass, field
 
 import ir as I
+from guard_ast import GAnd, GOr
 from extract import atom, _conj, item_transfer, EGO
 import extract as X
 
@@ -51,6 +52,9 @@ class Machine:
     #   init sets gIslandStatus:=3, the `changeState 1` cutscene guard is gIslandStatus==2)
     #   makes the standalone one-step-later entry never fire. Player-triggered entries
     #   (handleEvent/doit) stay in `entries` (evaluated in-room, post-init).
+    entry_armers: list = field(default_factory=list)   # PARALLEL to entries: the machine whose
+    #   changeState body armed us, or None. A cutscene armed by ANOTHER cutscene inherits its
+    #   preconditions -- see MachineBuilder._chain_entries.
     entry_locals: list = field(default_factory=list)   # PARALLEL to entries: {(vt,idx): val} the
     #   arming context wrote before setScript'ing us. A machine's internal local branches read
     #   these -- rm214 sets local1:=1 (guarded by using the staff) and knockDoor only reaches
@@ -150,7 +154,33 @@ class MachineBuilder:
                 m = self._build(script, o)
                 if m.states:
                     out.append(m)
+        self._chain_entries(out)
         return out
+
+    def _chain_entries(self, ms):
+        """A cutscene armed by ANOTHER cutscene inherits its preconditions.
+
+        KQ6's catacombs exit hinges on this: `freeCeleste` walks you out to the surface with an
+        empty guard, because it is armed deep inside `minotaurCharging` -- which is itself only
+        armed once the minotaur has seen you. Read alone, the escape looks free and the catacombs
+        never become the sealed pocket they are.
+
+        The armer's entries are alternatives, so they contribute a DISJUNCTION; conjoined with the
+        path condition at the arming site. Bounded: only when the armer has a small entry set (a
+        big one says little and would blow the guard up), and only one level, since the chains that
+        matter are short and a fixpoint over mutually-arming scripts is not worth the risk."""
+        by_name = {m.inst: m for m in ms}
+        for m in ms:
+            for i, armer in enumerate(m.entry_armers):
+                a = by_name.get(armer) if armer else None
+                if a is None or a is m or not a.entries or len(a.entries) > 3:
+                    continue
+                alts = [g for _k, g in a.entries if g is not None]
+                if not alts or len(alts) != len(a.entries):
+                    continue                    # some arming of the armer is unconditional
+                pre = alts[0] if len(alts) == 1 else GOr(list(alts))
+                K, g = m.entries[i]
+                m.entries[i] = (K, GAnd([pre, g]) if g is not None else pre)
 
     def _build(self, script, obj):
         m = Machine(script.number, obj.name, start=obj.props.get("start", 0))
@@ -182,7 +212,12 @@ class MachineBuilder:
         # bottle) never ran -- which is WHY the absent-start fall-through hack was needed.
         for other in script.objects:
             for mn, body in other.methods.items():
-                self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn))
+                # If the arming site is inside ANOTHER machine's changeState, remember whose:
+                # that machine's own preconditions are ours too (_chain_entries).
+                armer = other.name if (mn == "changeState" and other.name != m.inst
+                                       and "changeState" in other.methods) else None
+                self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn),
+                                     armer=armer)
         # ...and the same scan over the OTHER scripts that arm this machine by `(ScriptID s n)`.
         # Deduplicated per body: one method can arm the same machine on several branches, and
         # _scan_setscript already records one entry per arming site within a body.
@@ -206,7 +241,7 @@ class MachineBuilder:
         s, name = tgt
         return name == m.inst and (s is None or s == m.script)
 
-    def _scan_setscript(self, node, pc, m, source):
+    def _scan_setscript(self, node, pc, m, source, armer=None):
         """Find `(x setScript: <ref>)` where <ref> is m, record an entry to m at state 0 with the
         path condition, AND carry the LOCAL WRITES the arming context made before the setScript. A
         machine reads its own script's locals, so a local the arming branch set gates the machine's
@@ -249,13 +284,14 @@ class MachineBuilder:
                     loc[e[1]] = e[2]
             if len(ev) > 2 and ev[2] is not None:
                 loc[X.REG_KEY] = ev[2]            # the `register` this arming selected
-            self._add_entry(m, 0, _conj(apc), loc, source == "init")   # init entries are ADDITIONALLY
+            self._add_entry(m, 0, _conj(apc), loc, source == "init", armer)   # init entries are ADDITIONALLY
             #   bundled onto room arrival, not instead -- still normal entries too
 
-    def _add_entry(self, m, state, guard, locals_, is_init):
+    def _add_entry(self, m, state, guard, locals_, is_init, armer=None):
         """Append an entry AND its carried locals, keeping the two parallel lists in lockstep."""
         m.entries.append((state, guard))
         m.entry_locals.append(dict(locals_))
+        m.entry_armers.append(armer)
         if is_init:
             m.init_entries.append((state, guard))
             m.init_entry_locals.append(dict(locals_))

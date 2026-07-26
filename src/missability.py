@@ -1744,6 +1744,11 @@ def load(cfg=None, ir_path=None):
     # after lower_flags so the two synthetic blocks cannot overlap. Games without it are
     # untouched -- LSL2/KQ4/KQ5/QFG-VGA/Dagger have zero sites, KQ6 has 329.
     V.lower_prop_flags(ir, V.derive_prop_flags(ir))
+    # THIRD container: state kept in an ordinary object's PROPERTY. SCI1.1 leans on it because a
+    # region object outlives the rooms inside it -- KQ6's minotaur fight is decided entirely by
+    # `(ScriptID 30 0) scarfOnMino:` / `seenByMino:`. Same "written with a constant AND read back"
+    # rule as every other store, lowered to the same synthetic globals.
+    V.lower_obj_props(ir, V.derive_obj_props(ir))
     d_gi, d_val = sig[0], (sig[1] if len(sig) > 1 else None)
     is_death = (lambda gi, v: gi == d_gi and v == d_val) if d_val is not None else \
                (lambda gi, v: gi == d_gi and bool(v))
