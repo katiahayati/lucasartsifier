@@ -7,21 +7,27 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FORK="$REPO_ROOT/vendor/sci-tools"
-PATCH="$REPO_ROOT/tools/sci-tools-fork/json-ir.patch"
-PIN=46b19e8983286fab2f632d74c6bb84ee44172f07     # sci-tools commit this patch targets
+# OUR FORK of sci-tools (MIT, sluicebox). Our changes -- the --json IR emitter and the export
+# table -- are ordinary commits on the `json-ir` branch rather than a patch applied at build
+# time. That patch had grown to two independent changes, and because vendor/ is gitignored an
+# edit made here could silently vanish on the next build; commits cannot.
+# Upstream stays available as the `upstream` remote for syncing:
+#   git -C vendor/sci-tools fetch upstream && git -C vendor/sci-tools rebase upstream/main
+FORK_URL=https://github.com/katiahayati/sci-tools
+UPSTREAM_URL=https://github.com/sluicebox/sci-tools
+PIN=3895bc1a54515dc1d62e53570090a91b015afe52     # katiahayati/sci-tools json-ir
 GAME_DIR="${1:-/mnt/i/sierra/lsl2}"
 OUT_DIR="${2:-$REPO_ROOT/build/ir}"
 
 export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 
 if [ ! -d "$FORK/.git" ]; then
-  git clone https://github.com/sluicebox/sci-tools "$FORK"
+  git clone "$FORK_URL" "$FORK"
 fi
 cd "$FORK"
+git remote get-url upstream >/dev/null 2>&1 || git remote add upstream "$UPSTREAM_URL"
 git fetch --depth 50 origin || true
 git checkout -q "$PIN" 2>/dev/null || echo "warning: pinned commit $PIN not found; using current HEAD"
-git checkout -- . 2>/dev/null || true         # drop any prior patch application
-git apply --check "$PATCH" && git apply "$PATCH"
 
 dotnet build Snuffer/Snuffer.csproj -c Release
 mkdir -p "$OUT_DIR"

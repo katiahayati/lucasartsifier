@@ -2,8 +2,26 @@
 
 Per `ENGINE-DIRECTION.md` Plan A: the front-end is sluicebox's **sci-tools** (C#), which
 builds a full **typed control-flow AST** from SCI bytecode. Stock sci-tools discards that
-AST after emitting `.sc` text. `json-ir.patch` adds a `--json` flag that serializes it
-losslessly to `<game>.ir.json`, which our Python extraction consumes (the A2 hybrid seam).
+AST after emitting `.sc` text. Our `--json` flag serializes it losslessly to
+`<game>.ir.json`, which our Python extraction consumes (the A2 hybrid seam).
+
+**Our changes live in a fork: https://github.com/katiahayati/sci-tools, branch `json-ir`**
+(MIT, as upstream). They used to be a build-time patch; that stopped scaling once it held two
+independent changes, and because `vendor/` is gitignored an edit made there could silently
+vanish on the next build — a rebuild would quietly emit an IR missing whatever was lost, with
+no test failing. Commits cannot vanish that way.
+
+Two commits, deliberately separable so either could go upstream on its own:
+1. `--json` — the AST-as-IR emitter.
+2. `exports` — the per-script export table (see below).
+
+`build.sh` clones the fork and checks out the pinned commit; no patch step. Upstream stays
+wired up for syncing:
+
+```
+git -C vendor/sci-tools fetch upstream
+git -C vendor/sci-tools rebase upstream/main      # then re-pin PIN= in build.sh
+```
 
 The IR, per script: `locals` (script 0's = globals) with init values; `objects`
 (class/instance, species, super, `properties` [selector+value], `methods`); `exports`;
@@ -21,12 +39,15 @@ are bytecode-canonical: globals/locals by **index**, selectors by number (the `s
 table resolves names). Friendly global names (`gCurrentStatus` = global 101) are a
 sci-tools *annotation* layer, not applied here — the extractor maps indices→names.
 
-## What the patch changes (277 lines, all additive)
+## What the fork changes (all additive — without `--json`, behaviour is stock)
 - `SCI/Decompile/JsonExport.cs` (new): the AST→JSON serializer (dependency-free).
 - `SCI/Decompile/Decompiler.cs`: `public bool EmitJson` + the emit call in `Run`.
 - `Snuffer/Options.cs`, `Snuffer/Snuffer.cs`: the `--json` CLI flag.
 
 ## Build & run (`build.sh`)
-Clones sci-tools at the pinned commit into `vendor/sci-tools`, applies the patch, builds
-Snuffer (needs .NET 8 SDK), and decompiles the game to an IR. Requires the original game
-resources (`RESOURCE.MAP`/`RESOURCE.00x`), not the `.sc` tree.
+Clones **our fork** at the pinned commit into `vendor/sci-tools`, builds Snuffer (needs the
+.NET 8 SDK), and decompiles the game to an IR. Requires the original game resources
+(`RESOURCE.MAP`/`RESOURCE.00x`), not the `.sc` tree.
+
+`vendor/` is gitignored, so treat the clone as disposable build output: make changes on the
+fork and re-pin, never as uncommitted edits in `vendor/`.

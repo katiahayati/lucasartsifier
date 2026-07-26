@@ -34,10 +34,12 @@ sci-tools -- https://github.com/sluicebox/sci-tools
 Copyright (c) sluicebox
 MIT
 
-Used as the decompiler front-end. `tools/sci-tools-fork/json-ir.patch` adds a
-`--json` flag that serialises the typed control-flow AST it already builds, so
-the analysis can consume it instead of reparsing generated text. The patch is
-additive; the upstream sources are fetched and patched at build time, not vendored.
+Used as the decompiler front-end, via our MIT fork
+https://github.com/katiahayati/sci-tools (branch `json-ir`), which adds a `--json`
+flag serialising the typed control-flow AST it already builds -- so the analysis
+can consume it instead of reparsing generated text -- plus each script's export
+table. Both changes are additive: without `--json` the decompiler behaves as
+upstream. The fork is cloned at build time, not vendored into this repository.
 
 --------------------------------------------------------------------------------
 Game data (Sierra On-Line) is not included in this repository under any terms.

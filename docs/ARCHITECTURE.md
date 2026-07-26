@@ -11,7 +11,7 @@ python -m pipeline /path/to/game          # decompile -> analyse -> derive -> pa
 ```
   game resources (RESOURCE.MAP + RESOURCE.00x)
         |
-        |  vendor/sci-tools + tools/sci-tools-fork/json-ir.patch   [C#]
+        |  vendor/sci-tools -- our MIT fork, branch json-ir        [C#]
         v
   build/ir/  <game>.ir.json  +  src/*.sc
         |

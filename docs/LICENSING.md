@@ -11,7 +11,8 @@ license can be chosen deliberately.
 | `tools/scicompile/patched/**` | **SCICompanion**, modified | **GPL-2.0-or-later** | **yes** — 18 files |
 | `tools/scicompile/compat/**` | ours, but 9 files carry SCICompanion's header | **GPL-2.0-or-later** for those 9; the other 26 are ours | yes |
 | `tools/scicompile/main.cpp` | ours | derivative (see below) | yes |
-| `tools/sci-tools-fork/json-ir.patch` | patch against **sci-tools** | patch is ours; target is **MIT** | yes |
+| `tools/sci-tools-fork/build.sh` | ours | clones our sci-tools fork (**MIT**) | yes |
+| [katiahayati/sci-tools](https://github.com/katiahayati/sci-tools) `json-ir` | our fork of sluicebox/sci-tools | **MIT**, as upstream | no — separate repo, cloned at build time |
 | `vendor/SCICompanion`, `vendor/sci-tools` | upstream | GPL-2.0-or-later / MIT | **no** — gitignored |
 | Prof-UIS 2.92 (commercial UI lib) | bundled inside SCICompanion | proprietary | **no** — not shipped, not linked (the port is headless, no MFC/GUI) |
 | game data (`.sc`, IR, resources) | Sierra | proprietary | **no** — removed from history 2026-07-21 |
@@ -50,7 +51,7 @@ to be GPL.
 ## Options
 
 **A — GPL-2.0-or-later for the whole repo.** Simplest and safest: no argument about where the
-boundary falls, and MIT (sci-tools) is GPL-compatible so the fork patch is fine. Cost: anyone reusing
+boundary falls, and MIT (sci-tools) is GPL-compatible so the fork is fine. Cost: anyone reusing
 the *analysis* inherits copyleft, even though that part is independent of SCICompanion.
 
 **B — Segmented.** `tools/scicompile/**` GPL-2.0-or-later (unavoidable); `src/**` permissive
@@ -59,7 +60,8 @@ accepted as arm's length — well-supported, but it is an interpretation, and a 
 directory plus a clear README note is needed so nobody has to guess.
 
 **C — Drop the compiler from the repo.** Ship only the `.sc` edits and a build script that fetches
-and patches SCICompanion itself, exactly as we already do for sci-tools. Then nothing GPL is
+and builds SCICompanion itself, much as we already do for sci-tools (which is now a fork we
+clone rather than a patch we apply). Then nothing GPL is
 redistributed and `src/**` can be anything. Cost: the port was real work (a headless Linux build,
 two upstream null-deref/bounds bugs fixed, a `--sco` mode added); hiding it behind a patch file
 makes it much harder for anyone to use, and those upstream fixes are worth contributing back.
