@@ -6,7 +6,7 @@ state. Each state body is a sequence of ops, some guarded by if/cond path condit
   EXIT r     `(gCurRoom newRoom: r)`              -- leave to room r
   WRITE g v  `(= Global[g] v)`                    -- register write
   DEATH      the death signal write / death proc  -- absorbing sink
-  ADVANCE    a cue is armed (`... self` arg, `(= seconds N)`, `(= cycles N)`,
+  ADVANCE    a cue is armed (`... self` arg, `(= seconds N)`, `(= cycles N)`, `(= ticks N)`,
              `(other changeState: K)`, `(self cue:)`) -> next state = state+1
   JUMP k     `(self changeState: k)`              -- go to state k now
   SETSTATE k `(= state k)`                        -- set state (then a cue advances to k+1)
@@ -70,11 +70,21 @@ class Machine:
 def _is_cue_send(recv, msgs):
     """A send that ARMS a cue (completes later -> advance to state+1)."""
     for sel, params in msgs:
-        # `... self` as the last argument is the universal cue callback
-        if params and params[-1].get("t") == "Self":
+        # `self` as an argument is the universal cue callback -- ANY position, not just last.
+        # SCI1.1's Messager puts it mid-list (`say: noun verb cond seq self room`), so a
+        # last-argument test read those states as PARKing and truncated every cutscene that
+        # speaks: KQ6's minotaur fight stalls at state 1 and never reaches the state where the
+        # red scarf decides it.
+        if any(isinstance(p, dict) and p.get("t") == "Self" for p in params):
             return True
         if sel in ("cue", "setCycle", "setMotion", "setScript") and params and \
                 any(p.get("t") == "Self" for p in params):
+            return True
+        # `(self cue:)` -- an IMMEDIATE self-cue, the way a state says "nothing to wait for,
+        # carry on". No arguments, so the callback tests above cannot see it, and the state
+        # read as PARKing: KQ6's minotaur fight takes this branch whenever it is not the
+        # talking variant, and stalled one state before the scarf decides the outcome.
+        if sel == "cue" and not params and recv.get("t") == "Self":
             return True
         # `(otherInstance changeState: K)` starts another script that cues back here
         if sel == "changeState" and recv.get("t") != "Self":
@@ -172,7 +182,7 @@ class MachineBuilder:
         by_name = {m.inst: m for m in ms}
         for m in ms:
             for i, armer in enumerate(m.entry_armers):
-                a = by_name.get(armer) if armer else None
+                a = by_name.get(armer[0]) if armer else None
                 if a is None or a is m or not a.entries or len(a.entries) > 3:
                     continue
                 alts = [g for _k, g in a.entries if g is not None]
@@ -212,12 +222,24 @@ class MachineBuilder:
         # bottle) never ran -- which is WHY the absent-start fall-through hack was needed.
         for other in script.objects:
             for mn, body in other.methods.items():
-                # If the arming site is inside ANOTHER machine's changeState, remember whose:
-                # that machine's own preconditions are ours too (_chain_entries).
-                armer = other.name if (mn == "changeState" and other.name != m.inst
-                                       and "changeState" in other.methods) else None
-                self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn),
-                                     armer=armer)
+                # If the arming site is inside ANOTHER machine's changeState, remember whose AND
+                # at which state: that machine's preconditions up to that point are ours too, and
+                # a cutscene decides its outcome long before the state that pays it off (KQ6's
+                # minotaur fight branches at 8 and arms the walk-out at 14). Scanned per CASE so
+                # the state is known; the whole body otherwise loses it.
+                if (mn == "changeState" and other.name != m.inst
+                        and "changeState" in other.methods):
+                    sw = self._top_switch(body)
+                    for c in (sw["kids"][1:] if sw else []):
+                        if c.get("t") != "Case":
+                            continue
+                        k = I.as_int(c["kids"][0])
+                        if k is None:
+                            continue
+                        self._scan_setscript(c["kids"][1], [], m, source=mn,
+                                             armer=(other.name, k))
+                    continue
+                self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn))
         # ...and the same scan over the OTHER scripts that arm this machine by `(ScriptID s n)`.
         # Deduplicated per body: one method can arm the same machine on several branches, and
         # _scan_setscript already records one entry per arming site within a body.
@@ -392,7 +414,7 @@ class MachineBuilder:
                     out.append(Op("DEATH", g))
                 else:
                     out.append(Op("WRITE", g, gi, v))
-        elif dst.get("t") == "Property" and dst.get("name") in ("seconds", "cycles"):
+        elif dst.get("t") == "Property" and dst.get("name") in ("seconds", "cycles", "ticks"):
             out.append(Op("ADVANCE", g))            # timing set -> cue will fire
         elif dst.get("t") == "Property" and dst.get("name") == "state":
             k = I.as_int(src)

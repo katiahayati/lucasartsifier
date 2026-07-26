@@ -338,6 +338,16 @@ def build_maps(em):
             for (g, w, gg, c, tr) in paths:
                 target = hopefuls if hopeful(info, K, tr, gr, goal_ok) else hopeless
                 target |= _own_positive(g)
+    # ...and the uses that live on a MOVEMENT EDGE. The rule below is "a trap is an item whose
+    # EVERY own()-guarded use is hopeless", but it only ever looked at machine states, so an item
+    # whose real use is an edge could be condemned by an unrelated machine branch -- and being
+    # named a trap erases the item's requirements GLOBALLY, including the ones that edge
+    # established. KQ4's Peacock_Feather is exactly that: it tickles the whale into sneezing you
+    # out (the rm44->rm31 edge, which reaches the goal), but it ALSO picks the longer digestion
+    # timer inside the whale, and that branch ends in death whichever way it is taken. Judging it
+    # on the timer alone made the feather a trap and dropped a confirmed stranding.
+    for e in list(em.ts.edges) + list(em.ts.cs_edges):
+        (hopefuls if e.dst in goal_ok else hopeless).update(_own_positive(e.guard))
     trap_items = hopeless - hopefuls
 
     required = defaultdict(set)
@@ -647,6 +657,58 @@ def _entry_reach_walk(info, ents, carried, _ctr_ok, _apply):
     return per_entry
 
 
+def state_musts(info, regs):
+    """State -> {register: allowed values} that hold on EVERY path reaching it from an entry.
+
+    A cutscene decides its outcome early and pays it off late. KQ6's minotaur fight branches at
+    state 8 -- with the red scarf on the minotaur it charges into the wall and dies, without it you
+    are gored -- and only the surviving path walks on to state 14, which sets the minotaur-defeated
+    flag and arms the walk-out. We guard each state independently, so state 14's effects looked
+    reachable regardless, and the catacombs never sealed.
+
+    Forward dataflow over the machine's own transitions, intersecting where paths rejoin, so a
+    constraint survives only if EVERY way of getting here established it. A register the machine
+    WRITES on the way loses its constraint at that point -- the machine changed it, so what held
+    before says nothing after."""
+    out = {}
+    ents = list(info.get("entries", ())) + list(info.get("init_entries", ()))
+    work = []
+    for (K, _eg) in ents:
+        work.append((K, {}))
+        out.setdefault(K, {})
+    seen = 0
+    while work and seen < 4000:
+        seen += 1
+        K, cur = work.pop()
+        for (g, w, gg, c, tr) in info["states"].get(K, ()):
+            nxt = dict(cur)
+            for R in regs:
+                v = required_values(g, R)
+                if v:
+                    nxt[R] = (nxt[R] & v) if R in nxt else set(v)
+            for (gi, _val) in w:
+                nxt.pop(gi, None)                  # the machine wrote it; prior facts expire
+            if not tr:
+                continue
+            if tr[0] == "ADVANCE":
+                dst = K + 1
+            elif tr[0] == "JUMP":
+                dst = tr[1]
+            elif tr[0] == "SETSTATE":
+                dst = tr[1] + 1
+            else:
+                continue
+            if dst in out:
+                merged = {R: out[dst][R] | nxt[R] for R in set(out[dst]) & set(nxt)}
+                if merged == out[dst]:
+                    continue                       # fixpoint on this edge
+                out[dst] = merged
+            else:
+                out[dst] = nxt
+            work.append((dst, out[dst]))
+    return out
+
+
 def entry_reqs(info, regs):
     """State K -> {register: allowed values} that EVERY entry reaching K establishes.
 
@@ -738,9 +800,26 @@ def edge_meta(em, regs):
         #                       guard -- keeping it shadows the real gate (rm57 -> rm58 needs the
         #                       ticket handed to the agent). build_maps applies this filter too.
         meta[(e.src, e.dst)].append((reqs(e.guard), {}, (frozenset(_own_positive(e.guard)),)))
+    # Per-machine "what held on every path to this state", keyed so a machine armed by ANOTHER
+    # can inherit the armer's facts at the arming state. Cutscene chains hand off mid-sequence:
+    # KQ6's `freeCeleste` walks you out of the catacombs and is armed at state 14 of
+    # `minotaurCharging`, whose state 8 is where the red scarf decided you survived at all.
+    _musts = {}
+    for _i in em.machines:
+        key = (_i.get("script"), _i.get("inst"), _i.get("room"))
+        _musts[key] = state_musts(_i, regs)
     for info in em.machines:
         eo = entry_alts(info)
         er = entry_reqs(info, regs)
+        sm = state_musts(info, regs)
+        # What EVERY arming of this machine had already established.
+        chain = None
+        for armer in info.get("entry_armers", ()) or ():
+            got = _musts.get((info.get("script"), armer[0], info.get("room")), {}).get(armer[1], {}) \
+                if armer else {}
+            chain = dict(got) if chain is None else \
+                {R: chain[R] | got[R] for R in set(chain) & set(got)}
+        chain = chain or {}
         for K, paths in info["states"].items():
             for (g, w, gg, c, tr) in paths:
                 if tr and tr[0] == "EXIT":
@@ -755,7 +834,9 @@ def edge_meta(em, regs):
                     # says which arming it belongs to.
                     by_guard = er.get("_by_guard")
                     inherited = by_guard(K, g) if by_guard else er.get(K, {})
-                    for R, vals in inherited.items():
+                    # ...and whatever every path THROUGH the machine to this state established.
+                    for R, vals in (list(sm.get(K, {}).items()) + list(chain.items())
+                                    + list(inherited.items())):
                         rq[R] = (rq[R] & vals) if R in rq else set(vals)
                     meta[(info["room"], tr[1])].append(
                         (rq, sets, tuple(exit_own | a for a in alts)))

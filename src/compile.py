@@ -88,9 +88,12 @@ def _count_cues_send(recv, msgs):
     one `(self cue:)` -> one changeState:+1."""
     n = 0
     for sel, params in msgs:
-        if (params and params[-1].get("t") == "Self") or \
-           (sel in ("cue", "setCycle", "setMotion", "setScript") and params
-                and any(p.get("t") == "Self" for p in params)) or \
+        # `self` anywhere in the arguments is the cue callback -- SCI1.1's Messager puts it
+        # mid-list (`say: noun verb cond seq self room`) -- and `(self cue:)` with no arguments
+        # is an IMMEDIATE self-cue. Kept in lockstep with machine._is_cue_send; a last-argument
+        # test here read every speaking state as PARKing and truncated the cutscene there.
+        if (any(isinstance(p, dict) and p.get("t") == "Self" for p in params)) or \
+           (sel == "cue" and not params and recv.get("t") == "Self") or \
            (sel == "changeState" and recv.get("t") != "Self"):
             n += 1
     return n
@@ -141,7 +144,7 @@ def _interp(path, is_death):
                         st.trans = ("DEATH",); fixed = True
                     elif v is not None:
                         st.writes.append((dst["index"], v))
-            elif dst.get("t") == "Property" and dst.get("name") in ("seconds", "cycles"):
+            elif dst.get("t") == "Property" and dst.get("name") in ("seconds", "cycles", "ticks"):
                 armed = True
                 st.cues += 1
             elif dst.get("t") == "Property" and dst.get("name") == "state" and not fixed:

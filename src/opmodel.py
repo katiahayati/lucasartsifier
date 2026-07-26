@@ -385,6 +385,7 @@ class OpEmitter:
         return {"room": room, "inst": m.inst, "script": m.script, "states": states,
                 "entries": m.entries, "init_entries": m.init_entries,
                 "entry_locals": m.entry_locals, "init_entry_locals": m.init_entry_locals,
+                "entry_armers": m.entry_armers,
                 "start": m.start, "delivered": delivered, "drops": drops}
 
     def _apply_control_gates(self):

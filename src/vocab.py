@@ -1274,6 +1274,15 @@ def lower_obj_props(ir, pairs):
     base, index = max_gi + 1, {}
     for _n, key, _v in sites:
         index.setdefault(key, base + len(index))
+    # A property the game only ever writes 0 or 1 to is a BOOLEAN, so `!= 0` is exactly `== 1`.
+    # That is how SCI spells most of these -- `(if ((ScriptID 30 0) scarfOnMino:) ...)` -- and
+    # without it a "this happened" property can never constrain anything, since `required_values`
+    # ignores `!=`. Derived from the values actually written, not assumed.
+    written = collections.defaultdict(set)
+    for _n, key, v in sites:
+        if v is not None:
+            written[key].add(v)
+    BOOL_GLOBALS.update(index[k] for k, vs in written.items() if vs <= {0, 1})
     for node, key, val in sites:
         gi = index[key]
         node.clear()
