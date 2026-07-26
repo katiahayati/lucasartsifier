@@ -41,7 +41,7 @@ class Obj:
 
 
 class Script:
-    __slots__ = ("number", "locals", "objects", "procs", "by_name")
+    __slots__ = ("number", "locals", "objects", "procs", "by_name", "exports")
 
     def __init__(self, d):
         self.number = d["number"]
@@ -49,6 +49,12 @@ class Script:
         self.objects = [Obj(o) for o in d["objects"]]
         self.procs = {p["name"]: p["ast"] for p in d["procedures"]}
         self.by_name = {o.name: o for o in self.objects}
+        # EXPORT TABLE: index -> object name (None for a code export). `(ScriptID s n)` names
+        # script s's nth EXPORT, and that index does NOT follow object order -- KQ6's
+        # `(ScriptID 80 0)` is rgCastle, which is objects[2]. Absent from IRs emitted before the
+        # front-end learned to serialize it, so treat missing as "cannot resolve" rather than
+        # failing: every consumer already has to handle an unresolvable reference.
+        self.exports = d.get("exports") or []
 
     def __repr__(self):
         return f"Script({self.number}: {[o.name for o in self.objects]})"
@@ -63,6 +69,29 @@ class IR:
 
     def script(self, n):
         return self.scripts.get(n)
+
+    def script_id_target(self, node):
+        """`(ScriptID s n)` -> (script_number, object_name), else None.
+
+        SCI's cross-script reference: `n` indexes the target script's EXPORT table, not its
+        object list. Resolution therefore needs the exports the front-end now emits; an IR
+        without them, a code export, or a non-literal argument all yield None, which every
+        caller must already treat as "unresolvable" rather than as an error.
+
+        The second argument defaults to 0 -- `(ScriptID 344)` is export 0 of script 344 -- which
+        is how a script's principal object (a region, a room) is usually reached."""
+        if not (isinstance(node, dict) and node.get("t") in
+                ("KernelCall", "PublicCall", "LocalCall") and node.get("name") == "ScriptID"):
+            return None
+        args = [as_int(k) for k in (node.get("kids") or [])]
+        if not args or args[0] is None:
+            return None
+        idx = args[1] if len(args) > 1 and args[1] is not None else 0
+        s = self.scripts.get(args[0])
+        if s is None or idx >= len(s.exports):
+            return None
+        name = s.exports[idx]
+        return (args[0], name) if name else None
 
     def find_class(self, name):
         for s in self.scripts.values():

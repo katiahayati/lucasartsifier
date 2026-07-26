@@ -77,17 +77,31 @@ def _is_cue_send(recv, msgs):
     return False
 
 
-def _setscript_target(param):
-    """The Script instance/class name a `setScript:` param refers to: `henchScript` (an
-    Object ref) or `(henchScript new:)` (a Send whose receiver is the Object)."""
+def _setscript_target(param, ir=None):
+    """The Script a `setScript:` param refers to, as `(script_or_None, name)`.
+
+    Three spellings: `henchScript` (an Object ref in the same script), `(henchScript new:)`
+    (a Send whose receiver is the Object), and `(ScriptID 344 3)` -- SCI's CROSS-SCRIPT
+    reference, which needs the export table to resolve and so is only available when an `ir`
+    is supplied. A `None` script means "this same script", which is all the first two can mean.
+
+    KQ6 arms 231 scripts this way and we resolved none of them, so every cutscene armed from
+    another script -- the realm-of-the-dead entry among them -- lost its guard."""
     if not isinstance(param, dict):
         return None
     if param.get("t") == "Object":
-        return param.get("name")
+        return (None, param.get("name"))
+    if ir is not None:
+        got = ir.script_id_target(param)
+        if got:
+            return got
     if param.get("t") == "Send" and param.get("kids"):
         recv = param["kids"][0]
         if isinstance(recv, dict) and recv.get("t") == "Object":
-            return recv.get("name")
+            return (None, recv.get("name"))
+        got = ir.script_id_target(recv) if ir is not None else None
+        if got:
+            return got
     return None
 
 
@@ -107,6 +121,26 @@ class MachineBuilder:
         for rn, s in ir.scripts.items():
             for name, body in s.procs.items():
                 self.procs_by[(rn, name)] = body
+        # CROSS-SCRIPT arming index: (target script, target instance) -> [(arming script, method,
+        # body)]. A `setScript:` naming an Object can only mean an object of the SAME script, so
+        # the per-script scan in _build covers it; a `(ScriptID s n)` target can live anywhere, so
+        # the arming code has to be found by looking outward from the machine. Built once here
+        # rather than re-scanned per machine, which would be quadratic over 341 scripts.
+        self.arms = {}
+        for rn, s in ir.scripts.items():
+            bodies = [(o.name, mn, b) for o in s.objects for mn, b in o.methods.items()]
+            bodies += [(nm, "proc", b) for nm, b in s.procs.items()]
+            for _oname, mn, body in bodies:
+                for n in I.walk(body):
+                    if n.get("t") != "Send":
+                        continue
+                    _r, msgs = I.send_pairs(n)
+                    for sel, params in msgs:
+                        if sel != "setScript" or not params:
+                            continue
+                        tgt = _setscript_target(params[0], ir)
+                        if tgt and tgt[0] is not None and tgt[0] != rn:
+                            self.arms.setdefault(tgt, []).append((rn, mn, body))
 
     def machines(self, script):
         out = []
@@ -148,7 +182,28 @@ class MachineBuilder:
         for other in script.objects:
             for mn, body in other.methods.items():
                 self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn))
+        # ...and the same scan over the OTHER scripts that arm this machine by `(ScriptID s n)`.
+        # Deduplicated per body: one method can arm the same machine on several branches, and
+        # _scan_setscript already records one entry per arming site within a body.
+        seen = set()
+        for (arm_script, mn, body) in self.arms.get((script.number, m.inst), ()):
+            key = (arm_script, mn, id(body))
+            if key in seen:
+                continue
+            seen.add(key)
+            self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn))
         return m
+
+    def _targets(self, param, m):
+        """Does this `setScript:` argument name machine `m`? An Object reference is scoped to the
+        script it appears in, so only the name is compared; a `(ScriptID s n)` carries its own
+        script and must match m's too, or two same-named Scripts in different scripts would be
+        conflated."""
+        tgt = _setscript_target(param, self.ir)
+        if not tgt:
+            return False
+        s, name = tgt
+        return name == m.inst and (s is None or s == m.script)
 
     def _scan_setscript(self, node, pc, m, source):
         """Find `(x setScript: <ref>)` where <ref> is m, record an entry to m at state 0 with the
@@ -168,7 +223,7 @@ class MachineBuilder:
                     events.append(("w", (d["vtype"][0], d["index"]), I.as_int(ks[1]), list(p)))
             elif t == "Send":
                 _r, msgs = I.send_pairs(n)
-                if any(sel == "setScript" and params and _setscript_target(params[0]) == m.inst
+                if any(sel == "setScript" and params and self._targets(params[0], m)
                        for sel, params in msgs):
                     events.append(("a", list(p)))
         # A doVerb that arms this machine with `setScript:` gates it on the item the player used --

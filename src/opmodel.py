@@ -107,6 +107,19 @@ class OpEmitter:
         # `rLab` catacombs controller, `rgDead` and `rgCastle` went unlifted. Both spellings now
         # derive in vocab.derive_region_map, which reproduces LSL2's 9 and KQ4's 25 exactly.
         self.region_rooms = vocab.derive_region_map(ir, lambda s: _room_object(s, ir))
+        # A CUTSCENE script is neither a room nor a region: it is a bag of Scripts that other
+        # rooms arm with `setScript: (ScriptID s n)`. It still runs somewhere -- in the room that
+        # armed it -- so it gets lifted there, on exactly the principle regions already use ("the
+        # same machine really is live in each of those rooms"). Without this, script 344's
+        # `nightMare` holds the ONLY newRoom into the realm of the dead and is never lifted at all.
+        # Rooms/regions keep priority, so this only ever adds scripts that had no home.
+        self.armed_rooms = {}
+        for (tgt_script, _inst), sites in self.mb.arms.items():
+            for (arm_script, _mn, _body) in sites:
+                if arm_script in self.ts.rooms:
+                    self.armed_rooms.setdefault(tgt_script, set()).add(arm_script)
+                for r in self.region_rooms.get(arm_script, ()):
+                    self.armed_rooms.setdefault(tgt_script, set()).add(r)
         # Hoisted above the init/machine pass: `_init_writes` records room-LOCAL
         # seeds too, and it runs first.
         self.handler_writes = []       # (room, script, gi, val, guard)  -- script for CTR-local resolve
@@ -128,7 +141,8 @@ class OpEmitter:
             # -- among them regUnicorn's `uniActions`, the ONLY place the Golden_Bridle is ever
             # required. The duplication is not an approximation: the same machine really is live
             # in each of those rooms.
-            targets = self.region_rooms.get(rn) or ({rn} if rn in self.ts.rooms else None)
+            targets = (self.region_rooms.get(rn) or ({rn} if rn in self.ts.rooms else None)
+                       or self.armed_rooms.get(rn))
             if not targets:
                 continue
             if rn in self.ts.rooms:

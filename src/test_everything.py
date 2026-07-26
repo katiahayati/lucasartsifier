@@ -92,9 +92,13 @@ def test_local_compare_real():
 def test_setscript():
     print("Part 2: setScript capture")
     from machine import _setscript_target
-    check("setScript target from Object ref", _setscript_target(OBJ("henchScript")) == "henchScript")
+    # Returns (script, name); a None script means "the script this reference appears in", which
+    # is all an Object reference can mean. A `(ScriptID s n)` target carries its own script and
+    # needs the IR's export table to resolve -- covered against the real game below.
+    check("setScript target from Object ref",
+          _setscript_target(OBJ("henchScript")) == (None, "henchScript"))
     check("setScript target from (X new:)",
-          _setscript_target(SEND(OBJ("henchScript"), MSG("new"))) == "henchScript")
+          _setscript_target(SEND(OBJ("henchScript"), MSG("new"))) == (None, "henchScript"))
     check("setScript target None for non-script param", _setscript_target(N(5)) is None)
     em = real_em()
     if em is None:
@@ -105,6 +109,28 @@ def test_setscript():
     if hs:
         check("rm47 henchScript now HAS entries (setScript captured)", len(hs[0]["entries"]) >= 1,
               f"entries={hs[0]['entries']}")
+    # CROSS-SCRIPT arming, `setScript: (ScriptID s n)`. `n` indexes the EXPORT table, which does
+    # not follow object order, so this is only resolvable on an IR carrying exports. KQ6's
+    # nightMare is export 2 of script 344 but its objects[2] is `smoke` -- picking by position
+    # would silently arm the wrong object, so assert the export path specifically.
+    import os, glob, ir as I
+    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    kq6 = glob.glob(os.path.join(_root, "build", "sweep", "kq6", "*.ir.json"))
+    if not kq6:
+        print("  [SKIP] KQ6 IR not present (cross-script check)"); return
+    kir = I.load_ir(kq6[0])
+    if not (kir.scripts.get(344) and kir.scripts[344].exports):
+        print("  [SKIP] KQ6 IR predates the export table"); return
+    sid = lambda s, n: {"t": "KernelCall", "name": "ScriptID",
+                        "kids": [N(s), N(n)]}
+    check("ScriptID resolves through the EXPORT table, not object order",
+          kir.script_id_target(sid(344, 2)) == (344, "nightMare")
+          and kir.scripts[344].objects[2].name != "nightMare")
+    check("cross-script setScript target resolves",
+          _setscript_target(sid(344, 3), kir) == (344, "blowinIt"))
+    check("unresolvable ScriptID stays None (code export / missing script)",
+          _setscript_target(sid(344, 0), kir) is None
+          and _setscript_target(sid(99999, 0), kir) is None)
 
 # ---- Part 3: fall-through hack removed (no free start bypass) ------------
 def test_no_fallthrough_bypass():

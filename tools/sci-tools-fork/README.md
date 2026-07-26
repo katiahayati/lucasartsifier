@@ -6,7 +6,15 @@ AST after emitting `.sc` text. `json-ir.patch` adds a `--json` flag that seriali
 losslessly to `<game>.ir.json`, which our Python extraction consumes (the A2 hybrid seam).
 
 The IR, per script: `locals` (script 0's = globals) with init values; `objects`
-(class/instance, species, super, `properties` [selector+value], `methods`); `procedures`.
+(class/instance, species, super, `properties` [selector+value], `methods`); `exports`;
+`procedures`.
+
+`exports` is index -> object name (null for a code export, keeping indexes aligned).
+`(ScriptID <script> <n>)` -- SCI's cross-script reference, and how a region or a cutscene
+Script is reached from another script -- names the *nth export*, which does **not** follow
+object order: KQ6's `(ScriptID 80 0)` is `rgCastle`, its `objects[2]`. Without this table the
+reference is unresolvable, so every `setScript: (ScriptID ...)` arming (231 of them in KQ6)
+lost its guard.
 Each method/procedure carries its typed AST (`Switch`/`Case`/`If`/`Loop`/`Send`/
 `SendMessage`/`Assignment`/`Variable`/`Property`/`Class`/`Number`/`Said`/…). Identifiers
 are bytecode-canonical: globals/locals by **index**, selectors by number (the `selectors`
