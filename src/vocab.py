@@ -728,6 +728,13 @@ def lower_death_sci11(ir, dialogs, death_procs, death_value=1):
 # clears, `^=` toggles -- and, for a dispatcher, follows its wrappers to fix each one's op.
 _FLAG_WRITE_OPS = {"AssignmentBinOr": "set", "AssignmentBinAnd": "clear", "AssignmentXor": "toggle"}
 
+# Globals WE synthesized from a flag store, so their domain is exactly {0, 1} -- our own lowering
+# writes 1 for set and 0 for clear and nothing else. That makes `!= 0` and `== 1` the SAME
+# constraint on them, which matters because "this flag is SET" is the natural way to gate progress
+# and `required_values` otherwise ignores `!=` as unconstraining. Module-level, like extract's
+# per-game vocabulary: one game per process.
+BOOL_GLOBALS = set()
+
 
 def _single_bit_mask(n):
     """`(<< 1 (mod X 16))` or `(>> $8000 (mod X 16))` -- one bit selected within a 16-bit word."""
@@ -877,6 +884,7 @@ def lower_flags(ir, base_global, flag_procs):
         if op == "toggle" or not flags:
             skipped += 1
             continue
+        BOOL_GLOBALS.update(synth_base + f for f in flags)
         if op == "test":
             node.clear()
             node.update({"t": "Variable", "vtype": "Global", "index": synth_base + flags[0]})
@@ -1020,6 +1028,7 @@ def lower_prop_flags(ir, accessors):
     for _n, _op, keys in sites:
         for k in keys:
             index.setdefault(k, synth_base + len(index))
+    BOOL_GLOBALS.update(index.values())
     lowered = 0
     for node, op, keys in sites:
         gis = [index[k] for k in keys]

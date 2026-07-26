@@ -41,6 +41,36 @@ def _is_ego(node):
 
 NAV_SELECTORS = ("north", "south", "east", "west")
 
+# `register` is the third argument of `setScript:` -- SCI's way of telling one Script instance
+# WHICH job it is doing this time. It is a standard `Script` selector (script 999, alongside
+# client/caller), i.e. engine vocabulary like `newRoom` or `has`, not a game's own name.
+#
+# It matters because one machine can serve two exits: KQ6's `walkOut` is armed `setScript: walkOut
+# 0 1` behind the minotaur flag and `walkOut 0 0` without it, and its body reads
+# `(if register (newRoom: 340) else (newRoom: 409))`. Merge the two and the flag-gated escape from
+# the catacombs looks free, because the ungated arming also reaches the same state.
+#
+# Modelled as a CARRIED LOCAL under a reserved key, so the machinery that already threads an
+# arming context's local writes (`entry_locals` + `_ctr_ok`) prunes the arm this entry did not
+# choose. The key cannot collide with a real local: variable types are Local/Temp, giving key
+# letters "L"/"T".
+REG_KEY = ("R", 0)
+
+
+def _is_register(n):
+    """`register` read as this object's own property, or `(<obj> register:)`."""
+    if not isinstance(n, dict):
+        return False
+    if n.get("t") == "Property":
+        return n.get("name") == "register"
+    if n.get("t") == "Send":
+        try:
+            _r, msgs = I.send_pairs(n)
+        except Exception:                                   # noqa: BLE001
+            return False
+        return len(msgs) == 1 and msgs[0][0] == "register" and not msgs[0][1]
+    return False
+
 
 # ---- guard atoms from a test expression ----------------------------------
 def atom(n):
@@ -68,6 +98,8 @@ def atom(n):
         # `(== local1 N)` compare yields, so the machine compiler can resolve it against the
         # carried counter value. rm214's knockDoor gates its door-opens states on exactly this.
         return ("CTR", (n["vtype"][0], n["index"]), "!=", 0)
+    if _is_register(n):
+        return ("CTR", REG_KEY, "!=", 0)          # `(if register ...)` -- see REG_KEY
     if tp == "Number":
         return None if n["value"] != 0 else Pred("OPAQUE")       # constant test
     if tp in ("PublicCall", "LocalCall"):
@@ -125,6 +157,10 @@ def _cmp_atom(n, tp):
         return Pred("CMP", var=a["index"], op=op, value=str(I.as_int(b)))
     if I.is_global(b) and I.as_int(a) is not None:
         return Pred("CMP", var=b["index"], op=_REV[op], value=str(I.as_int(a)))
+    # `register` vs literal -- which job this Script was armed for. See REG_KEY.
+    for x, y in ((a, b), (b, a)):
+        if _is_register(x) and I.as_int(y) is not None:
+            return ("CTR", REG_KEY, op if x is a else _REV[op], I.as_int(y))
     # LOCAL/TEMP vs literal -> tracked-local CTR guard (the previously-dropped 196)
     if I.is_local_or_temp(a) and I.as_int(b) is not None:
         return ("CTR", (a["vtype"][0], a["index"]), op, I.as_int(b))

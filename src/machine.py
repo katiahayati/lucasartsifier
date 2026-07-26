@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 
 import ir as I
 from extract import atom, _conj, item_transfer, EGO
+import extract as X
 
 
 @dataclass
@@ -223,9 +224,16 @@ class MachineBuilder:
                     events.append(("w", (d["vtype"][0], d["index"]), I.as_int(ks[1]), list(p)))
             elif t == "Send":
                 _r, msgs = I.send_pairs(n)
-                if any(sel == "setScript" and params and self._targets(params[0], m)
-                       for sel, params in msgs):
-                    events.append(("a", list(p)))
+                for sel, params in msgs:
+                    if sel != "setScript" or not params or not self._targets(params[0], m):
+                        continue
+                    # `setScript: <script> <caller> <register>` -- the third argument tells the
+                    # Script WHICH job it is doing, and its body branches on it. Carried like a
+                    # local write so the entry only reaches the arm it selected: without it,
+                    # KQ6's `walkOut 0 1` (flag-gated, out to the surface) and `walkOut 0 0`
+                    # (back into the maze) merge, and the gated escape reads as free.
+                    reg = X.REG_KEY if len(params) > 2 and I.as_int(params[2]) is not None else None
+                    events.append(("a", list(p), I.as_int(params[2]) if reg else None))
         # A doVerb that arms this machine with `setScript:` gates it on the item the player used --
         # `(== param1 <item.message>)` -> OWN. verb_param_scope makes `atom` see that inside the
         # arming path condition (the machine lift shares extract.atom but does not set the context).
@@ -239,6 +247,8 @@ class MachineBuilder:
             for e in events[:i]:                  # writes that RAN before this arm, on its path
                 if e[0] == "w" and _pc_covers(e[3], apc):
                     loc[e[1]] = e[2]
+            if len(ev) > 2 and ev[2] is not None:
+                loc[X.REG_KEY] = ev[2]            # the `register` this arming selected
             self._add_entry(m, 0, _conj(apc), loc, source == "init")   # init entries are ADDITIONALLY
             #   bundled onto room arrival, not instead -- still normal entries too
 

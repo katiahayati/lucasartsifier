@@ -500,6 +500,29 @@ def asserts_eq(op, pol):
     return (op == "==" and pol) or (op == "!=" and not pol)
 
 
+def _must_hold(guard, out=None):
+    """`(reg, value)` pairs the guard REQUIRES along its top-level AND spine.
+
+    `_cmp_atoms` is deliberately flat -- it ignores AND/OR structure and reports every comparison
+    it can see. That is fine for collecting positive equalities, which only ever under-constrain,
+    but it cannot be used to turn `!= 0` into `== 1`: under a NOT or inside an OR the flag is not
+    required at all, and claiming it would BLOCK movement the game allows. So this walks only the
+    conjuncts that must hold, stopping at any negation or disjunction."""
+    out = set() if out is None else out
+    if isinstance(guard, list):
+        for g in guard:
+            _must_hold(g, out)
+    elif isinstance(guard, GAnd):
+        for k in guard.kids:
+            _must_hold(k, out)
+    elif isinstance(guard, Pred) and guard.kind == "CMP" and guard.op == "!=":
+        try:
+            out.add((guard.var, int(guard.value)))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
 def required_values(guard, reg):
     """Values of `reg` this guard REQUIRES (positive `== v`), or None if it doesn't constrain it.
 
@@ -515,8 +538,19 @@ def required_values(guard, reg):
     atoms = []
     _cmp_atoms(guard, atoms)
     for (r, op, v, pol) in atoms:
-        if r == reg and asserts_eq(op, pol):
+        if r != reg:
+            continue
+        if asserts_eq(op, pol):
             vals.add(v)
+        elif (op == "!=" and v == 0 and pol and r in vocab.BOOL_GLOBALS
+              and (reg, 0) in _must_hold(guard)):
+            # A global WE synthesized from a flag store has domain exactly {0, 1} -- our own
+            # lowering writes 1 to set and 0 to clear and nothing else -- so "not zero" IS "one".
+            # Reading it as unconstraining is the right default for a real global whose values we
+            # do not know, but here we minted the domain, so it costs no soundness and it is the
+            # ONLY way a "this flag is SET" gate can ever carry. KQ6's escape from the catacombs
+            # is exactly that: the walk out to the surface needs the minotaur-defeated flag.
+            vals.add(1)
     return vals or None
 
 
@@ -571,7 +605,7 @@ def entry_alts(info):
     per_entry = _entry_reach_walk(info, ents, carried, _ctr_ok, _apply)
     out = {}
     for K in info["states"]:
-        out[K] = tuple({frozenset(_own_positive(eg)) for (seen, eg) in per_entry if K in seen})
+        out[K] = tuple({frozenset(_own_positive(eg)) for (seen, eg, _loc) in per_entry if K in seen})
     return out
 
 
@@ -608,7 +642,7 @@ def _entry_reach_walk(info, ents, carried, _ctr_ok, _apply):
                     stack.append((tr[1], nc))
                 elif tr[0] == "SETSTATE":
                     stack.append((tr[1] + 1, nc))
-        per_entry.append((seen, eg))
+        per_entry.append((seen, eg, dict(loc)))
     info["_entry_reach"] = per_entry
     return per_entry
 
@@ -626,19 +660,37 @@ def entry_reqs(info, regs):
     Without this the exit edge inherited its entry's ITEM gates but silently dropped its FLAG
     gates -- so a cutscene armed only while a flag is clear (KQ6's sacred-water rm350->rm370,
     armed only when flag 174 is still 0) came out a free walk."""
+    from compile import _ctr_holds
     reach = _entry_reach_walk_of(info)
     per = []
-    for (seen, eg) in reach:
-        per.append((seen, {R: v for R, v in ((R, required_values(eg, R)) for R in regs) if v}))
-    out = {}
-    for K in info["states"]:
-        ds = [d for (seen, d) in per if K in seen]
+    for (seen, eg, loc) in reach:
+        per.append((seen, loc,
+                    {R: v for R, v in ((R, required_values(eg, R)) for R in regs) if v}))
+
+    def _consistent(loc, guard):
+        """Could an arming carrying `loc` have produced a path guarded by `guard`?
+
+        One machine can serve several exits, chosen by the `register` its arming passed --
+        KQ6's `walkOut` leaves to the surface when armed with 1 (behind the minotaur flag) and
+        back into the maze when armed with 0. Both armings reach the same STATE, so a per-state
+        answer intersects them to nothing and the gated escape reads as free. The exit's own
+        guard says which arming it belongs to, so honour it."""
+        for a in (guard or ()):
+            if isinstance(a, tuple) and a and a[0] == "CTR" and a[1] in loc \
+                    and not _ctr_holds(a, loc):
+                return False
+        return True
+
+    def reqs_for(K, guard=None):
+        ds = [d for (seen, loc, d) in per if K in seen and _consistent(loc, guard)]
         if not ds:
-            continue
+            return {}
         common = {R: set().union(*(d[R] for d in ds))
                   for R in set(ds[0]).intersection(*(set(d) for d in ds))}
-        if common:
-            out[K] = common
+        return common
+    out = {K: reqs_for(K) for K in info["states"]}
+    out = {K: v for K, v in out.items() if v}
+    out["_by_guard"] = reqs_for
     return out
 
 
@@ -698,7 +750,12 @@ def edge_meta(em, regs):
                     # The exit inherits its ENTRY's register requirements as well as its item
                     # ones. Both must hold, so a register constrained in both places INTERSECTS.
                     rq = reqs(g)
-                    for R, vals in er.get(K, {}).items():
+                    # Ask for THIS exit's entries, not the state's: a machine serving two exits
+                    # via `register` reaches one state from both armings, and only the exit guard
+                    # says which arming it belongs to.
+                    by_guard = er.get("_by_guard")
+                    inherited = by_guard(K, g) if by_guard else er.get(K, {})
+                    for R, vals in inherited.items():
                         rq[R] = (rq[R] & vals) if R in rq else set(vals)
                     meta[(info["room"], tr[1])].append(
                         (rq, sets, tuple(exit_own | a for a in alts)))

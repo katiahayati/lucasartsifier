@@ -82,6 +82,10 @@ ACCEPTED = {
                    "reads class-table comparisons.",
     "Ne":          "as Eq.",
     "Assignment":  "every walker records writes in its own vocabulary.",
+    "Property":    "extract reads a Property node to recognise `register` -- the setScript "
+                   "argument that tells one Script which of its exits it is taking -- and vocab "
+                   "reads properties to derive the item-location store. The machine walkers see "
+                   "properties only through the atoms extract already built.",
     "Variable":    "the walkers that BUILD guard atoms (extract, machine, compile) and vocab, "
                    "which matches variable IDENTITY to derive vocabulary -- the room-selecting "
                    "variable behind SCI1.1's central `setRegions` dispatch, so the guard's "
