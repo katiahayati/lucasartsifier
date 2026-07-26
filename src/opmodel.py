@@ -25,7 +25,7 @@ import ir as I
 import machine as M
 import compile as C
 import vocab
-from extract import extract, atom, item_transfer, _room_object, verb_param_scope, EGO
+from extract import extract, atom, item_transfer, item_transfers, _room_object, verb_param_scope, EGO
 from guard_ast import GAnd, GOr, GNot, Pred
 
 
@@ -150,6 +150,20 @@ class OpEmitter:
         # exactly ONE room. The tenth is the flag library itself, skipped because `lower_flags`
         # already rewrote every call to it into synthetic globals, so its body is redundant by
         # construction and lifting it would re-add the raw bit-array writes we just abstracted.
+        # ...and TRANSITIVELY. A helper is often reached through another helper: KQ6's pawn
+        # counter is rm280 -> counterInset -> placeOnCounter, and that last script holds the
+        # `get:`/`put:` that actually hands the tinderbox over. Resolving one level left it
+        # homeless, so three traded items had no source at all.
+        for _round in range(6):
+            grew = False
+            for (tgt, _inst), sites in self.mb.arms.items():
+                for (arm, _mn, _b) in sites:
+                    via = self.armed_rooms.get(arm)
+                    if via and not (via <= self.armed_rooms.get(tgt, set())):
+                        self.armed_rooms.setdefault(tgt, set()).update(via)
+                        grew = True
+            if not grew:
+                break
         flag_procs = set((vocab.derive_flags(ir) or (None, {}))[1])
         for sn, sc in ir.scripts.items():
             if sn in self.ts.rooms or sn in self.region_rooms or not sc.procs:
@@ -566,16 +580,13 @@ class OpEmitter:
         elif tp == "Send":
             recv, msgs = I.send_pairs(node)
             for sel, params in msgs:
-                tr = item_transfer(recv, sel, params)
-                if tr is None:
-                    continue
-                it, dest = tr
-                g = _conj_atoms(pc)
-                self.handler_moves.append((room, script, it, dest, g))
-                if dest == EGO:
-                    self.handler_gets.append((room, script, it, g))
-                else:
-                    self.handler_drops.append((room, script, it, g, dest))
+                for (it, dest) in item_transfers(recv, sel, params):
+                    g = _conj_atoms(pc)
+                    self.handler_moves.append((room, script, it, dest, g))
+                    if dest == EGO:
+                        self.handler_gets.append((room, script, it, g))
+                    else:
+                        self.handler_drops.append((room, script, it, g, dest))
         elif tp in ("PublicCall", "LocalCall"):
             self._follow_call(room, script, node, pc, seen)
 

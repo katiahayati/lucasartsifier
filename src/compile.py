@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import ir as I
 from guard_ast import GAnd, GNot, Pred
-from extract import atom, _conj, item_transfer, EGO
+from extract import atom, _conj, item_transfer, item_transfers, EGO
 import machine as M
 
 COUNTER_CAP = 40          # loop/unroll bound
@@ -126,9 +126,7 @@ def _interp(path, is_death):
                     # `gEgo get:/put:` and `(Inv at: N) moveTo:` are one operation -- see
                     # extract.item_transfer. Held (dest == EGO) is a get; anywhere else is a
                     # loss of ownership, whether that is limbo (-1, 999) or a spot in the world.
-                    tr = item_transfer(recv, sel, params)
-                    if tr is not None:
-                        it, dest = tr
+                    for (it, dest) in item_transfers(recv, sel, params):
                         st.moves.append((it, dest))
                         (st.gets if dest == EGO else st.drops).append(it)
             c = _count_cues_send(recv, msgs)

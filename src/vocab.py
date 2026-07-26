@@ -135,6 +135,42 @@ def derive(ir):
 EGO = "ego"          # destination sentinel: the item is HELD (shared with extract)
 
 
+def _literal_items(node):
+    """The item numbers a `get:`/`put:` argument can denote.
+
+    Usually one literal. But a shop that sells several things writes ONE routine and picks the
+    item from a slot: KQ6's pawn counter is `(gEgo get: (switch register (0 48) (3 27) (1 3)
+    (2 14)))`, which is how the tinderbox, the painter's brush and the mechanical nightingale
+    change hands -- and `as_int` on a Switch is None, so all three had no source at all and could
+    never be judged missable. Reading a switch's case LABELS as data is what
+    `extract._global_room_values` already does for a revolving-door room's destinations.
+
+    Every case is returned: which one you get depends on runtime state we do not track, so the
+    honest reading is that this site can yield any of them."""
+    if not isinstance(node, dict):
+        return []
+    v = I.as_int(node)
+    if v is not None:
+        return [v]
+    if node.get("t") != "Switch":
+        return []
+    def val(x):
+        # a case body is a statement LIST even when it is a single expression
+        if isinstance(x, dict) and x.get("t") == "List":
+            ks = x.get("kids") or []
+            return I.as_int(ks[0]) if len(ks) == 1 else None
+        return I.as_int(x)
+
+    out = []
+    for c in (node.get("kids") or [])[1:]:
+        ks = c.get("kids") or []
+        n = val(ks[1]) if (c.get("t") == "Case" and len(ks) > 1) else (
+            val(ks[0]) if (c.get("t") == "Else" and ks) else None)
+        if n is not None:
+            out.append(n)
+    return out
+
+
 def _arg_roles(ir, wrapper_cls, selector, core):
     """Where the ITEM and the DESTINATION live in a wrapper's own argument list.
 
@@ -316,7 +352,8 @@ class Vocabulary:
                 f"read via {sorted(self.reads)}")
 
     def transfer(self, recv, sel, params, item_of_receiver):
-        """A send -> `(item, dest)` if it moves an item, else None.
+        """A send -> `(item, dest)` if it moves an item, else None. `item` is a TUPLE when the
+        game picks the item at runtime from a fixed menu (see `_literal_items`).
 
         `item_of_receiver(recv)` resolves `(<inv> at: N)` to N -- the one structural fact that
         stays in the caller, because it is about how an item is REFERRED to, not about vocabulary.
@@ -343,9 +380,10 @@ class Vocabulary:
         i = roles["item_arg"] - 1
         if i < 0 or i >= len(params):
             return None
-        it = I.as_int(params[i])
-        if it is None:
+        its = _literal_items(params[i])
+        if not its:
             return None
+        it = its[0] if len(its) == 1 else tuple(its)
         if roles["dest_fixed"] is not None:
             return (it, roles["dest_fixed"])
         j = (roles["dest_arg"] or 0) - 1

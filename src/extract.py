@@ -350,6 +350,17 @@ def install_vocabulary(ir):
     return _VOCAB
 
 
+def item_transfers(recv, sel, params):
+    """`item_transfer`, but one entry per item when the game picks from a fixed menu (a shop
+    counter's `(gEgo get: (switch slot (0 48) (1 3) ...))`). Callers that record an effect per
+    item iterate this; `item_transfer` keeps the single-item shape for everything else."""
+    tr = item_transfer(recv, sel, params)
+    if tr is None:
+        return ()
+    it, dest = tr
+    return tuple((i, dest) for i in it) if isinstance(it, tuple) else (tr,)
+
+
 def item_transfer(recv, sel, params):
     """An inventory-transfer send -> `(item, dest)`, else None. `dest` is EGO or an int
     (a room number, real or pseudo; -1 = nowhere, SCI's own idiom).
@@ -1301,14 +1312,14 @@ class Extractor:
                 # ACQUISITION -- the last hardcoded `sel == "get"` here is gone too: whether a
                 # send hands the player an item is a question for the derived vocabulary, not a
                 # selector name we happen to know.
-                tr = item_transfer(recv, sel, params)
-                if tr is not None and tr[1] == EGO:
-                    self.ts.items.add(tr[0])
-                    self.ts.acqs.append(Acq(tr[0], room, _conj(pc)))
-                elif tr is not None and isinstance(tr[1], int) and tr[1] > 0:
-                    # a transfer to a ROOM (not the ego, not -1/nowhere): the item is PLACED there.
-                    # This is the owner state's transition to a location -- see TS.placed.
-                    self.ts.placed.setdefault(tr[0], set()).add(tr[1])
+                for tr in item_transfers(recv, sel, params):
+                    if tr[1] == EGO:
+                        self.ts.items.add(tr[0])
+                        self.ts.acqs.append(Acq(tr[0], room, _conj(pc)))
+                    elif isinstance(tr[1], int) and tr[1] > 0:
+                        # a transfer to a ROOM (not the ego, not -1/nowhere): the item is PLACED
+                        # there. The owner state's transition to a location -- see TS.placed.
+                        self.ts.placed.setdefault(tr[0], set()).add(tr[1])
 
     def _global_room_values(self, room, gi):
         """Room numbers a `newRoom:` global can hold, from switch-on-G case labels and

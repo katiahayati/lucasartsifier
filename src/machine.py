@@ -399,9 +399,9 @@ class MachineBuilder:
                     out.append(Op("JUMP", g, k))
             else:
                 # Same recogniser compile uses -- these two walkers must not drift.
-                tr = item_transfer(recv, sel, params)
-                if tr is not None and tr[1] == EGO:
-                    out.append(Op("GET", g, tr[0]))
+                for tr in X.item_transfers(recv, sel, params):
+                    if tr[1] == EGO:
+                        out.append(Op("GET", g, tr[0]))
         if _is_cue_send(recv, msgs):
             out.append(Op("ADVANCE", g))
 
