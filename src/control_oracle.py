@@ -554,6 +554,8 @@ def prop_gate(game, ir, room):
         if p["loop"] >= len(loops):
             continue
         cels = loops[p["loop"]]["cels"]
+        if not cels or any(c is None for c in p["posn"]):
+            continue          # a Prop positioned at runtime has no static footprint to read
         closed_fp = cels[0].footprint(*p["posn"])
         open_fp = cels[-1].footprint(*p["posn"])
         for bit in bits:
