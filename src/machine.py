@@ -240,6 +240,11 @@ class MachineBuilder:
                                              armer=(other.name, k))
                     continue
                 self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn))
+        # ...and this script's own PROCEDURES, which were never scanned at all. A machine armed
+        # from a proc in its own script had no entry whatever: KQ6's realm cutscene is armed by
+        # `proc344_1`, and the item-state test guarding it went with it.
+        for pname, pbody in script.procs.items():
+            self._scan_setscript(pbody, [], m, source="proc")
         # ...and the same scan over the OTHER scripts that arm this machine by `(ScriptID s n)`.
         # Deduplicated per body: one method can arm the same machine on several branches, and
         # _scan_setscript already records one entry per arming site within a body.
