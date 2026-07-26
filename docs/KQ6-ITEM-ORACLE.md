@@ -49,9 +49,9 @@ Zones: `CROWN` 200–290 · `SACRED` 340–390 · `CAT-L1` 405/408/410/415/420/4
 | 18 | holeInTheWall | **WONDER** gate, while the plants dance | placed on the wall, **CAT-L2** (spy room) | 230,407 — **GAP** | **CARRY-IN to B1** |
 | 19 | huntersLamp (old lamp) | **BEAST**, boiling pond (needs lettuce) | baby tears, fountain water, sacred water; → beggar for newLamp | 470,520 ✓ | model says **SOFTLOCK** |
 | 20 | letter | Alhazred's chest, **CASTLE** (needs skeletonKey) | show Saladin; give Cassima | 781 ✓ | obtained and used inside B4 — safe |
-| 21 | lettuce | WONDER | thrown in the boiling pond → old lamp | — **GAP: no source** | safe (melts = timer) |
+| 21 | lettuce | WONDER (picked up) | thrown in the boiling pond → old lamp | — **GAP: `get:` is in `n483`, a non-room script we never walk** | safe (melts = timer) |
 | 22 | milk | WONDER, dogwood tree | to the baby-tears plants | 470,480 ✓ | safe |
-| 23 | mint | pawn-shop jar | 3rd gnome | 280 ✓ | model says **SOFTLOCK** — suspect FP |
+| 23 | mint | pawn-shop jar | 3rd gnome; **and needed INSIDE THE CASTLE at the end** (user) | 280 ✓ | **STRANDING — B4 carry-in.** model ✓ |
 | 24 | mirror | BEAST | on the Lord of the Dead, **REALM** | 540 ✓ | **CARRY-IN to B3** |
 | 25 | newLamp | beggar (trade old lamp) | give to Jollo, **CASTLE** | 750 | **CARRY-IN to B4** |
 | 26 | nail | CASTLE | inside | 880 | safe |
@@ -61,7 +61,7 @@ Zones: `CROWN` 200–290 · `SACRED` 340–390 · `CAT-L1` 405/408/410/415/420/4
 | 30 | pearl | oyster, WONDER | to the pawn shop → reclaim royal ring | 280 | safe |
 | 31 | peppermint | **SACRED cave** | *(no use given in this guide)* | 390 ✓ | **verify** |
 | 32 | note | Cassima's warning, CROWN | narrative | 210 ✓ | safe |
-| 33 | potion | WONDER gate table | drink → fake death (pawn shop) | — **GAP: no source** | safe |
+| 33 | potion | WONDER gate table | drink → fake death (pawn shop) | — **GAP: `get:` is in `n483`** | safe |
 | 34 | rabbitFoot | ferryman | 4th gnome | 290 ✓ | safe |
 | 35 | ribbon | Sing Sing cut-scene | touch → black hair | 210 ✓ | safe |
 | 36 | riddleBook (rare book) | bookworm (give participle) | trade Ali → spellBook | 460 ✓ | safe |
@@ -107,14 +107,22 @@ Model catches 7 and 43; **misses 11 (skull)** because its use at the Isle of Mis
 strandings at a real boundary.
 **Missed (should fire):** skull (B2), handkerchief (B3), teacup/Styx (B3), and the whole
 carry-IN class (tinderbox, brick, hole-in-the-wall, scarf) because B1's exit gate is unmodelled.
-**Suspect FP:** mint — a gnome puzzle item with no boundary; check.
+**mint is NOT a false positive** (user, 2026-07-25): it is needed inside the castle at the
+end, so it is a genuine B4 carry-in and the model is right. My "suspect FP" call was wrong -- I
+judged it from the walkthrough's gnome puzzle alone and never checked the endgame.
 **Unverified:** clothes, huntersLamp.
 
 **Root causes of the misses, in priority order:**
 1. **B1's exit gate** (`rm440→340` needs the minotaur dead) is behind `onControl` → the catacombs
    are not a pocket → no carry-IN stranding can fire. Biggest single win.
-2. **Missing sources** — tinderbox, brush, nightingale, potion, lettuce have NO source: all are
-   **pawn-shop trades / consumed swaps**, i.e. the item-location store, not `get:`.
+2. **Missing sources — TWO distinct mechanisms**, not one (my first grouping was wrong;
+   lettuce is not a trade):
+   a. **`get:` inside a non-room, non-region script.** `lettuce` and `potion` are picked up in
+      `n483`, a helper script we never walk. Same root as the cutscene-script gap, but for
+      ACQUISITIONS: `armed_rooms` lifted such scripts' MACHINES and not their handler `get:` sites.
+   b. **Acquisition by `owner:` WRITE rather than `get:`.** `tinderBox` has no `get:`/`put:`
+      anywhere -- only `owner:` reads -- so the pawn-shop trade hands it over through the
+      item-location store's write side, which we do not treat as a source.
 3. **Missing uses** — handkerchief and teacup have no `required` at all.
 4. **B3's entry seal** (flag 15) unattached → the realm is not one-visit → its carry-outs cannot
    strand except where another boundary does the work (skeletonKey fires via B4).
