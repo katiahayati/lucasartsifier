@@ -252,7 +252,14 @@ def control_shape(node):
         # each case by "the selected item is N", i.e. OWN(N) (see _cmp_atom). Unlike a counter switch
         # its cases do NOT accumulate `!= earlier` priors: selecting item N says nothing about owning
         # the others, so a later case must not inherit a spurious "you lack the earlier items".
-        dispatch = bool(head) and is_selected_item(head)
+        # A PARAMETER head is a dispatch too: `(switch param1 (72 <use the scarf>) ...)` is how
+        # SCI1.1 writes what SCO0 spells `(if (== param1 72) ...)`, and inside a doVerb that case
+        # label IS the item the player used -- `_cmp_atom` turns `param1 == N` into OWN(N) there,
+        # and leaves it opaque anywhere else. Without this the whole switch form of item-use was
+        # unguarded: KQ6 sets `scarfOnMino` in such a case, so showing the minotaur the red scarf
+        # carried no requirement and the catacombs could be escaped without it.
+        param = bool(head) and head.get("t") == "Variable" and head.get("vtype") == "Parameter"
+        dispatch = bool(head) and (is_selected_item(head) or param)
         valued = glob or dispatch
         arms, priors = [], []
         for c in ks[1:]:
