@@ -46,6 +46,25 @@ def _cmp_const(cur, op, val):
             "<": cur < val, "<=": cur <= val}.get(op, True)
 
 
+def _has_pos_edge(guard, codes):
+    """Does this guard test `edgeHit == <one of codes>`? `atom` renders it ("POS","edge",N)."""
+    found = []
+
+    def w(g):
+        if isinstance(g, tuple) and len(g) == 3 and g[0] == "POS" and g[1] == "edge":
+            found.append(g[2])
+        elif isinstance(g, list):
+            for k in g:
+                w(k)
+        elif isinstance(g, (GAnd, GOr)):
+            for k in g.kids:
+                w(k)
+        elif isinstance(g, GNot):
+            w(g.kid)
+    w(guard)
+    return any(c in codes for c in found)
+
+
 def _conj_atoms(atoms):
     atoms = [a for a in atoms if a is not None]
     if not atoms:
@@ -274,6 +293,7 @@ class OpEmitter:
         #  - crossing-gate (rm47): the win-ward exit that PROVABLY forces the doit death-rect
         #    inherits the disguise requirement, per-exit (does not over-gate the retreat).
         self._apply_control_gates()
+        self._apply_polygon_gates()
 
         # finalize domains; single-value dims fold to constants (SMV rejects init on them)
         self.reg_dom, self.reg_const = {}, {}
@@ -387,6 +407,39 @@ class OpEmitter:
                 "entry_locals": m.entry_locals, "init_entry_locals": m.init_entry_locals,
                 "entry_armers": m.entry_armers,
                 "start": m.start, "delivered": delivered, "drops": drops}
+
+    def _apply_polygon_gates(self):
+        """Consume polygons.polygon_gates: a screen edge a room's obstacle layout only OPENS
+        under some condition is a real gate on the positional exit that leaves by it.
+
+        SCI1.1 blocks with pathfinder polygons rather than the PIC control plane, so this is the
+        SCI1.1 half of what `_apply_control_gates` does for SCO0. The exit is recognised by its own
+        `edgeHit` test -- `atom` already renders that as a POS atom carrying the edge code -- so
+        nothing here needs to know which room or which edge; both come from the data."""
+        self.polygon_gates = []
+        try:
+            import polygons as PG
+        except Exception:                                   # noqa: BLE001
+            return
+        by_room = {}
+        for info in self.machines:
+            by_room.setdefault(info["room"], []).append(info)
+        for room in sorted(by_room):
+            try:
+                gates = PG.polygon_gates(self.ir, room)
+            except Exception:                               # noqa: BLE001
+                continue
+            for gate in gates:
+                self.polygon_gates.append(gate)
+                want = [c for c, nm in PG.EDGES.items() if nm == gate["edge"]]
+                for info in by_room[room]:
+                    ents = info.get("entries") or []
+                    for i, (K, eg) in enumerate(ents):
+                        if not _has_pos_edge(eg, want):
+                            continue
+                        ents[i] = (K, GAnd(list(gate["guard"]) + [eg]) if eg is not None
+                                   else (gate["guard"][0] if len(gate["guard"]) == 1
+                                         else GAnd(list(gate["guard"]))))
 
     def _apply_control_gates(self):
         """Consume control_oracle.find_gates: for each prop-gate, AND the derived door-open
