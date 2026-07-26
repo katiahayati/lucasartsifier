@@ -120,6 +120,34 @@ class OpEmitter:
                     self.armed_rooms.setdefault(tgt_script, set()).add(arm_script)
                 for r in self.region_rooms.get(arm_script, ()):
                     self.armed_rooms.setdefault(tgt_script, set()).add(r)
+        # ...and a helper reached by CALLING its public procedures. `(proc441_2)` runs minoTrigger's
+        # code, which is where the minotaur-defeated flag is SET; `(proc483_x)` is where the lettuce
+        # and the potion are picked up. Neither script is a room or a region, so both went unwalked
+        # entirely -- the flag was never WRITTEN in our model and so never qualified as a gating
+        # register, and the two items had no source at all.
+        #
+        # Same principle as regions and armed scripts: the code runs in the rooms that invoke it.
+        # Naturally selective rather than capped -- 9 of KQ6's 10 effectful helpers are called from
+        # exactly ONE room. The tenth is the flag library itself, skipped because `lower_flags`
+        # already rewrote every call to it into synthetic globals, so its body is redundant by
+        # construction and lifting it would re-add the raw bit-array writes we just abstracted.
+        flag_procs = set((vocab.derive_flags(ir) or (None, {}))[1])
+        for sn, sc in ir.scripts.items():
+            if sn in self.ts.rooms or sn in self.region_rooms or not sc.procs:
+                continue
+            if sc.procs and set(sc.procs) <= flag_procs:
+                continue
+            for cn, csc in ir.scripts.items():
+                if cn == sn:
+                    continue
+                bodies = [b for o in csc.objects for b in o.methods.values()] + list(csc.procs.values())
+                if not any(n.get("t") in ("PublicCall", "LocalCall") and n.get("name") in sc.procs
+                           for b in bodies for n in I.walk(b)):
+                    continue
+                if cn in self.ts.rooms:
+                    self.armed_rooms.setdefault(sn, set()).add(cn)
+                for r in self.region_rooms.get(cn, ()):
+                    self.armed_rooms.setdefault(sn, set()).add(r)
         # Hoisted above the init/machine pass: `_init_writes` records room-LOCAL
         # seeds too, and it runs first.
         self.handler_writes = []       # (room, script, gi, val, guard)  -- script for CTR-local resolve
