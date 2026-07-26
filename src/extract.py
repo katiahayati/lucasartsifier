@@ -818,6 +818,11 @@ class Extractor:
         # add any newRoom target we saw as a room
         for e in self.ts.edges:
             self.ts.rooms.add(e.dst)
+        # AFTER the rooms are known: _coord_tables asks whether the player can be in the
+        # dispatcher room, which is only answerable once newRoom targets have been folded in.
+        self._coord_tables()
+        for e in self.ts.edges:
+            self.ts.rooms.add(e.dst)
         return self.ts
 
     def _nav_hubs(self):
@@ -864,6 +869,67 @@ class Extractor:
                 for b in dests:
                     if a != b:
                         self.ts.edges.append(Edge(a, b))    # hub: item-travel between destinations
+
+    def _coord_tables(self):
+        """SIGN-TAGGED destination tables: a room that computes where you go, and marks a real
+        room by NEGATING it.
+
+        A coordinate maze does not navigate by room number. KQ6's catacombs keep a grid coordinate
+        and derive the destination from it:
+
+            (method (newRoom param1)
+                (if (< (= param1 (self calcRoom: labCoords prevEdgeHit)) 0)
+                    (super newRoom: (- param1))          ; negative  => a REAL room
+                else
+                    (self initPseudoRoom: param1 ...)))  ; positive  => same room, redrawn
+
+        and `calcRoom` reads the destination out of a script-local table interleaving rooms with
+        the coordinates that reach them. The argument is data-dependent, so the edge is dropped and
+        the maze interior is unreachable -- 10 rooms in KQ6, the ones the catacombs softlock lives
+        among.
+
+        The SIGN is the game's own tag for "this is a room", and it is load-bearing rather than
+        cosmetic: the same table holds coordinate 180, and 180 is also a real room number, so
+        reading the table by absolute value invents an edge into the castle. We therefore take only
+        NEGATIVE entries, and only in a script that demonstrably uses the convention -- it must
+        contain a `newRoom:` whose argument is a NEGATION. That evidence is what keeps this inert
+        everywhere else: LSL2 and KQ4 have no negated newRoom at all.
+
+        The result is an over-approximation of the maze -- every table room becomes reachable from
+        the dispatcher -- which is the honest direction for a grid the player may walk freely; the
+        exact reachable set needs the wall lists (see `labCoords` in the gap census)."""
+        rooms = _room_numbers(self.ir)
+        for s in self.ir.scripts.values():
+            # The dispatcher need not DEFINE a room object: KQ6's script 400 holds the `LBRoom`
+            # CLASS its maze rooms inherit, and is itself entered by `newRoom: 400` from them. So
+            # the test is "can the player be in this room", i.e. the room graph reached it -- not
+            # "does this script declare a room instance", which would drop exactly this case.
+            if s.number not in self.ts.rooms:
+                continue
+            negated = False
+            for o in s.objects:
+                for body in o.methods.values():
+                    for n in I.walk(body):
+                        if n.get("t") != "Send":
+                            continue
+                        _r, msgs = I.send_pairs(n)
+                        for sel, params in msgs:
+                            if (sel == "newRoom" and params and isinstance(params[0], dict)
+                                    and params[0].get("t") == "Neg"):
+                                negated = True
+            if not negated:
+                continue
+            dests = set()
+            for l in s.locals:
+                v = l["value"]
+                v = v - 65536 if isinstance(v, int) and v > 32767 else v   # locals are uint16
+                if isinstance(v, int) and v < 0 and -v in rooms and -v != s.number:
+                    dests.add(-v)
+            if len(dests) < 2:                 # a lone negative is a sentinel, not a table
+                continue
+            for d in sorted(dests):
+                self.ts.edges.append(Edge(s.number, d))
+                self.ts.rooms.add(d)
 
     # selectors that make an object animate/move/run, i.e. that end in a `cue` back to it
     ARMING = ("setCycle", "setMotion", "setScript", "cue", "setReal", "setTimer")

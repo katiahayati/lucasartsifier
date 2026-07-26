@@ -134,7 +134,17 @@ def discover_start(em, edges=None, entries=None):
     # while it reaches only itself. A genuine free-roam start reaches about as much as the widest
     # room does (LSL2 ratio .99, KQ4 1.0); a sink is a small fraction. Any overlap with a candidate
     # that reaches a comparable amount keeps the candidate (SQ3 rm900 shares 36 rooms with rm40).
-    if (cand_reach & wide_reach) and len(cand_reach) * 2 >= len(wide_reach):
+    # The size ratio this used to test (`cand*2 >= wide`) is the right IDEA stated as a magic
+    # number, and the number is what breaks: a genuine start scores ~1.0 and a sink a small
+    # fraction, but KQ6's rm140 scores 0.62 and squeaks past a 0.5 bar, losing 29 rooms including
+    # the whole sacred-mountain/catacombs/realm half of the game.
+    #
+    # State it structurally instead: preferring the candidate is only safe if it COSTS NOTHING.
+    # Discounting the entry rooms themselves -- a pass-through root's sole contribution is itself,
+    # which is exactly what we are trying to drop -- keep the candidate unless the widest room
+    # reaches real rooms the candidate cannot. LSL2's rm10 adds only rm10, so rm11 still wins;
+    # KQ6's rm320 adds 29 real rooms, so it wins. No threshold to tune.
+    if (cand_reach & wide_reach) and not ((wide_reach - entries) - (cand_reach - entries)):
         return candidate
     return widest
 
