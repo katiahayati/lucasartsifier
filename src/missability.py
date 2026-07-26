@@ -887,6 +887,13 @@ class IrSccReach(SccReach):
         self.regs = gating_registers(em)
         self._emeta = edge_meta(em, self.regs)
         self._inroom = {R: defaultdict(set) for R in self.regs}
+        # OWN requirements on each in-room write. The writes themselves stay PERMISSIVE for
+        # registers (see below), but a write you can only perform by USING an item is not
+        # available when that item is banned: KQ6 sets `scarfOnMino` from `doVerb 72`, i.e. only
+        # if you hold the red scarf, and that single write is what eventually opens every exit
+        # from the catacombs. Ignoring it made the scarf look re-obtainable from inside the very
+        # trap that needs it.
+        self._inroom_own = {}
         regset = set(self.regs)
         dbg = frozenset(em.cfg.debug_globals)
         for room, script, gi, v, g in em.handler_writes:
@@ -899,6 +906,7 @@ class IrSccReach(SccReach):
             # move it; KQ4 has 12 across 8 registers, among them global100 (night) and global109.
             if gi in regset and not _debug_gated_guard(g, dbg):
                 self._inroom[gi][room].add(v)
+                self._inroom_own[(gi, room, v)] = frozenset(_own_positive(g))
         # MACHINE writes, with the machine's own entry guard on the SAME register kept as an
         # ordering. KQ4 dispatches Lolotte's conversations with `(switch global109 (1 lotTalk3)
         # (2 lotTalk4) (3 lotTalk5))`, and each writes the next value -- so lotTalk4 is a
@@ -935,6 +943,7 @@ class IrSccReach(SccReach):
                                 self._rstep[gi][info["room"]].add((frm, v))
                         else:
                             self._inroom[gi][info["room"]].add(v)
+                            self._inroom_own[(gi, info["room"], v)] = frozenset(_own_positive(g))
         self._pstates = {R: self._walk(R, frozenset()) for R in self.regs}
 
     _FREE = ({}, {}, (frozenset(),))
@@ -945,7 +954,8 @@ class IrSccReach(SccReach):
         what the old `_sealed` heuristic crudely approximated: you cannot use the parachute to
         walk back to the parachute."""
         r, st = node
-        out = {(r, v) for v in self._inroom[R].get(r, ())}
+        out = {(r, v) for v in self._inroom[R].get(r, ())
+               if not (banned and self._inroom_own.get((R, r, v), frozenset()) & banned)}
         # ...plus writes the game only makes FROM a particular value of R -- see _build_product
         out |= {(r, to) for (frm, to) in self._rstep[R].get(r, ()) if frm == st}
         for b in self.edges.get(r, ()):

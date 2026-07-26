@@ -25,7 +25,7 @@ import ir as I
 import machine as M
 import compile as C
 import vocab
-from extract import extract, atom, item_transfer, _room_object, EGO
+from extract import extract, atom, item_transfer, _room_object, verb_param_scope, EGO
 from guard_ast import GAnd, GOr, GNot, Pred
 
 
@@ -239,7 +239,14 @@ class OpEmitter:
                         # FOLLOWING calls into other scripts, so nothing is absent.
                         if mn in ("changeState", "init"):
                             continue
-                        self._hwalk(room, rn, body, [], set())
+                        # A `doVerb` body dispatches on the item the player used, so its guards
+                        # only read as OWN inside that context -- `extract._walk` sets it and this
+                        # walk did not, which is the same rule in two places. Without it KQ6's
+                        # `(switch param1 (72 ((ScriptID 30 0) scarfOnMino: 1)))` records the write
+                        # that kills the minotaur as UNGUARDED, so the escape from the catacombs
+                        # needs no red scarf and the whole carry-IN class cannot strand.
+                        with verb_param_scope(mn):
+                            self._hwalk(room, rn, body, [], set())
                 for pbody in s.procs.values():
                     self._hwalk(room, rn, pbody, [], set())
         self._walk_game_newroom(ir)

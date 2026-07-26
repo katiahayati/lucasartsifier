@@ -13,7 +13,7 @@ dies) · **B2** catacombs upper→lower (hard one-way) · **B3** the Realm of th
 
 | candidate | where it binds | real? | model | why |
 |---|---|---|---|---|
-| **tinderbox** | B1 carry-IN | **only if it can be LOST** | ✗ partial | required at rm370 (the entry gate, correct) and rm406 (lower catacombs). It is one of the four the game checks, so you cannot be captured without it — but it is TRADED for the brush at the pawn shop, so the open question is whether that trade is reversible. Blocked on its missing source (an `owner:` write, not `get:`) |
+| **tinderbox** | B1 carry-IN | **YES** | ✗ MISS | required at rm370 (first-visit check) and rm406 (lower catacombs — "you'll fall, light it"). Also has no source, because the pawn shop hands it over with an `owner:` write |
 | **teacup** | B3 carry-IN / water carry-OUT | **YES** (long path) | ✗ MISS | **B3 is unmodelled** — the realm's one-visit flag-15 seal is not attached, so you appear able to go back for it |
 | **mirror** | B3 carry-IN | **YES** | ✗ MISS | same — B3 unmodelled. Without it the Lord of the Dead kills you and the realm has no other non-death exit |
 | **handkerchief** | B3 → B4 carry-OUT | **YES** | ✓ **CAUGHT** | caught via B4 (castle terminal), not B3. ⚠ its recorded use is rm230/rm407, which looks wrong — right answer, possibly wrong reason |
@@ -30,33 +30,38 @@ dies) · **B2** catacombs upper→lower (hard one-way) · **B3** the Realm of th
 | **old lamp** | many uses, traded away | **likely** | ✓ CAUGHT | baby tears, fountain water, sacred water, then traded to the beggar |
 | **coal** | → egg → reach B3 | **likely** | ✓ CAUGHT | coal→White Queen→spoiled egg→the skull concoction that reaches the realm. Unconfirmed |
 | **clothes** | B4 entry (short) | **NO** | ✓ correct to skip | user 2026-07-26: only needed *outside*, to get in. Beauty gives them (rm540); worn at rm220 → rm730 |
-| **brick, hole-in-the-wall, red scarf** | B1 carry-IN | **NO — the game guards it** | ✓ correct | see below: KQ6 REFUSES to capture you without all four, and sends you to the beach instead. Our rm370 requirement is right, not a mis-attribution |
+| **brick, hole-in-the-wall, red scarf** | B1 carry-IN | **YES** | ✗ MISS | you get ONE warning, then the game throws you in regardless — see below. Without the scarf you can never kill the minotaur, so you can never leave |
 
-## ⚠ CORRECTION: KQ6 GUARDS its own catacombs entry (found 2026-07-26)
+## THE CAPTURE IS A ONE-WARNING GATE, IN TWO ROOMS (user 2026-07-26, verified)
 
-The community line -- "miss any of the four and you are stuck once captured" -- is **false**, and I
-repeated it before checking. rm370's capture reads:
+I first read only rm370 and wrongly concluded the game protects you. It does not -- it gives you
+exactly one pass. The mechanism spans TWO rooms, which is why half of it is easy to miss:
+
+**rm370 -- the gate, first visit.** `(proc913_1 2)` sets flag 2 ("caught at the gate") FIRST, then:
 
     (cond ((and (has: brick) (has: holeInTheWall) (has: tinderBox) (has: scarf))
-              (setScript: toLabyrinth))          ; thrown into the catacombs
+              (setScript: toLabyrinth))              ; into the catacombs now
           ((== global90 2) (setScript: toBeachCD))
-          (else            (setScript: toBeachTXT)))   ; BOTH send you to the beach
+          (else            (setScript: toBeachTXT))) ; one free pass -> the beach
 
-`global90` is the text/speech mode, so the only real branch is "have all four, or go to the beach".
-The game will not put you in the catacombs unless you are equipped for them. So the four are a
-REQUIREMENT at rm370, which is exactly what we record -- and NOT a stranding, provided each stays
-obtainable (brick, hole-in-the-wall and scarf are re-obtainable from 55 rooms; the tinderbox is
-unknown because we have no source for it).
+**rm340 -- every later arrival.** `rm340.sc:116`:
 
-This is anti-softlock design in the game itself, and it is the reason a "carry-IN" verdict has to be
-checked against the code rather than inferred from the boundary.
+    ((and (not (proc913_0 1)) (proc913_0 2))      ; minotaur alive AND you were caught before
+        ... (proc342_2))                           ; -> tossEmIn -> newRoom 405
+
+`n342.sc` contains **no `has:` checks whatsoever**. So the second time you set foot on the Sacred
+Mountain you are thrown in whatever you are carrying. The item check exists only on the FIRST
+visit; flag 2 is set regardless of whether you passed it.
+
+So all four ARE softlocks, and the scarf is the sharpest: without it `scarfOnMino` is never set, the
+minotaur never dies, flag 173 is never set, and every one of the three exits we now gate stays
+shut. Enter without it and the game is over.
 
 ## Score
 
-**Real softlocks identified: 11** (down from 14: brick, hole-in-the-wall and red scarf are guarded
-by the game). We catch **7** — dagger, shield, old coins, handkerchief, skeletonKey, mint, old lamp
-(+ coal, likely). We miss **4**: teacup, mirror, nightingale, skull — plus tinderbox, pending
-whether its pawn-shop trade is reversible.
+**Real softlocks identified: 14.** We catch **7** — dagger, shield, old coins, handkerchief,
+skeletonKey, mint, old lamp (+ coal, likely). We miss **7**: teacup, mirror, nightingale, skull,
+and the catacombs carry-IN four (tinderbox, brick, hole-in-the-wall, red scarf).
 
 ## The misses have exactly three causes
 
