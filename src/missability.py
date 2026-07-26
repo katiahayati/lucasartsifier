@@ -490,6 +490,13 @@ def gating_registers(em):
     written = set()
     for room, script, gi, v, g in em.handler_writes:
         written.add(gi)
+    # `init` runs on arrival, so a register it sets is genuinely written -- it was only collected
+    # apart to keep arrival atomic. Omitting it here meant a flag raised ONLY on entering a room
+    # counted as never-written and so was never promoted, however much movement it gated. That is
+    # how KQ6 seals the realm of the dead: rm600's init raises flag 15, nothing clears it, and the
+    # way in demands it clear.
+    for room, vs in getattr(em, "init_writes", {}).items():
+        written.update(vs)
     for info in em.machines:
         for K, paths in info["states"].items():
             for (g, w, gg, c, tr) in paths:
@@ -924,6 +931,16 @@ class IrSccReach(SccReach):
         # DISAGREE (some constrain R, some do not), we cannot pin the from-value, so we honour the
         # permissive default above and leave the write unguarded. This is a no-op for the Lolotte
         # counter (lotTalk3/4/5 each have a single 109-constraining entry, so they still order).
+        # ROOM-ENTRY writes. `init` runs on arrival, so a register it sets really does change in
+        # that room -- but init writes were collected separately (for the atomic-arrival ordering)
+        # and never reached the projections, so a flag raised ONLY on arrival looked never-written
+        # and did not even qualify as a gating register. KQ6 seals the realm of the dead exactly
+        # that way: rm600's init sets flag 15, nothing clears it, and the entry needs it clear.
+        for room, vs in getattr(em, "init_writes", {}).items():
+            for gi, v in vs.items():
+                if gi in regset:
+                    self._inroom[gi][room].add(v)
+                    self._inroom_own.setdefault((gi, room, v), frozenset())
         self._rstep = {R: defaultdict(set) for R in self.regs}
         for info in em.machines:
             entries = list(info.get("entries", ())) + list(info.get("init_entries", ()))
@@ -1862,14 +1879,26 @@ class IrSccReach(SccReach):
                 continue
             gates = {next(iter(alt)) for (req, sets, alts) in metas
                      for alt in alts if len(alt) == 1}
-            for X in sorted(gates):
-                spent = a in self.drops.get(X, set()) or a in placed.get(X, set())
-                if not spent or a in self.reobtainable_rooms(X):
-                    continue                     # not spent here, or spent but re-gettable -> benign
+            # A toll need not be an ITEM. The same "you may cross this once" shape arises when the
+            # gate is a set-once FLAG the far side raises: KQ6's realm of the dead is entered only
+            # while flag 15 is clear, and arriving in rm600 sets flag 15 and nothing ever clears
+            # it. Item-spent and flag-raised are two spellings of one fact, so they share the
+            # pocket logic below rather than getting a second detector.
+            inroom = getattr(self, "_inroom", {})
+            flag_tolls = sorted(_selfsealing_flags(metas, inroom))
+            for X in sorted(gates) + [("flag", F) for F in flag_tolls]:
+                if isinstance(X, tuple):
+                    pass                         # a flag toll is one-time by construction
+                else:
+                    spent = a in self.drops.get(X, set()) or a in placed.get(X, set())
+                    if not spent or a in self.reobtainable_rooms(X):
+                        continue                 # not spent here, or spent but re-gettable -> benign
                 cut = {u: (v - {b} if u == a else v) for u, v in self.edges.items()}
                 pocket = full - reachable(cut, {start})
                 if b not in pocket:
                     continue                     # b reachable another way -> not a sealed pocket
+                if isinstance(X, tuple) and not _flag_set_inside(X[1], pocket, inroom):
+                    continue                     # the flag is not raised in there -> re-enterable
                 for Y in sorted(self.required):
                     if Y == X:
                         continue
@@ -1885,11 +1914,38 @@ class IrSccReach(SccReach):
                         continue
                     seen.add(k)
                     out.append({"pattern": "one-visit-toll-pocket", "item": Y,
-                                "item_name": self.g.item_name(Y), "toll_item": X,
-                                "toll_item_name": self.g.item_name(X),
+                                "item_name": self.g.item_name(Y),
+                                "toll_item": None if isinstance(X, tuple) else X,
+                                "toll_item_name": (f"flag{X[1]}" if isinstance(X, tuple)
+                                                   else self.g.item_name(X)),
                                 "toll_edge": [a, b], "pocket": sorted(pocket),
                                 "source_rooms": sorted(srcs)})
         return out
+
+
+def _selfsealing_flags(metas, inroom):
+    """Registers this edge needs at 0 which the FAR SIDE then raises for good.
+
+    The self-disabling one-visit entry: you may cross while F is clear, and crossing leads
+    somewhere that sets F and nothing ever clears it, so the crossing happens exactly once. Only
+    registers we synthesized from a flag store qualify -- their domain really is {0,1}, so "needs
+    0" and "raised to 1" are the same axis -- and only if nothing writes 0 anywhere, which is what
+    makes it permanent rather than a toggle."""
+    out = set()
+    for (req, sets, alts) in metas:
+        for R, vals in req.items():
+            if vals != {0} or R not in vocab.BOOL_GLOBALS:
+                continue
+            writes = {v for rooms in (inroom.get(R) or {}).values() for v in rooms}
+            if 0 in writes or 1 not in writes:
+                continue                         # cleared somewhere, or never raised -> no seal
+            out.add(R)
+    return out
+
+
+def _flag_set_inside(R, pocket, inroom):
+    """Is R raised somewhere in the pocket -- i.e. does going in seal the way back?"""
+    return any(1 in vs for room, vs in (inroom.get(R) or {}).items() if room in pocket)
 
 
 def load(cfg=None, ir_path=None):
