@@ -13,7 +13,7 @@ dies) · **B2** catacombs upper→lower (hard one-way) · **B3** the Realm of th
 
 | candidate | where it binds | real? | model | why |
 |---|---|---|---|---|
-| **tinderbox** | B1 carry-IN | **YES** | ✗ MISS | requirement IS captured (rm406, lower catacombs — "you'll fall, light it") but the item has **no source**: it is a pawn-shop TRADE, handed over by an `owner:` write rather than `get:` |
+| **tinderbox** | B1 carry-IN | **only if it can be LOST** | ✗ partial | required at rm370 (the entry gate, correct) and rm406 (lower catacombs). It is one of the four the game checks, so you cannot be captured without it — but it is TRADED for the brush at the pawn shop, so the open question is whether that trade is reversible. Blocked on its missing source (an `owner:` write, not `get:`) |
 | **teacup** | B3 carry-IN / water carry-OUT | **YES** (long path) | ✗ MISS | **B3 is unmodelled** — the realm's one-visit flag-15 seal is not attached, so you appear able to go back for it |
 | **mirror** | B3 carry-IN | **YES** | ✗ MISS | same — B3 unmodelled. Without it the Lord of the Dead kills you and the realm has no other non-death exit |
 | **handkerchief** | B3 → B4 carry-OUT | **YES** | ✓ **CAUGHT** | caught via B4 (castle terminal), not B3. ⚠ its recorded use is rm230/rm407, which looks wrong — right answer, possibly wrong reason |
@@ -30,13 +30,33 @@ dies) · **B2** catacombs upper→lower (hard one-way) · **B3** the Realm of th
 | **old lamp** | many uses, traded away | **likely** | ✓ CAUGHT | baby tears, fountain water, sacred water, then traded to the beggar |
 | **coal** | → egg → reach B3 | **likely** | ✓ CAUGHT | coal→White Queen→spoiled egg→the skull concoction that reaches the realm. Unconfirmed |
 | **clothes** | B4 entry (short) | **NO** | ✓ correct to skip | user 2026-07-26: only needed *outside*, to get in. Beauty gives them (rm540); worn at rm220 → rm730 |
-| **brick, hole-in-the-wall, red scarf** | B1 carry-IN | **YES** | ✗ MISS | sources fine, but their uses record as rm370 rather than inside the catacombs, so no boundary demands them |
+| **brick, hole-in-the-wall, red scarf** | B1 carry-IN | **NO — the game guards it** | ✓ correct | see below: KQ6 REFUSES to capture you without all four, and sends you to the beach instead. Our rm370 requirement is right, not a mis-attribution |
+
+## ⚠ CORRECTION: KQ6 GUARDS its own catacombs entry (found 2026-07-26)
+
+The community line -- "miss any of the four and you are stuck once captured" -- is **false**, and I
+repeated it before checking. rm370's capture reads:
+
+    (cond ((and (has: brick) (has: holeInTheWall) (has: tinderBox) (has: scarf))
+              (setScript: toLabyrinth))          ; thrown into the catacombs
+          ((== global90 2) (setScript: toBeachCD))
+          (else            (setScript: toBeachTXT)))   ; BOTH send you to the beach
+
+`global90` is the text/speech mode, so the only real branch is "have all four, or go to the beach".
+The game will not put you in the catacombs unless you are equipped for them. So the four are a
+REQUIREMENT at rm370, which is exactly what we record -- and NOT a stranding, provided each stays
+obtainable (brick, hole-in-the-wall and scarf are re-obtainable from 55 rooms; the tinderbox is
+unknown because we have no source for it).
+
+This is anti-softlock design in the game itself, and it is the reason a "carry-IN" verdict has to be
+checked against the code rather than inferred from the boundary.
 
 ## Score
 
-**Real softlocks identified: 14.** We currently catch **7** of them — dagger, shield, old coins,
-handkerchief, skeletonKey, mint, old lamp (+ coal, likely). We miss **7**: tinderbox, teacup,
-mirror, nightingale, skull, brick, hole-in-the-wall, red scarf.
+**Real softlocks identified: 11** (down from 14: brick, hole-in-the-wall and red scarf are guarded
+by the game). We catch **7** — dagger, shield, old coins, handkerchief, skeletonKey, mint, old lamp
+(+ coal, likely). We miss **4**: teacup, mirror, nightingale, skull — plus tinderbox, pending
+whether its pawn-shop trade is reversible.
 
 ## The misses have exactly three causes
 
@@ -47,10 +67,9 @@ mirror, nightingale, skull, brick, hole-in-the-wall, red scarf.
    rm600 and never cleared, and the rm340 entry tests `not flag 15`. The realm's carry-OUTs
    (handkerchief, skeletonKey) are caught anyway because B4 does the work; only the carry-INs need
    B3 itself.
-3. **The use is recorded in the wrong room** — skull (real use: Isle of Mists), brick /
-   hole-in-the-wall / scarf (real use: inside the catacombs), and the two suspicious attributions
-   flagged above. These all land on rm370, which is the room whose machine *arms* the catacombs
-   sequence — so a use inside the armed cutscene is being credited to the arming room.
-
-That third one is a single mechanism too, and it would fix four items plus repair two we currently
-get for the wrong reason.
+3. **The use is recorded in the wrong room** — narrower than first thought, now that rm370 turns
+   out to be a real gate rather than a mis-attribution. What remains genuinely suspect: **skull**
+   (recorded rm340/rm420; real use is filling it with amber at the Isle of Mists), **handkerchief**
+   (recorded rm230/rm407; real use is the castle boy-ghost) and **old coins** (recorded
+   rm800/rm870; real use is paying Charon at rm660). The latter two we currently catch for the
+   wrong reason, so fixing this both adds skull and makes two existing catches trustworthy.
