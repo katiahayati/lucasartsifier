@@ -1,7 +1,7 @@
 # KQ6 softlock candidates — consolidated, with verdicts
 
 Sources: the user's manual notes (2026-07-24 and 2026-07-26), the Steam Full-Game walkthrough
-(231/231, **long path**), the-spoiler.com / gamerwalkthroughs, and our extraction at `1f6e33a`.
+(231/231, **long path**), the-spoiler.com / gamerwalkthroughs, and our extraction (model column re-derived at `f8145ae`, 2026-07-27).
 Where they disagree the user wins, then the walkthrough, then the model.
 
 **The rule**: a candidate is REAL iff, once you cross the boundary, something you still need has
@@ -11,26 +11,65 @@ dies) · **B2** catacombs upper→lower (hard one-way) · **B3** the Realm of th
 
 ## The verdicts
 
-| candidate | where it binds | real? | model | why |
+**Model column re-derived 2026-07-27 against the live run** (`f8145ae`). The previous column was
+written at `1f6e33a`, BEFORE the two systemic item-numbering fixes, and had drifted badly: it
+claimed handkerchief / old lamp / coal were caught (they are not) and that nightingale and scarf
+were missed (they are). Treat the "real?" column as the oracle -- it is user- and
+walkthrough-derived and did not move -- and this column as a measurement with a date on it.
+
+Every row now carries the item's ACTUAL extracted state, one of:
+`FLAGGED` · `required, judged reachable` (we know the item, its source and its use -- we simply
+believe you can go back) · `not required` · `no source`.
+
+| candidate | where it binds | real? | model (2026-07-27) | state |
 |---|---|---|---|---|
-| **tinderbox** | B1 carry-IN | **YES** | ✗ MISS | required at rm370 (first-visit check) and rm406 (lower catacombs — "you'll fall, light it"). Also has no source, because the pawn shop hands it over with an `owner:` write |
-| **teacup** | B3 carry-IN / water carry-OUT | **YES** (long path) | ✗ MISS | **B3 is unmodelled** — the realm's one-visit flag-15 seal is not attached, so you appear able to go back for it |
-| **mirror** | B3 carry-IN | **YES** | ✗ MISS | same — B3 unmodelled. Without it the Lord of the Dead kills you and the realm has no other non-death exit |
-| **handkerchief** | B3 → B4 carry-OUT | **YES** | ✓ **CAUGHT** | caught via B4 (castle terminal), not B3. ⚠ its recorded use is rm230/rm407, which looks wrong — right answer, possibly wrong reason |
-| **dagger** | B1 → B4 carry-OUT | **YES** | ✓ **CAUGHT** | Lady Celeste's, from the lair; required rm850 (Cassima). Attribution correct |
-| **vizier's letter** | inside B4 | **no, as an item** | ✓ correct to skip | obtained *and* used inside the castle (rm781→rm850). The real lock is the **skeletonKey** needed to open the chest — which we DO catch |
-| **befriending Jollo** | inside B4 | **YES, indirectly** | ✓ **CAUGHT** as `huntersLamp` | Jollo wants the *new* lamp, which you get by trading the **old lamp** to the beggar outside. We flag the old lamp |
-| **nightingale** | B4 carry-IN (short) | **YES** (short path) | ✗ MISS | **no source** — pawn-shop trade, same cause as the tinderbox |
-| **peppermint leaf** | B4 carry-IN (short) | **uncertain** | ✗ not flagged | source rm390 (Sacred Mtn cave). Real only if rm390 stops being reachable after the catacombs; needs a check |
-| **4 island treasures** | best ending | **not by our rule** | — | they gate the BEST ending, not winnability. Our goal is the ending (rm94), so missing them is not a softlock unless you want "best ending" as the goal |
-| **skull** | B2 carry-down | **YES** | ✗ MISS | source rm415 (upper catacombs) ✓ but its real use — filling with amber at the Isle of Mists — is not captured, so nothing demands it |
-| **shield** | B2 carry-down → B1 out | **YES** | ✓ **CAUGHT** | upper catacombs → the archer at rm510. Clean |
-| **old coins** | B2 carry-down → B3 | **YES** | ✓ **CAUGHT** | upper catacombs → Charon. ⚠ recorded use is rm800/rm870 (castle), which looks wrong |
-| **mint** | B4 carry-IN | **YES** (user) | ✓ **CAUGHT** | needed inside the castle at the end — user-confirmed 2026-07-26 |
-| **old lamp** | many uses, traded away | **likely** | ✓ CAUGHT | baby tears, fountain water, sacred water, then traded to the beggar |
-| **coal** | → egg → reach B3 | **likely** | ✓ CAUGHT | coal→White Queen→spoiled egg→the skull concoction that reaches the realm. Unconfirmed |
-| **clothes** | B4 entry (short) | **NO** | ✓ correct to skip | user 2026-07-26: only needed *outside*, to get in. Beauty gives them (rm540); worn at rm220 → rm730 |
-| **brick, hole-in-the-wall, red scarf** | B1 carry-IN | **YES** | ✗ MISS | you get ONE warning, then the game throws you in regardless — see below. Without the scarf you can never kill the minotaur, so you can never leave |
+| **tinderbox** | B1 carry-IN | **YES** | ✗ MISS | required, judged reachable — src rm280, needed rm340/370/390/406. (The old "no source" note is FIXED: the pawn-shop `owner:` trade now resolves.) |
+| **teacup** | B3 carry-IN / water carry-OUT | **YES** (long path) | ✗ MISS | required, judged reachable — src rm470/480, needed rm230/340/470/660 |
+| **mirror** | B3 carry-IN | **YES** | ✗ MISS | required, judged reachable — src rm540/605/740, needed rm280/340/690/740 |
+| **handkerchief** | B3 → B4 carry-OUT | **YES** | ✗ MISS | **not required** — src rm630, no use captured at all. The one miss that is NOT the reachability shape; see task #8 |
+| **dagger** | B1 → B4 carry-OUT | **YES** | ✓ **CAUGHT** | frontier rm220→rm730 / rm230→rm710; src rm440/470, needed rm800 |
+| **vizier's letter** | inside B4 | **no, as an item** | ✓ correct to skip | the real lock is the **skeletonKey**, and that IS caught (frontier rm155→rm200 …, src rm640, needed rm820) |
+| **befriending Jollo** | inside B4 | **YES, indirectly** | ✗ MISS | `huntersLamp` is required, judged reachable — src rm470/520, needed rm230/480/540/580. Previously recorded as caught; it is not |
+| **nightingale** | B4 carry-IN (short) | **YES** (short path) | ✓ **CAUGHT** | frontier rm220→rm730 / rm230→rm710; src rm280, needed rm850. The pawn-shop source now resolves |
+| **peppermint leaf** | B4 carry-IN (short) | **uncertain** | ✗ MISS | required, judged reachable — src rm390/740/750, needed rm280/340/510/750 |
+| **4 island treasures** | best ending | **not by our rule** | — | they gate the BEST ending, not winnability |
+| **skull** | B2 carry-down | **YES** | ✗ MISS | required, judged reachable — src rm415/470, needed rm340/420/580. (The old "nothing demands it" note is FIXED: it has uses now.) |
+| **shield** | B2 carry-down → B1 out | **YES** | ✓ **CAUGHT** | src rm408, needed rm510 |
+| **old coins** | B2 carry-down → B3 | **YES** | ✓ **CAUGHT** as `deadMansCoin` | frontier rm340→rm155; src rm430/605, needed rm660 (Charon). The old "recorded use rm800/rm870 looks wrong" worry is RESOLVED |
+| **mint** | B4 carry-IN | **YES** (user) | ✓ **CAUGHT** | frontier rm220→rm730 / rm230→rm710; src rm280, needed rm750 |
+| **old lamp** | many uses, traded away | **likely** | ✗ MISS | same item as the Jollo row (`huntersLamp`) — required, judged reachable |
+| **coal** | → egg → reach B3 | **likely** | ✗ MISS | required, judged reachable — src rm490/560, needed rm490 |
+| **clothes** | B4 entry (short) | **NO** | ✓ correct to skip | only needed outside the castle, to get in |
+| **red scarf** | B1 carry-IN | **YES** | ✓ **CAUGHT** | frontier rm340→rm370/405/440; src rm490, needed rm370/440 |
+| **brick** | B1 carry-IN | **YES** | ✗ MISS | required, judged reachable — src rm510, needed rm370/420 |
+| **hole-in-the-wall** | B1 carry-IN | **YES** | ✗ MISS | required, judged reachable — src rm230/400/405/…, needed rm230/370/407 |
+
+**Tally: 7 caught, 10 missed, 3 correctly skipped.** The old table read "7 of 14" because it merged
+brick / hole-in-the-wall / red scarf into ONE row and filed `skeletonKey` under the vizier's letter.
+Splitting them changes the denominator, not the numerator -- the seven caught items are the same
+seven the tool prints. Denominator moved deliberately and is called out here rather than quietly.
+
+## THE DIAGNOSIS: NINE OF THE TEN MISSES ARE ONE MECHANISM
+
+This is the useful result of the re-derivation, and it contradicts the old "each remaining miss
+needs 2-3 mechanisms STACKED" note.
+
+**Nine of the ten are `required, judged reachable`.** Not one of them is missing an item, a source,
+or a use. The whole detection pipeline already works on them; the ONLY thing wrong is that the
+movement graph believes you can walk back and re-collect. Ask it for the return path and it prints
+one, every time:
+
+    brick    rm370 -> rm510:  rm370->rm300->rm500->rm520->rm510
+    skull    rm340 -> rm470:  rm340->rm300->rm450->rm470
+    teacup   rm690 -> rm540:  rm690->rm680->rm155->rm200->rm210->rm240->rm250->rm540
+    coal     rm490 -> rm560:  rm490->rm480->rm470->rm450->rm550->rm560
+
+So KQ6's remaining work is **task #14** (state that seals room ACCESS behind you) for nine, plus
+**task #8** (the handkerchief's real use) for the tenth. Not nine separate investigations.
+
+The same shape holds in Laura Bow 2: 10 of its 12 cross-act carry items are already in `s.required`
+with sources, and are missed for the identical reason -- see `docs/LB2-ORACLE.md` §5. **One
+mechanism accounts for 19 of the 22 known misses across both games.**
 
 ## THE CAPTURE IS A ONE-WARNING GATE, IN TWO ROOMS (user 2026-07-26, verified)
 
