@@ -92,7 +92,7 @@ ACCEPTED = {
                    "membership test can be tied to the receiver. opmodel consumes finished atoms "
                    "and never inspects operand nodes itself.",
     "Send":        "as Cond -- vocab matches sends by selector via ir.send_pairs, not by node type.",
-    "Switch":      "extract._global_room_values reads switch CASE LABELS as data (the room "
+    "Switch":      "extract._var_room_values reads switch CASE LABELS as data (the room "
                    "numbers a revolving-door global can hold) and machine._top_switch finds the "
                    "switch that IS the machine. Neither is control flow -- that now lives only in "
                    "ir.control_shape, which is why If/Cond/Loop no longer appear in this matrix "

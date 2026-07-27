@@ -1293,12 +1293,19 @@ class Extractor:
                     self.ts.bulk_moves.append((room, dest, _conj(pc)))
             if sel in ("newRoom", "entranceTo") and params:
                 dsts = [I.as_int(params[0])]
-                if dsts[0] is None and I.is_global(params[0]):
-                    # INDIRECT destination `newRoom: <global>` -- a routing room whose next
-                    # room is held in a global (rm40's revolving door: gRmAfter40 cycles
-                    # 42..45). Resolve to the room numbers that global can hold; dropping it
-                    # made rm43 (the Knife) and its cluster unreachable -> endgame sealed.
-                    dsts = self._global_room_values(room, params[0]["index"])
+                if dsts[0] is None and (I.is_global(params[0])
+                                        or I.is_local_or_temp(params[0])):
+                    # INDIRECT destination `newRoom: <var>` -- a routing room that COMPUTES
+                    # where you go next and keeps it in a variable. Two storage choices, one
+                    # idiom:
+                    #   GLOBAL  LSL2 rm40's revolving door (gRmAfter40 cycles 42..45). Dropping
+                    #           it made rm43 (the Knife) and its cluster unreachable.
+                    #   LOCAL   LB2's act break (script 26) picks the next act's start room per
+                    #           act, then `newRoom: local0` from another object in the script.
+                    #           Dropping it left rm26 a pure SINK with 16 in-edges, which
+                    #           anchors.discover then read as a winning terminal.
+                    # Resolve either to the room numbers the variable can hold.
+                    dsts = self._var_room_values(room, params[0])
                 elif dsts[0] is None and params[0].get("t") == "ComplexVariable":
                     # `newRoom: [array][region]` -- overland-map travel keyed by the PIC control
                     # map (Camelot rm1 is the whole world's hub). Dropping it severed the hub and
@@ -1321,33 +1328,41 @@ class Extractor:
                         # there. The owner state's transition to a location -- see TS.placed.
                         self.ts.placed.setdefault(tr[0], set()).add(tr[1])
 
-    def _global_room_values(self, room, gi):
-        """Room numbers a `newRoom:` global can hold, from switch-on-G case labels and
-        `(= G lit)` assignments anywhere in this room's script. Filtered to real rooms
-        (an rm<N> Room instance exists), so cycle counters like 0 are excluded."""
+    def _var_room_values(self, room, var):
+        """Room numbers an indirect `newRoom:` destination variable can hold, from
+        switch-on-V case labels and `(= V lit)` assignments anywhere in this room's script.
+        Filtered to real rooms (an rm<N> Room instance exists), so cycle counters like 0
+        are excluded.
+
+        The variable may be a GLOBAL or a script LOCAL/TEMP -- same idiom, different storage,
+        so the same scan answers both. Scoping the scan to THIS script is exact for a local
+        (that is all a script local can see) and is the deliberate narrowing we already chose
+        for the global case."""
         vals = set()
         s = self.ir.scripts.get(room)
         if s is None:
             return vals
+        vtype, vindex = var.get("vtype"), var.get("index")
 
         def is_room(v):
             rs = self.ir.scripts.get(v)
             return rs is not None and _room_object(rs) is not None
 
+        def is_dest(n):
+            return (n and n.get("t") == "Variable" and n.get("vtype") == vtype
+                    and n.get("index") == vindex)
+
         for o in s.objects:
             for _mn, ast in o.methods.items():
                 for n in I.walk(ast):
                     if n["t"] == "Switch":
-                        head = n["kids"][0]
-                        if head.get("t") == "Variable" and head.get("vtype") == "Global" \
-                                and head.get("index") == gi:
+                        if is_dest(n["kids"][0]):
                             for c in n["kids"][1:]:
                                 if c["t"] == "Case":
                                     v = I.as_int(c["kids"][0])
                                     if v is not None and is_room(v):
                                         vals.add(v)
-                    elif n["t"] == "Assignment" and I.is_global(n["kids"][0]) \
-                            and n["kids"][0].get("index") == gi:
+                    elif n["t"] == "Assignment" and is_dest(n["kids"][0]):
                         v = I.as_int(n["kids"][1])
                         if v is not None and is_room(v):
                             vals.add(v)

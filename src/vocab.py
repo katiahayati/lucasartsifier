@@ -143,7 +143,7 @@ def _literal_items(node):
     (2 14)))`, which is how the tinderbox, the painter's brush and the mechanical nightingale
     change hands -- and `as_int` on a Switch is None, so all three had no source at all and could
     never be judged missable. Reading a switch's case LABELS as data is what
-    `extract._global_room_values` already does for a revolving-door room's destinations.
+    `extract._var_room_values` already does for a revolving-door room's destinations.
 
     Every case is returned: which one you get depends on runtime state we do not track, so the
     honest reading is that this site can yield any of them."""
