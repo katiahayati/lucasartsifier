@@ -51,6 +51,9 @@ class Sci0Game:
 
     def _parse_map(self):
         data = open(self.map_path, "rb").read()
+        secs = self._sci1_sections(data)
+        if secs is not None:
+            return self._parse_map_sci1(data, secs)
         entries = {}
         for i in range(0, len(data) - 5, 6):
             rid, packed = struct.unpack_from("<HI", data, i)
@@ -63,24 +66,101 @@ class Sci0Game:
             entries[(rtype, number)] = (package, offset)
         return entries
 
+    @staticmethod
+    def _sci1_sections(data):
+        """[(type, offset, length)] if this is an SCI1/SCI1.1 map, else None.
+
+        SCI0 stores one flat array of 6-byte (id, packed) entries. SCI1 replaced it with a
+        DIRECTORY -- `byte type, uint16 offset` repeated, terminated by type 0xFF whose offset is
+        the end of the map -- followed by one section of entries per type. Recognised by that
+        shape rather than declared, so a game is not asked which SCI version it is: the
+        terminator must land exactly on the file length and every offset must be inside it, which
+        an SCI0 map does not satisfy (KQ4's first "offset" alone is past its 7,476 bytes)."""
+        dirs, i = [], 0
+        while i + 3 <= len(data):
+            t = data[i]
+            off = struct.unpack_from("<H", data, i + 1)[0]
+            i += 3
+            if off > len(data):
+                return None
+            if t == 0xFF:
+                if off != len(data) or not dirs:
+                    return None
+                bounds = [o for _t, o in dirs] + [off]
+                return [(dirs[k][0] & 0x1F, bounds[k], bounds[k + 1] - bounds[k])
+                        for k in range(len(dirs))]
+            dirs.append((t, off))
+        return None
+
+    def _parse_map_sci1(self, data, secs):
+        """SCI1 entries are `uint16 number` plus an offset whose WIDTH is the version:
+        4 bytes with the volume in the top nibble (SCI1), or 3 bytes pre-shifted right by one
+        (SCI1.1). DERIVED, not declared -- the only size that divides every section evenly, and
+        then confirmed by resolving an entry against a real volume header. KQ5 lands on 6 (its
+        VIEW section, 3,078 bytes, is not a multiple of 5); KQ6 and Dagger land on 5 (their PIC
+        sections, 485 and 455 bytes, are not multiples of 6)."""
+        sizes = [n for n in (5, 6) if all(ln % n == 0 for _t, _o, ln in secs if ln > 0)]
+        for esz in sizes or (5, 6):
+            entries = {}
+            for (rtype, off, ln) in secs:
+                for k in range(ln // esz):
+                    p = off + k * esz
+                    number = struct.unpack_from("<H", data, p)[0]
+                    if esz == 5:
+                        o = struct.unpack_from("<H", data, p + 2)[0] | (data[p + 4] << 16)
+                        entries[(rtype, number)] = (0, o << 1)
+                    else:
+                        packed = struct.unpack_from("<I", data, p + 2)[0]
+                        entries[(rtype, number)] = (packed >> 28, packed & 0x0FFFFFFF)
+            if len(sizes) == 1 or self._entries_resolve(entries):
+                return entries
+        return {}
+
+    def _entries_resolve(self, entries):
+        """Does a sample of these entries actually point at its own header in a volume?
+        The tiebreak when both entry widths divide every section evenly."""
+        sample = sorted(entries)[:8]
+        return bool(sample) and all(
+            self._resolve_volume(pkg, off, t, n)[1] is not None
+            for (t, n), (pkg, off) in ((k, entries[k]) for k in sample))
+
     # -- resource extraction ------------------------------------------------
-    def _read_volume_header(self, vol_path, offset):
+    def _read_volume_header(self, vol_path, offset, layout="sci0"):
+        """One resource's header + body. Three layouts, all validated by the caller against the
+        (type, number) the map asked for, so the right one is RECOGNISED rather than declared:
+
+            sci0   uint16 id(type:5|number:11), uint16 comp, uint16 decomp, uint16 method
+                   -- `comp` counts the 4 header bytes after it, so the body is comp-4
+            sci1   byte type|0x80, uint16 number, uint16 comp, uint16 decomp, uint16 method
+                   -- same comp convention as sci0
+            sci11  the sci1 header, but `comp` is the body length outright
+        """
         with open(vol_path, "rb") as f:
             f.seek(offset)
-            hdr = f.read(8)
-            if len(hdr) < 8:
+            hdr = f.read(9)
+            if len(hdr) < 9:
                 return None
-            rid, comp, decomp, method = struct.unpack("<HHHH", hdr)
-            body = f.read(comp - 4)   # comp includes the 4 bytes of decomp+method
-            return {"id": rid, "number": rid & 0x7FF, "type": rid >> 11,
-                    "comp": comp, "decomp": decomp, "method": method, "body": body}
+            if layout == "sci0":
+                rid, comp, decomp, method = struct.unpack_from("<HHHH", hdr)
+                rtype, number, skip, blen = rid >> 11, rid & 0x7FF, 8, comp - 4
+            else:
+                rtype = hdr[0] & 0x7F
+                number, comp, decomp, method = struct.unpack_from("<HHHH", hdr, 1)
+                skip, blen = 9, (comp if layout == "sci11" else comp - 4)
+            if blen < 0 or decomp > 0xFFFF:
+                return None
+            f.seek(offset + skip)
+            return {"number": number, "type": rtype, "comp": comp, "decomp": decomp,
+                    "method": method, "body": f.read(blen)}
 
     def _resolve_volume(self, package, offset, want_type, want_num):
         """The package field's mapping to resource.00N varies; try the obvious
         candidates and accept the one whose header id matches."""
-        for vnum in (package, package + 1, 1):
-            if vnum in self.volumes:
-                h = self._read_volume_header(self.volumes[vnum], offset)
+        for vnum in (package, package + 1, 1, 0):
+            if vnum not in self.volumes:
+                continue
+            for layout in ("sci0", "sci11", "sci1"):
+                h = self._read_volume_header(self.volumes[vnum], offset, layout)
                 if h and h["type"] == want_type and h["number"] == want_num:
                     return self.volumes[vnum], h
         return None, None
@@ -109,14 +189,99 @@ class Sci0Game:
 
 
 def _decompress(method, body, decomp_size):
-    """SCI0: method 0 = none, 1 = LZW, 2 = Huffman."""
+    """method 0 = none, 1 = LZW, 2 = Huffman (SCI0); 18/19/20 = DCL implode (SCI1.1)."""
     if method == 0:
         return body[:decomp_size] if decomp_size else body
     if method == 1:
         return _decompress_lzw(body, decomp_size)
     if method == 2:
         return _decompress_huffman(body, decomp_size)
-    raise NotImplementedError(f"SCI0 compression method {method} not implemented")
+    if method in (18, 19, 20):
+        return _decompress_dcl(body, decomp_size)
+    raise NotImplementedError(f"compression method {method} not implemented")
+
+
+# PKWARE DCL "implode" -- what SCI1.1 packs its resources with (methods 18/19/20). Ported from
+# ScummVM `common/compression/dcl.cpp`; the three prefix trees are that file's BN/LN macro tables,
+# machine-translated rather than retyped (BN(l,r) = l<<12|r, LN(v) = v|LEAF).
+_DCL_LEAF = 0x40000000
+_LENGTH_TREE = [
+    4098, 12292, 20486, 28680, 36874, 45068, 1073741825, 53262, 61456, 69650, 1073741827,
+    1073741826, 1073741824, 77844, 86038, 94232, 1073741830, 1073741829, 1073741828, 102426,
+    110620, 1073741834, 1073741833, 1073741832, 1073741831, 118814, 1073741837, 1073741836,
+    1073741835, 1073741839, 1073741838,
+]
+_DISTANCE_TREE = [
+    4098, 12292, 20486, 28680, 36874, 45068, 1073741824, 53262, 61456, 69650, 77844, 86038,
+    94232, 102426, 110620, 118814, 127008, 135202, 143396, 151590, 159784, 167978, 176172,
+    1073741826, 1073741825, 184366, 192560, 200754, 208948, 217142, 225336, 233530, 241724,
+    249918, 258112, 266306, 274500, 282694, 290888, 299082, 307276, 1073741830, 1073741829,
+    1073741828, 1073741827, 315470, 323664, 331858, 340052, 348246, 356440, 364634, 372828,
+    381022, 389216, 397410, 405604, 413798, 421992, 430186, 438380, 446574, 1073741845,
+    1073741844, 1073741843, 1073741842, 1073741841, 1073741840, 1073741839, 1073741838,
+    1073741837, 1073741836, 1073741835, 1073741834, 1073741833, 1073741832, 1073741831,
+    454768, 462962, 471156, 479350, 487544, 495738, 503932, 512126, 1073741871, 1073741870,
+    1073741869, 1073741868, 1073741867, 1073741866, 1073741865, 1073741864, 1073741863,
+    1073741862, 1073741861, 1073741860, 1073741859, 1073741858, 1073741857, 1073741856,
+    1073741855, 1073741854, 1073741853, 1073741852, 1073741851, 1073741850, 1073741849,
+    1073741848, 1073741847, 1073741846, 1073741887, 1073741886, 1073741885, 1073741884,
+    1073741883, 1073741882, 1073741881, 1073741880, 1073741879, 1073741878, 1073741877,
+    1073741876, 1073741875, 1073741874, 1073741873, 1073741872,
+]
+
+
+class _LsbBits:
+    """DCL reads its bit stream least-significant-bit first, refilling a 32-bit window."""
+    __slots__ = ("d", "i", "bits", "n")
+
+    def __init__(self, data):
+        self.d, self.i, self.bits, self.n = data, 0, 0, 0
+
+    def get(self, n):
+        while self.n < n:
+            b = self.d[self.i] if self.i < len(self.d) else 0
+            self.i += 1
+            self.bits |= b << self.n
+            self.n += 8
+        v = self.bits & ((1 << n) - 1)
+        self.bits >>= n
+        self.n -= n
+        return v
+
+    def huff(self, tree):
+        pos = 0
+        while not tree[pos] & _DCL_LEAF:
+            pos = (tree[pos] & 0xFFF) if self.get(1) else (tree[pos] >> 12)
+        return tree[pos] & 0xFFFF
+
+
+def _decompress_dcl(body, out_len):
+    bs = _LsbBits(bytes(body))
+    mode, dict_type = bs.get(8), bs.get(8)
+    if mode != 0:
+        # ASCII mode literals go through a third (511-node) tree. No SCI1.1 resource we have
+        # uses it -- KQ6 and Dagger pack every resource in binary mode -- so it is not carried.
+        raise NotImplementedError(f"DCL ASCII mode ({mode}) not implemented")
+    if dict_type not in (4, 5, 6):
+        raise ValueError(f"DCL bad dictionary type {dict_type}")
+    out = bytearray()
+    while len(out) < out_len:
+        if bs.get(1):                                   # a (length, distance) back-reference
+            v = bs.huff(_LENGTH_TREE)
+            ln = v + 2 if v < 8 else 8 + (1 << (v - 7)) + bs.get(v - 7)
+            if ln == 519:
+                break                                   # end-of-stream marker
+            v = bs.huff(_DISTANCE_TREE)
+            off = ((v << 2) | bs.get(2)) if ln == 2 else ((v << dict_type) | bs.get(dict_type))
+            off += 1
+            if off > len(out):
+                raise ValueError("DCL back-reference before start of stream")
+            # Byte-at-a-time, because a run may overlap itself (off < ln).
+            for _ in range(ln):
+                out.append(out[-off])
+        else:
+            out.append(bs.get(8))
+    return bytes(out[:out_len])
 
 
 def _decompress_huffman(src, out_len):

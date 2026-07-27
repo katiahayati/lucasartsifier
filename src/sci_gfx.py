@@ -189,7 +189,12 @@ def _render(pic_bytes):
     while i < len(d):
         op = rd()
         if op == 0xF0:
-            c = rd(); pic_color = pal[c]; pic_color ^= (pic_color << 4) & 0xFF; pic_color &= 0xFF
+            c = rd()
+            if c < len(pal):
+                pic_color = pal[c]; pic_color ^= (pic_color << 4) & 0xFF; pic_color &= 0xFF
+            else:
+                pic_color = c        # VGA: a direct palette index, no EGA dither pair. Only the
+            #                          VISUAL plane cares, and we are here for the control one.
         elif op == 0xF1: pic_color = 255
         elif op == 0xF2: pic_pri = rd() & 0x0F
         elif op == 0xF3: pic_pri = 255
@@ -237,9 +242,28 @@ def _render(pic_bytes):
     return s
 
 
+def _vector_data(d):
+    """The opcode stream that draws a PIC's control/priority planes.
+
+    SCI0 EGA pics ARE that stream. SCI1.1 VGA pics wrap it: the visible image became a compressed
+    cel, but the control and priority planes stayed VECTOR data, in a chunk a header points at
+    (ScummVM `GfxPicture::drawSci11Vga` -- `vector_dataPos = READ_LE_UINT32(inbuffer + 16)`, then
+    the very same `drawVectorData`). So one interpreter serves both and only the framing differs.
+
+    Told apart by the first byte, not by asking which SCI version the game is: an opcode stream
+    starts with one (>= 0xF0), an SCI1.1 header starts with its size fields."""
+    if not d or d[0] >= 0xF0:
+        return d
+    if len(d) >= 20:
+        vp = int.from_bytes(bytes(d[16:20]), "little")
+        if 0 < vp < len(d) and d[vp] >= 0xF0:
+            return d[vp:]
+    return d
+
+
 def render_control(game: Sci0Game, pic_num: int) -> bytearray:
     """Return the 320x190 control plane of a PIC (one byte per pixel, control color 0..15)."""
-    return _render(game.get(PIC, pic_num)).con
+    return _render(_vector_data(game.get(PIC, pic_num))).con
 
 
 # ============================== VIEW decoder ================================
@@ -289,9 +313,104 @@ def _decode_cel(d, off):
     return c
 
 
+def _u16(d, o):
+    return d[o] | (d[o + 1] << 8)
+
+
+def _i16(d, o):
+    v = _u16(d, o)
+    return v - 0x10000 if v >= 0x8000 else v
+
+
+def _u32(d, o):
+    return int.from_bytes(bytes(d[o:o + 4]), "little")
+
+
+def _is_sci11_view(d):
+    """SCI1.1 views begin with `headerSize-2`; SCI0's first byte is the loop COUNT.
+
+    Told apart structurally: for SCI1.1 the header size is at least 16 and its loop/cel entry
+    sizes (bytes 12 and 13) are at least 16 and 32 -- ScummVM asserts exactly those three, which
+    makes them a recogniser as well as a sanity check. An SCI0 view has a small loop count there
+    and arbitrary bytes at 12/13, so it does not accidentally satisfy all of them."""
+    return (len(d) > 16 and _u16(d, 0) + 2 >= 16 and d[2] > 0
+            and d[12] >= 16 and d[13] >= 32)
+
+
+def _decode_cel_sci11(d, off, celSize):
+    """One SCI1.1 cel: a 32+ byte descriptor plus TWO streams -- a run/skip control stream and a
+    literal pixel stream (`unpackCelData`, ViewType kViewVga11)."""
+    c = Cel()
+    c.width, c.height = _i16(d, off), _i16(d, off + 2)
+    c.dx, c.dy = _i16(d, off + 4), _i16(d, off + 6)
+    if c.dy < 0:
+        c.dy += 255                      # Sierra's own adjustment in the SCI1.1 getCelRect
+    c.clearKey = d[off + 8]
+    rle, lit = _u32(d, off + 24), _u32(d, off + 28)
+    if rle and not lit:                  # uncompressed content stores the stream in the other slot
+        rle, lit = lit, rle
+    n = c.width * c.height
+    pix = bytearray([c.clearKey]) * n
+    if not rle:                          # no control stream: the cel is raw pixels
+        pix[:n] = bytes(d[lit:lit + n])
+    else:
+        p, q, i = rle, lit, 0
+        while i < n and p < len(d):
+            b = d[p]; p += 1
+            run = b & 0x3F
+            kind = b & 0xC0
+            if kind == 0x40:             # a copy run of 64..127 -- then fall into the copy case
+                run += 64
+                kind = 0x00
+            if kind == 0x00:             # copy `run` literal pixels
+                src = q if lit else p
+                take = min(run, n - i)
+                pix[i:i + take] = bytes(d[src:src + take])
+                if lit:
+                    q += run
+                else:
+                    p += run
+            elif kind == 0x80:           # fill `run` pixels with one colour
+                col = d[q] if lit else d[p]
+                if lit:
+                    q += 1
+                else:
+                    p += 1
+                for k in range(i, min(i + run, n)):
+                    pix[k] = col
+            # 0xC0 = skip, leaving the clear colour already in place
+            i += run
+    c.pix = pix
+    return c
+
+
 def decode_view(game: Sci0Game, view_num: int):
-    """Return list of loops; each loop is a dict {cels: [Cel], mirror: bool}."""
+    """Return list of loops; each loop is a dict {cels: [Cel], mirror: bool}.
+
+    Two resource layouts, recognised (see `_is_sci11_view`) rather than declared. SCI1.1 replaced
+    SCI0's offset tables with fixed-stride loop and cel records whose strides are in the header,
+    and its cels carry two data streams instead of one nibble-RLE stream."""
     d = game.get(VIEW, view_num)
+    if _is_sci11_view(d):
+        headerSize = _u16(d, 0) + 2
+        loopCount, loopSize, celSize = d[2], d[12], d[13]
+        loops = []
+        for L in range(loopCount):
+            lo = headerSize + L * loopSize
+            mirror = d[lo] != 255
+            seen = set()
+            while d[lo] != 255:          # a mirrored loop points at the one it copies
+                seek = d[lo]
+                if seek >= loopCount or seek in seen:
+                    break                # a cycle would hang the walk; ScummVM errors, we stop
+                seen.add(seek)
+                lo = headerSize + seek * loopSize
+            celCount = d[lo + 2]
+            base = _u32(d, lo + 12)
+            loops.append({"cels": [_decode_cel_sci11(d, base + c * celSize, celSize)
+                                   for c in range(celCount)],
+                          "mirror": mirror})
+        return loops
     loopCount = d[0]
     mirrorBits = d[2] | (d[3] << 8)
     loops = []

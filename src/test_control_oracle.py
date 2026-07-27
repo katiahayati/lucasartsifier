@@ -184,6 +184,53 @@ def test_crossing_gate():
     check("emitter gates 47->48 on the disguise condition (egoView==151)", "102==151" in g48, g48)
 
 
+def test_sci11_resources():
+    """SCI1.1 games' resources decode -- the prerequisite for reading their control planes.
+
+    Everything here is RECOGNISED from the file, not declared per game: the map directory shape,
+    the entry width, the volume-header layout and the view layout. The SCI0 titles must keep
+    reading exactly as before, which the goldens also cover end-to-end."""
+    print("\n-- SCI1.1 resource + graphics decoding --")
+    import os
+    import sci_gfx
+    from sci_resource import Sci0Game, PIC, VIEW
+
+    def game(p):
+        p = os.path.expanduser(p)
+        return Sci0Game(p) if os.path.isdir(p) else None
+
+    kq6 = game("~/sierra/Games/Kings Quest 6")
+    kq4 = game("~/sierra/Games/Kings Quest 4")
+    if kq4 is not None:
+        check("SCI0 map still parses (KQ4)", len(kq4.list_type(PIC)) > 100,
+              str(len(kq4.list_type(PIC))))
+        con = sci_gfx.render_control(kq4, 31)
+        check("SCI0 control plane still renders (KQ4 pic 31)", set(con) - {0} != set())
+    if kq6 is None:
+        print("  (skip KQ6: game files not present)")
+        return
+    # SCI1.1: a directory-style map with 5-byte entries, DCL-imploded bodies.
+    check("SCI1.1 map parses (KQ6)", len(kq6.list_type(PIC)) == 97, str(len(kq6.list_type(PIC))))
+    raw = kq6.get(PIC, 340)
+    check("SCI1.1 resource decompresses to its stated size (DCL implode)", len(raw) == 49025,
+          str(len(raw)))
+    # The control plane still lives in VECTOR data, behind the SCI1.1 pic header.
+    con = sci_gfx.render_control(kq6, 340)
+    colours = set(con)
+    check("SCI1.1 control plane renders with several colours", len(colours) > 4, str(sorted(colours)))
+    check("...including colour 4, the region rm340's doit tests as onControl==16",
+          4 in colours)
+    # And SCI1.1 views decode (two-stream cels, fixed-stride loop/cel records).
+    loops = sci_gfx.decode_view(kq6, 340)
+    check("SCI1.1 view decodes into loops with cels", len(loops) == 2
+          and [len(l["cels"]) for l in loops] == [5, 1],
+          str([len(l["cels"]) for l in loops]))
+    cel = loops[0]["cels"][0]
+    check("...and its cel has sane dimensions and an opaque footprint",
+          cel.width == 30 and cel.height == 71 and len(cel.footprint(113, 67)) > 500,
+          f"{cel.width}x{cel.height} fp={len(cel.footprint(113, 67))}")
+
+
 def run():
     print("=== test_control_oracle ===")
     test_pure()
@@ -192,6 +239,7 @@ def run():
     test_derivation()
     test_emitter_gate()
     test_crossing_gate()
+    test_sci11_resources()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 
