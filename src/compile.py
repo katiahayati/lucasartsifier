@@ -67,7 +67,8 @@ def _seq(forms):
 
 # ---- interpret a path into (guard, writes, gets, counters, transition) ---
 class Step:
-    __slots__ = ("guard", "writes", "gets", "counters", "trans", "cues", "drops", "moves")
+    __slots__ = ("guard", "writes", "gets", "counters", "trans", "cues", "drops", "moves",
+                 "gincs")
 
     def __init__(self):
         self.guard = []            # atoms (external) or ("CTR", (vt,idx), op, val)
@@ -80,6 +81,9 @@ class Step:
         #   requires owning it, and some requirements have NO own() guard at all -- the Flower
         #   given to the KGBishnas (rm50) is only ever expressed as a `put: 20 -1`.
         self.moves = []            # (item, dest) -- gets+drops with the destination kept
+        self.gincs = []            # (glob, delta) -- `(++ G)`/`(-- G)`. NOT a write: the new
+        #   value depends on the old one, so it can only be resolved against the values that
+        #   global is known to take. Fanned out per value in walk().
 
 
 def _count_cues_send(recv, msgs):
@@ -151,12 +155,17 @@ def _interp(path, is_death):
                     st.trans = ("SETSTATE", k); fixed = True
             elif dst.get("t") == "Variable" and dst["vtype"] in ("Local", "Temp"):
                 st.counters.append(((dst["vtype"][0], dst["index"]), "set", I.as_int(src)))
-        elif tp == "Increment" and I.is_local_or_temp(node["kids"][0]):
+        elif tp in ("Increment", "Decrement"):
             d = node["kids"][0]
-            st.counters.append(((d["vtype"][0], d["index"]), "inc", None))
-        elif tp == "Decrement" and I.is_local_or_temp(node["kids"][0]):
-            d = node["kids"][0]
-            st.counters.append(((d["vtype"][0], d["index"]), "dec", None))
+            delta = 1 if tp == "Increment" else -1
+            if I.is_local_or_temp(d):
+                st.counters.append(((d["vtype"][0], d["index"]),
+                                    "inc" if delta > 0 else "dec", None))
+            elif I.is_global(d):
+                # A counter kept in a GLOBAL. Every handler modelled this for locals only, so
+                # LB2's `(++ global123)` -- the ONE statement that advances the act, and with it
+                # the whole game -- was dropped, and no act boundary could ever seal.
+                st.gincs.append((d["index"], delta))
         elif tp in ("PublicCall", "LocalCall"):
             # a proc-call CUE: `(procN ... self)`. SCI1 prints messages through a proc, so the
             # "message dismissed -> cue -> changeState:+1" completion is a proc call ending in
@@ -213,7 +222,7 @@ def step_effects(st):
     frogActions dropping the Gold_Ball.
 
     Whenever a new store is added, this is the function to revisit -- and now it is the only one."""
-    return bool(st.writes or st.gets or st.drops or st.moves or st.counters)
+    return bool(st.writes or st.gets or st.drops or st.moves or st.counters or st.gincs)
 
 
 def compress_chains(steps_by_state, entry_states, start):
@@ -279,9 +288,53 @@ def _ctr_holds(cond, counters):
             "<": cur < val, "<=": cur <= val}[op]
 
 
+def _fan_globals(guard, writes, gincs, gdom):
+    """Expand `(++ G)` / `(-- G)` into concrete (guard, writes) branches.
+
+    A global counter is the shape LB2 builds its whole act structure on:
+
+        (switch global123 (0 ...) (1 ...) ... (5 ...))     ; the act you are in
+        ...
+        (++ global123)                                     ; actBreak, the ONLY advance
+
+    An increment cannot be a plain write because its result depends on the current value, so
+    each branch pins one: guard `G == v`, write `G := v+delta`. Values come from what the
+    machine's own script compares G against (machine.glob_dom) -- the same "read the literals
+    the code tests against" rule extract._var_room_values uses for destinations.
+
+    Yields the single unchanged branch when there is nothing to expand, so the common path
+    allocates no more than before.
+    """
+    branches = [(guard, writes)]
+    for (gi, delta) in gincs:
+        dom = gdom.get(gi) or ()
+        if not dom:
+            continue                     # unknown domain -> drop the step, never guess
+        nxt = []
+        for (g0, w0) in branches:
+            for v in dom:
+                nxt.append((g0 + [Pred("CMP", var=gi, op="==", value=str(v))],
+                            w0 + [(gi, v + delta)]))
+        branches = nxt
+    return branches
+
+
+def step_paths(st, gdom):
+    """A Step as the (guard, writes, gets, counters, trans) tuples the machine-state view uses.
+
+    More than one when the step increments a global. compile_machine's walk and opmodel's
+    per-state view must expand an increment IDENTICALLY, so this is the single place that
+    decides how -- the alternative is the same rule in two places, which is how a fix lands
+    and the output does not move.
+    """
+    return [(g, w, st.gets, st.counters, st.trans)
+            for (g, w) in _fan_globals(st.guard, st.writes, st.gincs, gdom)]
+
+
 def compile_machine(machine, is_death):
     """-> (exits, deaths). exits = [(exit_room, guard_tree, {glob: val})], deaths =
     [guard_tree]. Guards are over EXTERNAL atoms only (counters resolved concretely)."""
+    gdom = getattr(machine, "glob_dom", {}) or {}
     steps = {k: [_interp(p, is_death) for p in _paths_of(body)]
              for k, body in machine.bodies.items()}
     carry_cues(steps, machine.start)      # SCI cross-state cue carry: PARK -> ADVANCE where covered
@@ -311,24 +364,28 @@ def compile_machine(machine, is_death):
                     ext.append(a)
             if not ok:
                 continue
-            ng = guard + ext
-            nw = writes + st.writes
             nc = _apply_counters(counters, st.counters)
             tr = st.trans
             key = (state, tuple(sorted(nc.items())))
-            if tr[0] == "EXIT":
-                exits.append((tr[1], _conj(ng), dict(nw)))
-            elif tr[0] == "DEATH":
-                deaths.append(_conj(ng))
-            elif key in seen:
-                continue
-            elif tr[0] == "ADVANCE":
-                walk(state + 1, nc, ng, nw, depth + 1, seen | {key})
-            elif tr[0] == "JUMP":
-                walk(tr[1], nc, ng, nw, depth + 1, seen | {key})
-            elif tr[0] == "SETSTATE":
-                walk(tr[1] + 1, nc, ng, nw, depth + 1, seen | {key})
-            # PARK: dead end (no exit from this path)
+            # `(++ G)` is not a write -- the new value depends on the old one -- so the path
+            # FANS OUT over the values G is known to take: one branch per value, each learning
+            # `G == v` and delivering `G := v+delta`. A global with no known domain is dropped
+            # rather than guessed, which is what keeps this inert on the games that only ever
+            # increment a score.
+            for (ng, nw) in _fan_globals(guard + ext, writes + st.writes, st.gincs, gdom):
+                if tr[0] == "EXIT":
+                    exits.append((tr[1], _conj(ng), dict(nw)))
+                elif tr[0] == "DEATH":
+                    deaths.append(_conj(ng))
+                elif key in seen:
+                    continue
+                elif tr[0] == "ADVANCE":
+                    walk(state + 1, nc, ng, nw, depth + 1, seen | {key})
+                elif tr[0] == "JUMP":
+                    walk(tr[1], nc, ng, nw, depth + 1, seen | {key})
+                elif tr[0] == "SETSTATE":
+                    walk(tr[1] + 1, nc, ng, nw, depth + 1, seen | {key})
+                # PARK: dead end (no exit from this path)
 
     walk(machine.start, {}, [], [], 0, frozenset())
     for i, (k, eg) in enumerate(machine.entries):

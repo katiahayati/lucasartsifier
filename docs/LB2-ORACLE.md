@@ -66,12 +66,12 @@ walkthrough**, so it is quoted from the game:
 So LB2 has **no "cannot finish" state**: missing evidence buys a worse ending, not a dead end. The
 walkthroughs' *"the case cannot be solved"* is a description of ending 3, not of a softlock.
 
-⚠️ **Open question for the user, not mine to settle.** Under [[one-rule-death-is-in-scope]] a
-softlock is "from here, is what you need still obtainable?" — which depends on what the goal IS.
-Precedent cuts against counting these: for KQ6's four island treasures the user ruled *"they gate
-the BEST ending, not winnability."* But LB2's best ending is *solving the case*, which is the whole
-premise of the game, and Sierra's hint file frames a missing item as the coroner refusing you.
-**Do the five ending items count as softlocks?** See §5.
+**SETTLED (user, 2026-07-26): for Laura Bow 1 and 2 we gate on ITEMS only.** *"Evidence, people
+moving around, etc, is the whole point of the game."* So the five `has:`-checked items are in
+scope and count; the evidence-examination layer, the NPC schedules and the dialogue state that
+drive `local4`/`local5` are **deliberately out of scope** — modelling them would be modelling the
+game rather than its blockers. This also settles the KQ6-island-treasure analogy for LB2: the five
+count, because they are items.
 
 ### `proc0_3 147` is a red herring
 `(if (proc0_2 147) ... else (= local4 0))` looks like an evidence gate, but `rm750`'s own `init`
@@ -176,6 +176,42 @@ SCI1.1 machinery has had on a game it was not built against.
 Before the fix the same run produced one item (`pressPass`) and called the act-break card a winning
 terminal.
 
+### …and the mechanism is the right one (verified, not assumed)
+
+    pattern        missing-prereq-before-gate
+    need_room      750                      <- the has: chain in sAfterQuestions
+    source_rooms   640 / 620 / 500 / 525    <- acts 3 and 4, all behind the boundary
+    frontier_edges ["rm26->rm750"]          <- THE ACT BREAK
+
+The frontier the detector names is the act-break edge itself — the one task #11 restored. Not a
+coincidental true positive. The other eight conviction items are correctly **not** required, which
+matches the source: they are never `has:`-checked.
+
+### ⚠️ But this is the ACT-6 boundary only — 5 of a larger set
+
+`rm26 -> rm750` is a frontier because rm750 is terminal. The other four act breaks land inside the
+mega-SCC, so **boundaries 1→2, 2→3, 3→4, 4→5 are still invisible** and every item carried across
+one is a stranding we do not yet report. From §3, the predicted list — the validation target for
+tasks #12/#13:
+
+| item | obtained | needed | consequence of arriving without it |
+|---|---|---|---|
+| pressPass | 1 | 2 | no entry to the fundraiser |
+| eveningGown | 1 | 2 | ditto |
+| magnifier | 1 | 2–4 | most evidence is invisible |
+| waterGlass | 2 | 3–4 | cannot eavesdrop at doors |
+| pippin_sPad | 2 | **5** | cannot answer the sphinx riddles |
+| dinoBone | 3 | 4 | cannot break the statue → no bifocals |
+| snakeOil | 3 | **5** | the cobra nest is impassable |
+| cheese | 3 | **5** | the rats are impassable |
+| snakeLasso | 3 | **5** | cannot reach the mummy-case hook |
+| wire | 3 | **5** | cannot wire the door shut |
+| workBoot | 3 | **5** | Steve is injured |
+| smellingSalts | 4 | **5** | Steve cannot be revived |
+
+The act-5 six are the sharpest: act 5 is a linear chase with no way back to the museum, so entering
+it short of any one of them is a hard stop.
+
 ### Known gaps against this oracle
 - Act 3's break destination is `(if (== global12 620) 610 else 510)` — an `If`-valued `newRoom:`,
   still dropped. 20 more `If` sites in Dagger.
@@ -188,18 +224,18 @@ terminal.
 
 ---
 
-## 6. THE OPEN QUESTION
+## 6. SCOPE FOR THE LAURA BOW GAMES (user ruling, 2026-07-26)
 
-**Is "you got ending 3 instead of ending 1" a softlock?**
+**Gate on items only.** Evidence examination, who is standing where, which conversation you
+overheard — *"that's the whole point of the game."* We do not model it, and an accusation the
+coroner rejects because you never looked at the medallion is not a finding we owe.
 
-Arguments recorded, decision deferred to the user:
-- **No** — the game always reaches an ending, and the user already ruled this way on KQ6's four
-  island treasures ("they gate the BEST ending, not winnability").
-- **Yes** — the goal of LB2 *is* convicting the murderer; the other three endings are failure
-  states in fiction if not in code, and Sierra's own hint file treats a missing item as a problem
-  to be fixed rather than a variation.
-- **Either way**, the five items are irreversibly missable behind a monotone act counter, so the
-  *detection* is the same work. Only the label changes.
+Consequences, so this is not re-litigated:
+- The five `has:`-checked ending items are **in scope and count as strandings**, notwithstanding
+  that LB2 always reaches *an* ending. They are items, and they are irreversibly missable.
+- The eight examine-to-know conviction items are **out of scope**, and their absence from
+  `s.required` is correct behaviour, not a gap to close.
+- The twelve cross-act carry items in §5 are **in scope** and currently missed.
 
 Related: [[one-rule-death-is-in-scope]], [[dont-flip-enumerated-ground-truth]],
 [[kq6-softlock-ground-truth]], `docs/KQ6-SOFTLOCK-CANDIDATES.md`.

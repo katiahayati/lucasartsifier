@@ -61,6 +61,9 @@ class Machine:
     #   `newRoom: 18` when local1==1, so the coin/bottle inside are reachable ONLY with the staff.
     #   Kept parallel (not a 3-tuple) so every consumer that unpacks `(state, guard)` is untouched.
     init_entry_locals: list = field(default_factory=list)   # PARALLEL to init_entries.
+    glob_dom: dict = field(default_factory=dict)   # glob -> sorted values, for globals this
+    #   script uses as a COUNTER (`++`/`--`). compile fans an increment out over these: the new
+    #   value depends on the old one, so it is only resolvable against values we know it takes.
     start: int = 0
 
     def __repr__(self):
@@ -194,6 +197,7 @@ class MachineBuilder:
 
     def _build(self, script, obj):
         m = Machine(script.number, obj.name, start=obj.props.get("start", 0))
+        m.glob_dom = _glob_domains(script)
         cs = obj.methods["changeState"]
         sw = self._top_switch(cs)
         if sw:
@@ -455,3 +459,43 @@ if __name__ == "__main__":
                     desc = ", ".join(f"{o.kind}{'' if o.a is None else o.a}{'' if o.b is None else '='+str(o.b)}"
                                      f"{'[g]' if o.guard is not None else ''}" for o in ops)
                     print(f"   state {k:2d}: {desc}")
+
+
+def _glob_domains(script):
+    """{global: sorted values} for globals this script uses as a COUNTER.
+
+    Scoped two ways on purpose. Only globals the script actually `++`/`--` are included, so
+    nothing changes for a game that never counts in a global; and the values come from the
+    literals THIS SCRIPT tests the global against -- `(switch G (0 ...) (5 ...))`, `(== G 3)` --
+    which is the same "read the literals the code compares against" rule extract uses to resolve
+    a computed room destination.
+
+    LB2's act break is the motivating case: script 26 switches on global123 over 0..5 and is the
+    only place that advances it, so the domain and the increment sit in the same script. A game
+    that increments a score it never compares yields {} and the increment is dropped.
+    """
+    incs, vals = set(), {}
+    bodies = [a for o in script.objects for a in o.methods.values()]
+    bodies += list((getattr(script, "procs", None) or {}).values())
+    for ast in bodies:
+        for n in I.walk(ast):
+            tp = n["t"]
+            if tp in ("Increment", "Decrement") and I.is_global(n["kids"][0]):
+                incs.add(n["kids"][0]["index"])
+            elif tp == "Switch" and I.is_global(n["kids"][0]):
+                gi = n["kids"][0]["index"]
+                for c in n["kids"][1:]:
+                    if c["t"] == "Case":
+                        v = I.as_int(c["kids"][0])
+                        if v is not None:
+                            vals.setdefault(gi, set()).add(v)
+            # EQUALITY tests only. `(> G 3)` describes a RANGE, not a value the counter takes,
+            # and harvesting it would put 500 in the domain of any score compared against 500.
+            # A switch case label and an `==`/`!=` both name one concrete value; that is the
+            # evidence we want.
+            elif tp in ("Eq", "Ne") and len(n["kids"]) == 2:
+                a, b = n["kids"]
+                for x, y in ((a, b), (b, a)):
+                    if I.is_global(x) and I.as_int(y) is not None:
+                        vals.setdefault(x["index"], set()).add(I.as_int(y))
+    return {gi: sorted(vs) for gi, vs in vals.items() if gi in incs}

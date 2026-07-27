@@ -1131,7 +1131,14 @@ class Extractor:
             if not gs:
                 continue
             starter = gs[0] if len(gs) == 1 else GOr(list(gs))
-            e.guard = starter if e.guard is None else GAnd([e.guard, starter])
+            # via _conj, not a hand-built GAnd. Here a None starter means the arming was
+            # UNCONDITIONAL, so dropping it is correct -- which is exactly what _conj does.
+            # (Not to be confused with the None `atom()` yields for an operand we cannot model:
+            # that one means UNKNOWN and must stay in the tree, which is why the GAnd at the top
+            # of this file keeps its null kids. Two different Nones; only this one is droppable.)
+            # Latent until edges with a computed destination began arriving here already guarded
+            # -- before that this room's edges were all guard-None and took the other branch.
+            e.guard = _conj([e.guard, starter])
 
     def _nav_edges(self, room_num, script):
         obj = _room_object(script, self.ir)
@@ -1304,17 +1311,25 @@ class Extractor:
                     #           act, then `newRoom: local0` from another object in the script.
                     #           Dropping it left rm26 a pure SINK with 16 in-edges, which
                     #           anchors.discover then read as a winning terminal.
-                    # Resolve either to the room numbers the variable can hold.
+                    # Resolve either to the room numbers the variable can hold, each with the
+                    # condition it was assigned under (see _var_room_values).
                     dsts = self._var_room_values(room, params[0])
                 elif dsts[0] is None and params[0].get("t") == "ComplexVariable":
                     # `newRoom: [array][region]` -- overland-map travel keyed by the PIC control
                     # map (Camelot rm1 is the whole world's hub). Dropping it severed the hub and
                     # collapsed every location out of reachability.
                     dsts = _array_room_values(self.ir, script, params[0])
-                for dst in dsts:
+                # Normalise all three shapes to {destination: extra condition}. A literal or an
+                # array slot carries none; a computed destination carries the one it was chosen
+                # under, and that condition belongs on the EDGE -- it is the difference between
+                # "the act break can send you to act 5" and "it does so once you have finished
+                # act 4".
+                if not isinstance(dsts, dict):
+                    dsts = {d: None for d in dsts}
+                for dst, extra in dsts.items():
                     if dst is not None:
                         (self.ts.edges if movement else self.ts.cs_edges).append(
-                            Edge(room, dst, _conj(pc), self._cur_obj))
+                            Edge(room, dst, _conj(list(pc) + [extra]), self._cur_obj))
             else:
                 # ACQUISITION -- the last hardcoded `sel == "get"` here is gone too: whether a
                 # send hands the player an item is a question for the derived vocabulary, not a
@@ -1337,12 +1352,24 @@ class Extractor:
         The variable may be a GLOBAL or a script LOCAL/TEMP -- same idiom, different storage,
         so the same scan answers both. Scoping the scan to THIS script is exact for a local
         (that is all a script local can see) and is the deliberate narrowing we already chose
-        for the global case."""
-        vals = set()
+        for the global case.
+
+        Returns {room: guard}, where the guard is the PATH CONDITION UNDER WHICH THE
+        DESTINATION WAS ASSIGNED -- `None` meaning unconditional. That is what stops a routing
+        room from becoming a free hub between everywhere it can send you: LB2's act break is
+        reached from seven rooms and can deliver five, but `(switch global123 (2 (= local0 355)))`
+        says rm355 is the destination exactly when the act counter is 2. Without the condition
+        the model would let you walk out of act 1 into act 5 -- the same over-merge that hid the
+        LSL2 parachute.
+
+        A value assigned at more than one site drops to `None`: we compose conditions with AND
+        and the honest reading of two sites is their OR, so the permissive answer is the sound
+        one here (we never invent a constraint the game does not have)."""
         s = self.ir.scripts.get(room)
         if s is None:
-            return vals
+            return {}
         vtype, vindex = var.get("vtype"), var.get("index")
+        seen = {}                              # room -> [guard, ...] one per assignment site
 
         def is_room(v):
             rs = self.ir.scripts.get(v)
@@ -1352,21 +1379,29 @@ class Extractor:
             return (n and n.get("t") == "Variable" and n.get("vtype") == vtype
                     and n.get("index") == vindex)
 
+        def on_leaf(n, pc):
+            if n["t"] == "Assignment" and is_dest(n["kids"][0]):
+                v = I.as_int(n["kids"][1])
+                if v is not None and is_room(v):
+                    seen.setdefault(v, []).append(_conj(pc))
+
         for o in s.objects:
             for _mn, ast in o.methods.items():
+                # TWO scans, because the two shapes need different walkers and conflating them
+                # cost LSL2 eight softlocks once already. `(switch <dest> ...)` is DATA -- the
+                # case labels ARE the values -- but walk_stream reads a Switch as control flow
+                # and never hands it to on_leaf, so that harvest has to run on the flat walk.
+                # The assignment shape genuinely needs the path condition, so it uses
+                # walk_stream. See test_walkers on Switch-as-data.
                 for n in I.walk(ast):
-                    if n["t"] == "Switch":
-                        if is_dest(n["kids"][0]):
-                            for c in n["kids"][1:]:
-                                if c["t"] == "Case":
-                                    v = I.as_int(c["kids"][0])
-                                    if v is not None and is_room(v):
-                                        vals.add(v)
-                    elif n["t"] == "Assignment" and is_dest(n["kids"][0]):
-                        v = I.as_int(n["kids"][1])
-                        if v is not None and is_room(v):
-                            vals.add(v)
-        return vals
+                    if n["t"] == "Switch" and is_dest(n["kids"][0]):
+                        for c in n["kids"][1:]:
+                            if c["t"] == "Case":
+                                v = I.as_int(c["kids"][0])
+                                if v is not None and is_room(v):
+                                    seen.setdefault(v, []).append(None)
+                walk_stream(ast, [], on_leaf)
+        return {v: (gs[0] if len(gs) == 1 else None) for v, gs in seen.items()}
 
 
 def extract(ir):
