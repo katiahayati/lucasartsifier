@@ -510,6 +510,21 @@ class OpEmitter:
                         ents[i] = (K, GAnd(list(gate["guard"]) + [eg]) if eg is not None
                                    else (gate["guard"][0] if len(gate["guard"]) == 1
                                          else GAnd(list(gate["guard"]))))
+                    # ...and on the EXIT itself, because a room need not decide the direction on
+                    # the way IN. KQ6's labyrinth reads it in the state body instead --
+                    # `(switch ((ScriptID 30 0) prevEdgeHit:) (2 (global2 newRoom: 440)))` -- so
+                    # the entry carries no edge test and only the exit path does. Same rule, the
+                    # other place a machine can ask the question; the prop-gate branch of
+                    # _apply_control_gates gates exits exactly this way.
+                    for K, paths in list(info["states"].items()):
+                        newp = []
+                        for path in paths:
+                            g, rest, trans = path[0], path[1:], path[4]
+                            if (trans and trans[0] == "EXIT"
+                                    and _has_pos_edge(g, want, eregs)):
+                                g = list(g) + list(gate["guard"])
+                            newp.append((g,) + rest)
+                        info["states"][K] = newp
 
     def _apply_control_gates(self):
         """Consume control_oracle.find_gates: for each prop-gate, AND the derived door-open
