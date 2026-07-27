@@ -502,7 +502,27 @@ def gating_registers(em):
             for (g, w, gg, c, tr) in paths:
                 for (gi, v) in w:
                     written.add(gi)
+    # The PREVIOUS-ROOM register is written by no room and by every transition: the Game loop's
+    # room switch does `(= <prev> <current>)` before it goes (see extract.prev_room_global), so
+    # taking any edge a->b sets it to a. `edge_meta` puts that write on the edge; here it only has
+    # to count as written, or the "never written cannot create an inconsistent composition" rule
+    # above would keep refusing to promote it while 13 KQ6 edges, 12 KQ4, 53 KQ5 compare against it.
+    prev = prev_room_reg(em)
+    if prev is not None:
+        written.add(prev)
     return sorted(compared & written)
+
+
+def prev_room_reg(em):
+    """The previous-room register for this game, derived once per model. See edge_meta.
+
+    None for a model with no IR behind it -- the derivation reads the Game loop, so a synthetic
+    emitter that has no scripts has no previous-room register rather than a default one."""
+    if not hasattr(em, "_prev_reg"):
+        import extract as X
+        ir = getattr(em, "ir", None)
+        em._prev_reg = X.prev_room_global(ir) if ir is not None else None
+    return em._prev_reg
 
 
 def asserts_eq(op, pol):
@@ -537,10 +557,20 @@ def _must_hold(guard, out=None):
             out.add((guard.var, int(guard.value)))
         except (TypeError, ValueError):
             pass
+    elif (isinstance(guard, GNot) and isinstance(guard.kid, Pred)
+          and guard.kid.kind == "CMP" and guard.kid.op == "=="):
+        # `(not (== x v))` is the same assertion as `(!= x v)` -- the two spellings SCI compiles
+        # the same test into, and only one of them was read here. Descending a negation is safe
+        # exactly when its operand is a leaf: the flip is computable, which is not true of the
+        # subtree cases this deliberately stops at.
+        try:
+            out.add((guard.kid.var, int(guard.kid.value)))
+        except (TypeError, ValueError):
+            pass
     return out
 
 
-def guard_reqs(guard, regs):
+def guard_reqs(guard, regs, dom=None):
     """{reg: {values it REQUIRES}} for every reg in `regs` this guard constrains.
 
     THE one reading of "what does this guard demand of a register", used by both consumers: the
@@ -558,8 +588,22 @@ def guard_reqs(guard, regs):
     `CMP(gX, !=, 0)`. KQ4's day-only doors are guarded exactly that way -- `(if (not global100)
     <open the door>)` -- so without this the night gate parsed fine and then constrained nothing.
 
+    ...and a POSITIVE `!=` is exact too whenever we know the register's COMPLETE domain, because
+    "not v" is then just "one of the others". Two registers qualify and `dom` carries them:
+
+      * a flag global WE minted from a flag store -- our lowering writes 1 to set and 0 to clear
+        and nothing else, so `(!= flag 0)` IS `== 1`. The only way a "this flag is SET" gate can
+        ever carry, and KQ6's walk out of the catacombs needs the minotaur-defeated flag.
+      * the PREVIOUS-ROOM register, whose domain is the set of rooms an edge can leave from -- by
+        construction, since `edge_meta` is what writes it. KQ6's realm of the dead is left through
+        exactly one door and that door reads `(!= global12 670)`: you may go out only if you came
+        back from rm690, which is to say only if you held up the mirror and won.
+
+    Both stay subject to `_must_hold`, so a `!=` under a negation or inside an OR still constrains
+    nothing -- claiming otherwise would block movement the game allows.
+
     One walk of the guard tree for ALL the registers: walking it once per register made edge_meta
-    19x slower than it needed to be, and `_must_hold` is only paid for if a flag-SET atom shows up.
+    19x slower than it needed to be, and `_must_hold` is only paid for if such an atom shows up.
     """
     atoms = []
     _cmp_atoms(guard, atoms)
@@ -569,23 +613,70 @@ def guard_reqs(guard, regs):
             continue
         if asserts_eq(op, pol):
             out.setdefault(r, set()).add(v)
-        elif op == "!=" and v == 0 and pol and r in vocab.BOOL_GLOBALS:
-            # A global WE synthesized from a flag store has domain exactly {0, 1} -- our own
-            # lowering writes 1 to set and 0 to clear and nothing else -- so "not zero" IS "one".
-            # Reading it as unconstraining is the right default for a real global whose values we
-            # do not know, but here we minted the domain, so it costs no soundness and it is the
-            # ONLY way a "this flag is SET" gate can ever carry. KQ6's escape from the catacombs
-            # is exactly that: the walk out to the surface needs the minotaur-defeated flag.
+        elif (op == "!=" and pol) or (op == "==" and not pol):
+            # Both spellings of "not equal", the mirror of asserts_eq's two spellings of "equal".
+            full = ({0, 1} if (v == 0 and r in vocab.BOOL_GLOBALS)
+                    else (dom or {}).get(r))
+            if not full or v not in full:
+                continue                        # domain unknown, or the test excludes nothing
             if must is None:
                 must = _must_hold(guard)        # only conjuncts that MUST hold -- see _must_hold
-            if (r, 0) in must:
-                out.setdefault(r, set()).add(1)
+            if (r, v) in must:
+                out.setdefault(r, set()).update(full - {v})
     return out
 
 
 def required_values(guard, reg):
     """Values of `reg` this guard REQUIRES, or None if it doesn't constrain it. See guard_reqs."""
     return guard_reqs(guard, (reg,)).get(reg) or None
+
+
+def structural_reqs(guard, regs, dom=None):
+    """{reg: {values}} NECESSARILY true whenever `guard` is -- the register twin of `_own_required`.
+
+    `guard_reqs` reads the atoms FLAT, which is right for its job (what values may this edge be
+    crossed at) and wrong for composing one guard into another, because a disjunction of two ways
+    through reads as a conjunction of both their conditions. KQ4's whale is exactly that shape:
+
+        (or (and (not (prev == 43)) (prev == 44))         ; arrived from inside the whale
+            (and (g109 == 1) ... (g183 == 0) ...))        ; swam up to it with the flute played
+
+    Flat, that demands prev == 44 AND g109 == 1 to be swallowed -- i.e. you may only enter the
+    whale if you have just come out of it. So GOr keeps a register only if EVERY branch constrains
+    it, unioning the values, and GAnd unions the registers, intersecting values where both
+    constrain one. Negation swaps the two, as in `_own_required`."""
+    regs = set(regs)
+
+    def walk(g, pol):
+        if g is None:
+            return {}
+        if isinstance(g, list):
+            return walk(GAnd(list(g)), pol)
+        if isinstance(g, Pred):
+            got = guard_reqs(g if pol else GNot(g), regs, dom)
+            return {R: set(v) for R, v in got.items()}
+        if isinstance(g, GNot):
+            if isinstance(g.kid, Pred):
+                got = guard_reqs(g if pol else g.kid, regs, dom)
+                return {R: set(v) for R, v in got.items()}
+            return walk(g.kid, not pol)
+        if isinstance(g, (GAnd, GOr)):
+            union = pol == isinstance(g, GAnd)   # AND&true or OR&false -> union; else intersect
+            kids = [walk(k, pol) for k in g.kids]
+            if not kids:
+                return {}
+            if union:
+                out = {}
+                for d in kids:
+                    for R, vs in d.items():
+                        out[R] = (out[R] & vs) if R in out else set(vs)
+                return {R: vs for R, vs in out.items() if vs}
+            keep = set(kids[0])
+            for d in kids[1:]:
+                keep &= set(d)
+            return {R: set().union(*(d[R] for d in kids)) for R in keep}
+        return {}
+    return walk(guard, True)
 
 
 def entry_alts(info):
@@ -804,11 +895,35 @@ def edge_meta(em, regs):
     produced the Airline_Ticket FP). But rm82 dumps you into rm152 having set gCurrentStatus to
     14/15 (bomb botched) while rm152's exit to rm52 REQUIRES 7 -- an impossible composition."""
     regset = set(regs)
+    # The previous-room register's COMPLETE domain: every room an edge leaves from, plus the 0 it
+    # starts at. Complete by construction -- the writes below are the only ones -- which is what
+    # lets `guard_reqs` read `(!= prev 670)` exactly instead of dropping it.
+    pdom = {r for e in em.ts.edges for r in (e.src,)} | \
+           {r for e in em.ts.cs_edges for r in (e.src,)} | \
+           {i["room"] for i in em.machines} | {0}
+    dom = {prev_room_reg(em): pdom} if prev_room_reg(em) in regset else {}
+
     def reqs(guard):
-        return guard_reqs(guard, regset)
+        return guard_reqs(guard, regset, dom)
+    # THE PREVIOUS-ROOM WRITE. `(= <prev> <current>)` in the Game loop's room switch runs on every
+    # transition, so every edge a->b carries `prev := a`. Modelled here rather than as a room write
+    # because it is a property of the EDGE, and that is the whole point of it: a room whose exit
+    # asks where you came from is a router, not a hub. KQ6's rm155 is the flight to the Realm of
+    # the Dead -- `(if (== global12 340) (newRoom 600) else (newRoom 200))` -- and with prev
+    # unwritten both branches read as free, which welded the realm to the rest of the world in
+    # both directions. rm680's only way out asks the same question (`global12 != 670`, i.e. you
+    # came back from rm690 having held up the mirror), so "solve the level or stay" is spelled in
+    # this one register too.
+    prev = prev_room_reg(em) if prev_room_reg(em) in regset else None
+    def sets_of(src, base=None):
+        s = dict(base) if base else {}
+        if prev is not None:
+            s[prev] = src
+        return s
     meta = defaultdict(list)
     for e in em.ts.edges:
-        meta[(e.src, e.dst)].append((reqs(e.guard), {}, (frozenset(_own_positive(e.guard)),)))
+        meta[(e.src, e.dst)].append(
+            (reqs(e.guard), sets_of(e.src), (frozenset(_own_positive(e.guard)),)))
     md = em.machine_delivered
     # A cs_edge whose (room, dst) a machine delivers is the SAME `newRoom` statement the machine
     # EXIT carries -- the cutscene walk knows the machine's gate, the flat edge knows the room's
@@ -823,13 +938,17 @@ def edge_meta(em, regs):
     # that emitted them (`via` == the machine's instance), because a room can deliver one (a,b) from
     # several instances and only the matching one is the same statement -- 105 of KQ6's 108
     # suppressed edges match, and the three that do not are left dropped rather than guessed.
+    # Composed with the NECESSARY reading of both (structural_reqs / _own_required), not the flat
+    # one: this guard is about to be ANDed into another, and a flat read turns "either of two
+    # armings" into "both". That distinction is the whole of KQ4's whale -- see structural_reqs.
     suppressed = defaultdict(list)
     for e in em.ts.cs_edges:
         if (e.src, e.dst) in md:
             suppressed[(e.src, e.dst, e.via)].append(
-                (reqs(e.guard), frozenset(_own_positive(e.guard))))
+                (structural_reqs(e.guard, regset, dom), frozenset(_own_required(e.guard))))
             continue
-        meta[(e.src, e.dst)].append((reqs(e.guard), {}, (frozenset(_own_positive(e.guard)),)))
+        meta[(e.src, e.dst)].append(
+            (reqs(e.guard), sets_of(e.src), (frozenset(_own_positive(e.guard)),)))
 
     def _merged(key):
         """The conditions EVERY suppressed statement of this (room, dst, instance) demanded.
@@ -870,7 +989,8 @@ def edge_meta(em, regs):
                 if tr and tr[0] == "EXIT":
                     exit_own = frozenset(_own_positive(g))
                     alts = eo.get(K) or (frozenset(),)
-                    sets = {gi: v for (gi, v) in w if gi in regset}
+                    sets = sets_of(info["room"],
+                                   {gi: v for (gi, v) in w if gi in regset})
                     # The exit inherits its ENTRY's register requirements as well as its item
                     # ones. Both must hold, so a register constrained in both places INTERSECTS.
                     rq = reqs(g)

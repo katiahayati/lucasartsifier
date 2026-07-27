@@ -128,6 +128,35 @@ def test_required_values():
     finally:
         vocab.BOOL_GLOBALS = saved
 
+    # The same rule with a domain supplied instead of minted: `!= v` is exact when the register's
+    # complete value set is known, which is true of the previous-room register by construction.
+    # KQ6 leaves the realm of the dead through one door, guarded `(!= prev 670)`.
+    dom = {12: {0, 155, 340, 670, 690}}
+    ne670 = Pred("CMP", 12, "!=", 670)
+    check("`!= v` over a complete domain means every OTHER value",
+          M.guard_reqs(ne670, {12}, dom) == {12: {0, 155, 340, 690}})
+    check("...and `(not (== v))` is the same assertion, the other spelling",
+          M.guard_reqs(GNot(Pred("CMP", 12, "==", 670)), {12}, dom) == {12: {0, 155, 340, 690}})
+    check("...with no domain it still constrains nothing",
+          M.guard_reqs(ne670, {12}) == {})
+    check("...and inside an OR it constrains nothing either",
+          M.guard_reqs(GOr([ne670, _own(3)]), {12}, dom) == {})
+
+    # structural_reqs: the composing reader. An OR of two armings must not read as a conjunction
+    # of both -- KQ4's whale is `(or (prev == 44) (g109 == 1 and ...))` and reading it flat
+    # demanded you may only be swallowed if you have just been spat out.
+    armA = GAnd([GNot(Pred("CMP", 12, "==", 43)), Pred("CMP", 12, "==", 44)])
+    armB = GAnd([Pred("CMP", 109, "==", 1), Pred("CMP", 183, "==", 0)])
+    check("flat reading of an OR-of-armings demands both (why edge_meta cannot compose it)",
+          M.guard_reqs(GOr([armA, armB]), {12, 109, 183}) == {12: {44}, 109: {1}, 183: {0}})
+    check("structural reading demands neither",
+          M.structural_reqs(GOr([armA, armB]), {12, 109, 183}) == {})
+    check("...but keeps what a single arming requires",
+          M.structural_reqs(armA, {12, 109, 183}) == {12: {44}})
+    check("...and unions the values when both branches constrain one register",
+          M.structural_reqs(GOr([Pred("CMP", 5, "==", 1), Pred("CMP", 5, "==", 2)]), {5})
+          == {5: {1, 2}})
+
 
 def test_gating_registers():
     """Discovery: a register earns promotion iff it is BOTH compared in a movement guard AND
