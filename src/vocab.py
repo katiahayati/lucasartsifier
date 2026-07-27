@@ -1333,6 +1333,213 @@ def lower_obj_props(ir, pairs):
     return len(sites), len(index)
 
 
+def derive_item_bit_flags(ir, item_of_receiver):
+    """`{(item, prop, bit)}` for item state kept as BIT FLAGS in the item's own property.
+
+    The fourth store again, in the spelling `item_property_registers` cannot see. That function
+    looks only at `(Inv at: N) <prop>` sends, but an item maintains its OWN state from inside its
+    OWN methods, where `self` is the item and a bare property reference is its own property:
+
+        (instance skull of Kq6InvItem
+          (method (cue)   (self ... state: (& (self state:) $fff7)))    ; clear bit 3
+          (method (doVerb param1) (if (& state $0004) ...)))            ; read bit 2
+
+    Measured on KQ6: the only `(Inv at: N) state:` WRITE is the lettuce and all five READS are the
+    skull, so written-and-read never intersected and the whole store dropped out -- while the
+    skull's bits are what gate the realm-of-the-dead cutscene.
+
+    Same "written AND read" rule as every other store, and the same bit-in-a-word abstraction as
+    `derive_prop_flags`; only the container differs. Returns the (item, prop, bit) triples that are
+    both set/cleared and tested."""
+    read, written = set(), set()
+
+    def item_of(node, selfitem):
+        """The item whose property this reads, plus the property name -- or None."""
+        if not isinstance(node, dict):
+            return None
+        if node.get("t") == "Property" and selfitem is not None:
+            return (selfitem, node.get("name"))
+        if node.get("t") != "Send":
+            return None
+        try:
+            recv, msgs = I.send_pairs(node)
+        except Exception:                                   # noqa: BLE001
+            return None
+        if len(msgs) != 1 or msgs[0][1] or not msgs[0][0]:
+            return None
+        if isinstance(recv, dict) and recv.get("t") == "Self" and selfitem is not None:
+            return (selfitem, msgs[0][0])
+        it = item_of_receiver(recv)
+        return (it, msgs[0][0]) if it is not None else None
+
+    def bits(mask):
+        return [b for b in range(16) if (mask & 0xFFFF) >> b & 1]
+
+    names = {nm: i for i, nm in item_names(ir).items()}
+    for s in ir.scripts.values():
+        # procedures have no `self`, but `(Inv at: N)` still resolves there -- KQ6 tests the
+        # skull's bit from `proc344_1`, so skipping procs lost the only READ of it.
+        scopes = [(names.get(re.sub(r"[^0-9A-Za-z]+", "_", o.name).strip("_"))
+                   if not o.is_class else None, list(o.methods.values())) for o in s.objects]
+        scopes.append((None, list(s.procs.values())))
+        for selfitem, bodies in scopes:
+            for body in bodies:
+                for n in I.walk(body):
+                    t = n.get("t")
+                    if t == "BinAnd":                       # a TEST: `(& <prop> MASK)`
+                        ks = n.get("kids") or []
+                        for a, b in ((ks[0], ks[1]),) if len(ks) > 1 else ():
+                            for x, y in ((a, b), (b, a)):
+                                got, m = item_of(x, selfitem), I.as_int(y)
+                                if got and got[1] and m is not None:
+                                    read.update((got[0], got[1], bit) for bit in bits(m))
+                    elif t == "Send":                       # a WRITE: `(x prop: (| <prop> MASK))`
+                        try:
+                            recv, msgs = I.send_pairs(n)
+                        except Exception:                   # noqa: BLE001
+                            continue
+                        holder = (selfitem if isinstance(recv, dict) and recv.get("t") == "Self"
+                                  else item_of_receiver(recv))
+                        if holder is None:
+                            continue
+                        for sel, ps in msgs:
+                            if not ps or not sel:
+                                continue
+                            v = ps[0]
+                            if not (isinstance(v, dict) and v.get("t") in ("BinOr", "BinAnd")):
+                                continue
+                            for k in (v.get("kids") or []):
+                                m = I.as_int(k)
+                                if m is None:
+                                    continue
+                                # a clear is `& ~MASK`, so the literal is the COMPLEMENT
+                                mm = m if v["t"] == "BinOr" else (~m) & 0xFFFF
+                                written.update((holder, sel, bit) for bit in bits(mm))
+    return read & written
+
+
+def lower_item_bit_flags(ir, flags, item_of_receiver):
+    """Rewrite item bit-flag reads and writes into synthetic globals, in place.
+
+    Same destination as every other store -- an ordinary global the register machinery already
+    promotes -- so nothing downstream learns a new concept. Two rewrites:
+
+        (& <item.prop> MASK)            ->  a read of the bit's global
+        (x ... prop: (| <read> MASK))   ->  the same send WITHOUT that message, followed by the
+                                            assignments, so a CHAINED send keeps its other
+                                            messages (the skull sets loop/cel/cursor in the very
+                                            send that clears its bit).
+    """
+    if not flags:
+        return 0, 0
+    max_gi = 0
+    for s in ir.scripts.values():
+        for body in [b for o in s.objects for b in o.methods.values()] + list(s.procs.values()):
+            for n in I.walk(body):
+                if I.is_global(n):
+                    max_gi = max(max_gi, n["index"])
+    index, base = {}, max_gi + 1
+    for k in sorted(flags):
+        index[k] = base + len(index)
+    BOOL_GLOBALS.update(index.values())
+
+    def gread(gi):
+        return {"t": "Variable", "vtype": "Global", "index": gi}
+
+    def bits(mask):
+        return [b for b in range(16) if (mask & 0xFFFF) >> b & 1]
+
+    names = {nm: i for i, nm in item_names(ir).items()}
+    n_read = n_write = 0
+    for s in ir.scripts.values():
+        scopes = [(names.get(re.sub(r"[^0-9A-Za-z]+", "_", o.name).strip("_"))
+                   if not o.is_class else None, list(o.methods.values())) for o in s.objects]
+        scopes.append((None, list(s.procs.values())))       # procs: no `self`, but `(Inv at: N)` works
+        for selfitem, bodies in scopes:
+
+            def prop_of(node, selfitem=selfitem):
+                if not isinstance(node, dict):
+                    return None
+                if node.get("t") == "Property" and selfitem is not None:
+                    return (selfitem, node.get("name"))
+                if node.get("t") != "Send":
+                    return None
+                try:
+                    recv, msgs = I.send_pairs(node)
+                except Exception:                           # noqa: BLE001
+                    return None
+                if len(msgs) != 1 or msgs[0][1] or not msgs[0][0]:
+                    return None
+                if isinstance(recv, dict) and recv.get("t") == "Self" and selfitem is not None:
+                    return (selfitem, msgs[0][0])
+                it = item_of_receiver(recv)
+                return (it, msgs[0][0]) if it is not None else None
+
+            for body in bodies:
+                for n in I.walk(body):
+                    if n.get("t") == "BinAnd":
+                        ks = n.get("kids") or []
+                        if len(ks) < 2:
+                            continue
+                        for x, y in ((ks[0], ks[1]), (ks[1], ks[0])):
+                            got, m = prop_of(x), I.as_int(y)
+                            if not (got and got[1] and m is not None):
+                                continue
+                            gs = [index[(got[0], got[1], b)] for b in bits(m)
+                                  if (got[0], got[1], b) in index]
+                            if not gs:
+                                continue
+                            new = gread(gs[0]) if len(gs) == 1 else {
+                                "t": "Or", "kids": [gread(g) for g in gs]}
+                            n.clear()
+                            n.update(new)
+                            n_read += 1
+                            break
+                    elif n.get("t") == "Send":
+                        try:
+                            recv, msgs = I.send_pairs(n)
+                        except Exception:                   # noqa: BLE001
+                            continue
+                        holder = (selfitem if isinstance(recv, dict) and recv.get("t") == "Self"
+                                  else item_of_receiver(recv))
+                        if holder is None:
+                            continue
+                        keep, asg = [], []
+                        for mnode in (n.get("kids") or [])[1:]:
+                            sel = None
+                            if isinstance(mnode, dict) and mnode.get("t") == "SendMessage":
+                                sn_ = (mnode.get("kids") or [None])[0]
+                                sel = sn_.get("name") if isinstance(sn_, dict) else None
+                            ps = (mnode.get("kids") or [])[1:] if sel else []
+                            v = ps[0] if ps else None
+                            done = False
+                            if sel and isinstance(v, dict) and v.get("t") in ("BinOr", "BinAnd"):
+                                for k in (v.get("kids") or []):
+                                    m = I.as_int(k)
+                                    if m is None:
+                                        continue
+                                    mm = m if v["t"] == "BinOr" else (~m) & 0xFFFF
+                                    val = 1 if v["t"] == "BinOr" else 0
+                                    gs = [index[(holder, sel, b)] for b in bits(mm)
+                                          if (holder, sel, b) in index]
+                                    for gi in gs:
+                                        asg.append({"t": "Assignment",
+                                                    "kids": [gread(gi),
+                                                             {"t": "Number", "value": val}]})
+                                    if gs:
+                                        done = True
+                                    break
+                            if not done:
+                                keep.append(mnode)
+                        if asg:
+                            n_write += len(asg)
+                            rest = [n.get("kids")[0]] + keep
+                            n.clear()
+                            n.update({"t": "List",
+                                      "kids": ([{"t": "Send", "kids": rest}] if keep else []) + asg})
+    return n_read, n_write
+
+
 def derive_debug(ir):
     """Globals TOGGLED with `^=` -- what a debug menu checkbox compiles to.
 

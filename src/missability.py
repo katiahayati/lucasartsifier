@@ -2012,6 +2012,12 @@ def load(cfg=None, ir_path=None):
     # `(ScriptID 30 0) scarfOnMino:` / `seenByMino:`. Same "written with a constant AND read back"
     # rule as every other store, lowered to the same synthetic globals.
     V.lower_obj_props(ir, V.derive_obj_props(ir))
+    # FOURTH store, in the spelling item_property_registers cannot see: an item keeping its own
+    # state as BIT FLAGS in its own property, written from inside its own methods via `self` and
+    # read as a bare property. KQ6's skull gates the realm-of-the-dead cutscene on exactly that.
+    import extract as _X
+    _X.install_vocabulary(ir)
+    V.lower_item_bit_flags(ir, V.derive_item_bit_flags(ir, _X._at_item), _X._at_item)
     d_gi, d_val = sig[0], (sig[1] if len(sig) > 1 else None)
     is_death = (lambda gi, v: gi == d_gi and v == d_val) if d_val is not None else \
                (lambda gi, v: gi == d_gi and bool(v))
