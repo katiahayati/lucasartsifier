@@ -64,12 +64,36 @@ one, every time:
     teacup   rm690 -> rm540:  rm690->rm680->rm155->rm200->rm210->rm240->rm250->rm540
     coal     rm490 -> rm560:  rm490->rm480->rm470->rm450->rm550->rm560
 
-So KQ6's remaining work is **task #14** (state that seals room ACCESS behind you) for nine, plus
-**task #8** (the handkerchief's real use) for the tenth. Not nine separate investigations.
+### …but "one mechanism" was too clean. Measured 2026-07-27, same day.
 
-The same shape holds in Laura Bow 2: 10 of its 12 cross-act carry items are already in `s.required`
-with sources, and are missed for the identical reason -- see `docs/LB2-ORACLE.md` §5. **One
-mechanism accounts for 19 of the 22 known misses across both games.**
+The shared STATE is real (nine items, all `required, judged reachable`). The claim that one fix
+closes them was an inference from that state, and walking the actual return edges breaks it into
+at least two classes:
+
+**Class 1 — a scripted escape whose arming guard we dropped.** `rm370 -> rm300` is the
+`flyToBeach` cutscene, and our guard for it is:
+
+    GOr(kids=[None, None])
+
+Two arming sites (`toBeachTXT` and the saved-Celeste cutscene), neither condition modelled. An OR
+of two unknowns is unknown, and unknown is permissive, so the escape reads as free. This is a
+DROPPED-GUARD bug of the familiar kind, not a new mechanism.
+
+**Class 2 — the return path is genuinely walkable, and the seal is somewhere else entirely.**
+`rm510 <-> rm540` and `rm500 -> rm520` are real two-way map connections (`north`/`south` room
+properties), and in the real game you CAN walk back from rm370 to fetch the brick — the game
+bounces you to the beach precisely so you can. The softlock is that it does so **only once**: the
+one-warning gate sets flag 2, and every later arrival at rm340 throws you in with no item check.
+That is a one-time EVENT changing a later room's behaviour, not a region that seals room access.
+
+So the brick / hole-in-the-wall / tinderbox class is NOT the same mechanism as LB2's act counter,
+and #14 as originally written ("state that seals ROOM ACCESS") only describes part of the problem.
+Splitting it is the next step; do not treat the nine as one fix.
+
+⚠️ This paragraph replaced a confident "one mechanism accounts for 19 of the 22 known misses across
+both games" written earlier the same day. It was wrong in the same way the column above was wrong —
+an inference stated as a measurement. The nine sharing a STATE is measured; the nine sharing a
+CAUSE was not.
 
 ## THE CAPTURE IS A ONE-WARNING GATE, IN TWO ROOMS (user 2026-07-26, verified)
 
