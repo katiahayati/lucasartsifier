@@ -61,6 +61,9 @@ class Machine:
     #   `newRoom: 18` when local1==1, so the coin/bottle inside are reachable ONLY with the staff.
     #   Kept parallel (not a 3-tuple) so every consumer that unpacks `(state, guard)` is untouched.
     init_entry_locals: list = field(default_factory=list)   # PARALLEL to init_entries.
+    entry_sources: list = field(default_factory=list)   # PARALLEL to entries: the METHOD the
+    #   arming was found in ("init", "doit", "cue", a proc, ...). A `cue` is not a way IN -- see
+    #   MachineBuilder._drop_continuation_entries.
     glob_dom: dict = field(default_factory=dict)   # glob -> sorted values, for globals this
     #   script uses as a COUNTER (`++`/`--`). compile fans an increment out over these: the new
     #   value depends on the old one, so it is only resolvable against values we know it takes.
@@ -259,7 +262,47 @@ class MachineBuilder:
                 continue
             seen.add(key)
             self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn))
+        self._drop_continuation_entries(m)
         return m
+
+    @staticmethod
+    def _drop_continuation_entries(m):
+        """An UNCONDITIONAL arming found in a `cue` method is not a way IN; drop it.
+
+        A room's `cue` runs only because a script the room was already running finished, so a
+        `setScript:` there CONTINUES that script rather than offering the player a fresh way to
+        start this one. Its real precondition is whatever armed the previous script -- upstream,
+        in the arming chain, which we do not follow. Recorded as an unconditional entry it says
+        "this machine can start at any time", and since entries are ALTERNATIVES that single
+        vacuous member erases every real precondition the other armings carry.
+
+        KQ6's rm407 is the case. `emptyHandedDeath` is armed four ways; one of them is
+
+            (method (cue) (global1 handsOff:) (global2 setScript: emptyHandedDeath))
+
+        and another is the real gate, `... (not (has: 18)) ...` -- you die in the hole-in-the-wall
+        room without the hole. With the `cue` arming counted, the death looks unconditional, the
+        item requirement vanishes, and the labyrinth stops being a trap for a player who walked in
+        without it.
+
+        Narrow on purpose, because dropping an alternative STRENGTHENS a guard and that is the
+        direction that invents softlocks:
+          * only when the cue arming is UNCONDITIONAL -- a conditional one carries real information
+            and is kept, even though the same argument would apply;
+          * only when some other entry survives, so a machine armed solely from `cue` is untouched
+            and keeps its (permissive) unconditional entry.
+        Measured over six games: LSL2, KQ4 and SQ3 contain NO cue armings at all, Dagger's 28 are
+        all either cue-only or already conditional, and exactly three machines change -- KQ6's
+        `emptyHandedDeath` and `queensLeave`, and KQ5's `faceMove`."""
+        drop = {i for i, src in enumerate(m.entry_sources)
+                if src == "cue" and m.entries[i][1] is None}
+        if not drop or len(drop) == len(m.entries):
+            return
+        keep = [i for i in range(len(m.entries)) if i not in drop]
+        m.entries = [m.entries[i] for i in keep]
+        m.entry_locals = [m.entry_locals[i] for i in keep]
+        m.entry_armers = [m.entry_armers[i] for i in keep]
+        m.entry_sources = [m.entry_sources[i] for i in keep]
 
     def _targets(self, param, m):
         """Does this `setScript:` argument name machine `m`? An Object reference is scoped to the
@@ -315,14 +358,15 @@ class MachineBuilder:
                     loc[e[1]] = e[2]
             if len(ev) > 2 and ev[2] is not None:
                 loc[X.REG_KEY] = ev[2]            # the `register` this arming selected
-            self._add_entry(m, 0, _conj(apc), loc, source == "init", armer)   # init entries are ADDITIONALLY
-            #   bundled onto room arrival, not instead -- still normal entries too
+            self._add_entry(m, 0, _conj(apc), loc, source == "init", armer, source)   # init entries
+            #   are ADDITIONALLY bundled onto room arrival, not instead -- still normal entries too
 
-    def _add_entry(self, m, state, guard, locals_, is_init, armer=None):
-        """Append an entry AND its carried locals, keeping the two parallel lists in lockstep."""
+    def _add_entry(self, m, state, guard, locals_, is_init, armer=None, source=None):
+        """Append an entry AND its carried locals, keeping the parallel lists in lockstep."""
         m.entries.append((state, guard))
         m.entry_locals.append(dict(locals_))
         m.entry_armers.append(armer)
+        m.entry_sources.append(source)
         if is_init:
             m.init_entries.append((state, guard))
             m.init_entry_locals.append(dict(locals_))

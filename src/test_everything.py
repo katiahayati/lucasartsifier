@@ -132,6 +132,29 @@ def test_setscript():
           _setscript_target(sid(344, 0), kir) is None
           and _setscript_target(sid(99999, 0), kir) is None)
 
+    # A `cue`-method arming is a CONTINUATION, not a way in, and an unconditional one erases every
+    # real precondition its machine's other armings carry (entries are alternatives). KQ6's rm407
+    # kills you in the hole-in-the-wall room without the hole -- `(not (global0 has: 18))` -- and
+    # `(method (cue) ... (setScript: emptyHandedDeath))` was making that vacuous.
+    import extract as X, machine as MA
+    X.install_vocabulary(kir)
+    b = MA.MachineBuilder(kir, lambda *a: False)
+    m = next((x for x in b.machines(kir.scripts[407]) if x.inst == "emptyHandedDeath"), None)
+    if m is None:
+        print("  [SKIP] KQ6 rm407 not in this IR"); return
+    check("rm407's death machine keeps no unconditional `cue` entry",
+          all(g is not None for _k, g in m.entries), repr(m.entry_sources))
+    check("...and the hole-in-the-wall gate survives in its armings",
+          any(18 in __import__("missability")._own_positive(g)
+              for _k, g in m.entries if g is not None),
+          repr([str(g)[:60] for _k, g in m.entries]))
+    # ...while a machine armed ONLY from `cue` keeps its entry, since dropping it would strengthen
+    # a guard with nothing to replace it -- the direction that invents softlocks.
+    cue_only = [x for s in kir.scripts.values() for x in b.machines(s)
+                if x.entry_sources and set(x.entry_sources) == {"cue"}]
+    check("a cue-ONLY machine is left alone", all(x.entries for x in cue_only),
+          f"{len(cue_only)} such machines")
+
 # ---- Part 3: fall-through hack removed (no free start bypass) ------------
 def test_no_fallthrough_bypass():
     print("Part 3: start-state fall-through hack removed")
