@@ -1540,6 +1540,60 @@ def lower_item_bit_flags(ir, flags, item_of_receiver):
     return n_read, n_write
 
 
+def derive_walk_icon(ir):
+    """(icon-bar global, walk-icon index, walk-icon object name), or None.
+
+    SCI1's point-and-click interface is an `IconBar` whose icons are verbs, and one of them is
+    WALK. The game names it itself, in the same send that builds the bar:
+
+        ((= global69 Kq6IconBar)
+            add: (icon0 cursor: cIcon0 yourself:) (icon1 ...) ... icon6
+            curIcon: icon0
+            useIconItem: icon4
+            walkIconItem: icon0)              ; <-- walking is icon0, which `add:` puts at index 0
+
+    so the walk icon is `walkIconItem:`'s argument and its INDEX is its position in `add:` --
+    which is what a room needs, because `IconBar::disable` accepts either spelling:
+    `(if (IsObject arg) arg else (self at: arg))`. A room that disables it has taken walking away
+    (see extract's `_no_walk_rooms`).
+
+    Returns None for a game with no icon bar at all, which is every SCI0 title -- LSL2, KQ4, SQ3
+    and Camelot have no `walkIconItem:` anywhere, so everything built on this is inert there."""
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for body in o.methods.values():
+                for n in I.walk(body):
+                    if n.get("t") != "Send":
+                        continue
+                    recv, msgs = I.send_pairs(n)
+                    sel = {}
+                    for m, params in msgs:
+                        sel.setdefault(m, params)
+                    if not sel.get("walkIconItem"):
+                        continue
+                    w = sel["walkIconItem"][0]
+                    name = w.get("name") if isinstance(w, dict) else None
+                    if not name:
+                        continue
+                    order = []
+                    for p in sel.get("add", ()):
+                        if not isinstance(p, dict):
+                            continue
+                        if p.get("t") == "Send":        # `(icon0 cursor: c yourself:)`
+                            p, _m = I.send_pairs(p)
+                        order.append(p.get("name") if isinstance(p, dict) else None)
+                    gi = None
+                    for m in I.walk(recv):              # the receiver is `(= gN <IconBar>)`
+                        if m.get("t") == "Assignment":
+                            ks = m.get("kids") or []
+                            if ks and I.is_global(ks[0]):
+                                gi = ks[0]["index"]
+                    if gi is None:
+                        continue
+                    return gi, (order.index(name) if name in order else None), name
+    return None
+
+
 def derive_debug(ir):
     """Globals TOGGLED with `^=` -- what a debug menu checkbox compiles to.
 

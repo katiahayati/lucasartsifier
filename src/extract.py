@@ -779,6 +779,7 @@ class Extractor:
         self._armed = {}                    # room -> {object name: [guard, ...]}
         self._pending = pending_room_global(ir)
         self._list_loop = False             # inside a `for` that walks a linked list
+        self._nowalk = None                 # rooms with the walk icon off -- see _no_walk_rooms
         self.procs_by = {}
         for rn, s in ir.scripts.items():
             for name, body in s.procs.items():
@@ -1179,7 +1180,7 @@ class Extractor:
 
     def _nav_edges(self, room_num, script):
         obj = _room_object(script, self.ir)
-        if obj is not None:
+        if obj is not None and room_num not in self._no_walk_rooms():
             for sel in NAV_SELECTORS:
                 dst = obj.props.get(sel)
                 if dst and dst != 0xffff:
@@ -1189,6 +1190,82 @@ class Extractor:
             et = o.props.get("entranceTo", 0)
             if et and et != 0xffff:
                 self.ts.edges.append(Edge(room_num, et))
+
+    def _no_walk_rooms(self):
+        """Rooms whose `init` TAKES THE WALK ICON AWAY -- so their declared n/s/e/w exits are not
+        exits the player can use, whatever the room object says.
+
+        A declared `south 680` is a walk-off exit: the player walks to the screen edge and the room
+        hands them on. If walking is disabled there is no such action. KQ6's rm690 is the room in
+        front of the Lord of the Dead:
+
+            (method (init) ... (global69 disable: 0) (self setScript: introScript) ...)
+
+        and it declares `south 680`. The user confirmed in-game that you cannot walk away from that
+        confrontation -- the only way out is `holdUpMirror`, which needs the mirror. Without this the
+        model strolls south, reaches the escape cutscene having never held up the mirror, and the
+        Realm of the Dead's carry-IN items stop being softlocks.
+
+        Note rm690 disables ONLY the walk icon, leaving look/talk/use available, which is the point:
+        you are meant to act, just not leave. That is a different idiom from the cutscene shape
+        (`enable: disable: 0 1 2 3 4 5 6 height: -100`, which hides the whole bar) -- both mean no
+        walking, and both are covered, but only the first has anything to remove.
+
+        Three conditions, because REMOVING movement is the unsafe direction:
+          * the disable is in `init` and holds on EVERY path -- descend only `seq` nodes, never a
+            branch or a loop. rm580 and rm350 disable the bar under `(if local0 ...)` /
+            `(if (not (proc913_0 2)) ...)` and are correctly left alone;
+          * it names the walk icon, by index or by object (`IconBar::disable` accepts either), or
+            takes no argument at all, which disables every icon;
+          * and nothing anywhere in the room's script enables it again.
+        Measured over the corpus, exactly one room in one game loses an edge: KQ6's rm690. SCI0 has
+        no icon bar, so `derive_walk_icon` returns None and this is inert on LSL2/KQ4/SQ3/Camelot."""
+        if self._nowalk is not None:
+            return self._nowalk
+        self._nowalk = set()
+        found = V.derive_walk_icon(self.ir)
+        if not found:
+            return self._nowalk
+        gi, idx, name = found
+
+        def names_walk(params):
+            return (not params) or any(
+                (I.as_int(p) is not None and I.as_int(p) == idx)
+                or (isinstance(p, dict) and p.get("name") == name) for p in params)
+
+        def bar_sends(node):
+            for n in I.walk(node):
+                if n.get("t") != "Send":
+                    continue
+                recv, msgs = I.send_pairs(n)
+                if I.is_global(recv, gi):
+                    yield msgs
+
+        def unconditional(node, out):
+            """Sends reached on every path: descend `seq` only."""
+            shape = I.control_shape(node)
+            if shape[0] == "seq":
+                for k in shape[1]:
+                    unconditional(k, out)
+            elif node is not None and node.get("t") == "Send":
+                out.append(node)
+
+        for s in self.ir.scripts.values():
+            obj = _room_object(s, self.ir)
+            if obj is None or "init" not in obj.methods:
+                continue
+            stmts = []
+            unconditional(obj.methods["init"], stmts)
+            off = any(sel == "disable" and names_walk(params)
+                      for st in stmts for sel, params in next(bar_sends(st), ()))
+            if not off:
+                continue
+            back = any(sel == "enable" and names_walk(params)
+                       for o in s.objects for body in o.methods.values()
+                       for msgs in bar_sends(body) for sel, params in msgs)
+            if not back:
+                self._nowalk.add(s.number)
+        return self._nowalk
 
     def _walk(self, room, node, pc, script, seen, movement=True, verb_param=None):
         """Compose path conditions and record effects (newRoom, item transfers), FOLLOWING calls
