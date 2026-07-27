@@ -1119,7 +1119,14 @@ class Extractor:
         self.ts.maze_reach.update(reach)
 
     # selectors that make an object animate/move/run, i.e. that end in a `cue` back to it
-    ARMING = ("setCycle", "setMotion", "setScript", "cue", "setReal", "setTimer")
+    # `init` is the most fundamental arming of the lot: an object the room never inits is not in
+    # the cast, so it cannot be clicked, cued or animated, and nothing its methods would have done
+    # happens. Sierra gates content that way -- Laura Bow 2 removes the taxi from outside the
+    # museum once the act advances, `(if (< global123 2) (taxi init: stopUpd:))`, and that single
+    # line is what stops you riding back to act 1's city. Inert wherever an object is init'ed
+    # unconditionally somewhere, which is nearly everywhere, because one unguarded arming site
+    # makes the disjunction below vacuous.
+    ARMING = ("setCycle", "setMotion", "setScript", "cue", "setReal", "setTimer", "init")
 
     def _inherit_arming(self, room):
         """A cue-driven edge inherits the guard of whatever ARMED it.
