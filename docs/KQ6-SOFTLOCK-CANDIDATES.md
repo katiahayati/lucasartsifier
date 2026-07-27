@@ -34,7 +34,7 @@ believe you can go back) · `not required` · `no source`.
 | **peppermint leaf** | B4 carry-IN (short) | **uncertain** | ✗ MISS | required, judged reachable — src rm390/740/750, needed rm280/340/510/750 |
 | **4 island treasures** | best ending | **not by our rule** | — | they gate the BEST ending, not winnability |
 | **skull** | B2 carry-down | **YES** | ✗ MISS | required, judged reachable — src rm415/470, needed rm340/420/580. (The old "nothing demands it" note is FIXED: it has uses now.) |
-| **shield** | B2 carry-down → B1 out | **YES** | ⚠️ **DROPPED 2026-07-27** | required, judged reachable — src rm408, needed rm510. Was caught; see "the shield question" below |
+| **shield** | B2 carry-down → B1 out | **NO** — user-corrected 2026-07-27 | ✓ **correct to skip** | src rm408 (UPPER catacombs), needed rm510. Both rm340 entrances reopen once the minotaur is dead, so it is re-obtainable; see "the shield" below |
 | **old coins** | B2 carry-down → B3 | **YES** | ✓ **CAUGHT** as `deadMansCoin` | frontier **rm155→rm600 / rm670→rm660** (the realm entry and Charon's toll — was rm340→rm155); src rm430/605, needed rm660 |
 | **mint** | B4 carry-IN | **YES** (user) | ✓ **CAUGHT** | frontier rm220→rm730 / rm230→rm710; src rm280, needed rm750 |
 | **old lamp** | many uses, traded away | **likely** | ✗ MISS | same item as the Jollo row (`huntersLamp`) — required, judged reachable |
@@ -49,11 +49,15 @@ brick / hole-in-the-wall / red scarf into ONE row and filed `skeletonKey` under 
 Splitting them changes the denominator, not the numerator -- the seven caught items are the same
 seven the tool prints. Denominator moved deliberately and is called out here rather than quietly.
 
-**As of `ca5637e` (2026-07-27, later the same day) it is 6 caught, 11 missed** — the same six the
-tool prints (`dagger, deadMansCoin, mint, nightingale, scarf, skeletonKey`) plus `skeletonKey`
-again as a one-visit toll pocket, and the shield dropped. Two of the six are caught for better
-reasons than before: `deadMansCoin`'s frontier is now the realm entry and Charon's toll rather
-than the transit room, and `skeletonKey` is additionally reported as
+**As of `6e31547` (2026-07-27, later the same day) it is 7 caught of 13 real, 6 missed, 4 correctly
+skipped** — the seven the tool prints (`dagger, deadMansCoin, mint, mirror, nightingale, scarf,
+skeletonKey`). Both ends of that moved for the right reason, each confirmed in-game by the user:
+the **mirror** was ADDED (rm690 takes the walk icon away, so you cannot leave the Lord of the Dead
+without holding it up), and the **shield** was REMOVED and the oracle's own verdict corrected —
+it is re-obtainable, so the denominator drops 14 → 13 and the shield joins the "correctly skipped"
+column. Two of the seven are also caught for better reasons than before: `deadMansCoin`'s frontier
+is now the realm entry and Charon's toll rather than the transit room, and `skeletonKey` is
+additionally reported as
 
     toll skeletonKey behind flag187 at rm[340,155]
          pocket=[155,600,630,640,650,660,670,680,690]
@@ -83,10 +87,51 @@ icon. A room that takes walking away has no walk-off exits. Exactly one room in 
 an edge to this rule. The teacup is still missed, but its realm use (Styx water, flag 58) is
 flavour — see the teaCup red-herring note in [[kq6-softlock-ground-truth]].
 
-## THE SHIELD — RULED REAL, and blocked on ONE named gap
+## THE SHIELD — NOT a softlock, and the drop was correct
 
-**User ruling 2026-07-27: "you can't go back into the catacombs after you exit."** So the shield IS
-a softlock and its disappearance from our findings is a MISS, not a correction. The chain:
+**User ruling 2026-07-27, after testing in ScummVM: "you were completely right and I was completely
+wrong. Yes you can go back to either level of the catacombs."** So the shield is re-obtainable and
+its disappearance from our findings is a CORRECTION, not a miss. The oracle's "real?" column moves
+YES → NO with the user's sign-off.
+
+The two ways back in, both from rm340 and both open once the minotaur is dead (flag 1):
+* **colour 4, x≈68..114** (the cave mouth) → `newRoom: 405` — the **UPPER** level, where the shield
+  is. Our geometry PREDICTED this becomes walkable at exactly that band when flag 1 is set, and
+  that it is unreachable (0 of 948 cells) while the minotaur lives. The prediction was confirmed
+  in-game.
+* **colour 9, x≈3..49** (far left) → `goToLair` → rm440 — the **LOWER** level; the script gates
+  this one itself, `(and (== onControl 512) (proc913_0 1))`.
+
+The guards do not seal anything: rm350's only conditional is flag 2 (a first-visit cutscene that
+hides the icon bar), its bottom edge always returns to rm340, and rm340's toss-in
+`(and (not (proc913_0 1)) (proc913_0 2))` cannot fire once the minotaur is dead.
+
+**The levels, from the game's own table** (`LBRoom.sc:22`, sign-tagged (room, coord) pairs on a
+16-wide grid, `row = coord/16`): UPPER rows 0–7 = rm430(1) rm435(7) rm420(20) **rm408(51)**
+rm425(66) rm410(68) rm415(71) rm405(117); LOWER rows 9–11 = rm406(152) rm407(180) rm409(181)
+**rm440(182)**. The shield is UPPER; the minotaur is LOWER; the drop between them is one-way — and
+`maze_reach` already models that correctly (rm406/rm407 reach only lower rooms). Upper access is
+then restored through the SURFACE, `rm440 → rm340 → rm405`, which is exactly what the game does.
+**Do not "fix" that edge** — it was briefly on the list to remove and would have been a fabricated
+seal.
+
+<details><summary>The three refuted hypotheses, kept so they are not re-tried</summary>
+
+Each was a plausible mechanism, and each was killed by measurement:
+
+1. **`theDoor` as an LSL2-rm82-style prop-gate.** Its cel switches on flag 3 (set at rm380 just
+   before `flyToBeach`), so it looked like the entrance sealing behind you. Measured: the control-4
+   region is 3,663 px and the door's footprint covers at most 1,484 of them — and covers MORE with
+   flag 3 clear (1,484) than set (214). It is also `signal 28688`, which includes
+   `kSignalIgnoreActor`, so it never blocked the ego at all.
+2. **The entrance closing after the minotaur dies.** Measured the opposite: colour 4 is UNREACHABLE
+   while the minotaur lives and WALKABLE once it is dead. (Finding this needed a real `polygons.py`
+   fix — `_proc_polygons` was UNIONING a helper's branches, and `proc343_0` IS the flag-1 fork.)
+3. **"The upper level is unreachable once you descend."** Refuted by the user's own retest.
+
+</details>
+
+The chain that made the shield look re-obtainable, all of which turned out to be right:
 
 1. rm300 (the Sacred Mountain beach) declares no exits and picks its north in `init`:
    `(if (proc913_0 157) (self north: 340) else (self north: 320))`. We only read the assignment
@@ -97,22 +142,23 @@ a softlock and its disappearance from our findings is a MISS, not a correction. 
 3. So the model walks rm510 → rm520 → rm500 → rm300 → rm340 → rm405 → rm408 and re-collects the
    shield.
 
-**Where the seal is NOT** (measured, so nobody re-checks):
+**There is no seal — measured, so nobody re-checks:**
 
-* Not rm405's obstacle polygons. It does keep two layouts, and they do differ on flag 1 — but what
-  they gate is the way OUT: `south` (edgeHit 3, the walk back to rm340) is open only once the
-  minotaur is dead. That is B1's "no exit until the minotaur dies", already derived. It says
-  nothing about coming back in.
-* Not the upper maze. `rm405 → rm408` is a free grid edge, correctly — the upper level really is
-  freely walkable once you are in it.
-* Not rm340's geometry: rm340 installs one obstacle layout, unconditionally.
+* rm405's obstacle polygons keep two layouts differing on flag 1, but what they gate is the way
+  OUT: `south` (edgeHit 3, the walk back to rm340) opens only once the minotaur is dead. That is
+  B1's "no exit until the minotaur dies", already derived. It says nothing about coming back in.
+* `rm405 → rm408` is a free grid edge, correctly — the upper level really is freely walkable once
+  you are in it.
+* rm340's two layouts differ on flag 1 in the permissive direction: the cave mouth OPENS.
 
-**Where it IS.** The re-entry test is `rm340::doit ((== (global0 onControl: 1) 16) → newRoom 405)`.
-`onControl` is the PIC control map, which we render OPAQUE — and opaque is permissive, so the edge
-reads as free. This is the **#1 gap in the corpus-wide census** ([[modeling-gap-census]]), and the
-ScummVM study concluded it is **statically recoverable** (onControl is a colour bitmask, and the
-colour→meaning map is in the script) — see `docs/SCI1.1-SEMANTICS.md`. The shield is now a
-concrete, named, user-confirmed instance of that gap rather than an open question about the game.
+**A note on `onControl` for whoever reads this next.** The re-entry test is
+`rm340::doit ((== (gEgo onControl: 1) 16) → newRoom 405)`, and we still render `onControl` OPAQUE,
+which is permissive — so this edge reads as free. Here that happens to be the RIGHT answer, but by
+luck rather than by modelling, and it remains the **#1 gap in the corpus-wide census**
+([[modeling-gap-census]]). What this episode adds is that the geometry needed to decide such a
+question now EXISTS: the SCI1.1 resource reader and the control-plane renderer answered "can the
+ego stand on colour 4, and when" correctly and in advance of the in-game test. See
+`docs/SCI1.1-SEMANTICS.md`.
 
 ## THE DIAGNOSIS: NINE OF THE TEN MISSES ARE ONE MECHANISM
 
