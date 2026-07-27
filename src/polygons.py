@@ -53,37 +53,59 @@ def _polygon(node):
 
 
 def _proc_polygons(ir):
-    """proc name -> the polygons it installs. A room often keeps its SEALED layout in a shared
-    helper (`(proc402_2)`) and only its open layout inline, so without following the call one
-    branch looks like it has no obstacles at all -- and two layouts are needed to see a gate."""
+    """proc name -> [(guard, polygons), ...] -- the layouts it installs, one per BRANCH.
+
+    A room often keeps its SEALED layout in a shared helper (`(proc402_2)`) and only its open
+    layout inline, so without following the call one branch looks like it has no obstacles at all,
+    and two layouts are needed to see a gate.
+
+    The helper's OWN branches have to survive the trip, which is the whole point. KQ6's rm340
+    calls `(proc343_0)` unconditionally, and the proc is nothing but the choice:
+
+        (procedure (proc343_0)
+            (if (proc913_0 1) (global2 addObstacle: <minotaur dead>)
+                         else (global2 addObstacle: <minotaur alive>)))
+
+    Flattened to one list, the two layouts UNION -- and a union blocks everything that either
+    layout blocks, which walled off the whole cliff face and made the room look like it had a
+    single unconditional layout. So this walks the proc the same way `room_obstacles` walks an
+    init, and the call site composes the two conditions."""
+    from extract import walk_stream
     cache = getattr(ir, "_poly_procs", None)
     if cache is not None:
         return cache
     out = {}
     for s in ir.scripts.values():
         for name, body in s.procs.items():
-            polys = []
-            for n in I.walk(body):
-                if n.get("t") != "Send":
-                    continue
-                try:
-                    _r, msgs = I.send_pairs(n)
-                except Exception:                           # noqa: BLE001
-                    continue
-                for sel, ps in msgs:
-                    if sel != "addObstacle":
-                        continue
-                    for p in ps:
-                        got = _polygon(p)
-                        if got:
-                            polys.append(got)
-            if polys:
-                out[name] = polys
+            found = []
+            walk_stream(body, [], lambda n, pc: _collect(n, pc, found))
+            if found:
+                out[name] = found
     try:
         ir._poly_procs = out
     except Exception:                                       # noqa: BLE001
         pass
     return out
+
+
+def _collect(n, pc, out):
+    """`addObstacle:` sites in one statement, with the path condition that reaches them."""
+    if n.get("t") != "Send":
+        return
+    try:
+        _recv, msgs = I.send_pairs(n)
+    except Exception:                                       # noqa: BLE001
+        return
+    polys = []
+    for sel, ps in msgs:
+        if sel != "addObstacle":
+            continue
+        for p in ps:
+            got = _polygon(p)
+            if got:
+                polys.append(got)
+    if polys:
+        out.append((list(pc), polys))
 
 
 def room_obstacles(ir, script):
@@ -95,24 +117,13 @@ def room_obstacles(ir, script):
 
     def leaf(n, pc):
         if n.get("t") in ("PublicCall", "LocalCall") and n.get("name") in procs:
-            out.append((list(pc), procs[n["name"]]))        # a helper installs this layout
+            # A helper installs these layouts. Its own branch condition ANDs with the condition
+            # that reached the call -- so `(proc343_0)` called unconditionally still contributes
+            # two layouts, one per branch, not their union.
+            for (inner, polys) in procs[n["name"]]:
+                out.append((list(pc) + list(inner), polys))
             return
-        if n.get("t") != "Send":
-            return
-        try:
-            _recv, msgs = I.send_pairs(n)
-        except Exception:                                   # noqa: BLE001
-            return
-        polys = []
-        for sel, ps in msgs:
-            if sel != "addObstacle":
-                continue
-            for p in ps:
-                got = _polygon(p)
-                if got:
-                    polys.append(got)
-        if polys:
-            out.append((list(pc), polys))
+        _collect(n, pc, out)
 
     for o in script.objects:
         body = o.methods.get("init")
