@@ -25,7 +25,7 @@ believe you can go back) · `not required` · `no source`.
 |---|---|---|---|---|
 | **tinderbox** | B1 carry-IN | **YES** | ✗ MISS | required, judged reachable — src rm280, needed rm340/370/390/406. (The old "no source" note is FIXED: the pawn-shop `owner:` trade now resolves.) |
 | **teacup** | B3 carry-IN / water carry-OUT | **YES** (long path) | ✗ MISS | required, judged reachable — src rm470/480, needed rm230/340/470/660 |
-| **mirror** | B3 carry-IN | **YES** | ✗ MISS | required, judged reachable — src rm540/605/740, needed rm280/340/690/740 |
+| **mirror** | B3 carry-IN | **YES** | ✓ **CAUGHT 2026-07-27** | frontier rm155→rm600 / rm680→rm690 (the realm entry, and the step into the Lord's chamber); src rm540/605/740, needed rm690 |
 | **handkerchief** | B3 → B4 carry-OUT | **YES** | ✗ MISS | **not required** — src rm630, no use captured at all. The one miss that is NOT the reachability shape; see task #8 |
 | **dagger** | B1 → B4 carry-OUT | **YES** | ✓ **CAUGHT** | frontier rm220→rm730 / rm230→rm710; src rm440/470, needed rm800 |
 | **vizier's letter** | inside B4 | **no, as an item** | ✓ correct to skip | the real lock is the **skeletonKey**, and that IS caught (frontier rm155→rm200 …, src rm640, needed rm820) |
@@ -75,15 +75,18 @@ All three of its guards were already extracted and none of them reached the mode
 `rm690→rm680` is `holdUpMirror`, which needs `own(24)`. So "solve the level or stay" is spelled,
 in the game's own scripts, as a previous-room test — which is why modelling `prev` was the unlock.
 
-**What still keeps the carry-INs (mirror, teacup) invisible:** rm690 also declares `south 680` as
-an ordinary map exit, and our model walks it for free. That reaches rm680 with `prev == 690`, which
-runs `wonDeadScript` and lets you out having never held up the mirror. rm690's `init` does
-`handsOff:` and `introScript` hands control back for exactly 15 seconds (state 2 → state 3), so the
-walk is not obviously impossible — this is a question about the game, not about the extractor.
+**✅ RESOLVED 2026-07-27 — the mirror is CAUGHT.** rm690 declared `south 680` and our model walked
+it, reaching the escape cutscene having never held up the mirror. **User ruling: "once you're in
+front of the lord of the dead you can't walk away."** The game says so in rm690's init —
+`(global69 disable: 0)`, and `Main.sc:545` declares `walkIconItem: icon0`, so that is the WALK
+icon. A room that takes walking away has no walk-off exits. Exactly one room in eight games loses
+an edge to this rule. The teacup is still missed, but its realm use (Styx water, flag 58) is
+flavour — see the teaCup red-herring note in [[kq6-softlock-ground-truth]].
 
-## THE SHIELD QUESTION (open, needs a ruling)
+## THE SHIELD — RULED REAL, and blocked on ONE named gap
 
-The shield was caught and now is not. The cause is a correct new edge, and the chain is short:
+**User ruling 2026-07-27: "you can't go back into the catacombs after you exit."** So the shield IS
+a softlock and its disappearance from our findings is a MISS, not a correction. The chain:
 
 1. rm300 (the Sacred Mountain beach) declares no exits and picks its north in `init`:
    `(if (proc913_0 157) (self north: 340) else (self north: 320))`. We only read the assignment
@@ -94,11 +97,22 @@ The shield was caught and now is not. The cause is a correct new edge, and the c
 3. So the model walks rm510 → rm520 → rm500 → rm300 → rm340 → rm405 → rm408 and re-collects the
    shield.
 
-The question is whether that walk is real. If you can jump back into the catacombs after the
-minotaur is dead and walk the upper level to rm408, the shield is genuinely re-obtainable and the
-oracle's "YES" needs revisiting. If something stops you, we are missing it — and the likeliest
-candidates are inside the catacombs (the B2 upper→lower one-way, or re-entry landing you somewhere
-that is not the upper level), not at rm340.
+**Where the seal is NOT** (measured, so nobody re-checks):
+
+* Not rm405's obstacle polygons. It does keep two layouts, and they do differ on flag 1 — but what
+  they gate is the way OUT: `south` (edgeHit 3, the walk back to rm340) is open only once the
+  minotaur is dead. That is B1's "no exit until the minotaur dies", already derived. It says
+  nothing about coming back in.
+* Not the upper maze. `rm405 → rm408` is a free grid edge, correctly — the upper level really is
+  freely walkable once you are in it.
+* Not rm340's geometry: rm340 installs one obstacle layout, unconditionally.
+
+**Where it IS.** The re-entry test is `rm340::doit ((== (global0 onControl: 1) 16) → newRoom 405)`.
+`onControl` is the PIC control map, which we render OPAQUE — and opaque is permissive, so the edge
+reads as free. This is the **#1 gap in the corpus-wide census** ([[modeling-gap-census]]), and the
+ScummVM study concluded it is **statically recoverable** (onControl is a colour bitmask, and the
+colour→meaning map is in the script) — see `docs/SCI1.1-SEMANTICS.md`. The shield is now a
+concrete, named, user-confirmed instance of that gap rather than an open question about the game.
 
 ## THE DIAGNOSIS: NINE OF THE TEN MISSES ARE ONE MECHANISM
 
