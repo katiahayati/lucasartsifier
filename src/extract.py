@@ -682,17 +682,35 @@ def prev_room_global(ir):
     """The global that holds the PREVIOUS room, or None.
 
     DISCOVERED from the same Game-loop shape as `pending_room_global`. The loop saves the current
-    room before switching -- `(= <previous> <current>)` -- where `<current>` is `current_room_global`.
-    Both LSL2 and KQ4 land on global12 (current global11, pending global13), by derivation. It is
-    what a virtual-map room reads to seed its entry cell, so `grid.analyze` gates a grid exit on it
-    -- "you can only reach the island if you arrived from the whale"."""
+    room before switching, in the ROOM-SWITCH METHOD and nowhere else:
+
+        (method (newRoom param1 ...)
+            ...
+            (= <previous> <current>)        ; save where we were
+            (= <current>  param1)           ; and go
+            (= <pending>  param1))
+
+    so the method is identified by its `<current> := <parameter>` write, and the previous-room
+    global is what `<current>` was copied to inside it. `<current>` is `current_room_global`.
+    LSL2, KQ4, KQ5 and KQ6 all land on global12 (current global11, pending global13).
+
+    The method restriction is the whole derivation. Without it any `(= X <current>)` anywhere in
+    the game matches, and a game that saves the current room for its OWN purposes wins on script
+    order: KQ5's `boatRegion` does `(= global361 global11)` to remember which shore you sailed
+    from, and prev_room_global returned 361 -- so KQ5's 53 prevRoom-guarded edges measured as 4,
+    and "prevRoom is a minor idiom" was concluded from the wrong register.
+
+    It is what a virtual-map room reads to seed its entry cell, so `grid.analyze` gates a grid
+    exit on it -- "you can only reach the island if you arrived from the whale" -- and what
+    `missability.edge_meta` writes on every edge, since this assignment runs on every transition."""
     current = current_room_global(ir)
     if current is None:
         return None
-    # previous = the global assigned FROM the current-room global (saved before the update)
     for s in ir.scripts.values():
         for o in s.objects:
             for body in o.methods.values():
+                if not _switches_room(body, current):
+                    continue
                 for n in I.walk(body):
                     if n.get("t") != "Assignment":
                         continue
@@ -701,6 +719,18 @@ def prev_room_global(ir):
                             and ks[1]["index"] == current and ks[0]["index"] != current):
                         return ks[0]["index"]
     return None
+
+
+def _switches_room(body, current):
+    """Is this the Game loop's room-switch method -- does it assign `<current> := <parameter>`?"""
+    for n in I.walk(body):
+        if n.get("t") != "Assignment":
+            continue
+        ks = n.get("kids") or []
+        if (len(ks) >= 2 and I.is_global(ks[0]) and ks[0]["index"] == current
+                and ks[1].get("t") == "Variable" and ks[1].get("vtype") == "Parameter"):
+            return True
+    return False
 
 
 def _walks_a_list(loop):
@@ -1298,7 +1328,24 @@ class Extractor:
                         else I.as_int(d) if I.as_int(d) is not None else None)
                 if dest is not None:
                     self.ts.bulk_moves.append((room, dest, _conj(pc)))
-            if sel in ("newRoom", "entranceTo") and params:
+            if sel in NAV_SELECTORS and params and self._nav_send_room(recv, room) is not None:
+                # `(self north: 340)` -- the SEND spelling of `_nav_assignment`'s `(= north 5)`.
+                # Same fact (this room's walk-off exit in that direction), same guard treatment,
+                # different syntax, and games mix the two freely: LSL2 5 sites, KQ4 2, KQ6 3,
+                # SQ3 4, Dagger 1. Only KQ6 / Dagger / SQ3 gain an edge -- everywhere else the
+                # room also declares the exit in its properties block, which is why supporting
+                # one spelling looked like it worked.
+                #
+                # It matters where it does gain one: KQ6's rm300 picks its north exit in `init`
+                # (`(if (proc913_0 157) (self north: 340) else (self north: 320))`) and declares
+                # none, so the whole Sacred Mountain hung off the START ROOM alone. Nothing could
+                # return to it, and every gate that demands a flag set elsewhere became
+                # unsatisfiable there -- including the realm of the dead's entry.
+                dst = I.as_int(params[0])
+                if dst and dst != 0xffff:       # 0 CLOSES the exit; it does not open one
+                    self.ts.edges.append(Edge(self._nav_send_room(recv, room), dst,
+                                              _conj(pc), self._cur_obj))
+            elif sel in ("newRoom", "entranceTo") and params:
                 dsts = [I.as_int(params[0])]
                 if dsts[0] is None and (I.is_global(params[0])
                                         or I.is_local_or_temp(params[0])):
@@ -1342,6 +1389,22 @@ class Extractor:
                         # a transfer to a ROOM (not the ego, not -1/nowhere): the item is PLACED
                         # there. The owner state's transition to a location -- see TS.placed.
                         self.ts.placed.setdefault(tr[0], set()).add(tr[1])
+
+    def _nav_send_room(self, recv, room):
+        """Whose exit does `(<recv> north: N)` open -- this room's, or None if not a room's.
+
+        `self`, the current-room global (`(global2 south: 720)`) and the script's own `rm<N>`
+        instance are all the room we are extracting. A send to a DIFFERENT room's instance is
+        not, and is dropped rather than attributed here -- unlike `newRoom:`, where the receiver
+        genuinely does not matter because any object can send it."""
+        if not isinstance(recv, dict):
+            return None
+        if I.is_global(recv) or recv.get("t") in ("Self", "Property"):
+            return room
+        name = recv.get("name") or ""
+        if recv.get("t") == "Object" and name.startswith("rm") and name[2:].isdigit():
+            return room if int(name[2:]) == room else None
+        return room if recv.get("t") == "Object" and name in ("self", "Self") else None
 
     def _var_room_values(self, room, var):
         """Room numbers an indirect `newRoom:` destination variable can hold, from

@@ -43,6 +43,26 @@ EGO_VAR = V("Global", 0)                      # gEgo
 def INV_AT(n):                                 # `(Inv at: N)`
     return SEND(OBJ("Inv"), MSG("at", N(n)))
 
+def _fake_ir(scripts):
+    """A minimal IR from {script number: {object name: {method name: [statements]}}}.
+
+    Enough for the derivations that read the Game loop's shape. Every object also carries the
+    `(if (!= g13 g11) (self newRoom: g13))` test the pending/current pair derives from, so a
+    synthetic Game loop is one method, not a fixture."""
+    import ir as I
+    def meth(name, stmts):
+        return {"sel": 0, "name": name, "ast": {"t": "List", "kids": list(stmts)}}
+    loop = {"t": "If", "kids": [
+        {"t": "Ne", "kids": [V("Global", 13), V("Global", 11)]},
+        SEND(OBJ("self"), MSG("newRoom", V("Global", 13)))]}
+    return I.IR({"game": "fake", "selectors": [], "scripts": [
+        {"number": num, "locals": [], "procedures": [], "exports": [],
+         "objects": [{"name": obj, "isClass": False, "species": 0, "super": 0, "properties": [],
+                      "methods": [meth(mn, list(body) + [loop]) for mn, body in ms.items()]}
+                     for obj, ms in objs.items()]}
+        for num, objs in scripts.items()]})
+
+
 PASS, FAIL = [], []
 def check(name, cond, detail=""):
     (PASS if cond else FAIL).append(name)
@@ -421,6 +441,22 @@ def test_grid_and_joint():
         X.install_vocabulary(ird)   # sets _EGO / _CURROOM from derivation, not the template default
         check(f"{which}: ego global derives as {{0}}, current-room as 11 (not hardcoded)",
               X._EGO == frozenset({0}) and X._CURROOM == 11, f"ego={sorted(X._EGO)} cur={X._CURROOM}")
+
+    # (a2) and the previous-room global is the one the ROOM-SWITCH METHOD saves, not any global a
+    #      game happens to copy the current room into. KQ5's boatRegion remembers which shore you
+    #      sailed from with `(= global361 global11)`, won on script order, and made KQ5's 53
+    #      prevRoom-guarded edges measure as 4. Synthetic so it holds without KQ5's IR.
+    def _asn(dst, src): return {"t": "Assignment", "kids": [dst, src]}
+    switcher = [_asn(V("Global", 12), V("Global", 11)),     # save   <- the answer
+                _asn(V("Global", 11), V("Parameter", 1)),   # and go <- what marks the method
+                _asn(V("Global", 13), V("Parameter", 1))]
+    decoy = [_asn(V("Global", 361), V("Global", 11))]       # a room's own "where did I come from"
+    fake = _fake_ir({99: {"decoy": {"init": decoy}},        # script order puts the decoy FIRST
+                     0:  {"KQ6": {"newRoom": switcher}}})
+    check("the decoy `(= X current)` outside the switch method does not win",
+          X.prev_room_global(fake) == 12, repr(X.prev_room_global(fake)))
+    check("...and with no switch method at all, nothing is derived",
+          X.prev_room_global(_fake_ir({99: {"decoy": {"init": decoy}}})) is None)
 
     # (b) the ocean summarises to an edge gate: the island (rm43) is reachable ONLY from the whale
     #     (44) or the island itself (43). LSL2 has no virtual-map room and yields nothing.

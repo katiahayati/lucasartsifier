@@ -107,6 +107,27 @@ def test_required_values():
     check("two values for one register are both allowed",
           M.required_values(GOr([eq7, Pred("CMP", 101, "==", 9)]), 101) == {7, 9})
 
+    # "this flag is SET" -- `(!= flag 0)`, positive -- carries only for a global WE minted from a
+    # flag store (domain exactly {0,1}) and only along the must-hold spine. It used to be known to
+    # required_values and NOT to edge_meta, so the same gate constrained a machine entry and not a
+    # room edge; both now go through guard_reqs. KQ6's realm entry needs flags 14 and 4 SET.
+    import vocab
+    setf = Pred("CMP", 900, "!=", 0)
+    saved = vocab.BOOL_GLOBALS
+    try:
+        vocab.BOOL_GLOBALS = frozenset({900})
+        check("a flag-SET gate on a minted bool global requires 1",
+              M.required_values(setf, 900) == {1})
+        check("...and edge_meta's scan agrees, over all registers at once",
+              M.guard_reqs(GAnd([setf, eq7]), {900, 101}) == {900: {1}, 101: {7}})
+        check("...but not under an OR, where the flag need not hold",
+              M.required_values(GOr([setf, _own(3)]), 900) is None)
+        vocab.BOOL_GLOBALS = frozenset()
+        check("a real global's `!= 0` stays unconstraining (domain unknown)",
+              M.required_values(setf, 900) is None)
+    finally:
+        vocab.BOOL_GLOBALS = saved
+
 
 def test_gating_registers():
     """Discovery: a register earns promotion iff it is BOTH compared in a movement guard AND

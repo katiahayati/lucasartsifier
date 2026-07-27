@@ -540,8 +540,14 @@ def _must_hold(guard, out=None):
     return out
 
 
-def required_values(guard, reg):
-    """Values of `reg` this guard REQUIRES (positive `== v`), or None if it doesn't constrain it.
+def guard_reqs(guard, regs):
+    """{reg: {values it REQUIRES}} for every reg in `regs` this guard constrains.
+
+    THE one reading of "what does this guard demand of a register", used by both consumers: the
+    per-register `required_values` (machine entries, state musts) and `edge_meta`'s per-edge scan.
+    They were separate, and only this one knew the flag-SET rule below, so a "this flag is set"
+    gate constrained a machine entry and nothing at all on a room edge -- which is how KQ6's realm
+    of the dead kept its doors open. See the same-shaped bug in `asserts_eq`'s docstring.
 
     Only positive equalities are used. `!=` and the relational ops are deliberately ignored: they
     would need the value-partition abstraction to stay exact, and ignoring them is the PERMISSIVE
@@ -550,25 +556,36 @@ def required_values(guard, reg):
     A NEGATED `!=` is a positive equality, though, and that is not a technicality: `(if (not gX)
     ...)` is how SCI writes "gX is 0", and `atom()` turns bare-global truthiness into
     `CMP(gX, !=, 0)`. KQ4's day-only doors are guarded exactly that way -- `(if (not global100)
-    <open the door>)` -- so without this the night gate parsed fine and then constrained nothing."""
-    vals = set()
+    <open the door>)` -- so without this the night gate parsed fine and then constrained nothing.
+
+    One walk of the guard tree for ALL the registers: walking it once per register made edge_meta
+    19x slower than it needed to be, and `_must_hold` is only paid for if a flag-SET atom shows up.
+    """
     atoms = []
     _cmp_atoms(guard, atoms)
+    out, must = {}, None
     for (r, op, v, pol) in atoms:
-        if r != reg:
+        if r not in regs:
             continue
         if asserts_eq(op, pol):
-            vals.add(v)
-        elif (op == "!=" and v == 0 and pol and r in vocab.BOOL_GLOBALS
-              and (reg, 0) in _must_hold(guard)):
+            out.setdefault(r, set()).add(v)
+        elif op == "!=" and v == 0 and pol and r in vocab.BOOL_GLOBALS:
             # A global WE synthesized from a flag store has domain exactly {0, 1} -- our own
             # lowering writes 1 to set and 0 to clear and nothing else -- so "not zero" IS "one".
             # Reading it as unconstraining is the right default for a real global whose values we
             # do not know, but here we minted the domain, so it costs no soundness and it is the
             # ONLY way a "this flag is SET" gate can ever carry. KQ6's escape from the catacombs
             # is exactly that: the walk out to the surface needs the minotaur-defeated flag.
-            vals.add(1)
-    return vals or None
+            if must is None:
+                must = _must_hold(guard)        # only conjuncts that MUST hold -- see _must_hold
+            if (r, 0) in must:
+                out.setdefault(r, set()).add(1)
+    return out
+
+
+def required_values(guard, reg):
+    """Values of `reg` this guard REQUIRES, or None if it doesn't constrain it. See guard_reqs."""
+    return guard_reqs(guard, (reg,)).get(reg) or None
 
 
 def entry_alts(info):
@@ -778,7 +795,7 @@ def blocked(alts, banned):
 def edge_meta(em, regs):
     """(a,b) -> [(req, sets, alts)] for the discovered gating `regs`.
 
-    req  = {reg: {allowed values}}   from positive `== v` atoms on the edge's guard
+    req  = {reg: {allowed values}}   what the edge's guard demands -- see guard_reqs
     sets = {reg: value}              writes the edge performs on the way out
     alts = DNF tuple of item-sets    (see entry_alts / blocked)
 
@@ -788,25 +805,46 @@ def edge_meta(em, regs):
     14/15 (bomb botched) while rm152's exit to rm52 REQUIRES 7 -- an impossible composition."""
     regset = set(regs)
     def reqs(guard):
-        """One walk of the guard tree for ALL registers -- walking it once per register made
-        edge_meta 19x slower than it needed to be."""
-        atoms = []
-        _cmp_atoms(guard, atoms)
-        out = {}
-        for (r, op, v, pol) in atoms:
-            if r in regset and asserts_eq(op, pol):
-                out.setdefault(r, set()).add(v)
-        return out
+        return guard_reqs(guard, regset)
     meta = defaultdict(list)
     for e in em.ts.edges:
         meta[(e.src, e.dst)].append((reqs(e.guard), {}, (frozenset(_own_positive(e.guard)),)))
     md = em.machine_delivered
+    # A cs_edge whose (room, dst) a machine delivers is the SAME `newRoom` statement the machine
+    # EXIT carries -- the cutscene walk knows the machine's gate, the flat edge knows the room's
+    # path condition to the statement. Keeping both as separate rows makes the flat one a free
+    # bypass of the gate (rm57 -> rm58 must hand the ticket to the agent), which is why it is
+    # suppressed. But suppressing DROPPED its path condition, and a machine EXIT is not
+    # automatically the stronger of the two: KQ6's realm of the dead is entered by a cutscene
+    # armed under `flag14 and flag4 and not flag15`, the machine kept none of that, and the
+    # one-visit seal on the whole region vanished at this line.
+    #
+    # So the two are COMPOSED instead: same statement, both conditions hold. Matched by the object
+    # that emitted them (`via` == the machine's instance), because a room can deliver one (a,b) from
+    # several instances and only the matching one is the same statement -- 105 of KQ6's 108
+    # suppressed edges match, and the three that do not are left dropped rather than guessed.
+    suppressed = defaultdict(list)
     for e in em.ts.cs_edges:
         if (e.src, e.dst) in md:
-            continue          # same newRoom the machine EXIT already carries, but WITHOUT its
-        #                       guard -- keeping it shadows the real gate (rm57 -> rm58 needs the
-        #                       ticket handed to the agent). build_maps applies this filter too.
+            suppressed[(e.src, e.dst, e.via)].append(
+                (reqs(e.guard), frozenset(_own_positive(e.guard))))
+            continue
         meta[(e.src, e.dst)].append((reqs(e.guard), {}, (frozenset(_own_positive(e.guard)),)))
+
+    def _merged(key):
+        """The conditions EVERY suppressed statement of this (room, dst, instance) demanded.
+
+        Several statements are ALTERNATIVE ways to make the same move, so a register survives only
+        if all of them constrain it, and then its allowed values are the union -- the same merge
+        `chain` does over a machine's armers below."""
+        rows = suppressed.get(key)
+        if not rows:
+            return {}, frozenset()
+        rq, own = None, None
+        for (r, o) in rows:
+            rq = dict(r) if rq is None else {R: rq[R] | r[R] for R in set(rq) & set(r)}
+            own = o if own is None else (own & o)
+        return rq, own
     # Per-machine "what held on every path to this state", keyed so a machine armed by ANOTHER
     # can inherit the armer's facts at the arming state. Cutscene chains hand off mid-sequence:
     # KQ6's `freeCeleste` walks you out of the catacombs and is armed at state 14 of
@@ -841,12 +879,14 @@ def edge_meta(em, regs):
                     # says which arming it belongs to.
                     by_guard = er.get("_by_guard")
                     inherited = by_guard(K, g) if by_guard else er.get(K, {})
-                    # ...and whatever every path THROUGH the machine to this state established.
+                    # ...whatever every path THROUGH the machine to this state established, and
+                    # the path condition of the flat edge this EXIT suppressed (see `suppressed`).
+                    supp_rq, supp_own = _merged((info["room"], tr[1], info.get("inst")))
                     for R, vals in (list(sm.get(K, {}).items()) + list(chain.items())
-                                    + list(inherited.items())):
+                                    + list(inherited.items()) + list(supp_rq.items())):
                         rq[R] = (rq[R] & vals) if R in rq else set(vals)
                     meta[(info["room"], tr[1])].append(
-                        (rq, sets, tuple(exit_own | a for a in alts)))
+                        (rq, sets, tuple(exit_own | supp_own | a for a in alts)))
     return meta
 
 
