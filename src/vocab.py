@@ -1358,6 +1358,13 @@ def lower_obj_props(ir, pairs):
     base, index = max_gi + 1, {}
     for _n, key, _v in sites:
         index.setdefault(key, base + len(index))
+    try:
+        # Keep the map so a synthetic register can be named back to the property it stands for.
+        # Every other store's registers are traceable (a flag has its number, a global its index);
+        # these were anonymous, which makes any question about them start with re-deriving this.
+        ir._obj_prop_index = {gi: key for key, gi in index.items()}
+    except Exception:                                      # noqa: BLE001
+        pass
     # A property the game only ever writes 0 or 1 to is a BOOLEAN, so `!= 0` is exactly `== 1`.
     # That is how SCI spells most of these -- `(if ((ScriptID 30 0) scarfOnMino:) ...)` -- and
     # without it a "this happened" property can never constrain anything, since `required_values`

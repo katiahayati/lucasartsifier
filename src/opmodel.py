@@ -18,6 +18,7 @@ the tracked counter var; opaque/untracked-> a fresh nondet input (satisfiable bo
 """
 from __future__ import annotations
 
+import collections
 import os
 import subprocess
 
@@ -46,13 +47,23 @@ def _cmp_const(cur, op, val):
             "<": cur < val, "<=": cur <= val}.get(op, True)
 
 
-def _has_pos_edge(guard, codes):
-    """Does this guard test `edgeHit == <one of codes>`? `atom` renders it ("POS","edge",N)."""
+def _has_pos_edge(guard, codes, edge_regs=()):
+    """Does this guard test "the ego left by one of `codes`"?
+
+    TWO SPELLINGS. The direct one is the ego's own `edgeHit:`, which `atom` renders as the POS
+    atom ("POS","edge",N). The other is a register the game COPIES that into, which is what a room
+    does when something outside it needs to know the direction later -- see `edge_hit_registers`.
+    `edge_regs` names those, so `R == N` counts as the same test."""
     found = []
 
     def w(g):
         if isinstance(g, tuple) and len(g) == 3 and g[0] == "POS" and g[1] == "edge":
             found.append(g[2])
+        elif isinstance(g, Pred) and g.kind == "CMP" and g.op == "==" and g.var in edge_regs:
+            try:
+                found.append(int(g.value))
+            except (TypeError, ValueError):
+                pass
         elif isinstance(g, list):
             for k in g:
                 w(k)
@@ -430,6 +441,42 @@ class OpEmitter:
                 "entry_armers": m.entry_armers,
                 "start": m.start, "delivered": delivered, "drops": drops}
 
+    def edge_hit_registers(self):
+        """Registers that carry the ego's `edgeHit` CODE, discovered from identity copies.
+
+        A room that has to remember which way the ego left stores the direction somewhere the next
+        room can read. KQ6's labyrinth does exactly that, because the maze walker needs the
+        direction to work out which cell you arrive in:
+
+            (method (doit)
+                (cond ...
+                      ((== (global0 edgeHit:) 3) (rLab prevEdgeHit: 3) ...)
+                      ((== (global0 edgeHit:) 1) (rLab prevEdgeHit: 1) ...)))
+
+        Those two writes are the proof: a register assigned the constant N under the guard
+        `edgeHit == N` is carrying edgeHit's own numbering, so `R == K` elsewhere means the same
+        thing as the POS atom for K -- INCLUDING codes never written that way. rLab also sets
+        prevEdgeHit 2 and 4 from `onControl` colours (the maze uses control regions for left and
+        right), and those inherit the same code space once the identity writes establish it.
+
+        Requires TWO witnesses. One identity write could be coincidence -- a register that happens
+        to take the value 3 inside a branch testing for 3 -- while two different codes agreeing is
+        the register tracking the selector. Nothing here names a selector or a game."""
+        if hasattr(self, "_edge_regs"):
+            return self._edge_regs
+        witnesses = collections.defaultdict(set)
+        for room, script, gi, v, g in self.handler_writes:
+            if v is not None and _has_pos_edge(g, {v}):
+                witnesses[gi].add(v)
+        for info in self.machines:
+            for K, paths in info["states"].items():
+                for (g, w, gg, c, tr) in paths:
+                    for (gi, v) in w:
+                        if v is not None and _has_pos_edge(g, {v}):
+                            witnesses[gi].add(v)
+        self._edge_regs = frozenset(gi for gi, vs in witnesses.items() if len(vs) >= 2)
+        return self._edge_regs
+
     def _apply_polygon_gates(self):
         """Consume polygons.polygon_gates: a screen edge a room's obstacle layout only OPENS
         under some condition is a real gate on the positional exit that leaves by it.
@@ -454,10 +501,11 @@ class OpEmitter:
             for gate in gates:
                 self.polygon_gates.append(gate)
                 want = [c for c, nm in PG.EDGES.items() if nm == gate["edge"]]
+                eregs = self.edge_hit_registers()
                 for info in by_room[room]:
                     ents = info.get("entries") or []
                     for i, (K, eg) in enumerate(ents):
-                        if not _has_pos_edge(eg, want):
+                        if not _has_pos_edge(eg, want, eregs):
                             continue
                         ents[i] = (K, GAnd(list(gate["guard"]) + [eg]) if eg is not None
                                    else (gate["guard"][0] if len(gate["guard"]) == 1
