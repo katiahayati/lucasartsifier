@@ -34,8 +34,8 @@ believe you can go back) · `not required` · `no source`.
 | **peppermint leaf** | B4 carry-IN (short) | **uncertain** | ✗ MISS | required, judged reachable — src rm390/740/750, needed rm280/340/510/750 |
 | **4 island treasures** | best ending | **not by our rule** | — | they gate the BEST ending, not winnability |
 | **skull** | B2 carry-down | **YES** | ✗ MISS | required, judged reachable — src rm415/470, needed rm340/420/580. (The old "nothing demands it" note is FIXED: it has uses now.) |
-| **shield** | B2 carry-down → B1 out | **YES** | ✓ **CAUGHT** | src rm408, needed rm510 |
-| **old coins** | B2 carry-down → B3 | **YES** | ✓ **CAUGHT** as `deadMansCoin` | frontier rm340→rm155; src rm430/605, needed rm660 (Charon). The old "recorded use rm800/rm870 looks wrong" worry is RESOLVED |
+| **shield** | B2 carry-down → B1 out | **YES** | ⚠️ **DROPPED 2026-07-27** | required, judged reachable — src rm408, needed rm510. Was caught; see "the shield question" below |
+| **old coins** | B2 carry-down → B3 | **YES** | ✓ **CAUGHT** as `deadMansCoin` | frontier **rm155→rm600 / rm670→rm660** (the realm entry and Charon's toll — was rm340→rm155); src rm430/605, needed rm660 |
 | **mint** | B4 carry-IN | **YES** (user) | ✓ **CAUGHT** | frontier rm220→rm730 / rm230→rm710; src rm280, needed rm750 |
 | **old lamp** | many uses, traded away | **likely** | ✗ MISS | same item as the Jollo row (`huntersLamp`) — required, judged reachable |
 | **coal** | → egg → reach B3 | **likely** | ✗ MISS | required, judged reachable — src rm490/560, needed rm490 |
@@ -48,6 +48,57 @@ believe you can go back) · `not required` · `no source`.
 brick / hole-in-the-wall / red scarf into ONE row and filed `skeletonKey` under the vizier's letter.
 Splitting them changes the denominator, not the numerator -- the seven caught items are the same
 seven the tool prints. Denominator moved deliberately and is called out here rather than quietly.
+
+**As of `ca5637e` (2026-07-27, later the same day) it is 6 caught, 11 missed** — the same six the
+tool prints (`dagger, deadMansCoin, mint, nightingale, scarf, skeletonKey`) plus `skeletonKey`
+again as a one-visit toll pocket, and the shield dropped. Two of the six are caught for better
+reasons than before: `deadMansCoin`'s frontier is now the realm entry and Charon's toll rather
+than the transit room, and `skeletonKey` is additionally reported as
+
+    toll skeletonKey behind flag187 at rm[340,155]
+         pocket=[155,600,630,640,650,660,670,680,690]
+
+which is the Realm of the Dead, named as a region, for the right reason: flag 15 is set on arrival
+at rm600 and the entry demands it clear.
+
+## THE REALM IS NOW MODELLED AS A ONE-WAY POCKET (2026-07-27)
+
+All three of its guards were already extracted and none of them reached the model. They do now:
+
+| edge | guard | meaning |
+|---|---|---|
+| rm155→rm600 | `prev == 340` | you fly to the realm only from the Sacred Mountain |
+| rm155→rm200 | `prev != 340` | the same transit room's other destination |
+| rm340→rm155 | `flag14 & flag4 & not flag15` | and only once — rm600's init sets flag 15 forever |
+| rm680→rm155 | `prev != 670` | **the only way out**, taken only if you re-entered rm680 from rm690 |
+
+`rm690→rm680` is `holdUpMirror`, which needs `own(24)`. So "solve the level or stay" is spelled,
+in the game's own scripts, as a previous-room test — which is why modelling `prev` was the unlock.
+
+**What still keeps the carry-INs (mirror, teacup) invisible:** rm690 also declares `south 680` as
+an ordinary map exit, and our model walks it for free. That reaches rm680 with `prev == 690`, which
+runs `wonDeadScript` and lets you out having never held up the mirror. rm690's `init` does
+`handsOff:` and `introScript` hands control back for exactly 15 seconds (state 2 → state 3), so the
+walk is not obviously impossible — this is a question about the game, not about the extractor.
+
+## THE SHIELD QUESTION (open, needs a ruling)
+
+The shield was caught and now is not. The cause is a correct new edge, and the chain is short:
+
+1. rm300 (the Sacred Mountain beach) declares no exits and picks its north in `init`:
+   `(if (proc913_0 157) (self north: 340) else (self north: 320))`. We only read the assignment
+   spelling of that, not the send spelling, so **rm300 had no way up the mountain at all** and the
+   whole cluster hung off the start room. Now it does.
+2. rm340→rm405 — the drop into the catacombs — is FREE, and the game does not gate it either:
+   `((== (global0 onControl: 1) 16) (global2 newRoom: 405))` in rm340's `doit`. No flag test.
+3. So the model walks rm510 → rm520 → rm500 → rm300 → rm340 → rm405 → rm408 and re-collects the
+   shield.
+
+The question is whether that walk is real. If you can jump back into the catacombs after the
+minotaur is dead and walk the upper level to rm408, the shield is genuinely re-obtainable and the
+oracle's "YES" needs revisiting. If something stops you, we are missing it — and the likeliest
+candidates are inside the catacombs (the B2 upper→lower one-way, or re-entry landing you somewhere
+that is not the upper level), not at rm340.
 
 ## THE DIAGNOSIS: NINE OF THE TEN MISSES ARE ONE MECHANISM
 
@@ -122,9 +173,14 @@ shut. Enter without it and the game is over.
 
 ## Score
 
-**Real softlocks identified: 14.** We catch **7** — dagger, shield, old coins, handkerchief,
+⚠️ **STALE — this paragraph is the pre-`2f75dff` count and its item list is wrong** (it credits
+shield, handkerchief and old lamp as caught; the first was caught until `ca5637e`, the other two
+never were). Kept only because the table above records how the denominator moved. **The live score
+is the table: 6 caught, 11 missed, 3 correctly skipped, at `ca5637e`.**
+
+<s>**Real softlocks identified: 14.** We catch **7** — dagger, shield, old coins, handkerchief,
 skeletonKey, mint, old lamp (+ coal, likely). We miss **7**: teacup, mirror, nightingale, skull,
-and the catacombs carry-IN four (tinderbox, brick, hole-in-the-wall, red scarf).
+and the catacombs carry-IN four (tinderbox, brick, hole-in-the-wall, red scarf).</s>
 
 ## The misses have exactly three causes
 
