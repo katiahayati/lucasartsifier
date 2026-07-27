@@ -1233,6 +1233,52 @@ def derive_region_map(ir, room_object_of):
     return out
 
 
+def _prop_receiver_script(ir, recv):
+    """The script whose object this send addresses, or None if it is not statically one object.
+
+    TWO SPELLINGS of the same thing, and a game mixes them freely. `(ScriptID s n)` names script
+    s's nth export. A bare Object reference names an object by NAME, and when that name belongs to
+    exactly one object in the whole game it is just as static -- there is no second instance for it
+    to be confused with, which is the only thing the restriction ever guarded against.
+
+    KQ6's rm407 and rm409 address the SAME object both ways: `((ScriptID 30 0) seenByMino:)` and
+    `(rLab seenSecretLatch: 1)`, rLab BEING script 30's export 0. Reading only the first spelling
+    left half of that object's state invisible -- including `seenSecretLatch`, which is the whole
+    reason the hole-in-the-wall matters: you put it up, watch the minotaur go behind the tapestry,
+    and that is how the secret door to his lair opens. Both spellings must land on the SAME key or
+    they become two registers and neither is the state the game keeps.
+
+    Classes count, and are the case that matters. SCI1.1 regions are routinely declared
+    `(class rLab of Rgn)` and used as singletons, and a class reference is its own node type --
+    `{"t": "Class", "name": "rLab", "number": 146}` -- so a rule that only looked for `Object`
+    dropped exactly the objects this is for. A class is unique BY CONSTRUCTION (one definition per
+    species), so it needs no uniqueness test; a plain instance name does."""
+    if not isinstance(recv, dict):
+        return None
+    tgt = ir.script_id_target(recv)
+    if tgt:
+        return tgt[0]
+    if recv.get("t") not in ("Object", "Class") or not recv.get("name"):
+        return None
+    return _singleton_scripts(ir).get(recv["name"])
+
+
+def _singleton_scripts(ir):
+    """{name: script} for names that name exactly ONE object or class in the game."""
+    cache = getattr(ir, "_singleton_objs", None)
+    if cache is None:
+        owners = collections.defaultdict(set)
+        for s in ir.scripts.values():
+            for o in s.objects:
+                owners[o.name].add(s.number)
+        cache = {n: next(iter(v)) for n, v in owners.items() if len(v) == 1}
+        try:
+            ir._singleton_objs = cache
+        except Exception:                                  # noqa: BLE001
+            pass
+    return cache
+
+
 def derive_obj_props(ir):
     """`{(script, export, selector)}` for object PROPERTIES the game uses as state.
 
@@ -1259,16 +1305,16 @@ def derive_obj_props(ir):
                     recv, msgs = I.send_pairs(n)
                 except Exception:                          # noqa: BLE001
                     continue
-                tgt = ir.script_id_target(recv)
-                if not tgt:
+                rs = _prop_receiver_script(ir, recv)
+                if rs is None:
                     continue
                 for sel, ps in msgs:
                     if sel is None:
                         continue
                     if ps and I.as_int(ps[0]) is not None:
-                        writes[(tgt[0], sel)] += 1
+                        writes[(rs, sel)] += 1
                     elif not ps:
-                        reads[(tgt[0], sel)] += 1
+                        reads[(rs, sel)] += 1
     return set(reads) & set(writes)
 
 
@@ -1298,11 +1344,11 @@ def lower_obj_props(ir, pairs):
                     continue
                 if len(msgs) != 1:
                     continue                               # chained: rewriting drops the rest
-                tgt = ir.script_id_target(recv)
-                if not tgt:
+                rs = _prop_receiver_script(ir, recv)
+                if rs is None:
                     continue
                 sel, ps = msgs[0]
-                key = (tgt[0], sel)
+                key = (rs, sel)
                 if key not in pairs:
                     continue
                 if not ps:

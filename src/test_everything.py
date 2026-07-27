@@ -155,6 +155,21 @@ def test_setscript():
     check("a cue-ONLY machine is left alone", all(x.entries for x in cue_only),
           f"{len(cue_only)} such machines")
 
+    # Object-property state has TWO SPELLINGS and KQ6 mixes them on the SAME object: rm407 says
+    # both `((ScriptID 30 0) seenByMino:)` and `(rLab seenSecretLatch: 1)`, rLab being script 30's
+    # export 0 -- and declared a CLASS, which is how SCI1.1 writes a singleton region. Reading only
+    # the ScriptID spelling left half that object's state invisible, `seenSecretLatch` included:
+    # the hole-in-the-wall matters because putting it up lets you watch the minotaur and learn
+    # where his lair is.
+    import vocab as V2
+    kir2 = I.load_ir(kq6[0])          # fresh: derive_* must run before any lowering rewrites it
+    props = V2.derive_obj_props(kir2)
+    r30 = {sel for scr, sel in props if scr == 30}
+    check("both spellings resolve to the SAME object's register set",
+          {"seenByMino", "seenSecretLatch"} <= r30, sorted(r30))
+    check("...and a class receiver is eligible (SCI1.1 regions are classes)",
+          "hiddenDoorOpen" in r30, sorted(r30))
+
 # ---- Part 3: fall-through hack removed (no free start bypass) ------------
 def test_no_fallthrough_bypass():
     print("Part 3: start-state fall-through hack removed")
