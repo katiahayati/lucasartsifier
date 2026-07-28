@@ -52,8 +52,7 @@ KNOWN_GAPS = {
     "teaCup",           # B3 carry-in / Styx-water carry-out, long path
     "handkerchief",     # obtained in the Realm, needed in the endgame dungeon; no use captured
     "huntersLamp",      # the old lamp -- traded away, and befriending Jollo depends on it
-    "skull",            # B2 carry-down
-    "coal",             # -> egg -> reach the Realm
+    "skull",            # B2 carry-down, AND the vessel for the B3 carry-in (amber + egg + hair)
     "peppermint",       # castle carry-in, short path; the oracle itself calls this one uncertain
 }
 
@@ -61,7 +60,11 @@ KNOWN_GAPS = {
 #   shield: user, 2026-07-27, after testing -- "you were completely right and I was completely
 #     wrong. Yes you can go back to either level of the catacombs." It is re-obtainable.
 #   clothes: only needed OUTSIDE the castle, to get in.
-CONFIRMED_SAFE = {"shield", "clothes"}
+#   coal: settled 2026-07-28 from docs/KQ6-ITEM-ORACLE.md rows 6 and 10. Coal is given to the White
+#     Queen on the Isle of Mists in exchange for the spoiled EGG, and it is the egg that is carried
+#     into the Realm. Coal itself never crosses a boundary -- source rm560, every use at rm490,
+#     both on the open map -- so it was a KNOWN_GAP by association with a chain it does not travel.
+CONFIRMED_SAFE = {"shield", "clothes", "coal"}
 
 ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS
 
