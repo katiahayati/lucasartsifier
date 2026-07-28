@@ -231,9 +231,19 @@ class OpEmitter:
                         # all it does is start `lolotteDead`. Dropping it took the `has: 14` on
                         # its entry with it, so the Cupid's Bow had no recorded use at rm82 at
                         # all and `resource_exhaustion` could only report the unicorn rooms.
-                        for K, eg in list(m.entries) + list(m.init_entries):
+                        # The SLOT and the machine's name come along too: a machine we do not
+                        # model is still a player action competing for the room's script, so it can
+                        # be what CANCELS a timed death. KQ6's `lightItUp` is exactly that -- its
+                        # entry is `own(tinderBox)`, and all it does is start a palette fade, so it
+                        # is dropped and the only escape from the dark room went with it. The name
+                        # is what lets `death_traps` still ask whether it re-arms the death.
+                        for i, (K, eg) in enumerate(list(m.entries)):
                             if eg is not None:
-                                self.dropped_entries.append((room, eg))
+                                recv = m.entry_recv[i] if i < len(m.entry_recv) else None
+                                self.dropped_entries.append((room, eg, m.inst, recv))
+                        for K, eg in list(m.init_entries):
+                            if eg is not None:
+                                self.dropped_entries.append((room, eg, m.inst, None))
         # player-action effects in handleEvent/doit: register writes + item get/put that
         # the game does NOT do via a changeState machine (e.g. `(= gLoweredLifeboats 1)`
         # when the player says "lower lifeboats"). Guard = the path condition (Said/opaque

@@ -296,6 +296,31 @@ def test_setscript():
           MI.death_traps(em, {173}, {173: {0, 1}}).get(1) == [({173: {1}}, (frozenset(),))],
           repr(MI.death_traps(em, {173}, {173: {0, 1}})))
 
+    # A machine we do NOT model is still a competitor for the slot. KQ6's `lightItUp` is gated
+    # `own(tinderBox)` and all it does is start a palette fade, so `_machine_info` drops it -- and
+    # it is the only thing that stops the minotaur killing you in the dark room.
+    em.machines = [mach("timer", [(0, None)], [SLOT], [None], ("DEATH",))]
+    em.dropped_entries = [(1, Pred("OWN", var=48), "lightItUp", SLOT)]
+    check("a DROPPED machine can still be the escape",
+          [sorted(a) for _r, al in MI.death_traps(em, set(), {}).get(1, []) for a in al] == [[48]],
+          repr(MI.death_traps(em, set(), {})))
+    em.dropped_entries = [(1, Pred("OWN", var=48), "lightItUp", ("G", 0))]
+    check("...but only on the SAME slot", MI.death_traps(em, set(), {}) == {})
+
+    # Negating a CONJUNCTION gives alternatives, and per-register projections let each through in
+    # the projection that cannot see the other -- so the pair has to be walked together. Bounded
+    # and self-selecting: the trap names the registers, and a game with no such trap gets none.
+    ir_ = MI.IrSccReach.__new__(MI.IrSccReach)
+    two = {406: [({12: {1, 2}}, (frozenset(),)), ({173: {1}}, (frozenset(),))]}
+    one = {420: [({}, (frozenset({2}),))], 411: [({173: {1}}, (frozenset(),))]}
+    check("a trap naming two registers asks for them jointly",
+          ir_._trap_joints(two, {12: {1, 2, 3}, 173: {0, 1}}) == [(12, 173)],
+          repr(ir_._trap_joints(two, {12: {1, 2, 3}, 173: {0, 1}})))
+    check("...and a trap naming one register (or none) asks for nothing",
+          ir_._trap_joints(one, {173: {0, 1}}) == [], repr(ir_._trap_joints(one, {173: {0, 1}})))
+    check("...and an oversized product is refused",
+          ir_._trap_joints(two, {12: set(range(500)), 173: set(range(50))}) == [])
+
 # ---- Part 3: fall-through hack removed (no free start bypass) ------------
 def test_no_fallthrough_bypass():
     print("Part 3: start-state fall-through hack removed")

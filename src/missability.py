@@ -373,7 +373,7 @@ def build_maps(em):
     for room, script, gi, v, g in em.handler_writes:
         req(g, room)
     # entry guards of machines we chose not to model -- see opmodel.dropped_entries
-    for room, eg in getattr(em, "dropped_entries", ()):
+    for room, eg, _inst, _recv in getattr(em, "dropped_entries", ()):
         req(eg, room)
     # consuming an item in a HANDLER -- the Pamphlet handed to the bore on the plane (rm62) is a
     # Said-handler `put: 26 -1`, which the machine-body scan never sees. Held back; see below.
@@ -957,6 +957,15 @@ def death_traps(em, regs, dom):
     by_room = {}
     for info in em.machines:
         by_room.setdefault(info["room"], []).append(info)
+    # A machine we chose not to MODEL is still a competitor for the slot. KQ6's `lightItUp` is
+    # gated `own(tinderBox)` and does nothing we track (it starts a palette fade), so it is dropped
+    # -- and it is the only thing that stops the minotaur killing you in the dark. Carried as a
+    # stateless stand-in: no states, so it can never be `fatal`, but its NAME still participates in
+    # the doomed walk, so a dropped machine that re-arms the death is excluded like any other.
+    for room, eg, inst, recv in getattr(em, "dropped_entries", ()):
+        by_room.setdefault(room, []).append(
+            {"room": room, "inst": inst, "entries": [(0, eg)], "entry_recv": [recv],
+             "entry_armers": [], "states": {}})
     out = {}
     for room, infos in by_room.items():
         arms = {}                                  # machine name -> names it arms
@@ -1322,9 +1331,43 @@ class IrSccReach(SccReach):
                         # and the hole-in-the-wall it depends on was dropped on the floor.
                         self._inroom_own.setdefault((gi, info["room"], v),
                                                     frozenset(_own_positive(g)))
+        self._joints = []
         self._apply_death_traps()
         self._own_fixpoint()
-        self._pstates = {R: self._walk(R, frozenset()) for R in self.regs}
+        # Projections = one per register, PLUS the few joints the death traps ask for. See
+        # _trap_joints: `self.regs` stays scalar because everything else iterates it expecting a
+        # register, and only the four reachability walks look at `self.proj`.
+        self.proj = list(self.regs) + list(self._joints)
+        self._pstates = {R: self._walk(R, frozenset()) for R in self.proj}
+
+    def _trap_joints(self, traps, dom):
+        """The register TUPLES a death trap needs evaluated together.
+
+        Negating a conjunction gives a disjunction, so a trap whose death condition is
+        `prev == 435 AND minotaur alive` becomes two ALTERNATIVE ways out -- and per-register
+        projections let each one through in the projection that cannot see the other. KQ6's dark
+        room is exactly that: in the prevRoom projection the flag alternative is unconstrained, in
+        the flag projection the prevRoom one is, so the trap never bites and the tinderbox you must
+        light to survive the fall never looks required.
+
+        Self-selecting, which is what keeps this from being "promote everything": the pair comes
+        from the trap that needs it, and a game with no such trap gets no joints at all (LSL2, KQ4
+        and every other title in the corpus). Bounded twice over -- by how many trap rooms name two
+        or more registers, and by the size of the product -- because a joint projection is the
+        expensive kind."""
+        want, seen = [], set()
+        for room in sorted(traps):
+            named = tuple(sorted({R for (req, _alts) in traps[room] for R in req}))
+            if len(named) < 2 or named in seen:
+                continue
+            size = 1
+            for R in named:
+                size *= max(1, len(dom.get(R) or (0,)))
+            if size > 4000 or len(want) >= 8:
+                continue                          # a joint is the expensive projection; bound it
+            seen.add(named)
+            want.append(named)
+        return want
 
     def _apply_death_traps(self):
         """Conjoin `death_traps`' disjunction onto every way OUT of a room whose arrival kills you.
@@ -1342,6 +1385,7 @@ class IrSccReach(SccReach):
                     if R in dom:
                         dom[R].add(v)
         traps = death_traps(self.em, self.regs, dom)
+        self._joints = self._trap_joints(traps, dom)
         for room, rows in traps.items():
             for b in self.edges.get(room, ()):
                 base = list(self._emeta.get((room, b)) or [self._FREE])
@@ -1474,6 +1518,8 @@ class IrSccReach(SccReach):
         do not hold, so edges needing them are false -- the ITEM dimension of gate-awareness, and
         what the old `_sealed` heuristic crudely approximated: you cannot use the parachute to
         walk back to the parachute."""
+        if isinstance(R, tuple):
+            return self._psucc_joint(R, node, banned)
         r, st = node
         out = {(r, v) for v in self._inroom[R].get(r, ())
                if not (banned and self._inroom_own.get((R, r, v), frozenset()) & banned)}
@@ -1493,9 +1539,44 @@ class IrSccReach(SccReach):
                 out.add((b, sets.get(R, st)))
         return out
 
+    def _psucc_joint(self, Rs, node, banned):
+        """`_psucc` over a TUPLE of registers tracked together -- see `_trap_joints`.
+
+        Same rules, one value per register. Deliberately a separate body rather than a generalised
+        one: the scalar path is walked millions of times and every corpus baseline is pinned to it,
+        so it stays untouched."""
+        r, st = node
+        out = set()
+        for i, Ri in enumerate(Rs):
+            for v in self._inroom[Ri].get(r, ()):
+                if banned and self._inroom_own.get((Ri, r, v), frozenset()) & banned:
+                    continue
+                nv = list(st)
+                nv[i] = v
+                out.add((r, tuple(nv)))
+            for (frm, to) in self._rstep[Ri].get(r, ()):
+                if st[i] != frm or (banned and
+                                    self._inroom_own.get((Ri, r, to), frozenset()) & banned):
+                    continue
+                nv = list(st)
+                nv[i] = to
+                out.add((r, tuple(nv)))
+        for b in self.edges.get(r, ()):
+            for (req, sets, alts) in self._emeta.get((r, b), (self._FREE,)):
+                if any(req.get(Ri) is not None and st[i] not in req[Ri]
+                       for i, Ri in enumerate(Rs)):
+                    continue
+                if banned and blocked(alts, banned):
+                    continue
+                if self._reg_unreachable(req, banned):
+                    continue
+                out.add((b, tuple(sets.get(Ri, st[i]) for i, Ri in enumerate(Rs))))
+        return out
+
     def _walk(self, R, banned, starts=None):
         """Forward reachable (room, value) states in projection R."""
-        seen = set(starts) if starts else {(self.em.cfg.start_room, 0)}
+        zero = tuple(0 for _ in R) if isinstance(R, tuple) else 0
+        seen = set(starts) if starts else {(self.em.cfg.start_room, zero)}
         q = list(seen)
         while q:
             u = q.pop()
@@ -1516,7 +1597,7 @@ class IrSccReach(SccReach):
         if ban in self._rw:
             return self._rw[ban]
         out = None
-        for R in self.regs:
+        for R in self.proj:
             rooms = {r for r, _ in self._walk(R, ban)}
             out = rooms if out is None else (out & rooms)
         self._rw[ban] = out if out is not None else set(self.reach_rooms)
@@ -1543,8 +1624,21 @@ class IrSccReach(SccReach):
             self._reob[ban] = set()
             return self._reob[ban]
         out = None
-        for R in self.regs:
-            states = self._pstates[R]
+        for R in self.proj:
+            # For a JOINT projection the universe is the states you can actually BE in without the
+            # item. `_pstates` is the UNBANNED walk, so it holds states you could only have reached
+            # by already surviving WITH the item, and a backward walk starting from one of those
+            # says the item is re-obtainable from a place you could never have stood. KQ6's dark
+            # room is the case: lit, you walk on and eventually kill the minotaur, so
+            # `(rm406, minotaur dead)` exists and reaches the pawn shop; unlit you die there.
+            #
+            # This is the more correct universe for EVERY projection, and it is applied only to the
+            # joints deliberately. Measured on the scalar ones it moves LSL2 -- a `has: 2` guard on
+            # rm101->rm102, a second literal on the rm79->rm80 raft guard, and two Vine sinks -- and
+            # that baseline is play-test-validated, so widening it needs its own evidence rather
+            # than riding along here. A joint exists precisely because a trap needs two registers
+            # judged together, and the stale universe defeats exactly that.
+            states = self._walk(R, ban) if isinstance(R, tuple) else self._pstates[R]
             prev = defaultdict(set)               # reverse edges, minus own(item)-gated ones
             for u in states:
                 for v in self._psucc(R, u, ban):
@@ -1589,7 +1683,7 @@ class IrSccReach(SccReach):
         if b in self._after:
             return self._after[b]
         out = None
-        for R in self.regs:
+        for R in self.proj:
             starts = {p for p in self._pstates[R] if p[0] == b}
             if not starts:
                 continue
