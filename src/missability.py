@@ -1034,7 +1034,7 @@ def death_traps(em, regs, dom):
     return out
 
 
-def entry_reqs(info, regs):
+def entry_reqs(info, regs, dom=None):
     """State K -> {register: allowed values} that EVERY entry reaching K establishes.
 
     The REGISTER twin of `entry_alts`, and deliberately the opposite composition. Items are a
@@ -1046,13 +1046,20 @@ def entry_reqs(info, regs):
 
     Without this the exit edge inherited its entry's ITEM gates but silently dropped its FLAG
     gates -- so a cutscene armed only while a flag is clear (KQ6's sacred-water rm350->rm370,
-    armed only when flag 174 is still 0) came out a free walk."""
+    armed only when flag 174 is still 0) came out a free walk.
+
+    Read with `structural_reqs`, the NECESSARY reading, because carrying an entry onto an exit is
+    COMPOSING one guard into another -- the third place that distinction has mattered and the same
+    lesson KQ4's whale taught (see `structural_reqs`, and `death_traps` case (b)). Flat, a
+    disjunction of alternative armings reads as a conjunction of all their conditions: once an
+    object's cast condition became a real disjunction, KQ6's `gates` was `arrived from rm490 OR
+    NOT arrived from rm490` -- a tautology -- and the flat read turned it into a requirement to
+    have already been in rm490 to reach rm490, which strands the red scarf behind its own door."""
     from compile import _ctr_holds
     reach = _entry_reach_walk_of(info)
     per = []
     for (seen, eg, loc) in reach:
-        per.append((seen, loc,
-                    {R: v for R, v in ((R, required_values(eg, R)) for R in regs) if v}))
+        per.append((seen, loc, {R: v for R, v in structural_reqs(eg, regs, dom).items() if v}))
 
     def _consistent(loc, guard):
         """Could an arming carrying `loc` have produced a path guarded by `guard`?
@@ -1184,7 +1191,7 @@ def edge_meta(em, regs):
         _musts[key] = state_musts(_i, regs)
     for info in em.machines:
         eo = entry_alts(info)
-        er = entry_reqs(info, regs)
+        er = entry_reqs(info, regs, dom)
         sm = state_musts(info, regs)
         # What EVERY arming of this machine had already established.
         chain = None

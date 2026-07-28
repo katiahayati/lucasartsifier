@@ -145,6 +145,8 @@ class MachineBuilder:
         self.is_death = game_death        # (glob_index, value) -> bool
         self.procs_by = {}                # (script, proc-name) -> body, for call-following
         self._cast_cache = {}             # script number -> extract.cast_conditions(script)
+        self._entry_guard = {}            # (script, inst) -> the machine's entry disjunction, from
+        #   the PREVIOUS pass. Empty until `prime` runs, which is the permissive answer. See prime.
         for rn, s in ir.scripts.items():
             for name, body in s.procs.items():
                 self.procs_by[(rn, name)] = body
@@ -357,12 +359,46 @@ class MachineBuilder:
         s, name = tgt
         return name == m.inst and (s is None or s == m.script)
 
+    def prime(self):
+        """Resolve the casts/entries mutual recursion by iterating it, twice.
+
+        A machine's ENTRY is built from the casts (an arming that sits in the method of an object
+        the room only sometimes `init:`s only fires under that condition), and a cast is built from
+        the entries (an `init:` inside a `changeState` runs only when that machine was armed and
+        got that far). Neither can be computed first, so compute both from the permissive answer
+        and feed the result back: pass 0 sees `_entry_guard = {}` and reproduces exactly what this
+        builder did before, pass 1 rebuilds the casts from pass 0's entries, and a pass that
+        changes nothing stops.
+
+        Iterated rather than shortcut on purpose. The shortcut -- a flat scan of every `setScript:`
+        naming the machine, used as if it were the entry -- was tried twice and reverted twice: it
+        has not been through `_drop_continuation_entries` or `_chain_entries`, so it can be
+        STRONGER than the real entry, and gating a cast on a too-strong guard deletes movement the
+        game allows. Convergence is not assumed either: `_entry_guard` only ever appears inside a
+        conjunction, so a round can only narrow, and the loop is bounded regardless.
+
+        Optional -- a caller that never primes gets the previous behaviour. `opmodel` primes."""
+        for _round in range(2):
+            eg = {}
+            for rn, s in self.ir.scripts.items():
+                for m in self.machines(s):
+                    # Alternatives, and permissive (None) if any of them is unconditional -- the
+                    # same reading `any_guard` gives everywhere else.
+                    eg[(rn, m.inst)] = X.any_guard([g for _k, g in m.entries]) if m.entries else None
+            if eg == self._entry_guard:
+                break
+            self._entry_guard = eg
+            self._cast_cache.clear()
+        return self
+
     def _cast(self, script):
         """`cast_conditions` for a script, computed once -- `_build` runs per machine."""
         c = self._cast_cache.get(script.number)
         if c is None:
             c = self._cast_cache[script.number] = X.cast_conditions(
-                script, proc_guard=lambda pn: X.any_guard(self.proc_calls.get(pn)))
+                script, proc_guard=lambda pn: X.any_guard(self.proc_calls.get(pn)),
+                machine_guard=lambda on: self._entry_guard.get((script.number, on)),
+                init_sels=X.init_selectors(self.ir))
         return c
 
     def _scan_setscript(self, node, pc, m, source, armer=None, owner=None):

@@ -414,7 +414,64 @@ def walk_stream(node, pc, on_leaf, on_loop=None, undecided=None):
         walk_stream(k, pc, on_leaf, on_loop, undecided)
 
 
-def cast_conditions(script, proc_guard=None):
+_INIT_SELECTORS = {}        # ir id -> selectors that put an object in the cast
+
+
+def init_selectors(ir):
+    """`species -> selectors that put an instance of it IN THE CAST`, from the game's class table.
+
+    `init` is the one every SCI game spells, but it is not the only one, and a catalogue of
+    selector names is what this codebase keeps being punished for (see `vocab.Vocabulary`). KQ6's
+    `View` -- the ancestor of every Prop and Actor -- defines a second:
+
+        (method (addToPic)
+          (if (global5 contains: self) (|= signal $8021)
+          else (|= signal $0020) (self init:)))          ; <-- an init, by another name
+
+    So `(gates cel: 0 signal: 16384 addToPic:)` DOES put the gates in the cast, and reading only
+    the literal selector made rm480's `else` branch look like "not in the cast" -- the gates then
+    appeared clickable only when you had arrived from rm490, i.e. only once you had already been
+    where the gate takes you, which strands the red scarf behind it.
+
+    Scoped by CLASS, not unioned, because the same name means different things on different
+    classes: `Cursor::setLoop` and `Talker::say` also `(self init:)`, and treating every `setLoop:`
+    as a cast site would make the whole rule vacuous. An object contributes only the aliases its
+    own ancestry defines, which is the same "resolve through the class table" discipline
+    `vocab.Vocabulary` uses for item moves."""
+    key = id(ir)
+    if key in _INIT_SELECTORS:
+        return _INIT_SELECTORS[key]
+    classes = {o.species: o for s in ir.scripts.values() for o in s.objects if o.is_class}
+    own = {}
+    for sp, o in classes.items():
+        names = set()
+        for mn, body in o.methods.items():
+            for n in I.walk(body):
+                if n.get("t") != "Send":
+                    continue
+                recv, msgs = I.send_pairs(n)
+                if (isinstance(recv, dict) and recv.get("t") == "Self"
+                        and any(sel == "init" for sel, _p in msgs)):
+                    names.add(mn)
+                    break
+        own[sp] = names
+    memo = {}
+
+    def resolve(sp, seen=()):
+        if sp in memo:
+            return memo[sp]
+        o = classes.get(sp)
+        if o is None or sp in seen:
+            return frozenset({"init"})
+        out = frozenset(own.get(sp, ()) | {"init"} | resolve(o.super, seen + (sp,)))
+        memo[sp] = out
+        return out
+
+    _INIT_SELECTORS[key] = {sp: resolve(sp) for sp in classes}
+    return _INIT_SELECTORS[key]
+
+
+def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None):
     """`objname -> [guard|None]`: the conditions under which this script puts an object IN THE CAST.
 
     An object that is not `init:`ed does not exist for the player -- it cannot be clicked, cued or
@@ -444,8 +501,30 @@ def cast_conditions(script, proc_guard=None):
     `proc_guard(name)` supplies the condition a PROCEDURE runs under, since a proc's body has no
     path condition of its own -- it runs because something called it. KQ6 redraws the
     hole-in-the-wall that way: `proc404_1` inits the hole actor, and every one of its three call
-    sites is `(if (== (rLab holeCoords:) <this cell>) (proc404_1))`."""
-    declared = {o.name for o in script.objects}
+    sites is `(if (== (rLab holeCoords:) <this cell>) (proc404_1))`.
+
+    `machine_guard(objname)` is the SAME rule for a `changeState` body, which likewise has no path
+    condition of its own -- it runs because the machine was armed and reached that state, so its
+    precondition is the machine's ENTRY. Sierra puts an object into the cast from inside a cutscene
+    all the time, and read standalone every one of those inits is unconditional, which makes the
+    disjunction vacuous and hands the object to the player for free. KQ6's hole-in-the-wall is the
+    case, in three rooms with three spellings of the same act:
+
+        (instance putHoleOnWall of Script (method (changeState param1) (switch (= state param1)
+           (0 (global0 put: 18 global11) ...)          ; the hole leaves your inventory...
+           (2 (theHole init:) ...))))                  ; ...and becomes a thing on the wall
+
+    `putHoleOnWall` is armed from `hiwEastWall::doVerb 25`, i.e. from USING the hole, so `theHole`
+    exists only once you have carried the hole in and put it up. Everything hanging off it inherits
+    that: looking through it (which is how you learn where the minotaur's lair is) and taking it
+    back down (which is why every maze room looked like a place you could pick the hole up).
+
+    Since a machine's entry is itself computed FROM the casts -- an arming inside a conditionally
+    init'ed object's method inherits that condition -- the two are mutually recursive and the
+    caller must supply the guard from a previous pass. See `MachineBuilder.prime`."""
+    # name -> the selectors that put THIS object in the cast, resolved through its own ancestry.
+    declared = {o.name: (init_sels or {}).get(o.species if o.is_class else o.super) or {"init"}
+                for o in script.objects}
     out = {}
 
     def leaf(n, pc):
@@ -453,22 +532,23 @@ def cast_conditions(script, proc_guard=None):
             return
         recv, msgs = I.send_pairs(n)
         rname = recv.get("name") if isinstance(recv, dict) else None
-        bulk = any(sel == "eachElementDo"
-                   and any(isinstance(p, dict) and p.get("t") == "Selector"
-                           and p.get("name") == "init" for p in params)
-                   for sel, params in msgs)
+        # `(<list> add: a b c eachElementDo: #init)` names the objects in one message and the
+        # selector in another, so the selector is collected across the whole send.
+        bulk = {p.get("name") for sel, params in msgs if sel == "eachElementDo" for p in params
+                if isinstance(p, dict) and p.get("t") == "Selector"}
         for sel, params in msgs:
-            if sel == "init" and rname in declared:
+            if sel in declared.get(rname, ()):
                 out.setdefault(rname, []).append(_conj(pc))
             if bulk:
                 for p in params:
                     if (isinstance(p, dict) and p.get("t") == "Object"
-                            and p.get("name") in declared):
+                            and bulk & set(declared.get(p.get("name"), ()))):
                         out.setdefault(p["name"], []).append(_conj(pc))
 
     for o in script.objects:
-        for body in o.methods.values():
-            walk_stream(body, [], leaf)
+        for mn, body in o.methods.items():
+            seed = [machine_guard(o.name)] if (machine_guard and mn == "changeState") else []
+            walk_stream(body, seed, leaf)
     for pn, body in script.procs.items():
         walk_stream(body, [proc_guard(pn)] if proc_guard else [], leaf)
     return out

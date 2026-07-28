@@ -89,7 +89,9 @@ class OpEmitter:
         self.cfg = cfg
         self.is_death = is_death
         self.ts = extract(ir)
-        self.mb = M.MachineBuilder(ir, is_death)
+        # `prime` settles the casts/entries mutual recursion before anything reads either, so the
+        # machines this emitter lifts are the second-pass ones. See MachineBuilder.prime.
+        self.mb = M.MachineBuilder(ir, is_death).prime()
         self.n_opaque = 0
         self._collect()
 
