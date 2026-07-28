@@ -1,6 +1,35 @@
 # The KQ6 catacombs: why the carry-in items are not required, and the plan
 
-## STATUS 2026-07-28 — Steps 1, 2, 2b, 3 and 5 LANDED; **the brick is CAUGHT (7 -> 8)**
+## STATUS 2026-07-28 (final) — **3 of the 4 carry-ins are caught; KQ6 7 -> 9**
+
+`brick, deadMansCoin, dagger, mint, mirror, nightingale, scarf, skeletonKey, tinderBox`. Of the
+four the user confirmed, only the **hole-in-the-wall** is still missed. LSL2 and KQ4 byte-identical
+on the full snapshot surface through all seven commits; 277 checks green; Dagger, SQ3, KQ5
+unchanged.
+
+### The hole: what it needs, and the second thing that went wrong
+
+Three pieces must compose (see the earlier section). Piece 1 — *an init inside a `changeState`
+inherits that machine's entry* — has now been attempted TWICE and reverted twice, and the second
+attempt says something sharper than the first:
+
+* it did what it was meant to (`lookInHole` picked up `own(18)` through the chain), but
+* it **dropped the scarf**, because `rm480 -> rm490` acquired `prev == 490` — a requirement to have
+  been in rm490 in order to reach rm490 — so the scarf's only source became unreachable.
+
+Half of that was the flat-vs-necessary reading and is now fixed on its own (`ea91881`). The other
+half is structural: the guard I fed it was `arm_guards`, a **provisional flat scan** of every
+`setScript:` naming the machine, which is NOT the machine's entry — it has not been through
+`_drop_continuation_entries` (so a `cue` arming still counts), `_chain_entries`, or the cue
+handling. Using a possibly-too-strong provisional guard to gate object casts is the unsafe
+direction, and it over-restricted.
+
+**So piece 1 needs the real entries, and the real entries are built FROM the casts.** That is a
+genuine ordering problem and it wants a two-pass fixpoint — build entries with no cast composition,
+then rebuild casts from those entries, then rebuild entries — not the shortcut. Do not attempt
+piece 1 a third time with a provisional guard.
+
+## STATUS (earlier) — Steps 1, 2, 2b, 3 and 5 LANDED; the brick is CAUGHT (7 -> 8)
 
 Commits `ac6bad5`, `f4b0c2b`, `9db2d52`, `2cfa652`. LSL2 and KQ4 byte-identical on the full
 snapshot surface throughout; 272 checks green; Dagger, SQ3 and KQ5 unchanged.
