@@ -1,5 +1,43 @@
 # The KQ6 catacombs: why the carry-in items are not required, and the plan
 
+## STATUS 2026-07-28 — Steps 1, 2, 2b and 3 are LANDED
+
+Commits `ac6bad5`, `f4b0c2b`, `9db2d52`. **LSL2 and KQ4 byte-identical on the full snapshot
+surface (placements included) through every one; 269 checks green; Dagger, SQ3 and KQ5 all still
+load and report unchanged.** KQ6's softlock list has NOT moved yet (still the same 7) and the
+sections below say exactly what is holding each remaining item.
+
+| step | what landed | effect on KQ6 |
+|---|---|---|
+| 1 | `cast_conditions` / `cast_guard`: an object the room inits only under a condition is only then in the cast, and a machine armed from its methods inherits that | `rm340 -> rm440` now carries flag 1 — the lair's first free entrance is shut |
+| 2 | a NAMED maze room speaks for its own cell; `_dir_table` + `_repurposed_dirs` read the direction table and the room's own re-purposed edges out of the game | the invented `117 -> 133` descent is gone; upper and lower levels separate, the trapdoor is the only way down, rm420 is a cut vertex |
+| 2b | `_listed_pseudo_rooms`: a pseudo-room can be named for a LIST of coordinates | rm411 has cells, so it stops inheriting "reaches every maze room" — the lair's second free entrance is shut |
+| 3 | `state_musts` splits its node by the machine's LOCALS; `_rstep` writes keep their preconditions; a machine armed inside a PROCEDURE inherits its call sites | `sm.at(18, g) = {seenSecretLatch: {1}}` (was `{0,1}`); `holeOnWall` now carries `own(18)` |
+
+**What is still holding each item, measured:**
+
+* **holeInTheWall** — the chain reaches `seenSecretLatch`, but that is written by `lookInHole`,
+  armed from the hole ACTOR, and the actor is init'ed two ways: one carrying a clean
+  `holeWall == N` (from `holeOnWall`, which now costs the hole) and one carrying
+  `holeCoords == <this cell>`, which is a comparison between two REGISTERS and renders opaque.
+  An OR with an opaque arm says nothing. Closing it needs `holeCoords` to carry its non-constant
+  write — "a register written with a computed value still records THAT it was written, and at what
+  cost" — which is a real modelling addition, not a tweak.
+* **brick / tinderbox / rm411** — Step 5, and it needs one piece the plan did not name: the
+  `setScript:` RECEIVER. `sqwishEm` (fatal) and `useBrick` (`own(2)`) / `throwSkull` (`own(11)`)
+  are all `(global2 setScript: ...)`, i.e. they compete for the ROOM's script slot, which is why
+  the player's action pre-empts the timer. `holeOnWall` is `(global0 setScript: ...)` — the EGO's
+  slot — and is lifted into every maze room, so without the receiver every room looks escapable
+  with the hole and the rule is neutered. Recording the receiver is small; it is just not free.
+  Also measured: **`lightItUp`, the tinderbox's escape, is not lifted as a machine at all**, so
+  rm406 has no escape to find yet.
+* **rm411** is the cheapest of the three and needs no escape logic: `dieAlready`'s single entry
+  requires `173 == 0`, so leaving rm411 requires `173 == 1` and the level merge disappears. It is
+  blocked only by the same receiver question (`holeOnWall` is lifted into rm411 and would look
+  like an escape).
+
+
+
 Measured 2026-07-28 on `sci1-doverb-capture` @ `59b511a`, working tree clean, LSL2 golden and the
 KQ4 oracle both green. Every number below came from a probe run today, not from a previous note.
 
