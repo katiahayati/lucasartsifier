@@ -196,7 +196,7 @@ i.e. `setScript: N` ≡ `setScript: (ScriptID N)` ≡ export 0 of script N. Same
 | LSL2 | 0 | — |
 | KQ6 | 95 | 61 |
 | QFG-VGA | 184 | — |
-| Dagger | 33 | — |
+| Dagger | 33 | **33 — all of them**, measured after the fact; step 3 is inert on Dagger too |
 
 So **LSL2 and KQ4 cannot move**: LSL2 has none, and every one of KQ4's is `setScript: 0`. ~34 real
 targets in KQ6 (scripts 915, 130, 190, 88, 97, 96, 90, 101, 93, 92, …). `0` must keep meaning
@@ -322,3 +322,45 @@ user's *"we should not let you leave the realm of the dead without it"* reads as
 ending is the target — but that reclassifies the goal for the whole game, so it is asked, not
 assumed. If the answer is that the long ending is the goal, blocker A becomes worth paying for and
 the chain is otherwise fully understood.
+
+## THE CORPUS SWEEP — measured against a WORKTREE at `a148cc8`, not against remembered numbers
+
+|  | before (`a148cc8`) | after (`e7118e7`) |
+|---|---|---|
+| LSL2 | full snapshot + placements | **byte-identical** |
+| KQ4 | full snapshot + placements | **byte-identical** |
+| Dagger | 6 | **6, identical** |
+| Camelot | 5 | **5, identical** |
+| TCB | 2 | **2, identical** |
+| SQ3 | 11 | **12 — `Buckazoids` is new** |
+| KQ6 | 11 | **13** |
+
+**A correction I have to make about my own reporting.** I first said "Dagger moved 5 -> 6, gaining
+`pressPass`", comparing against the 5 recorded in the previous session's handoff. That figure was
+measured at `69be969`, two commits earlier, and `pressPass` had already arrived by `a148cc8`.
+Dagger did not move at all here. Quoting a remembered baseline instead of measuring one is exactly
+what the worktree discipline exists to prevent.
+
+### The one real change outside KQ6: SQ3 gains `Buckazoids`, and it needs judgement
+
+    Buckazoids 25 [290]        pay the dinner bill at rm25 -> still needed at rm290
+
+Admitted by step 4, and the sites are `put: 8 -1` in both places:
+
+    rm25.sc:71    (if (not (-= global154 global244)) (gEgo put: 8 -1))   ; pay the bill
+    rm290.sc:48   (if (not (-- global154))           (gEgo put: 8 -1))   ; feed the machine
+
+**`Buckazoids` is a COUNTER PROXY, not an ordinary item.** `global154` holds the balance and the
+inventory entry is only the icon, so `put: 8 -1` means "the balance just hit zero", not "the item
+was destroyed" — and the guard says so explicitly. Step 4 reads it as a destruction to NOWHERE,
+which is literally what it is.
+
+The finding is not obviously wrong: `destroyed_is_permanent(8)` is False and `sources == [14, 470]`,
+so it survived only because rm25 is NOT in `reobtainable_rooms(8)` — from the restaurant you cannot
+reach either source. "Spend your last buckazoid on dinner and you cannot pay at rm290" is a
+coherent claim of exactly the class we hunt.
+
+**But SQ3 has no oracle, so it cannot be validated here.** Recorded rather than suppressed, and
+called out as the one behavioural change outside the target game. If it turns out to be noise, the
+cure is to model counter-proxy items as counters rather than to narrow step 4 — the step-4 reading
+of that statement is correct.
