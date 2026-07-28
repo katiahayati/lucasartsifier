@@ -290,6 +290,32 @@ def test_setscript():
           any(p and 490 not in p for p in sites(isel))
           and not any(p and 490 not in p for p in sites(None)), repr(sites(isel)))
 
+    # THE FOURTH SCOPE. A script that is neither room nor region still runs somewhere: in whatever
+    # room brings it to life. `setScript:` was the only spelling we counted, but `init:` on a
+    # cross-script object is the other, and it is how an NPC or a prop arrives:
+    #
+    #     rm240.init                (ScriptID 241 lampSeller) init:    -> script 241 lives in rm240
+    #     enterDungeon.changeState  (ScriptID 822 boyGhost)   init:    -> script 822 lives in rm820
+    #
+    # Script 822 holds the handkerchief's ONLY use and script 241 leads (via setScript, so
+    # transitively) to script 11, where the old lamp is traded away. Counting only `setScript:`
+    # left 183 of KQ6's 341 scripts with no home at all.
+    import opmodel as OP
+    em6 = OP.OpEmitter(I.load_ir(kq6[0]), config.KQ6, lambda *a: False) \
+        if hasattr(config, "KQ6") else None
+    if em6 is not None:
+        check("a script whose object a room `init:`s is homed to that room",
+              em6.armed_rooms.get(241) == {240} and em6.armed_rooms.get(822) == {820},
+              f"241={em6.armed_rooms.get(241)} 822={em6.armed_rooms.get(822)}")
+        check("...and the transitive closure carries setScript targets along with it",
+              em6.armed_rooms.get(11) == {240}, repr(em6.armed_rooms.get(11)))
+        # Both passes must agree on the scope. The MACHINE pass already used `armed_rooms`; the
+        # HANDLER pass did not, so a foreign script's cutscenes were lifted while its
+        # doVerb/handleEvent effects were dropped -- and the lamp's destruction is a doVerb.
+        check("the HANDLER pass uses the fourth scope too (same rule, one place)",
+              any(room == 240 and it == 19 for room, _s, it, _g, _d in em6.handler_drops),
+              repr([(r, i) for r, _s, i, _g, _d in em6.handler_drops if i == 19]))
+
     # `state_musts` splits its dataflow node by the machine's LOCALS. A cutscene decides something
     # early, remembers it in a local, and acts on it much later -- KQ6's tapestry tests
     # `seenSecretLatch` at state 2, keeps it in local1, and only opens the secret door at state 18.

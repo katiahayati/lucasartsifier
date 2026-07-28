@@ -26,6 +26,7 @@ import ir as I
 import machine as M
 import compile as C
 import vocab
+import extract as X
 from extract import extract, atom, item_transfer, item_transfers, _room_object, verb_param_scope, EGO
 from guard_ast import GAnd, GOr, GNot, Pred
 
@@ -146,8 +147,49 @@ class OpEmitter:
         # `nightMare` holds the ONLY newRoom into the realm of the dead and is never lifted at all.
         # Rooms/regions keep priority, so this only ever adds scripts that had no home.
         self.armed_rooms = {}
+        # ...and a script whose object another script puts IN THE CAST. `setScript:` is one way to
+        # bring a foreign script to life; `init:` is the other, and it is the one an NPC or a prop
+        # arrives by. KQ6 needs both, twice over:
+        #
+        #     rm240.init                (ScriptID 241 lampSeller) init:     -- the pawn-shop seller
+        #     enterDungeon.changeState  (ScriptID 822 boyGhost)   init:     -- the dungeon ghost boy
+        #
+        # Script 241 is where the old lamp is TRADED AWAY and script 822 is the handkerchief's only
+        # use, so both items had a source and a use in the game and neither in our model. Counting
+        # only `setScript:` left 183 of KQ6's 341 scripts with no home at all.
+        #
+        # Recognised through `extract.init_selectors`, the same per-class derivation `cast_conditions`
+        # uses, so a game's own aliases (`addToPic:` on the View family) come along and a `Cursor`'s
+        # `setLoop:` does not. Kept SEPARATE from `mb.arms` deliberately: that index answers "what
+        # are this machine's entries", which is a `setScript:` question, while this one answers
+        # "where does this script's code run", which is a scope question.
+        cast_refs = {}
+        isel = X.init_selectors(ir)
+        for rn, sc in ir.scripts.items():
+            for o in sc.objects:
+                for _mn, body in o.methods.items():
+                    for n in I.walk(body):
+                        if n.get("t") != "Send":
+                            continue
+                        try:
+                            recv, msgs = I.send_pairs(n)
+                        except Exception:                      # noqa: BLE001
+                            continue
+                        tgt = ir.script_id_target(recv)
+                        if not tgt or tgt[0] == rn:
+                            continue                           # same script: not a cross-script home
+                        to = ir.scripts.get(tgt[0])
+                        obj = to.by_name.get(tgt[1]) if to else None
+                        if obj is None:
+                            continue
+                        sels = isel.get(obj.species if obj.is_class else obj.super) or {"init"}
+                        if any(sel in sels for sel, _p in msgs):
+                            cast_refs.setdefault(tgt[0], set()).add(rn)
         for (tgt_script, _inst), sites in self.mb.arms.items():
             for (arm_script, _oname, _mn, _body) in sites:
+                cast_refs.setdefault(tgt_script, set()).add(arm_script)
+        for tgt_script, arms in cast_refs.items():
+            for arm_script in arms:
                 if arm_script in self.ts.rooms:
                     self.armed_rooms.setdefault(tgt_script, set()).add(arm_script)
                 for r in self.region_rooms.get(arm_script, ()):
@@ -169,8 +211,8 @@ class OpEmitter:
         # homeless, so three traded items had no source at all.
         for _round in range(6):
             grew = False
-            for (tgt, _inst), sites in self.mb.arms.items():
-                for (arm, _on, _mn, _b) in sites:
+            for tgt, arms in cast_refs.items():
+                for arm in arms:
                     via = self.armed_rooms.get(arm)
                     if via and not (via <= self.armed_rooms.get(tgt, set())):
                         self.armed_rooms.setdefault(tgt, set()).update(via)
@@ -266,6 +308,15 @@ class OpEmitter:
                 # against room 0 (as LSL2's already was); consumers that know Main is global
                 # widen it -- see missability.GLOBAL_SCRIPTS.
                 targets = {0}
+            elif self.armed_rooms.get(rn):
+                # ...and a script with no home of its own runs in the rooms that bring it to life,
+                # exactly as the MACHINE pass above already decided. This copy of the same rule was
+                # missing the fourth scope, so a foreign script's cutscenes were lifted while its
+                # `doVerb`/`handleEvent` effects were dropped on the floor. KQ6's old lamp is the
+                # case: `lampTradeScr::doVerb 5` does `(global0 put: 19)` -- no destination, i.e.
+                # SCI's NOWHERE -- which is the trade that destroys it, and the only reason the
+                # lamp can strand at all.
+                targets = self.armed_rooms[rn]
             else:
                 continue
             for room in targets:
