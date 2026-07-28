@@ -87,11 +87,19 @@ class IR:
         if not args or args[0] is None:
             return None
         idx = args[1] if len(args) > 1 and args[1] is not None else 0
-        s = self.scripts.get(args[0])
+        return self.export_target(args[0], idx)
+
+    def export_target(self, num, idx=0):
+        """`(script number, export index)` -> (script_number, object_name), else None.
+
+        Split out of `script_id_target` because `(ScriptID N)` is not the only way SCI names a
+        cross-script object: `setScript:` accepts the script NUMBER directly and does the lookup
+        itself. See `machine._setscript_target`."""
+        s = self.scripts.get(num)
         if s is None or idx >= len(s.exports):
             return None
         name = s.exports[idx]
-        return (args[0], name) if name else None
+        return (num, name) if name else None
 
     def find_class(self, name):
         for s in self.scripts.values():

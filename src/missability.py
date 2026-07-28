@@ -269,6 +269,11 @@ def build_maps(em):
     #
     # Per SITE, and a room keeps its source if ANY site is free: this only ever removes a
     # re-acquisition, never a first one.
+    # ...AND AN ACQUISITION YOU CAN ONLY REACH BY ARRIVING FROM SOMEWHERE THAT CANNOT REACH IT is
+    # not a source either. Same "per site, only ever removes an impossible one" discipline; the
+    # question it answers -- and why it is the previous-room register rather than a debug global --
+    # is in `_prev_impossible`. `edges` is complete by here; nothing below adds to it.
+    prev = prev_room_reg(em)
     mg = getattr(em, "machine_gets", set())
     for a in em.ts.acqs:
         # The same `get:` inside a `changeState` body is walked twice -- here with the body's own
@@ -276,10 +281,12 @@ def build_maps(em):
         # Matched by the emitting object, exactly as `edge_meta` matches a suppressed cs_edge.
         if (a.room, a.via, a.item) in mg:
             continue
-        if not _debug_gated(a.guard) and a.item not in _own_required(a.guard):
+        if (not _debug_gated(a.guard) and a.item not in _own_required(a.guard)
+                and not _prev_impossible(a.guard, a.room, prev, edges)):
             sources[a.item].add(a.room)
     for room, script, it, g in em.handler_gets:
-        if not _debug_gated(g) and it not in _own_required(g):
+        if (not _debug_gated(g) and it not in _own_required(g)
+                and not _prev_impossible(g, room, prev, edges)):
             sources[it].add(room)
     for info in em.machines:
         em_ = entry_musts(info)
@@ -589,6 +596,72 @@ def _must_hold(guard, out=None):
         except (TypeError, ValueError):
             pass
     return out
+
+
+def _must_equal(guard, out=None):
+    """`(reg, value)` pairs the guard REQUIRES to be EQUAL, along its top-level AND spine.
+
+    The mirror of `_must_hold`, which collects the `!=` assertions; same discipline and the same
+    reason for it. Stops at any negation or disjunction, because a conjunct under an OR is not
+    required and claiming it would let a caller delete something the game allows. The one negation
+    it does descend is `(not (!= x v))`, whose flip is computable because the operand is a leaf."""
+    out = set() if out is None else out
+    if isinstance(guard, list):
+        for g in guard:
+            _must_equal(g, out)
+    elif isinstance(guard, GAnd):
+        for k in guard.kids:
+            _must_equal(k, out)
+    elif isinstance(guard, Pred) and guard.kind == "CMP" and guard.op == "==":
+        try:
+            out.add((guard.var, int(guard.value)))
+        except (TypeError, ValueError):
+            pass
+    elif (isinstance(guard, GNot) and isinstance(guard.kid, Pred)
+          and guard.kid.kind == "CMP" and guard.kid.op == "!="):
+        try:
+            out.add((guard.kid.var, int(guard.kid.value)))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def _prev_impossible(guard, room, prev, edges):
+    """Does `guard` demand you arrived in `room` from somewhere that cannot reach it?
+
+    The previous-room register is written by no room and by every transition -- taking a->b sets it
+    to a -- so `prev == R` inside room X asserts "you got here from R", and the ROOM GRAPH already
+    knows whether that is possible. Nothing about items is involved, so this needs no fixpoint: it
+    can be asked while the maps are still being built.
+
+    What it is for: Sierra's developer warps. KQ6 hands out five items at once in
+    `rm470::init` under `(and global100 (== global12 99) (FileIO 10 {g}))`, and rm99 is the room
+    `Main::init` ends on -- so the branch is dead in play, but read permissively it is a free source
+    for the old lamp, the skull and the teacup, in a room you can always reach. rm740 and rm750 do
+    the same for the peppermint.
+
+    DERIVED, not a debug heuristic, and that distinction is load-bearing. The alternative was to
+    recognise KQ6's `(FileIO 10 <marker>)` probe and pin the global it sets, the way
+    `config.debug_globals` pins LSL2's. That is worse twice over: KQ6 sets `global90` from the very
+    same probe shape to detect the CD, so the recogniser would have to tell two identical idioms
+    apart -- and pinning the global also deletes the debug hand-out in `rm740.sc:261`, which sits
+    inside a LEGITIMATE `(== global12 180)` branch, leaving `royalRing` with no modelled source and
+    inventing a softlock the item oracle says is safe. Reading the previous room leaves that one
+    alone, because `prev == 180` IS satisfiable. Measured both ways.
+
+    Three conditions, all of them the conservative direction:
+      * the demand is on the top-level AND spine (`_must_equal`), so a `prev` test inside an OR or
+        under a negation -- where it is not required -- is ignored;
+      * we must actually KNOW where R goes (`R in edges`). A room we extracted no out-edge for is a
+        room we learned nothing about, and "no evidence" must not read as "cannot happen" -- that
+        is the direction that invents softlocks;
+      * and `room` must not be among them."""
+    if prev is None:
+        return False
+    for reg, val in _must_equal(guard):
+        if reg == prev and val in edges and room not in edges[val]:
+            return True
+    return False
 
 
 def guard_reqs(guard, regs, dom=None):
@@ -1920,6 +1993,14 @@ class IrSccReach(SccReach):
                 guards.append((None, info["room"]))
         dbg = frozenset(self.em.cfg.debug_globals)
         guards = [(g, r) for (g, r) in guards if not _debug_gated_guard(g, dbg)]
+        # ...and the same for an acquisition you could only reach by arriving from somewhere that
+        # cannot reach it. This list is re-derived from `ts.acqs` rather than read off `sources`,
+        # so `build_maps`' filters do NOT apply to it and each one has to be repeated here -- the
+        # recurring shape in this codebase, and the reason the skull's throw looked survivable:
+        # rm470's developer warp contributes an unconditional acquisition, and one unconditional
+        # alternative is all it takes to make a destruction look undoable.
+        prev = prev_room_reg(self.em)
+        guards = [(g, r) for (g, r) in guards if not _prev_impossible(g, r, prev, self.edges)]
         return bool(guards) and all(self._loc_required(g, item, r) for (g, r) in guards)
 
     def _groups(self):
@@ -1939,16 +2020,54 @@ class IrSccReach(SccReach):
             return sorted(r for r in self.reach_rooms if r in self.rooms and r != 0)
         return [sk["room"]]
 
+    NOWHERE = (-1, None)     # `(gEgo put: N)` with no destination -- SCI's owner = -1
+
+    def destroying_sinks(self):
+        """Consumptions admitted because the item goes NOWHERE, whatever else the clause does.
+
+        The SECOND way into `dangerous_sinks`, and it exists because `pure_sinks`' arms-nothing test
+        is a PROXY. What that test is really trying to say is "spending it here was the intended
+        move"; what it actually asks is "does this clause do anything at all", and a TRADE answers
+        yes. KQ6's old lamp is the counterexample:
+
+            lamps::doVerb 5   (gEgo put: 19)        ; the old lamp goes nowhere...
+                              (gEgo get: 25)        ; ...and you are handed a new one
+
+        The `get:` in the same clause makes it non-pure, so the destruction was invisible -- and the
+        peddler then LEAVES (`lampTradeScr.sc:192` sets flag 12, one writer, never cleared), so
+        there is no second trade. Meanwhile the old lamp is what `rm580::init` demands to cast the
+        rain spell instead of caging you: `(if (and (gEgo has: 19) (== global161 15)) makeRain else
+        inTheCage)`.
+
+        Deliberately narrow: only `put:` with NO destination. That is SCI's owner = -1, which no
+        `owner == gCurRoomNum` acquisition can ever satisfy again, so the loss is a fact rather than
+        an inference -- no re-obtainability reasoning is involved and none of `pure_sinks`' judgement
+        is being second-guessed. A `put:` to a ROOM is a different question (the item is lying
+        somewhere, and whether anything there can pick it up is a real question) and is left alone.
+
+        The "was it the intended move" worry is answered by `dangerous_sinks` itself rather than
+        here: an intended use does not leave the item still needed in a room you can still reach."""
+        seen = {(sk["room"], sk["script"], sk["item"]) for sk in self.pure_sinks()}
+        out = []
+        for room, script, it, g, dest in self.em.handler_drops:
+            if dest in self.NOWHERE and (room, script, it) not in seen:
+                out.append({"room": room, "script": script, "item": it, "dest": dest})
+        return out
+
     def dangerous_sinks(self):
-        """Pure sinks that COST you the game: the item is still needed somewhere you can still
+        """Consumptions that COST you the game: the item is still needed somewhere you can still
         reach, and once wasted it cannot be re-obtained. The action-shaped sibling of a room-gate
         stranding -- nothing about it is a movement edge, so `edge_strandings` cannot see it.
 
         LSL2: rm63 `apply rejuvenator to bolt` (-5 points, and the bolt does NOT open) and rm81
-        `drop rejuvenator` (-5) both destroy the bomb ingredient rm82 needs."""
+        `drop rejuvenator` (-5) both destroy the bomb ingredient rm82 needs.
+
+        Candidates come from two places, one danger test over both: `pure_sinks` (the clause
+        accomplishes nothing) and `destroying_sinks` (the item goes NOWHERE, whatever else the
+        clause accomplishes)."""
         uses = self.real_uses()
         out = []
-        for sk in self.pure_sinks():
+        for sk in self.pure_sinks() + self.destroying_sinks():
             it = sk["item"]
             for room in self._sink_rooms(sk):
                 ahead = (uses.get(it, set()) - {room}) & self.rooms_after(room)

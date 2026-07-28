@@ -106,13 +106,39 @@ def _is_cue_send(recv, msgs):
 def _setscript_target(param, ir=None):
     """The Script a `setScript:` param refers to, as `(script_or_None, name)`.
 
-    Three spellings: `henchScript` (an Object ref in the same script), `(henchScript new:)`
-    (a Send whose receiver is the Object), and `(ScriptID 344 3)` -- SCI's CROSS-SCRIPT
-    reference, which needs the export table to resolve and so is only available when an `ir`
-    is supplied. A `None` script means "this same script", which is all the first two can mean.
+    FOUR spellings: `henchScript` (an Object ref in the same script), `(henchScript new:)`
+    (a Send whose receiver is the Object), `(ScriptID 344 3)` -- SCI's CROSS-SCRIPT reference --
+    and a bare SCRIPT NUMBER. The last two need the export table to resolve and so are only
+    available when an `ir` is supplied. A `None` script means "this same script", which is all the
+    first two can mean.
 
     KQ6 arms 231 scripts this way and we resolved none of them, so every cutscene armed from
-    another script -- the realm-of-the-dead entry among them -- lost its guard."""
+    another script -- the realm-of-the-dead entry among them -- lost its guard.
+
+    THE NUMBER SPELLING, and it is derived from the game's own class table rather than assumed --
+    `KQ6Room::setScript` spells out what the interpreter does with a non-object argument:
+
+        (method (setScript param1 &tmp temp0)
+          (cond ((IsObject param1) (super setScript: param1 &rest))
+                ...
+                (else (super setScript: (ScriptID param1) &rest))))
+
+    so `setScript: N` IS `setScript: (ScriptID N)`, i.e. export 0 of script N. **Zero is not a
+    target**: `Actor::setScript` guards the delegation with `(if param1 ...)`, so `setScript: 0`
+    disposes the running script and arms nothing. That distinction is the whole safety story here --
+    all 77 of KQ4's integer `setScript:`s are `setScript: 0`, and LSL2 has none, so neither golden
+    can move. KQ6 has ~34 real targets, QFG-VGA 184, Dagger 33.
+
+    What it costs to miss: KQ6's `mixPaintScr` is script 915, armed `(gCurRoom setScript: 915)`
+    from the inventory under `(and flag68 flag58 (not flag22))`. Unresolved it has no entry at all,
+    so the magic paint reads as free -- and flag 58 is the Styx water, which you can only draw
+    during the Realm of the Dead's single visit."""
+    if isinstance(param, dict) and ir is not None:
+        n = I.as_int(param)
+        if n:                          # 0 = clear the slot, not a script number
+            got = ir.export_target(n)
+            if got:
+                return got
     if not isinstance(param, dict):
         return None
     if param.get("t") == "Object":
@@ -131,6 +157,29 @@ def _setscript_target(param, ir=None):
     return None
 
 
+def _local_conjuncts(guard):
+    """Room-LOCAL keys this guard requires to be non-zero, along its top-level AND spine.
+
+    `atom()` renders a bare `(if local1 ...)` as the tuple `('CTR', ('L', 1), '!=', 0)`, which is
+    the SCI spelling of "the player set this latch". Only the AND spine, and only locals: a test
+    under a negation or inside an OR is not required, and a TEMP is scratch within a single call so
+    it can never carry a latch from one handler to a later arming."""
+    out = set()
+
+    def walk(g):
+        if isinstance(g, list):
+            for k in g:
+                walk(k)
+        elif isinstance(g, GAnd):
+            for k in g.kids:
+                walk(k)
+        elif (isinstance(g, tuple) and len(g) == 4 and g[0] == "CTR"
+              and isinstance(g[1], tuple) and g[1][0] == "L" and g[2] == "!=" and g[3] == 0):
+            out.add(g[1])
+    walk(guard)
+    return out
+
+
 def _pc_covers(wpc, apc):
     """The write's path condition is a PREFIX of the arm's -- so whenever the arm fires, the write
     has already run and its value holds at machine start. Sibling leaves in one branch share the
@@ -145,6 +194,7 @@ class MachineBuilder:
         self.is_death = game_death        # (glob_index, value) -> bool
         self.procs_by = {}                # (script, proc-name) -> body, for call-following
         self._cast_cache = {}             # script number -> extract.cast_conditions(script)
+        self._local_cache = {}            # script number -> extract.local_write_conditions(script)
         self._entry_guard = {}            # (script, inst) -> the machine's entry disjunction, from
         #   the PREVIOUS pass. Empty until `prime` runs, which is the permissive answer. See prime.
         for rn, s in ir.scripts.items():
@@ -306,7 +356,69 @@ class MachineBuilder:
             self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn),
                                  owner=(X.cast_guard(self._cast(s2), oname) if s2 else None))
         self._drop_continuation_entries(m)
+        self._inherit_local_continuations(m, script)
         return m
+
+    def _inherit_local_continuations(self, m, script):
+        """An entry gated on a room LOCAL inherits the condition of whoever SETS that local.
+
+        The sibling of `_drop_continuation_entries`, and the same insight from the other side. That
+        one recognises a `cue` arming as the continuation of something already running and drops it;
+        this one recognises the LATCHED form -- one handler records what the player asked for, and a
+        later arming replays it -- and supplies the condition instead of discarding the entry.
+
+        SCI writes an interrupted action that way whenever walking to a thing can be pre-empted.
+        KQ6's rm520 is the specimen:
+
+            theHuntersLamp::doVerb 5   (= local1 1) (gEgo setScript: getLamp)  ; you clicked the lamp
+            rm520::doit                ... (self setScript: bravePond)         ; the pond pre-empts
+            bravePond::changeState 5   (cond (local1 (gEgo setScript: getLamp)) ...)  ; and resumes
+
+        Read standalone, that third arming is gated on nothing an item model can see, so `getLamp`
+        offers an alternative with no `LOC(19 ownedBy room)` in it -- and a destruction is permanent
+        only if EVERY way of re-acquiring demands the object still be lying there. One vacuous
+        alternative is enough to make trading the lamp away read as harmless, which is the whole
+        finding (the peddler leaves; there is no second trade).
+
+        Locals start at 0 in SCI, so "this local is non-zero" is EXACTLY the union of the writes
+        that made it so -- an identity, not an approximation. That is what makes strengthening an
+        entry legitimate here, and it is also what makes the bail-outs mandatory, because the
+        identity only holds if every write is accounted for. Strengthening an entry is the direction
+        that deletes real movement (it cost the scarf twice), so it stands down whenever the picture
+        is incomplete:
+          * only conjuncts on the top-level AND spine, where the test really is required;
+          * a write we cannot pin to a literal value (computed, incremented, decremented) is
+            reported by `local_write_conditions` as `None` and makes us stand down for that local;
+          * no non-zero writer found at all -> stand down (we learned nothing, which is not the
+            same as "it cannot happen");
+          * `any_guard` already yields None if any writer is unconditional, and None changes
+            nothing.
+        Temps are excluded: a temp is scratch within one call and cannot carry a latch between the
+        handler that sets it and the arming that reads it."""
+        loc = self._locals(script)
+        for i, (K, g) in enumerate(m.entries):
+            if g is None:
+                continue
+            extra = []
+            for key in _local_conjuncts(g):
+                writes = loc.get(key)
+                if not writes or any(v is None for v, _pc in writes):
+                    continue
+                pre = X.any_guard([pc for v, pc in writes if v != 0])
+                if pre is not None:
+                    extra.append(pre)
+            if extra:
+                m.entries[i] = (K, GAnd([g] + extra))
+
+    def _locals(self, script):
+        """`local_write_conditions` for a script, computed once -- `_build` runs per machine."""
+        c = self._local_cache.get(script.number)
+        if c is None:
+            c = self._local_cache[script.number] = X.local_write_conditions(
+                script, cast=self._cast(script),
+                proc_guard=lambda pn: X.any_guard(self.proc_calls.get(pn)),
+                machine_guard=lambda on: self._entry_guard.get((script.number, on)))
+        return c
 
     @staticmethod
     def _drop_continuation_entries(m):
@@ -389,6 +501,7 @@ class MachineBuilder:
                 break
             self._entry_guard = eg
             self._cast_cache.clear()
+            self._local_cache.clear()     # derived from the casts, so it goes stale with them
         return self
 
     def _cast(self, script):

@@ -554,6 +554,70 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None)
     return out
 
 
+def local_write_conditions(script, cast=None, proc_guard=None, machine_guard=None):
+    """`(vtype, index) -> [(value, guard|None)]`: the conditions under which this script sets a LOCAL.
+
+    The same question `cast_conditions` asks about `init:`, asked about a local assignment, and it
+    is asked for the same reason: SCI rooms use a local as a "what was the player doing" latch, and
+    an entry gated on that latch is not an independent way in -- it is the CONTINUATION of whoever
+    set it. `_drop_continuation_entries` already knows that shape for `cue`; this supplies the other
+    half, the condition to inherit.
+
+    KQ6's old lamp is the case. `theHuntersLamp::doVerb 5` sets `local1 := 1` and arms `getLamp`;
+    walking to the lamp crosses the boiling pond, so `rm520::doit` pre-empts with
+    `setScript: bravePond`, and `bravePond`'s last state re-arms `getLamp` iff `local1`. Read
+    standalone that second arming is gated on nothing an item model can see, which makes the
+    disjunction vacuous and the lamp look freshly obtainable forever -- so trading it to the peddler
+    (who then LEAVES) reads as harmless.
+
+    Carries the same two inherited conditions `cast_conditions` does, and for the same reasons: a
+    body has no path condition of its own when it is a PROCEDURE (it runs because something called
+    it) or a `changeState` (it runs because the machine was armed and got that far). It adds a
+    third, which `cast_conditions` gets from its caller instead: an object's method only runs when
+    the object is IN THE CAST, so a write inside `theHuntersLamp::doVerb` inherits
+    `((gInv at: 19) owner:) == gCurRoomNum` -- the fact that the lamp is still lying there. That is
+    the difference between "you can always do this" and "you can do this while it exists", and it
+    is the whole point for a one-time pickup.
+
+    Values are reported, not filtered: only the caller knows whether it cares about the set or the
+    clear (`getLamp`'s own last state writes `local1 := 0`). A `None` guard means unconditional.
+
+    A write whose VALUE we cannot pin to a literal -- a computed assignment, an increment, a
+    decrement -- is reported as value `None` rather than dropped. That is the difference between a
+    complete answer and a partial one, and a consumer that strengthens a guard from this needs to
+    know which it has: locals start at 0 in SCI, so "the local is non-zero" is exactly the union of
+    the writes that made it so, and that identity holds only if every write is accounted for. Drop
+    the ones we cannot read and the caller silently over-restricts."""
+    out = {}
+
+    def leaf_for(seed_owner):
+        def leaf(n, pc):
+            t = n.get("t")
+            if t in ("Increment", "Decrement"):
+                d = (n.get("kids") or [None])[0]
+                if isinstance(d, dict) and I.is_local_or_temp(d):
+                    out.setdefault((d["vtype"][0], d["index"]), []).append((None, _conj(pc)))
+                return
+            if t != "Assignment":
+                return
+            dst, src = (n.get("kids") or [None, None])[:2]
+            if not (isinstance(dst, dict) and I.is_local_or_temp(dst)):
+                return
+            out.setdefault((dst["vtype"][0], dst["index"]), []).append((I.as_int(src), _conj(pc)))
+        return leaf
+
+    for o in script.objects:
+        owner = cast_guard(cast, o.name) if cast else None
+        for mn, body in o.methods.items():
+            seed = [owner] if owner is not None else []
+            if machine_guard and mn == "changeState":
+                seed = seed + [machine_guard(o.name)]
+            walk_stream(body, seed, leaf_for(owner))
+    for pn, body in script.procs.items():
+        walk_stream(body, [proc_guard(pn)] if proc_guard else [], leaf_for(None))
+    return out
+
+
 def any_guard(gs):
     """OR a list of alternative path conditions, or None for "always / we did not find out".
 
