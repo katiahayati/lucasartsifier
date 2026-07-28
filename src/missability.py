@@ -1897,8 +1897,27 @@ class IrSccReach(SccReach):
         why barfing into the Airsick_Bag costs you the game at rm82 even though rm62 is still
         walkable. Note it does NOT make the item unobtainable for someone who simply never took
         it, so it is deliberately scoped to DESTRUCTION and leaves the stranding sweep alone."""
-        guards = [(a.guard, a.room) for a in self.em.ts.acqs if a.item == item]
+        mg = getattr(self.em, "machine_gets", set())
+        guards = [(a.guard, a.room) for a in self.em.ts.acqs
+                  if a.item == item and (a.room, a.via, a.item) not in mg]
         guards += [(g, room) for room, script, it, g in self.em.handler_gets if it == item]
+        # ...and a pickup the game performs inside a CUTSCENE, whose condition is on the way IN.
+        # The flat walk sees `(gEgo get: N)` in a `changeState` body with no path condition at all,
+        # so read alone every cutscene pickup looks unconditional and NOTHING is ever permanent.
+        # KQ6's old lamp is the case: `rm520.init` only puts `theHuntersLamp` in the cast under
+        # `((gInv at: 19) owner:) == gCurRoomNum`, and `getLamp` -- armed from that object's doVerb
+        # -- is what actually hands it over. Trade the lamp to the peddler and he LEAVES (flag 12,
+        # one writer, never cleared), so the destruction is final and this is the only place that
+        # can know it. Entries are ALTERNATIVES, so the acquisition is location-gated only if every
+        # one of them is; a machine with no entry contributes an unconditional acquisition, which is
+        # the permissive answer.
+        for info in self.em.machines:
+            if not any(item in gg for paths in info["states"].values()
+                       for (_g, _w, gg, _c, _tr) in paths):
+                continue
+            ents = [eg for (_seen, eg, _loc) in _entry_reach_walk_of(info)]
+            guards.extend((eg, info["room"]) for eg in ents) if ents else \
+                guards.append((None, info["room"]))
         dbg = frozenset(self.em.cfg.debug_globals)
         guards = [(g, r) for (g, r) in guards if not _debug_gated_guard(g, dbg)]
         return bool(guards) and all(self._loc_required(g, item, r) for (g, r) in guards)
