@@ -139,6 +139,7 @@ class MachineBuilder:
         self.ir = ir
         self.is_death = game_death        # (glob_index, value) -> bool
         self.procs_by = {}                # (script, proc-name) -> body, for call-following
+        self._cast_cache = {}             # script number -> extract.cast_conditions(script)
         for rn, s in ir.scripts.items():
             for name, body in s.procs.items():
                 self.procs_by[(rn, name)] = body
@@ -161,7 +162,7 @@ class MachineBuilder:
                             continue
                         tgt = _setscript_target(params[0], ir)
                         if tgt and tgt[0] is not None and tgt[0] != rn:
-                            self.arms.setdefault(tgt, []).append((rn, mn, body))
+                            self.arms.setdefault(tgt, []).append((rn, _oname, mn, body))
 
     def machines(self, script):
         out = []
@@ -227,7 +228,9 @@ class MachineBuilder:
         # changeState body -- hench1Script state1 -> henchScript). These START m at state 0.
         # The extractor dropped them, so setScript-driven machines (the henchmen chasers, the
         # bottle) never ran -- which is WHY the absent-start fall-through hack was needed.
+        cast = self._cast(script)
         for other in script.objects:
+            owner = X.cast_guard(cast, other.name)   # in the cast only when...? see cast_conditions
             for mn, body in other.methods.items():
                 # If the arming site is inside ANOTHER machine's changeState, remember whose AND
                 # at which state: that machine's preconditions up to that point are ours too, and
@@ -244,9 +247,10 @@ class MachineBuilder:
                         if k is None:
                             continue
                         self._scan_setscript(c["kids"][1], [], m, source=mn,
-                                             armer=(other.name, k))
+                                             armer=(other.name, k), owner=owner)
                     continue
-                self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn))
+                self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn),
+                                     owner=owner)
         # ...and this script's own PROCEDURES, which were never scanned at all. A machine armed
         # from a proc in its own script had no entry whatever: KQ6's realm cutscene is armed by
         # `proc344_1`, and the item-state test guarding it went with it.
@@ -256,12 +260,14 @@ class MachineBuilder:
         # Deduplicated per body: one method can arm the same machine on several branches, and
         # _scan_setscript already records one entry per arming site within a body.
         seen = set()
-        for (arm_script, mn, body) in self.arms.get((script.number, m.inst), ()):
+        for (arm_script, oname, mn, body) in self.arms.get((script.number, m.inst), ()):
             key = (arm_script, mn, id(body))
             if key in seen:
                 continue
             seen.add(key)
-            self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn))
+            s2 = self.ir.scripts.get(arm_script)
+            self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn),
+                                 owner=(X.cast_guard(self._cast(s2), oname) if s2 else None))
         self._drop_continuation_entries(m)
         return m
 
@@ -315,7 +321,14 @@ class MachineBuilder:
         s, name = tgt
         return name == m.inst and (s is None or s == m.script)
 
-    def _scan_setscript(self, node, pc, m, source, armer=None):
+    def _cast(self, script):
+        """`cast_conditions` for a script, computed once -- `_build` runs per machine."""
+        c = self._cast_cache.get(script.number)
+        if c is None:
+            c = self._cast_cache[script.number] = X.cast_conditions(script)
+        return c
+
+    def _scan_setscript(self, node, pc, m, source, armer=None, owner=None):
         """Find `(x setScript: <ref>)` where <ref> is m, record an entry to m at state 0 with the
         path condition, AND carry the LOCAL WRITES the arming context made before the setScript. A
         machine reads its own script's locals, so a local the arming branch set gates the machine's
@@ -358,7 +371,9 @@ class MachineBuilder:
                     loc[e[1]] = e[2]
             if len(ev) > 2 and ev[2] is not None:
                 loc[X.REG_KEY] = ev[2]            # the `register` this arming selected
-            self._add_entry(m, 0, _conj(apc), loc, source == "init", armer, source)   # init entries
+            # ...and the arming cannot be freer than the object whose method it sits in: a method
+            # of an object the room only conditionally `init:`s only runs under that condition.
+            self._add_entry(m, 0, _conj(apc + [owner]), loc, source == "init", armer, source)
             #   are ADDITIONALLY bundled onto room arrival, not instead -- still normal entries too
 
     def _add_entry(self, m, state, guard, locals_, is_init, armer=None, source=None):

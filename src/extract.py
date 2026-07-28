@@ -414,6 +414,76 @@ def walk_stream(node, pc, on_leaf, on_loop=None, undecided=None):
         walk_stream(k, pc, on_leaf, on_loop, undecided)
 
 
+def cast_conditions(script):
+    """`objname -> [guard|None]`: the conditions under which this script puts an object IN THE CAST.
+
+    An object that is not `init:`ed does not exist for the player -- it cannot be clicked, cued or
+    animated -- so anything its methods would have done is gated on whatever gated its `init`. That
+    is the same principle `Extractor._inherit_arming` applies to EDGES (`init` is in `ARMING`); this
+    is the reusable form of it, so a consumer that is not walking rooms can ask the same question.
+    KQ6's rm340 needs it:
+
+        (if (proc913_0 1) (= local2 23) (minoOpening init:) else (= local2 20))
+
+    `minoOpening` is the cave mouth to the minotaur's lair, and its `doVerb` arms `goToLair`. It is
+    in the cast ONLY once the minotaur is dead, which is exactly what the room's `doit` says on the
+    other route in (`(and (== (gEgo onControl: 1) 512) (proc913_0 1))`). Miss it and the lair has an
+    unguarded entrance, so the catacombs can be beaten carrying nothing.
+
+    Both `init` spellings, because Sierra uses them interchangeably in the same method:
+      * `(minoOpening init:)`               -- the object is the receiver
+      * `(<list> add: a b c eachElementDo: #init)` -- one send, `add:` naming the objects and
+        `eachElementDo:` naming the selector. Recognised by the `init` SELECTOR argument, not by
+        the list's name, so any collection works.
+
+    Only objects DECLARED in this script are reported: `self`, `super` and the globals a room sends
+    `init:` to are not things whose methods we are about to attribute. A `None` in the list means an
+    unconditional init -- consumers must treat that as "always in the cast", which is the permissive
+    answer and the reason this is inert almost everywhere."""
+    declared = {o.name for o in script.objects}
+    out = {}
+
+    def leaf(n, pc):
+        if n.get("t") != "Send":
+            return
+        recv, msgs = I.send_pairs(n)
+        rname = recv.get("name") if isinstance(recv, dict) else None
+        bulk = any(sel == "eachElementDo"
+                   and any(isinstance(p, dict) and p.get("t") == "Selector"
+                           and p.get("name") == "init" for p in params)
+                   for sel, params in msgs)
+        for sel, params in msgs:
+            if sel == "init" and rname in declared:
+                out.setdefault(rname, []).append(_conj(pc))
+            if bulk:
+                for p in params:
+                    if (isinstance(p, dict) and p.get("t") == "Object"
+                            and p.get("name") in declared):
+                        out.setdefault(p["name"], []).append(_conj(pc))
+
+    for o in script.objects:
+        for body in o.methods.values():
+            walk_stream(body, [], leaf)
+    for body in script.procs.values():
+        walk_stream(body, [], leaf)
+    return out
+
+
+def cast_guard(conds, name):
+    """The condition under which `name` is in the cast, or None for "always / do not know".
+
+    None is returned both when the object is never init'ed anywhere in the script and when any one
+    init site is unconditional. The second is obvious; the first is deliberate and NARROW: plenty of
+    objects join the cast without a send we can see -- the room object itself, and the `Actions`
+    handlers a room hands to the ego (`(gEgo actions: egoDoVerb init:)`) -- so "no init site" means
+    "we did not find out", not "absent". Strengthening a guard on a non-observation is the direction
+    that invents softlocks."""
+    gs = conds.get(name)
+    if not gs or any(g is None for g in gs):
+        return None
+    return gs[0] if len(gs) == 1 else GOr(list(gs))
+
+
 def _send_atom(n):
     ip = item_prop_read(n)          # `(if ((Inv at: 15) loop:) {Broken Shovel} ...)`
     if ip is not None:

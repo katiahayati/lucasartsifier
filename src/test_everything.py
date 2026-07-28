@@ -170,6 +170,35 @@ def test_setscript():
     check("...and a class receiver is eligible (SCI1.1 regions are classes)",
           "hiddenDoorOpen" in r30, sorted(r30))
 
+    # An object the room inits only under a CONDITION can only be interacted with under that
+    # condition, so a machine armed from its methods inherits it. KQ6's rm340 keeps the cave mouth
+    # to the minotaur's lair out of the cast until the minotaur is dead --
+    # `(if (proc913_0 1) (= local2 23) (minoOpening init:) else (= local2 20))` -- and
+    # `minoOpening::doVerb` is what arms `goToLair`. Without this the lair has an unguarded
+    # entrance and the catacombs can be beaten carrying nothing.
+    cast = X.cast_conditions(kir.scripts[340])
+    check("a conditionally-init'ed object reports its cast condition",
+          X.cast_guard(cast, "minoOpening") is not None, repr(cast.get("minoOpening")))
+    check("...an object init'ed in a bulk `add: ... eachElementDo: #init` is IN the cast",
+          "labDoor" in cast and "theDoor" in cast, sorted(cast))
+    check("...and unconditionally-init'ed objects contribute nothing",
+          X.cast_guard(cast, "labDoor") is None and X.cast_guard(cast, "nosuchobject") is None)
+    # On a flag-LOWERED IR the shared condition is visible as one synthetic global, so assert the
+    # thing that matters: the `doit` arming (`(and (== onControl 512) (proc913_0 1))`) and the
+    # `doVerb` arming (gated only by the conditional `init:`) demand the SAME flag. Before the cast
+    # rule the doVerb entry was a bare `opaque()`, which made the disjunction vacuous.
+    kir3 = I.load_ir(kq6[0])
+    fl = V2.derive_flags(kir3)
+    base = V2.lower_flags(kir3, fl[0], fl[1])[0] if fl else None
+    X.install_vocabulary(kir3)
+    lair = next((x for x in MA.MachineBuilder(kir3, lambda *a: False)
+                 .machines(kir3.scripts[340]) if x.inst == "goToLair"), None)
+    want = f"{base + 1}!=0"            # flag 1 = "the minotaur is dead"
+    check("every arming of KQ6's goToLair carries the minotaur flag",
+          base is not None and lair is not None and len(lair.entries) > 1
+          and all(g is not None and want in str(g) for _k, g in lair.entries),
+          repr([str(g)[:70] for _k, g in (lair.entries if lair else [])]))
+
 # ---- Part 3: fall-through hack removed (no free start bypass) ------------
 def test_no_fallthrough_bypass():
     print("Part 3: start-state fall-through hack removed")

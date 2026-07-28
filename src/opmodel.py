@@ -145,7 +145,7 @@ class OpEmitter:
         # Rooms/regions keep priority, so this only ever adds scripts that had no home.
         self.armed_rooms = {}
         for (tgt_script, _inst), sites in self.mb.arms.items():
-            for (arm_script, _mn, _body) in sites:
+            for (arm_script, _oname, _mn, _body) in sites:
                 if arm_script in self.ts.rooms:
                     self.armed_rooms.setdefault(tgt_script, set()).add(arm_script)
                 for r in self.region_rooms.get(arm_script, ()):
@@ -168,7 +168,7 @@ class OpEmitter:
         for _round in range(6):
             grew = False
             for (tgt, _inst), sites in self.mb.arms.items():
-                for (arm, _mn, _b) in sites:
+                for (arm, _on, _mn, _b) in sites:
                     via = self.armed_rooms.get(arm)
                     if via and not (via <= self.armed_rooms.get(tgt, set())):
                         self.armed_rooms.setdefault(tgt, set()).update(via)
