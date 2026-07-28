@@ -114,6 +114,20 @@ KQ4 = GameConfig(
     debug_globals=frozenset(),
 )
 
+KQ6 = GameConfig(
+    name="King's Quest VI: Heir Today, Gone Tomorrow (SCI1.1, DOS/English)",
+    src_dir=os.path.join(_ROOT, "build", "sweep", "kq6", "src"),
+    ir_path=os.path.join(_ROOT, "build", "sweep", "kq6", "Kings Quest 6.ir.json"),
+    resource_dir=os.path.expanduser("~/sierra/Games/Kings Quest 6"),
+    # Everything else DISCOVERED, as for the other two. Named here only so the KQ6 oracle test and
+    # the snapshot tool can reach it the same way they reach LSL2 and KQ4, instead of each caller
+    # hand-rolling a GameConfig from a glob. Paths only -- no game logic, per this file's contract.
+    start_room=0,
+    goal_rooms=frozenset(),
+    death_signal=(),          # DERIVED -> the SCI1.1 death-dialog signal (see vocab.derive_death_sci11)
+    debug_globals=frozenset(),
+)
+
 # The config the pipeline runs against. Swap this (or set it from run.py) to target
 # a different game.
 ACTIVE = LSL2

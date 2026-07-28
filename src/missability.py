@@ -258,17 +258,38 @@ def build_maps(em):
         w(guard)
         return bool(refs)
     sources, drops = defaultdict(set), defaultdict(set)
+    # AN ACQUISITION YOU CAN ONLY REACH WHILE ALREADY HOLDING THE ITEM IS NOT A SOURCE. Sierra
+    # writes "take it back down" with the very same `get:` as "pick it up", and the only thing
+    # separating them is the condition: KQ6's hole-in-the-wall sticks onto any wall you like and
+    # comes off again, so `get: 18` appears in the labyrinth's shared script and thus in EVERY
+    # maze room, and the model believed the hole was freshly obtainable throughout the trap it is
+    # needed to escape. The take-back is armed from an object that only exists because you put the
+    # hole up (see `cast_conditions`), so its entry demands own(18) -- and something you must
+    # already have is not something a room GIVES you.
+    #
+    # Per SITE, and a room keeps its source if ANY site is free: this only ever removes a
+    # re-acquisition, never a first one.
+    mg = getattr(em, "machine_gets", set())
     for a in em.ts.acqs:
-        if not _debug_gated(a.guard):
+        # The same `get:` inside a `changeState` body is walked twice -- here with the body's own
+        # path condition (nothing) and by the machine lift, which knows what arming it costs.
+        # Matched by the emitting object, exactly as `edge_meta` matches a suppressed cs_edge.
+        if (a.room, a.via, a.item) in mg:
+            continue
+        if not _debug_gated(a.guard) and a.item not in _own_required(a.guard):
             sources[a.item].add(a.room)
     for room, script, it, g in em.handler_gets:
-        if not _debug_gated(g):
+        if not _debug_gated(g) and it not in _own_required(g):
             sources[it].add(room)
     for info in em.machines:
+        em_ = entry_musts(info)
         for K, paths in info["states"].items():
             for (g, w, gg, c, tr) in paths:
+                # ...and what EVERY way of arming this machine demands you already hold.
+                must = em_.get(K, frozenset())
                 for it in gg:
-                    sources[it].add(info["room"])
+                    if it not in must | _own_required(g):
+                        sources[it].add(info["room"])
 
     # BULK transfers -- the whole inventory at once, written as a walk of the Inv list setting
     # each item's `owner:`. KQ4 confiscates everything at rm92 (captured) and rm81 (the wedding
@@ -1095,6 +1116,31 @@ def _entry_reach_walk_of(info):
     return info.get("_entry_reach") or []
 
 
+def entry_musts(info):
+    """State K -> the items you must be holding to arm this machine at all, by ANY route.
+
+    `entry_alts` is the DNF of ways in; an item you cannot avoid is one that appears in every
+    alternative, which is exactly `blocked(alts, {item})`. Stated as a set so callers that need
+    the items rather than the yes/no can have them.
+
+    What it is for: a cutscene's body usually carries no path condition at all -- the decision was
+    made where the machine was started -- so read alone its effects are free. KQ6's `lookInHole`
+    writes `seenSecretLatch`, which is what eventually opens the minotaur's lair and so the only
+    way out of the catacombs, and it is armed by clicking a hole that exists only because you
+    carried the hole-in-the-wall in and put it up. Its sibling `getTheHole` hands item 18 straight
+    back, which is not the labyrinth GIVING you the hole.
+
+    The reading inside one entry is `_own_positive`, inherited from `entry_alts` and deliberately
+    the same one `edge_meta`/`blocked` have always used to gate an EXIT on its machine's arming: a
+    positive mention of own(X) anywhere in the guard is evidence the action presupposes X. That is
+    a mention, not a proof, so it can over-state -- which is why it is intersected over every
+    alternative, and why the consumers that subtract on it (a source, a register's cost) keep the
+    room or the write whenever ANY other site is free."""
+    ea = entry_alts(info)
+    return {K: (frozenset(set.intersection(*[set(a) for a in alts])) if alts else frozenset())
+            for K, alts in ea.items()}
+
+
 def blocked(alts, banned):
     """Is an edge with these DNF alternatives blocked when `banned` items are unavailable?"""
     return bool(alts) and all(a & banned for a in alts)
@@ -1280,6 +1326,17 @@ class IrSccReach(SccReach):
         self._inroom_own = {}
         regset = set(self.regs)
         dbg = frozenset(em.cfg.debug_globals)
+
+        def cheapest(key, cost):
+            """Record what this write costs, keeping the CHEAPEST route when a room has several.
+
+            Same composition `_reg_cost`/`value_cost` already apply across rooms -- you may make
+            the register take the value whichever way suits you, so the requirement is the
+            intersection. Per room it used to be first-writer-wins, which is arbitrary in a room
+            where one script gates the write and another does not."""
+            cost = frozenset(cost)
+            self._inroom_own[key] = (self._inroom_own[key] & cost
+                                     if key in self._inroom_own else cost)
         for room, script, gi, v, g in em.handler_writes:
             # A debug-gated write is not real availability -- the same reason `build_maps` skips
             # debug-gated ACQUISITIONS (rm82's `if gDebugging` hands over the whole bomb). Applied
@@ -1290,7 +1347,7 @@ class IrSccReach(SccReach):
             # move it; KQ4 has 12 across 8 registers, among them global100 (night) and global109.
             if gi in regset and not _debug_gated_guard(g, dbg):
                 self._inroom[gi][room].add(v)
-                self._inroom_own[(gi, room, v)] = frozenset(_own_positive(g))
+                cheapest((gi, room, v), _own_positive(g))
         # MACHINE writes, with the machine's own entry guard on the SAME register kept as an
         # ordering. KQ4 dispatches Lolotte's conversations with `(switch global109 (1 lotTalk3)
         # (2 lotTalk4) (3 lotTalk5))`, and each writes the next value -- so lotTalk4 is a
@@ -1317,10 +1374,11 @@ class IrSccReach(SccReach):
             for gi, v in vs.items():
                 if gi in regset:
                     self._inroom[gi][room].add(v)
-                    self._inroom_own.setdefault((gi, room, v), frozenset())
+                    cheapest((gi, room, v), ())
         self._rstep = {R: defaultdict(set) for R in self.regs}
         for info in em.machines:
             entries = list(info.get("entries", ())) + list(info.get("init_entries", ()))
+            emust = entry_musts(info)
             gates = {}
             for R in self.regs:
                 rvs = [required_values(eg, R) for _, eg in entries]
@@ -1343,8 +1401,13 @@ class IrSccReach(SccReach):
                         # `hiddenDoorOpen` -- the secret door to the minotaur's lair -- and every
                         # arming of that cutscene pins the same flag, so the write went to `_rstep`
                         # and the hole-in-the-wall it depends on was dropped on the floor.
-                        self._inroom_own.setdefault((gi, info["room"], v),
-                                                    frozenset(_own_positive(g)))
+                        #
+                        # A write inside a cutscene costs whatever ARMING the cutscene costs, too
+                        # -- see `entry_musts`. The path condition inside a `changeState` body is
+                        # usually empty, the decision having been made where the machine was
+                        # started, so reading only that made every cutscene effect free.
+                        cheapest((gi, info["room"], v),
+                                 _own_positive(g) | emust.get(K, frozenset()))
         self._joints = []
         self._apply_death_traps()
         self._own_fixpoint()

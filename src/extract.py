@@ -631,6 +631,10 @@ class Acq:
     item: int
     room: int
     guard: object = None
+    via: str = ""              # object whose method emitted it -- the same key `Edge.via` uses.
+    #   A `get:` inside a `changeState` body is walked BOTH here (with the body's own path
+    #   condition, i.e. nothing) and by the machine lift (which knows what it costs to arm the
+    #   cutscene at all). Naming the emitter lets `build_maps` recognise the two as one statement.
 
 
 @dataclass
@@ -1811,7 +1815,7 @@ class Extractor:
                 for tr in item_transfers(recv, sel, params):
                     if tr[1] == EGO:
                         self.ts.items.add(tr[0])
-                        self.ts.acqs.append(Acq(tr[0], room, _conj(pc)))
+                        self.ts.acqs.append(Acq(tr[0], room, _conj(pc), self._cur_obj))
                     elif isinstance(tr[1], int) and tr[1] > 0:
                         # a transfer to a ROOM (not the ego, not -1/nowhere): the item is PLACED
                         # there. The owner state's transition to a location -- see TS.placed.

@@ -79,6 +79,38 @@ def test_entry_alts():
           M.entry_alts(m3)[20] == () and not M.blocked(M.entry_alts(m3)[20], frozenset({30})))
 
 
+def test_entry_musts():
+    """What a cutscene's own effects cost: whatever arming it at all costs.
+
+    A `changeState` body carries no path condition of its own, so an item gate on the way IN is the
+    only thing that can price a write or a `get:` inside it. `entry_musts` is `entry_alts` read as
+    "what no alternative avoids" -- the item twin of `blocked`."""
+    print("\n-- entry_musts() --")
+    states = {0: [([], [], [], [], ("ADVANCE",))],
+              1: [([], [(900, 1)], [7], [], ("ADVANCE",))]}
+    one = _machine(states, entries=[(0, [_own(30)])])
+    check("a single gated arming prices every state it reaches",
+          M.entry_musts(one)[1] == frozenset({30}))
+    rival = _machine(states, entries=[(0, [_own(30)]), (0, [_own(31)])])
+    check("RIVAL armings are alternatives, so neither item is unavoidable",
+          M.entry_musts(rival)[1] == frozenset())
+    both = _machine(states, entries=[(0, [_own(30), _own(31)])])
+    check("one arming needing two items makes both unavoidable",
+          M.entry_musts(both)[1] == frozenset({30, 31}))
+    free = _machine(states, entries=[(0, [_own(30)]), (0, [])])
+    check("an UNCONDITIONAL arming makes the cutscene free",
+          M.entry_musts(free)[1] == frozenset())
+    none = _machine(states, entries=[])
+    check("no entry at all costs nothing (never over-price)",
+          M.entry_musts(none)[1] == frozenset())
+    # ...and this is exactly `blocked` on the same alternatives, which is the point: an acquisition
+    # you can only reach while holding the item is a TAKE-BACK, and a cutscene you cannot start is
+    # a cutscene whose register writes you cannot make.
+    check("...and it agrees with blocked() over the same alternatives",
+          all(M.blocked(M.entry_alts(m)[1], frozenset({30})) == (30 in M.entry_musts(m)[1])
+              for m in (one, rival, both, free, none)))
+
+
 class _Stub:
     """Minimal OpEmitter stand-in for gating_registers()."""
     class _TS:
@@ -239,6 +271,7 @@ def run():
     print("=== test_gate_aware ===")
     test_blocked()
     test_entry_alts()
+    test_entry_musts()
     test_required_values()
     test_gating_registers()
     test_goal_reachability_traps()

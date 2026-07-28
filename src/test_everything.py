@@ -234,6 +234,62 @@ def test_setscript():
           and all(g is not None and "own(18)" in str(g) for _k, g in hw.entries),
           repr([str(g)[:80] for _k, g in (hw.entries if hw else [])]))
 
+    # AN `init:` INSIDE A `changeState` INHERITS THAT MACHINE'S ENTRY. The body has no path
+    # condition of its own -- it runs because the machine was armed and got that far -- which is
+    # the same rule the PROCEDURE case above applies, with a different supplier. KQ6's rm407 puts
+    # the hole-in-the-wall on the wall in `putHoleOnWall` (armed from `doVerb 25`, i.e. from USING
+    # the hole) and inits `theHole` at state 2, so looking through it -- how you learn where the
+    # minotaur's lair is -- costs own(18). Read standalone that init is unconditional and free.
+    import missability as MI
+    bprime = MA.MachineBuilder(kir3, lambda *a: False).prime()
+    cast407 = bprime._cast(kir3.scripts[407])
+    check("an object init'ed inside a cutscene inherits the cutscene's entry",
+          "own(18)" in str(X.cast_guard(cast407, "theHole")),
+          repr(X.cast_guard(cast407, "theHole")))
+    check("...and unprimed, the same init reads as unconditional (pass 0 is the old behaviour)",
+          X.cast_guard(MA.MachineBuilder(kir3, lambda *a: False)._cast(kir3.scripts[407]),
+                       "theHole") is None)
+    look = next((x for x in bprime.machines(kir3.scripts[407]) if x.inst == "lookInHole"), None)
+    check("...so the machine armed from that object's doVerb carries the item too",
+          look is not None and look.entries
+          and all(g is not None and "own(18)" in str(g) for _k, g in look.entries),
+          repr([str(g)[:80] for _k, g in (look.entries if look else [])]))
+
+    # `addToPic:` IS an init -- the game's own class table says so (`View::addToPic` is
+    # `(if (global5 contains: self) ... else (self init:))`). Derived per CLASS, because
+    # `Cursor::setLoop` and `Talker::say` also init self and unioning the names would make the
+    # cast rule vacuous. Without it KQ6's rm480 -- which inits the gates when you arrive from
+    # rm490 and `addToPic:`s them otherwise -- looked as though its gates were only clickable
+    # once you had already been through them, stranding the red scarf behind its own door.
+    isel = X.init_selectors(kir3)
+    byname = {o.name: o for s in kir3.scripts.values() for o in s.objects if o.is_class}
+    view, cursor = byname.get("View"), byname.get("Cursor")
+    check("addToPic is derived as an init for the View family",
+          view is not None and "addToPic" in isel.get(view.species, ()),
+          repr(sorted(isel.get(view.species, ())) if view else None))
+    check("...and a Cursor's own init-aliases stay on the Cursor",
+          cursor is not None and "setLoop" in isel.get(cursor.species, ())
+          and "setLoop" not in isel.get(view.species, ()),
+          repr(sorted(isel.get(cursor.species, ())) if cursor else None))
+    # rm480 spells it `(if (== global12 490) (gates ... init:) else (gates ... addToPic:))`, so
+    # with `addToPic` counted the two branches are complementary and the disjunction constrains
+    # nothing; without it only the `init:` arm is a cast site and the gates demand `prev == 490`
+    # -- a requirement to have already been where they take you. Asserted through `structural_reqs`
+    # because that is the reading a cast guard is COMPOSED with, and a tautology is only visible
+    # there (`any_guard` cannot fold `A or not A`).
+    mg = lambda on: bprime._entry_guard.get((480, on))
+    pg = lambda pn: X.any_guard(bprime.proc_calls.get(pn))
+    PREV, dom = 12, {12: {0, 480, 490}}
+    prev_of = lambda g: MI.structural_reqs(g, {PREV}, dom).get(PREV)
+    sites = lambda sels: [prev_of(g) for g in
+                          X.cast_conditions(kir3.scripts[480], proc_guard=pg, machine_guard=mg,
+                                            init_sels=sels).get("gates", ())]
+    check("the `init:` branch is the one that demands you arrived from rm490",
+          {490} in sites(isel) and {490} in sites(None), repr(sites(None)))
+    check("...and counting addToPic recovers the `else` branch that covers it",
+          any(p and 490 not in p for p in sites(isel))
+          and not any(p and 490 not in p for p in sites(None)), repr(sites(isel)))
+
     # `state_musts` splits its dataflow node by the machine's LOCALS. A cutscene decides something
     # early, remembers it in a local, and acts on it much later -- KQ6's tapestry tests
     # `seenSecretLatch` at state 2, keeps it in local1, and only opens the secret door at state 18.

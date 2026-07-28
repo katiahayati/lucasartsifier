@@ -330,6 +330,16 @@ class OpEmitter:
         for info in self.machines:
             for dst in info.get("delivered", ()):
                 self.machine_delivered.add((info["room"], dst))
+        # ...and the ACQUISITIONS they make, keyed the same way. `extract` walks a changeState body
+        # for items too (`movement=False` suppresses only its exits), so the same `get:` arrives
+        # twice: once flat and guardless, once through the machine, which knows what arming the
+        # cutscene costs. Only the second reading can tell a first pickup from a take-back.
+        self.machine_gets = set()
+        for info in self.machines:
+            for paths in info["states"].values():
+                for (_g, _w, gg, _c, _tr) in paths:
+                    for it in gg:
+                        self.machine_gets.add((info["room"], info["inst"], it))
 
         # Control-map oracle FIRST (reads the PIC control plane + VIEW cels, not declared):
         #  - prop-gate  (rm82): machine EXIT->83 requires causedEruption (the aDoor Prop covers
