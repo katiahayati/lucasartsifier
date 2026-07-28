@@ -23,7 +23,7 @@ believe you can go back) · `not required` · `no source`.
 
 | candidate | where it binds | real? | model (2026-07-27) | state |
 |---|---|---|---|---|
-| **tinderbox** | B1 carry-IN | **YES** | ✗ MISS | required, judged reachable — src rm280, needed rm340/370/390/406. (The old "no source" note is FIXED: the pawn-shop `owner:` trade now resolves.) |
+| **tinderbox** | B1 carry-IN | **YES** | ✓ **CAUGHT 2026-07-28** | frontier rm340→rm370/405/440; src rm280, needed rm340/370/390/406. The dark room is the only descent, and the death there is cancelled only by lighting it |
 | **teacup** | B3 carry-IN / water carry-OUT | **YES** (long path) | ✗ MISS | required, judged reachable — src rm470/480, needed rm230/340/470/660 |
 | **mirror** | B3 carry-IN | **YES** | ✓ **CAUGHT 2026-07-27** | frontier rm155→rm600 / rm680→rm690 (the realm entry, and the step into the Lord's chamber); src rm540/605/740, needed rm690 |
 | **handkerchief** | B3 → B4 carry-OUT | **YES** | ✗ MISS | **not required** — src rm630, no use captured at all. The one miss that is NOT the reachability shape; see task #8 |
@@ -41,10 +41,18 @@ believe you can go back) · `not required` · `no source`.
 | **coal** | → egg → reach B3 | **likely** | ✗ MISS | required, judged reachable — src rm490/560, needed rm490 |
 | **clothes** | B4 entry (short) | **NO** | ✓ correct to skip | only needed outside the castle, to get in |
 | **red scarf** | B1 carry-IN | **YES** | ✓ **CAUGHT** | frontier rm340→rm370/405/440; src rm490, needed rm370/440 |
-| **brick** | B1 carry-IN | **YES** | ✗ MISS | required, judged reachable — src rm510, needed rm370/420 |
-| **hole-in-the-wall** | B1 carry-IN | **YES** | ✗ MISS | required, judged reachable — src rm230/400/405/…, needed rm230/370/407 |
+| **brick** | B1 carry-IN | **YES** | ✓ **CAUGHT 2026-07-28** | frontier = every way into rm420 (the crushing ceiling, a cut vertex on the only descent); src rm510, needed rm370/420 |
+| **hole-in-the-wall** | B1 carry-IN | **YES** | ✓ **CAUGHT 2026-07-28** | frontier rm340→rm370/405/440; src **rm480 only** — the sixteen maze "sources" were take-backs of a hole you put up yourself |
 
-**Tally: 7 caught, 10 missed, 3 correctly skipped.** The old table read "7 of 14" because it merged
+**⭐ TALLY AS OF `68b6cc1` (2026-07-28): 10 caught of 16 real, 6 missed, 4 correctly skipped.**
+`brick, dagger, deadMansCoin, holeInTheWall, mint, mirror, nightingale, scarf, skeletonKey,
+tinderBox`. The **entire B1 carry-IN class is now closed** — all four items you must bring into the
+catacombs strand at the entrance (the brick at the crusher, which is a cut vertex on the way in).
+Still missed: `teacup, handkerchief, huntersLamp/old lamp, skull, coal, peppermint`. Mechanisms in
+`KQ6-CATACOMBS-PLAN.md`; pinned by `src/test_kq6_ground_truth.py`, which is where this table's
+verdicts are now enforced rather than merely recorded.
+
+**Tally (2026-07-27, superseded): 7 caught, 10 missed, 3 correctly skipped.** The old table read "7 of 14" because it merged
 brick / hole-in-the-wall / red scarf into ONE row and filed `skeletonKey` under the vizier's letter.
 Splitting them changes the denominator, not the numerator -- the seven caught items are the same
 seven the tool prints. Denominator moved deliberately and is called out here rather than quietly.

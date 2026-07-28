@@ -1,6 +1,76 @@
 # The KQ6 catacombs: why the carry-in items are not required, and the plan
 
-## STATUS 2026-07-28 (final) — **3 of the 4 carry-ins are caught; KQ6 7 -> 9**
+## ✅ STATUS 2026-07-28 (closed) — **ALL FOUR carry-ins are caught; KQ6 7 -> 10**
+
+`brick, dagger, deadMansCoin, holeInTheWall, mint, mirror, nightingale, scarf, skeletonKey,
+tinderBox`. Commits `b68bd58` and `68b6cc1`. LSL2 and KQ4 byte-identical on the full snapshot
+surface (placements included); 287 checks green; KQ5, Camelot, SQ3 and TCB unchanged; Dagger
+4 -> 5, restoring `daggerOfRa`, which `docs/LB2-ORACLE.md` records as one of the five it should
+find and which had silently gone missing at some point before `69be969`.
+
+Pinned by the new **`src/test_kq6_ground_truth.py`** — the SCI1.1 twin of the KQ4 oracle. It
+asserts the ten, keeps the six known gaps visible, pins the shield as CONFIRMED SAFE, and pins the
+two structural facts underneath: the hole has exactly one source (rm480), and the carry-ins strand
+at the catacombs ENTRANCE.
+
+### What the hole actually needed — and how the old plan's three pieces resolved
+
+The plan named pieces (i)/(ii)/(iii). Only **(i)** was real. Pieces (ii) and (iii) -- teaching
+`holeWall`/`holeCoords` to carry their computed writes, and making `_own_required` descend an OR
+into register costs -- turned out to be **unnecessary**: they were the route to the same conclusion
+through the register store, and once the CAST was priced the item cost arrived directly.
+
+**(i) An `init:` inside a `changeState` inherits that machine's entry.** The body has no path
+condition of its own -- it runs because the machine was armed and got that far -- which is exactly
+the rule `cast_conditions` already applied to a PROCEDURE, with a different supplier. rm407:
+
+    (instance putHoleOnWall of Script (method (changeState param1) (switch ...
+       (0 (global0 put: 18 global11) ...)      ; the hole leaves your inventory
+       (2 (theHole init:) ...))))              ; ...and becomes a thing on the wall
+
+`putHoleOnWall` is armed from `hiwEastWall::doVerb 25`, i.e. from USING the hole, so `theHole`
+exists only once you carried it in and put it up -- and so do `lookInHole` (spying, which writes
+`seenSecretLatch`) and `getTheHole` (taking it back).
+
+Entries are built FROM the casts, so the two are mutually recursive. **The reason this failed twice
+before was the shortcut**: a flat scan of every `setScript:` naming the machine, used as if it were
+the entry. That scan has not been through `_drop_continuation_entries` or `_chain_entries`, so it
+can be STRONGER than the real entry, and gating a cast on a too-strong guard deletes movement the
+game allows. `MachineBuilder.prime` iterates instead: pass 0 with no cast composition (bit-for-bit
+the old behaviour), rebuild the casts from those entries, stop when a round changes nothing.
+
+### The two things that had to come with it, both found by the scarf going missing AGAIN
+
+* **`addToPic:` IS an init**, and the game says so in its own class table:
+  `View::addToPic` is `(if (global5 contains: self) ... else (self init:))`. rm480 spells its gates
+  as `(if (== global12 490) (gates ... init:) else (gates ... addToPic:))`, so reading only the
+  literal selector made the `else` branch look like "not in the cast" -- the gates appeared
+  clickable only once you had already been to rm490, which strands the red scarf behind its own
+  door. Derived per CLASS, not unioned: `Cursor::setLoop` and `Talker::say` also `(self init:)`,
+  and one global set of names would make the whole cast rule vacuous.
+* **`entry_reqs` composes an entry onto an exit, so it must use `structural_reqs`.** The third
+  place that distinction has bitten, after KQ4's whale and `death_traps` case (b). Flat, `gates`'
+  cast condition `arrived from rm490 OR NOT arrived from rm490` -- a tautology -- reads as a
+  requirement to have been in rm490 to reach rm490.
+
+### And the two rules that finished it
+
+* **An acquisition you can only reach while already holding the item is not a source.** Sierra
+  writes the take-back with the same `get:` as the pickup, and the hole's take-back lives in the
+  labyrinth's shared script 404, so `sources[18]` held all thirteen catacombs rooms -- the hole
+  looked freshly obtainable inside the very trap it is needed to escape. With the cast priced,
+  every take-back's entry demands own(18) and only rm480 survives. Applied per SITE; a room keeps
+  its source if any site is free. The same `get:` is walked twice (flat by `extract`, and by the
+  machine lift), so `Acq` now carries `via` and `build_maps` matches the two as one statement, the
+  way `edge_meta` already does for a suppressed cs_edge.
+* **A register write inside a cutscene costs whatever arming the cutscene costs.** `_inroom_own`
+  read only the state's path guard, so `(rLab seenSecretLatch: 1)` was free. `entry_musts` is
+  `entry_alts` read as "what no alternative avoids" -- the item twin of `blocked`, and the same
+  reading `edge_meta` has always used to gate an exit on its machine's arming.
+
+---
+
+## STATUS 2026-07-28 (superseded) — 3 of the 4 carry-ins are caught; KQ6 7 -> 9
 
 `brick, deadMansCoin, dagger, mint, mirror, nightingale, scarf, skeletonKey, tinderBox`. Of the
 four the user confirmed, only the **hole-in-the-wall** is still missed. LSL2 and KQ4 byte-identical
