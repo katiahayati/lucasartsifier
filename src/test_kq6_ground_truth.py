@@ -61,7 +61,8 @@ KNOWN_GAPS = {
     "huntersLamp",      # the old lamp -- traded away, and befriending Jollo depends on it
     "skull",            # the vessel for the B3 carry-in (amber + egg + hair); the loss is the
                         # `throwSkull` spend at rm420, not a carry-down -- rm415 is the UPPER
-                        # catacombs, which the shield ruling says you can return to
+                        # catacombs, which the shield ruling says you can return to.
+                        # NOW CAUGHT by `fatal_uses` -- awaiting the user's OK to promote.
     "peppermint",       # castle carry-in, short path; the oracle itself calls this one uncertain
 }
 
@@ -115,7 +116,8 @@ def run():
     cands = s.analyze()
     ids = ({c["item"] for c in cands} | {j["item"] for j in s.joint_strandings()}
            | {r["item"] for r in s.resource_exhaustion()} | {d["item"] for d in s.dangerous_sinks()}
-           | {r["item"] for r in s.register_flip_strandings()})
+           | {r["item"] for r in s.register_flip_strandings()}
+           | {f["item"] for f in s.fatal_uses()})
     caught = {s.g.item_name(i) for i in ids}
 
     missing = EXPECTED_CAUGHT - caught

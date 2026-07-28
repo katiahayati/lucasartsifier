@@ -1023,6 +1023,139 @@ def _has_opaque(guard):
     return guard is not None            # a bare tuple (CTR) or anything unrecognised
 
 
+def _trap_rooms(em):
+    """`room -> [machine info]`, including the machines we chose not to model.
+
+    A machine we dropped is still a COMPETITOR for the room's script slot. KQ6's `lightItUp` is
+    gated `own(tinderBox)` and does nothing we track (it starts a palette fade), so it is dropped --
+    and it is the only thing that stops the minotaur killing you in the dark. Carried as a stateless
+    stand-in: no states, so it can never be `fatal`, but its NAME still participates in the doomed
+    walk, so a dropped machine that re-arms the death is excluded like any other."""
+    by_room = {}
+    for info in em.machines:
+        by_room.setdefault(info["room"], []).append(info)
+    for room, eg, inst, recv in getattr(em, "dropped_entries", ()):
+        by_room.setdefault(room, []).append(
+            {"room": room, "inst": inst, "entries": [(0, eg)], "entry_recv": [recv],
+             "entry_armers": [], "states": {}})
+    return by_room
+
+
+def _trap_graph(infos):
+    """`(arms, fatal, doomed)` for one room's machines.
+
+    `fatal` names the machines that reach a DEATH transition themselves; `doomed` closes that over
+    the arming graph, so a machine that ends by arming the death is doomed too. KQ6's `throwSkull`
+    is the specimen -- it throws the skull into the gears, the gears are not jammed, and its last
+    state arms `sqwishEm` again.
+
+    `handoff` is the same arming relation keyed by the ARMING STATE, `(armer, state) -> names`,
+    which is what tells a state that ends the machine apart from one that ends it by starting the
+    death. `entry_armers` already carries the state; only `arms` was throwing it away.
+
+    Shared by `death_traps` and `fatal_uses`, which ask opposite questions of the same graph: one
+    wants the machines that are NOT doomed (the escapes), the other wants the ones that ARE (the
+    actions that kill you). They were one function's local variables, and the second consumer is
+    exactly the moment that becomes a bug waiting to happen -- see the codebase's running theme of
+    the same rule living in two places."""
+    arms, handoff = {}, {}                         # machine name -> names it arms; + by state
+    for info in infos:
+        for a in (info.get("entry_armers") or ()):
+            if a:
+                arms.setdefault(a[0], set()).add(info["inst"])
+                handoff.setdefault(a, set()).add(info["inst"])
+    fatal = {i["inst"] for i in infos
+             if any(tr and tr[0] == "DEATH"
+                    for _K, ps in i["states"].items() for (_g, _w, _gg, _c, tr) in ps)}
+    doomed, changed = set(fatal), True
+    while changed:                                 # ...and anything that arms something fatal
+        changed = False
+        for a, bs in arms.items():
+            if a not in doomed and (bs & doomed):
+                doomed.add(a)
+                changed = True
+    return arms, fatal, doomed, handoff
+
+
+def _succ_state(K, tr):
+    """The state a transition moves to, or None if it ends the machine. The successor rule is the
+    game's, and it is spelled the same way in `opmodel._state_info`; keep them in step."""
+    if not tr:
+        return None
+    return (K + 1 if tr[0] == "ADVANCE" else tr[1] if tr[0] == "JUMP" else
+            tr[1] + 1 if tr[0] == "SETSTATE" else None)
+
+
+def _survivable(info, unavoidable, handoff, start=None):
+    """Is there ANY way through this machine, FROM STATE `start`, that does not end in death?
+
+    Per ENTRY, not per machine, because one machine routinely serves both roles. KQ6's
+    `emptyHandedDeath` is armed four ways at three different states -- one of them the timer that
+    kills you for lingering, another the act of putting the hole UP, which is the puzzle's solution.
+    Asking only about the machine's own `start` and then blaming every entry condemned the
+    hole-in-the-wall for the death it exists to prevent.
+
+    `doomed` -- death is REACHABLE -- is the wrong test for blaming an item, and getting that wrong
+    is instructive: it condemned the shield for the KQ6 archer, the hole-in-the-wall for the
+    labyrinth and LSL2's Matches for the volcano, which are precisely the items that SAVE you.
+    Those machines all branch on the item and only one arm dies. `throwSkull` does not branch: every
+    path reaches state 24, which arms the ceiling again.
+
+    So the question is co-reachability, not reachability. A state survives if any of its paths
+    does, and a path survives when it EXITS the room, or ends the machine without handing off to
+    something unavoidable, or moves to a state that survives. Cycles resolve to "does not survive"
+    by starting pessimistic and only ever adding survivors -- a loop with no way out is exactly the
+    timer that kills you.
+
+    PERMISSIVE where we cannot see: a machine with no states at all (a dropped competitor)
+    contributes survival, because "we did not learn what happens" must not become "you die here" --
+    the same rule `death_traps` states for opaque conjuncts.
+
+    ...with ONE exception, and it is the difference between catching KQ6's skull and not. Running
+    off the end of the state graph normally means the machine finished, which is safe. But our
+    graph ELIDES states that carry no effect we track, and an arming is not an effect: `throwSkull`
+    is modelled as `st23 -> JUMP 25` with a max state of 24, so state 24,
+    whose entire body is `(gCurRoom setScript: sqwishEm 0 1)`, is unreachable in our graph and the
+    machine reads as survivable. It is not; that state is the crushing ceiling being re-armed.
+
+    So for a machine that DEMONSTRABLY hands off to something unavoidable -- we know it from
+    `entry_armers`, which does not depend on state reachability -- falling off the end is not
+    evidence of survival, and we decline to call it safe. That is still the conservative direction
+    for the machine's own claim: the only machines it can affect are ones already known to arm a
+    death."""
+    states = info.get("states") or {}
+    if not states:
+        return True
+    inst = info["inst"]
+    hands_to_death = any(m in unavoidable
+                         for (a, _K), ms in handoff.items() if a == inst for m in ms)
+    safe, changed = set(), True
+    while changed:
+        changed = False
+        for K, paths in states.items():
+            if K in safe:
+                continue
+            # A state that hands the room's script slot to a death is not safe by ANY path: the
+            # `setScript:` replaces whatever this machine would have done next.
+            if any(m in unavoidable for m in handoff.get((inst, K), ())):
+                continue
+            for (_g, _w, _gg, _c, tr) in paths:
+                if tr and tr[0] == "DEATH":
+                    continue
+                if tr and tr[0] == "EXIT":
+                    ok = True
+                else:
+                    nxt = _succ_state(K, tr)
+                    ok = (nxt in safe) if (nxt is not None and nxt in states) \
+                        else not hands_to_death
+                if ok:
+                    safe.add(K)
+                    changed = True
+                    break
+    start = info.get("start", 0) if start is None else start
+    return start not in states or start in safe
+
+
 def death_traps(em, regs, dom):
     """`room -> [(req, alts), ...]` -- the ALTERNATIVE ways to leave a room whose arrival kills you.
 
@@ -1048,35 +1181,9 @@ def death_traps(em, regs, dom):
         (setScript: dieAlready))`), so leaving needs flag 1 set.
     Empty when the death is unconditional and no escape was found: refusing to model it is the
     permissive answer, and blocking every exit on a non-observation is how you invent a softlock."""
-    by_room = {}
-    for info in em.machines:
-        by_room.setdefault(info["room"], []).append(info)
-    # A machine we chose not to MODEL is still a competitor for the slot. KQ6's `lightItUp` is
-    # gated `own(tinderBox)` and does nothing we track (it starts a palette fade), so it is dropped
-    # -- and it is the only thing that stops the minotaur killing you in the dark. Carried as a
-    # stateless stand-in: no states, so it can never be `fatal`, but its NAME still participates in
-    # the doomed walk, so a dropped machine that re-arms the death is excluded like any other.
-    for room, eg, inst, recv in getattr(em, "dropped_entries", ()):
-        by_room.setdefault(room, []).append(
-            {"room": room, "inst": inst, "entries": [(0, eg)], "entry_recv": [recv],
-             "entry_armers": [], "states": {}})
     out = {}
-    for room, infos in by_room.items():
-        arms = {}                                  # machine name -> names it arms
-        for info in infos:
-            for a in (info.get("entry_armers") or ()):
-                if a:
-                    arms.setdefault(a[0], set()).add(info["inst"])
-        fatal = {i["inst"] for i in infos
-                 if any(tr and tr[0] == "DEATH"
-                        for _K, ps in i["states"].items() for (_g, _w, _gg, _c, tr) in ps)}
-        doomed, changed = set(fatal), True
-        while changed:                             # ...and anything that arms something fatal
-            changed = False
-            for a, bs in arms.items():
-                if a not in doomed and (bs & doomed):
-                    doomed.add(a)
-                    changed = True
+    for room, infos in _trap_rooms(em).items():
+        arms, fatal, doomed, _handoff = _trap_graph(infos)
         rows = []
         for info in infos:
             if info["inst"] not in fatal:
@@ -2052,6 +2159,85 @@ class IrSccReach(SccReach):
         for room, script, it, g, dest in self.em.handler_drops:
             if dest in self.NOWHERE and (room, script, it) not in seen:
                 out.append({"room": room, "script": script, "item": it, "dest": dest})
+        return out
+
+    def fatal_uses(self):
+        """USING an item somewhere that kills you: the dangerous ACTION, in its purest form.
+
+        Not a stranding and not a sink -- nothing is stranded and nothing is spent, because you do
+        not survive to notice. It is still the thing the tool exists to prevent. KQ6's crushing
+        ceiling offers the player two things to do with the gears, and one of them is a trap that
+        looks exactly like the solution:
+
+            theGears doVerb 39 -> useBrick     ; jam them with the brick -- you live
+            theGears doVerb 51 -> throwSkull   ; throw the skull in -- the gears eat it and
+                                               ; state 24 arms `sqwishEm` again: you are crushed
+
+        `sqwishEm` is armed `0 1`, and its register only chooses whether one extra line is spoken
+        (`(if register (say: ...) else (self cue:))`); both arms fall through to `(proc0_1 9)`,
+        which is KQ6's imperative death proc. So there is no register value, no branch and no
+        timing under which throwing the skull works.
+
+        **Deaths are IN SCOPE, and the reasoning that says otherwise is the trap.** "You die, so you
+        restore, so the item was never really lost" is true and irrelevant -- the player still spent
+        a real attempt on a move the game invited them to make, and a tool that can see the move is
+        fatal and says nothing is failing at its job. Recording that here because I talked myself
+        out of this exact finding once, on exactly that argument.
+
+        Derived, with no room or item named: an item appears here when some entry that requires
+        holding it arms a machine that cannot be survived. "Cannot be survived" is `_survivable`,
+        NOT `_trap_graph`'s `doomed` -- doomed means death is REACHABLE, and using it here condemned
+        the shield for the KQ6 archer, the hole-in-the-wall for the labyrinth and LSL2's Matches for
+        the volcano, i.e. exactly the items that keep you alive. Those machines branch on the item;
+        this one does not.
+
+        The complement of `death_traps`, which asks the same graph for the machines that are NOT
+        doomed. That is why the brick is a REQUIREMENT to leave rm420 and the skull is a HAZARD in
+        it, from one arming graph and one death set."""
+        out, seen = [], set()
+        for room, infos in _trap_rooms(self.em).items():
+            if room not in self.reach_rooms:
+                continue
+            _arms, _fatal, doomed, handoff = _trap_graph(infos)
+            unavoidable = {i["inst"] for i in infos
+                           if i["inst"] in doomed and not _survivable(i, doomed, handoff)}
+            # ...and settle the mutual dependency the same way `_trap_graph` settles `doomed`: a
+            # state that hands off to a machine we have just condemned is not an escape either.
+            changed = True
+            while changed:
+                changed = False
+                for i in infos:
+                    if i["inst"] in unavoidable or i["inst"] not in doomed:
+                        continue
+                    if not _survivable(i, unavoidable, handoff):
+                        unavoidable.add(i["inst"])
+                        changed = True
+            for info in infos:
+                if info["inst"] not in doomed:
+                    continue
+                # PER ENTRY, because the state an arming enters at decides whether it is
+                # survivable: LSL2's bore talks you to death from state 0 and is SHUT UP by
+                # `(boreScript changeState: 10)`, which is what giving him the pamphlet does.
+                lethal = [(K, g) for K, g in (info.get("entries") or ())
+                          if not _survivable(info, unavoidable, handoff, start=K)]
+                if not lethal:
+                    continue
+                # WHAT NO LETHAL ARMING AVOIDS -- `entry_musts` read over the fatal entries. An
+                # item is the CAUSE of a death only if the death cannot happen without it; if some
+                # other arming kills you just the same, holding it was incidental. KQ6's
+                # `emptyHandedDeath` is the case and it is the exact inverse of the truth: one of
+                # its armings is unconditional, and the hole-in-the-wall reaches it only through
+                # the composed chain of PUTTING THE HOLE UP, which is the puzzle's solution. Blame
+                # per entry and you condemn the item that exists to prevent the death.
+                #
+                # (`_own_required` inside each, for the usual reason: an item in one arm of an OR
+                # is a way to arm this, not a thing you must hold.)
+                blame = set.intersection(*[set(_own_required(g)) for _K, g in lethal])
+                for it in blame:
+                    if (it, room) not in seen:
+                        seen.add((it, room))
+                        out.append({"item": it, "room": room, "machine": info["inst"],
+                                    "states": sorted(K for K, _g in lethal)})
         return out
 
     def dangerous_sinks(self):

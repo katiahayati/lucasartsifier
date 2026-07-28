@@ -364,3 +364,57 @@ coherent claim of exactly the class we hunt.
 called out as the one behavioural change outside the target game. If it turns out to be noise, the
 cure is to model counter-proxy items as counters rather than to narrow step 4 — the step-4 reading
 of that statement is correct.
+
+## ⭐ THE SKULL IS CAUGHT — `fatal_uses`, and the reasoning I had to be corrected out of
+
+**User, when I proposed filing the skull as CONFIRMED_SAFE: *"what? that's exactly the kind of bad
+use we need to prevent."*** They are right and my argument was the banned one. I had found that
+`throwSkull` always ends in death and concluded the loss "never survives into a playable state", so
+it was out of scope. That is [[one-rule-death-is-in-scope]] verbatim, and I walked into it while
+holding a note that says never to. Throwing the skull into the gears is a move the game invites,
+it looks exactly like the solution, it costs a required item and it kills you. Preventing it is the
+point of the tool.
+
+### `missability.fatal_uses()` — using an item somewhere that kills you
+
+Not a stranding and not a sink: nothing is stranded and nothing is spent, because you do not
+survive to notice. Derived, no room or item named. An item is reported when an entry requiring it
+arms a machine that **cannot be survived**.
+
+**The four things it took to make that quiet**, each found by measuring the whole corpus:
+
+| # | naive version | what it condemned | fix |
+|---|---|---|---|
+| 1 | machine is in `doomed` | 29 rows: the shield vs the KQ6 archer, the hole-in-the-wall, LSL2's Matches — the items that SAVE you | `doomed` = death is REACHABLE. Ask co-reachability instead (`_survivable`): is there ANY path that does not end in death? Those machines branch on the item; `throwSkull` does not |
+| 2 | survivable from the machine's `start` | LSL2's Pamphlet — you GIVE it to the bore and it shuts him up via `(boreScript changeState: 10)` | per ENTRY, from that entry's own state |
+| 3 | blame every item on a lethal entry | KQ6's hole-in-the-wall, for the death it exists to prevent | `entry_musts` reading: intersect over the lethal entries. An item is the CAUSE only if the death cannot happen without it — `emptyHandedDeath` has an unconditional arming, so nothing is blamed |
+| 4 | "ran off the end of the state graph" = safe | nothing — this one HID the skull | our graph elides states with no tracked effect, and an arming is not an effect. `throwSkull` is `st23 -> JUMP 25` with max state 24, so state 24 (`(gCurRoom setScript: sqwishEm 0 1)`) is unreachable in our graph. For a machine we KNOW hands off to a death (from `entry_armers`, which does not depend on state reachability), falling off the end is not evidence of survival |
+
+**Corpus result: LSL2 0, KQ4 0, Dagger 0, SQ3 0, Camelot 0, TCB 0, KQ6 2.** LSL2 and KQ4
+byte-identical on the full snapshot surface; the `death_traps` refactor that shares `_trap_rooms` /
+`_trap_graph` with it is behaviour-preserving, measured.
+
+### ⚠️ One KNOWN FALSE POSITIVE, with a documented upstream cause
+
+    holeInTheWall(#18) @rm407 via putHoleOnWall
+
+Putting the hole on the wall is the puzzle's solution, not a fatal use. The chain:
+
+    rm407.sc:193  (gCurRoom setScript: putHoleOnWall 0 1)      ; armed with REGISTER 1
+    putHoleOnWall st4  (if (== register 1) (gEgo setScript: holeTimer) (handsOn:) (self dispose:)
+                        else (client setScript: emptyHandedDeath))
+    holeTimer     st5  (emptyHandedDeath start: 2) (gCurRoom setScript: emptyHandedDeath)
+
+Two separate reasons it fires, and the second is the real one:
+1. `putHoleOnWall`'s own entry does not carry the register it was armed with (`0 1`), so the
+   `else` branch — the death — looks reachable. The death's entry DOES carry `¬(R0 == 1)`, so the
+   information exists; it is the armer's side that drops it.
+2. Even on the register-1 branch, `holeTimer` gives you 20 seconds and then kills you. The escape
+   is LOOKING THROUGH THE HOLE, and `kq6-catacombs-diagnosis` already records that gap:
+   *"`lookInHole`'s entry is `opaque()`, armed from `theHole`'s doVerb, and `theHole` is only
+   `init:`ed once the hole is on the wall."* Until `lookInHole` is recognised as the competing
+   escape, the model's honest view is that putting the hole up leads to death.
+
+**It does not corrupt the item-level oracle** — `holeInTheWall` is already in EXPECTED_CAUGHT for
+the right reason (the B1 carry-in stranding), so this only adds a wrong REASON, not a wrong item.
+Recorded rather than suppressed.
