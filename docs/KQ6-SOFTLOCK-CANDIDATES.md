@@ -77,7 +77,34 @@ additionally reported as
 which is the Realm of the Dead, named as a region, for the right reason: flag 15 is set on arrival
 at rm600 and the entry demands it clear.
 
-## ⭐ THE FIVE REMAINING MISSES, ROOT-CAUSED 2026-07-28 (`c340e1a`)
+## ⭐ UPDATE 2026-07-28 (`43f1944`): 11 CAUGHT — handkerchief in, and the lamp is CONFIRMED REAL
+
+**handkerchief CAUGHT and promoted** (user sign-off). Cause (B) below was right: `opmodel` was
+missing `extract`'s fourth script scope. Fixed by counting `init:` on a cross-script object as a
+home, not only `setScript:` — `enterDungeon.changeState` sends `init:` to `(ScriptID 822 boyGhost)`,
+and script 822 holds the handkerchief's only use. 183 of KQ6's 341 scripts had no home; now 174.
+The same rule was in two places: the MACHINE pass used `armed_rooms`, the HANDLER pass did not.
+
+**⚠️ USER RULING — the lamp trade is ONE-WAY, and I nearly mis-generalised it.**
+*"you cannot trade it again because the peddler leaves. this is not the pawn shop, it's the lamp
+peddler."* The PAWN SHOP (rm280, script 283) is a generic re-tradeable exchange over
+`[48 3 14 27]` — which is why the NIGHTINGALE is safe. The LAMP PEDDLER is a different NPC in a
+different room and the lamp is not in that table. Verified:
+
+    rm240.sc:112         (if (and ... (not (proc913_0 12))) ((ScriptID 241 0) init:))
+    lampTradeScr.sc:192  (proc913_1 12)      ; one writer, never cleared -- he is gone
+
+So **huntersLamp is a real softlock of the DANGEROUS-ACTION class**, not a boundary crossing.
+
+**Why it still misses**, measured: `rm520.init` casts `theHuntersLamp` only under
+`((gInv at: 19) owner:) == gCurRoomNum`, and `getLamp` has TWO entries — the LOC-gated doVerb, and
+rm520's `doit` gated on `local1`. The second is SCI's APPROACH IDIOM (doVerb sets `local1` and
+starts the ego walking; `doit` fires on arrival), i.e. a CONTINUATION of the same action, exactly
+what `_drop_continuation_entries` says about a `cue`. Needs two stacked rules, both general, both
+touching machine entries: (a) a handler effect inherits the CAST condition of the object whose
+method it is in; (b) an entry gated on a room local inherits the condition of whoever writes it.
+
+## THE FIVE REMAINING MISSES, ROOT-CAUSED 2026-07-28 (`c340e1a`) — 4 of them still open
 
 Every one was checked against the scripts and against `docs/KQ6-ITEM-ORACLE.md`, item by item, to
 answer "is this actually a miss?". **All five are real misses**, `coal` was NOT and has been
