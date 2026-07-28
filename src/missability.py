@@ -1017,8 +1017,15 @@ def death_traps(em, regs, dom):
                 g = ents[0][1]
                 rows.extend(({}, (a,)) for a in esc)
                 rows.extend(({}, (frozenset({it}),)) for it in _own_negative(g))
-                for R in regs:
-                    vs = required_values(g, R)
+                # The NECESSARY reading, not the flat one. `guard_reqs` reports every comparison it
+                # can see, which is right for "what values may this edge be crossed at" and wrong
+                # for composing a guard into another -- the same lesson KQ4's whale taught, where
+                # the flat reading of a disjunction demanded both its arms. Negating the flat
+                # reading of a big `not (or prev==a prev==b ...)` left KQ6's rm480 -> rm490 needing
+                # `prev == 490` to reach rm490, so the scarf's own source became unreachable and the
+                # scarf stopped being a softlock at all.
+                sreq = structural_reqs(g, regs, dom)
+                for R, vs in sreq.items():
                     d = dom.get(R)
                     if vs and d and set(vs) < set(d):
                         rows.append(({R: set(d) - set(vs)}, (frozenset(),)))
