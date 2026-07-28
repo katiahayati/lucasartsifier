@@ -896,6 +896,128 @@ class _Musts(dict):
         return acc if acc is not None else self.get(K, {})
 
 
+def _own_negative(guard, out=None):
+    """Items the guard requires you NOT to hold -- `own(X)` under a negation. The mirror of
+    `_own_positive`, and what turns "you die here without the brick" into "leaving needs it"."""
+    out = set() if out is None else out
+
+    def w(g, neg):
+        if isinstance(g, list):
+            for k in g:
+                w(k, neg)
+        elif isinstance(g, GNot):
+            w(g.kid, not neg)
+        elif isinstance(g, (GAnd, GOr)):
+            for k in g.kids:
+                w(k, neg)
+        elif isinstance(g, Pred) and g.kind == "OWN" and neg:
+            out.add(g.var)
+    w(guard, False)
+    return out
+
+
+def _has_opaque(guard):
+    """Does the guard contain anything we could not model? Then it is not safe to negate."""
+    if isinstance(guard, list):
+        return any(_has_opaque(k) for k in guard)
+    if isinstance(guard, (GAnd, GOr)):
+        return any(_has_opaque(k) for k in guard.kids)
+    if isinstance(guard, GNot):
+        return _has_opaque(guard.kid)
+    if isinstance(guard, Pred):
+        return guard.kind not in ("OWN", "CMP", "LOC", "IPROP", "POS")
+    return guard is not None            # a bare tuple (CTR) or anything unrecognised
+
+
+def death_traps(em, regs, dom):
+    """`room -> [(req, alts), ...]` -- the ALTERNATIVE ways to leave a room whose arrival kills you.
+
+    A room you cannot survive offers no exits, and SCI writes that as a race for one slot. A Script
+    object holds exactly one `setScript:` slot, so whichever machine is set last is the one that
+    runs, and a player action that grabs the room's slot cancels the timer that was in it. KQ6's
+    crushing ceiling is the pure case:
+
+        rm420 walkIn  (9  (global2 setScript: sqwishEm))       ; arrival -> the ceiling comes down
+        rm420 theGears doVerb 39 -> (global2 setScript: useBrick)   ; jam it: needs the brick
+        rm420 theGears doVerb 51 -> (global2 setScript: throwSkull) ; needs the skull, and ENDS
+                                    (global2 setScript: sqwishEm 0 1)  ; ...by dying anyway
+
+    So the slot alone is not enough -- `throwSkull` takes it and hands it straight back to the
+    death. An ESCAPE is a competitor from which the death is NOT reachable, following the arming
+    graph the machines already record in `entry_armers`. That distinction is the whole rule: with it
+    the brick is required to leave rm420 and the skull is not.
+
+    Returns a DISJUNCTION per room, since any one of these gets you out:
+      * one alternative per escape (its items), and
+      * one per register the death CONDITION pins, requiring the complement -- rm411's collapsing
+        floor kills you only while the minotaur lives (`(if (proc913_0 1) <corridor> else
+        (setScript: dieAlready))`), so leaving needs flag 1 set.
+    Empty when the death is unconditional and no escape was found: refusing to model it is the
+    permissive answer, and blocking every exit on a non-observation is how you invent a softlock."""
+    by_room = {}
+    for info in em.machines:
+        by_room.setdefault(info["room"], []).append(info)
+    out = {}
+    for room, infos in by_room.items():
+        arms = {}                                  # machine name -> names it arms
+        for info in infos:
+            for a in (info.get("entry_armers") or ()):
+                if a:
+                    arms.setdefault(a[0], set()).add(info["inst"])
+        fatal = {i["inst"] for i in infos
+                 if any(tr and tr[0] == "DEATH"
+                        for _K, ps in i["states"].items() for (_g, _w, _gg, _c, tr) in ps)}
+        doomed, changed = set(fatal), True
+        while changed:                             # ...and anything that arms something fatal
+            changed = False
+            for a, bs in arms.items():
+                if a not in doomed and (bs & doomed):
+                    doomed.add(a)
+                    changed = True
+        rows = []
+        for info in infos:
+            if info["inst"] not in fatal:
+                continue
+            slots = {r for r in (info.get("entry_recv") or ()) if r}
+            if not slots:
+                continue                           # not slot-armed -> no competitor story
+            esc = []
+            for other in infos:
+                if other["inst"] in doomed or other["inst"] == info["inst"]:
+                    continue
+                for j, (_k, g) in enumerate(other["entries"]):
+                    recv = (other.get("entry_recv") or [None] * (j + 1))[j] \
+                        if j < len(other.get("entry_recv") or ()) else None
+                    items = _own_positive(g) if g is not None else set()
+                    if recv in slots and items:
+                        esc.append(frozenset(items))
+            # The death fires if ANY entry does, so surviving means EVERY entry is false -- and we
+            # may only say that when we can read them all. An OPAQUE conjunct makes an entry
+            # NARROWER than what we can see, so negating what we can see over-restricts, and
+            # "we do not know when this fires" must never become "you die here". KQ4 is the
+            # warning: the ogre's `grabbed` is gated on opaques, and negating its readable half
+            # demanded the Axe to walk out of four ordinary rooms. Two cases are decidable:
+            ents = list(info["entries"])
+            if any(g is None for _k, g in ents):
+                #  (a) some arming is UNCONDITIONAL, so the death is certain and only an escape
+                #      helps. KQ6's ceiling: `walkIn` state 9 arms `sqwishEm` with no guard.
+                rows.extend(({}, (a,)) for a in esc)
+            elif len(ents) == 1 and not _has_opaque(ents[0][1]):
+                #  (b) one arming, fully modelled, so its negation is exactly the way to survive --
+                #      a disjunction over its conjuncts, since falsifying any one is enough.
+                g = ents[0][1]
+                rows.extend(({}, (a,)) for a in esc)
+                rows.extend(({}, (frozenset({it}),)) for it in _own_negative(g))
+                for R in regs:
+                    vs = required_values(g, R)
+                    d = dom.get(R)
+                    if vs and d and set(vs) < set(d):
+                        rows.append(({R: set(d) - set(vs)}, (frozenset(),)))
+        if rows:
+            out[room] = rows
+    return out
+
+
 def entry_reqs(info, regs):
     """State K -> {register: allowed values} that EVERY entry reaching K establishes.
 
@@ -1200,8 +1322,42 @@ class IrSccReach(SccReach):
                         # and the hole-in-the-wall it depends on was dropped on the floor.
                         self._inroom_own.setdefault((gi, info["room"], v),
                                                     frozenset(_own_positive(g)))
+        self._apply_death_traps()
         self._own_fixpoint()
         self._pstates = {R: self._walk(R, frozenset()) for R in self.regs}
+
+    def _apply_death_traps(self):
+        """Conjoin `death_traps`' disjunction onto every way OUT of a room whose arrival kills you.
+
+        The rows are alternatives and each existing meta is an alternative, so the two cross: a
+        crossing is possible when some (existing way) and some (way to survive) both hold."""
+        dom = defaultdict(set)                     # values each register is ever given
+        for R in self.regs:
+            dom[R] |= {v for vs in (self._inroom.get(R) or {}).values() for v in vs}
+            dom[R] |= {t for pairs in self._rstep[R].values() for (_f, t) in pairs}
+            dom[R].add(0)                          # registers start at 0
+        for metas in self._emeta.values():
+            for (_req, sets, _alts) in metas:
+                for R, v in sets.items():
+                    if R in dom:
+                        dom[R].add(v)
+        traps = death_traps(self.em, self.regs, dom)
+        for room, rows in traps.items():
+            for b in self.edges.get(room, ()):
+                base = list(self._emeta.get((room, b)) or [self._FREE])
+                out = []
+                for (req, sets, alts) in base:
+                    for (treq, talts) in rows:
+                        r2 = dict(req)
+                        for R, vals in treq.items():
+                            r2[R] = (r2[R] & set(vals)) if R in r2 else set(vals)
+                            if not r2[R]:
+                                break
+                        else:
+                            out.append((r2, sets,
+                                        tuple(a | t for a in alts for t in talts)))
+                if out:
+                    self._emeta[(room, b)] = out
 
     def _reg_cost(self, R, vals):
         """Items you must hold to make register R take any of `vals` -- the cheapest route."""

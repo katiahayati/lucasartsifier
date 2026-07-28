@@ -260,6 +260,42 @@ def test_setscript():
           sm.at(1, [("CTR", ("L", 1), "==", 0)]) == {},
           repr(sm.at(1, [("CTR", ("L", 1), "==", 0)])))
 
+    # DEATH TRAPS. A Script object holds one `setScript:` slot, so machines armed into the same
+    # slot are competitors and the player's action cancels the timer that was in it. But taking the
+    # slot is not enough: KQ6's rm420 offers `throwSkull` (own 11), which ENDS by re-arming the
+    # death, and `useBrick` (own 2), which does not. Only the second is an escape.
+    from guard_ast import GNot
+    def mach(inst, entries, recv, armers, trans, room=1):
+        return {"room": room, "inst": inst, "entries": entries, "entry_recv": recv,
+                "entry_armers": armers, "states": {0: [([], [], [], [], trans)]}}
+    SLOT = ("G", 2)
+    em = type("Em", (), {})()
+    em.machines = [
+        mach("timer", [(0, None), (0, None)], [SLOT, SLOT], [None, ("tryIt", 9)], ("DEATH",)),
+        mach("useIt", [(0, Pred("OWN", var=2))], [SLOT], [None], ("ADVANCE",)),
+        mach("tryIt", [(0, Pred("OWN", var=11))], [SLOT], [None], ("ADVANCE",)),
+        mach("elsewhere", [(0, Pred("OWN", var=99))], [("G", 0)], [None], ("ADVANCE",)),
+    ]
+    rows = MI.death_traps(em, set(), {}).get(1, [])
+    check("an unconditional death is escaped only by a competitor that does not re-arm it",
+          [sorted(a) for _r, al in rows for a in al] == [[2]], repr(rows))
+    # ...and a death we cannot fully read must NOT be negated: KQ4's ogre grabs you under
+    # conditions that render opaque, and negating the readable half demanded the Axe to walk out
+    # of four ordinary rooms.
+    em.machines = [mach("grabbed", [(0, GAnd([GNot(Pred("CMP", var=112, op="!=", value="0")),
+                                              Pred("OPAQUE")]))],
+                        [SLOT], [None], ("DEATH",))]
+    check("a death whose trigger contains an opaque is left alone",
+          MI.death_traps(em, {112}, {112: {0, 1}}) == {},
+          repr(MI.death_traps(em, {112}, {112: {0, 1}})))
+    # ...while one fully-modelled arming IS negatable -- KQ6's collapsing floor kills you only
+    # while the minotaur lives, so leaving needs the flag set.
+    em.machines = [mach("dieAlready", [(0, GNot(Pred("CMP", var=173, op="!=", value="0")))],
+                        [SLOT], [None], ("DEATH",))]
+    check("a fully-modelled arming yields the complement of its condition",
+          MI.death_traps(em, {173}, {173: {0, 1}}).get(1) == [({173: {1}}, (frozenset(),))],
+          repr(MI.death_traps(em, {173}, {173: {0, 1}})))
+
 # ---- Part 3: fall-through hack removed (no free start bypass) ------------
 def test_no_fallthrough_bypass():
     print("Part 3: start-state fall-through hack removed")

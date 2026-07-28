@@ -61,6 +61,11 @@ class Machine:
     #   `newRoom: 18` when local1==1, so the coin/bottle inside are reachable ONLY with the staff.
     #   Kept parallel (not a 3-tuple) so every consumer that unpacks `(state, guard)` is untouched.
     init_entry_locals: list = field(default_factory=list)   # PARALLEL to init_entries.
+    entry_recv: list = field(default_factory=list)      # PARALLEL to entries: the SLOT the arming
+    #   `setScript:` wrote -- ("G", 2) for the room's script, ("G", 0) for the ego's, ("O", name)
+    #   for an actor's. A Script object occupies one slot, so two machines armed into the SAME slot
+    #   are COMPETITORS: whichever is set last is the one that runs. That is how SCI expresses
+    #   "the player's action interrupts the timer" -- see missability.death_traps.
     entry_sources: list = field(default_factory=list)   # PARALLEL to entries: the METHOD the
     #   arming was found in ("init", "doit", "cue", a proc, ...). A `cue` is not a way IN -- see
     #   MachineBuilder._drop_continuation_entries.
@@ -339,6 +344,7 @@ class MachineBuilder:
         m.entry_locals = [m.entry_locals[i] for i in keep]
         m.entry_armers = [m.entry_armers[i] for i in keep]
         m.entry_sources = [m.entry_sources[i] for i in keep]
+        m.entry_recv = [m.entry_recv[i] for i in keep]
 
     def _targets(self, param, m):
         """Does this `setScript:` argument name machine `m`? An Object reference is scoped to the
@@ -377,6 +383,12 @@ class MachineBuilder:
                     events.append(("w", (d["vtype"][0], d["index"]), I.as_int(ks[1]), list(p)))
             elif t == "Send":
                 _r, msgs = I.send_pairs(n)
+                slot = None
+                if isinstance(_r, dict):
+                    if _r.get("t") == "Variable" and _r.get("vtype") == "Global":
+                        slot = ("G", _r["index"])
+                    elif _r.get("name"):
+                        slot = ("O", _r["name"])
                 for sel, params in msgs:
                     if sel != "setScript" or not params or not self._targets(params[0], m):
                         continue
@@ -386,7 +398,7 @@ class MachineBuilder:
                     # KQ6's `walkOut 0 1` (flag-gated, out to the surface) and `walkOut 0 0`
                     # (back into the maze) merge, and the gated escape reads as free.
                     reg = X.REG_KEY if len(params) > 2 and I.as_int(params[2]) is not None else None
-                    events.append(("a", list(p), I.as_int(params[2]) if reg else None))
+                    events.append(("a", list(p), I.as_int(params[2]) if reg else None, slot))
         # A doVerb that arms this machine with `setScript:` gates it on the item the player used --
         # `(== param1 <item.message>)` -> OWN. verb_param_scope makes `atom` see that inside the
         # arming path condition (the machine lift shares extract.atom but does not set the context).
@@ -404,15 +416,17 @@ class MachineBuilder:
                 loc[X.REG_KEY] = ev[2]            # the `register` this arming selected
             # ...and the arming cannot be freer than the object whose method it sits in: a method
             # of an object the room only conditionally `init:`s only runs under that condition.
-            self._add_entry(m, 0, _conj(apc + [owner]), loc, source == "init", armer, source)
+            self._add_entry(m, 0, _conj(apc + [owner]), loc, source == "init", armer, source,
+                            recv=(ev[3] if len(ev) > 3 else None))
             #   are ADDITIONALLY bundled onto room arrival, not instead -- still normal entries too
 
-    def _add_entry(self, m, state, guard, locals_, is_init, armer=None, source=None):
+    def _add_entry(self, m, state, guard, locals_, is_init, armer=None, source=None, recv=None):
         """Append an entry AND its carried locals, keeping the parallel lists in lockstep."""
         m.entries.append((state, guard))
         m.entry_locals.append(dict(locals_))
         m.entry_armers.append(armer)
         m.entry_sources.append(source)
+        m.entry_recv.append(recv)
         if is_init:
             m.init_entries.append((state, guard))
             m.init_entry_locals.append(dict(locals_))
