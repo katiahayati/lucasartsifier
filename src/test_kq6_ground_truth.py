@@ -39,6 +39,10 @@ EXPECTED_CAUGHT = {
                         # and holding up the mirror is the only way out of rm690
     "deadMansCoin",     # Charon's toll, consumed at the crossing
     "skeletonKey",      # obtained inside; opens the chest that holds the vizier's letter
+    "handkerchief",     # obtained at rm630 (the mother ghost), needed at rm820 in the endgame
+                        # dungeon -- a B3 carry-OUT. Promoted 2026-07-28 with the user's sign-off.
+                        # NOTE (user): its GUARD placement is part of the endgame path-forcing
+                        # split and is deliberately left to the gater -- see [[path-forcing-guards]].
     # THE CASTLE (terminal).
     "dagger",           # Celeste's, taken from the catacombs and needed at rm800
     "mint",             # user-listed castle carry-in
@@ -50,7 +54,6 @@ EXPECTED_CAUGHT = {
 # measured state.
 KNOWN_GAPS = {
     "teaCup",           # B3 carry-in / Styx-water carry-out, long path
-    "handkerchief",     # obtained in the Realm, needed in the endgame dungeon; no use captured
     "huntersLamp",      # the old lamp -- traded away, and befriending Jollo depends on it
     "skull",            # B2 carry-down, AND the vessel for the B3 carry-in (amber + egg + hair)
     "peppermint",       # castle carry-in, short path; the oracle itself calls this one uncertain
