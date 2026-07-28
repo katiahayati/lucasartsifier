@@ -1,6 +1,47 @@
 # The KQ6 catacombs: why the carry-in items are not required, and the plan
 
-## STATUS 2026-07-28 — Steps 1, 2, 2b and 3 are LANDED
+## STATUS 2026-07-28 — Steps 1, 2, 2b, 3 and 5 LANDED; **the brick is CAUGHT (7 -> 8)**
+
+Commits `ac6bad5`, `f4b0c2b`, `9db2d52`, `2cfa652`. LSL2 and KQ4 byte-identical on the full
+snapshot surface throughout; 272 checks green; Dagger, SQ3 and KQ5 unchanged.
+
+**Step 5 landed with one piece the plan had not named: the `setScript:` RECEIVER.** A Script object
+holds one slot, so machines armed into the same slot are competitors and the player's action
+cancels the timer. But the slot alone is not the answer — rm420's `throwSkull` (own 11) takes the
+slot and ENDS by re-arming `sqwishEm`, while `useBrick` (own 2) does not. An escape is a competitor
+from which the death is NOT reachable, following the arming graph. With the corrected grid making
+rm420 a cut vertex, requiring the brick to leave it seals the whole pocket, and the brick strands.
+
+**KQ4 taught the safety rule and it cost a measurement.** The first version negated whatever it
+could read of any fatal machine's trigger; the ogre's `grabbed` is gated on opaques, and negating
+its readable half demanded the Axe to walk out of four ordinary rooms. Only two cases are
+decidable and only those are used — an unconditional arming (escape only), or exactly one
+fully-modelled arming (its negation, as a disjunction over its conjuncts).
+
+### The two remaining items, and what each needs
+
+* **tinderbox** — rm406's trap is correct (`prev != 435` OR `flag1`), but it is a negated
+  CONJUNCTION, so it becomes two alternatives, and the per-register projections let each through
+  independently: projection 12 cannot see the flag-1 alternative fail and vice versa. This is the
+  joint-projection weakness, now actually biting. Note it would NOT be fixed by lifting
+  `lightItUp` (the tinderbox's escape, currently not lifted at all): an escape ADDS an alternative,
+  which weakens the requirement. It needs the two registers promoted jointly.
+* **holeInTheWall** — needs THREE things composing, measured this session:
+  1. an init inside a machine's `changeState` inheriting that machine's entry (attempted — see the
+     negative result below);
+  2. a register written with a COMPUTED value recording that it was written and at what cost
+     (`holeWall: register`, `holeCoords: labCoords` — both invisible today, so `_reg_cost` reads
+     them as free);
+  3. a "what must I own for this guard" function that descends an OR by intersecting per-arm
+     costs, converting register requirements to item costs on the way. `_own_required` intersects
+     items only, so the arm expressing the same fact as `holeWall == N` contributes nothing.
+
+**NEGATIVE RESULT, kept so it is not re-tried blind.** Piece 1 was implemented and reverted. It
+worked — `lookInHole`'s entry did pick up `own(18)` through the chain — but it **dropped the
+scarf** from KQ6's findings, and bought nothing without pieces 2 and 3, because `holeWall`'s only
+writes are non-constant so the other arm of the OR still costs nothing. Do not re-add it alone.
+
+## STATUS (earlier the same day) — Steps 1, 2, 2b and 3
 
 Commits `ac6bad5`, `f4b0c2b`, `9db2d52`. **LSL2 and KQ4 byte-identical on the full snapshot
 surface (placements included) through every one; 269 checks green; Dagger, SQ3 and KQ5 all still
