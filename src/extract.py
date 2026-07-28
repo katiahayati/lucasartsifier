@@ -414,7 +414,7 @@ def walk_stream(node, pc, on_leaf, on_loop=None, undecided=None):
         walk_stream(k, pc, on_leaf, on_loop, undecided)
 
 
-def cast_conditions(script):
+def cast_conditions(script, proc_guard=None):
     """`objname -> [guard|None]`: the conditions under which this script puts an object IN THE CAST.
 
     An object that is not `init:`ed does not exist for the player -- it cannot be clicked, cued or
@@ -439,7 +439,12 @@ def cast_conditions(script):
     Only objects DECLARED in this script are reported: `self`, `super` and the globals a room sends
     `init:` to are not things whose methods we are about to attribute. A `None` in the list means an
     unconditional init -- consumers must treat that as "always in the cast", which is the permissive
-    answer and the reason this is inert almost everywhere."""
+    answer and the reason this is inert almost everywhere.
+
+    `proc_guard(name)` supplies the condition a PROCEDURE runs under, since a proc's body has no
+    path condition of its own -- it runs because something called it. KQ6 redraws the
+    hole-in-the-wall that way: `proc404_1` inits the hole actor, and every one of its three call
+    sites is `(if (== (rLab holeCoords:) <this cell>) (proc404_1))`."""
     declared = {o.name for o in script.objects}
     out = {}
 
@@ -464,24 +469,31 @@ def cast_conditions(script):
     for o in script.objects:
         for body in o.methods.values():
             walk_stream(body, [], leaf)
-    for body in script.procs.values():
-        walk_stream(body, [], leaf)
+    for pn, body in script.procs.items():
+        walk_stream(body, [proc_guard(pn)] if proc_guard else [], leaf)
     return out
+
+
+def any_guard(gs):
+    """OR a list of alternative path conditions, or None for "always / we did not find out".
+
+    None both when the list is EMPTY and when any member is unconditional. The second is obvious;
+    the first is deliberate and narrow -- a thing we found no site for is a thing we did not learn
+    about, not a thing that cannot happen, and strengthening a guard on a non-observation is the
+    direction that invents softlocks."""
+    gs = list(gs or ())
+    if not gs or any(g is None for g in gs):
+        return None
+    return gs[0] if len(gs) == 1 else GOr(gs)
 
 
 def cast_guard(conds, name):
     """The condition under which `name` is in the cast, or None for "always / do not know".
 
-    None is returned both when the object is never init'ed anywhere in the script and when any one
-    init site is unconditional. The second is obvious; the first is deliberate and NARROW: plenty of
-    objects join the cast without a send we can see -- the room object itself, and the `Actions`
-    handlers a room hands to the ego (`(gEgo actions: egoDoVerb init:)`) -- so "no init site" means
-    "we did not find out", not "absent". Strengthening a guard on a non-observation is the direction
-    that invents softlocks."""
-    gs = conds.get(name)
-    if not gs or any(g is None for g in gs):
-        return None
-    return gs[0] if len(gs) == 1 else GOr(list(gs))
+    See `any_guard` for why "never init'ed" reads as None: plenty of objects join the cast without
+    a send we can see -- the room object itself, and the `Actions` handlers a room hands to the ego
+    (`(gEgo actions: egoDoVerb init:)`)."""
+    return any_guard(conds.get(name))
 
 
 def _send_atom(n):

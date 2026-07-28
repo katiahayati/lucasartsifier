@@ -148,6 +148,35 @@ class MachineBuilder:
         # the per-script scan in _build covers it; a `(ScriptID s n)` target can live anywhere, so
         # the arming code has to be found by looking outward from the machine. Built once here
         # rather than re-scanned per machine, which would be quadratic over 341 scripts.
+        # CALL-SITE index for procedures. A machine armed inside a procedure has no way in of its
+        # own -- the procedure runs because someone CALLED it, so the conditions on the call are
+        # the machine's preconditions. KQ6 hangs the hole-in-the-wall chain off exactly that:
+        #
+        #     n404.sc:25   (procedure (proc404_0 param1) (global0 setScript: holeOnWall 0 param1))
+        #     rm409.sc:232 (method (doVerb param1) (switch param1 (25 (proc404_0 2)) ...))
+        #
+        # Scanned standalone, `holeOnWall` gets an UNCONDITIONAL entry, and since entries are
+        # alternatives that erases the `own(holeInTheWall)` the call site carries -- so putting the
+        # hole on the wall, watching the minotaur through it, and thus finding the secret door to
+        # his lair all become free. Same principle as `scriptid_refs`, which already carries a
+        # cross-script reference's path condition; ORed over call sites, and permissive (None) if
+        # any call site is unconditional or none was found.
+        self.proc_calls = {}
+        from extract import walk_stream, verb_param_scope
+
+        def scan_calls(body, source):
+            def leaf(n, pc):
+                if n.get("t") in ("PublicCall", "LocalCall") and n.get("name"):
+                    self.proc_calls.setdefault(n["name"], []).append(_conj(pc))
+            with verb_param_scope(source):
+                walk_stream(body, [], leaf)
+
+        for rn, s in ir.scripts.items():
+            for o in s.objects:
+                for mn, body in o.methods.items():
+                    scan_calls(body, mn)
+            for pn, body in s.procs.items():
+                scan_calls(body, pn)
         self.arms = {}
         for rn, s in ir.scripts.items():
             bodies = [(o.name, mn, b) for o in s.objects for mn, b in o.methods.items()]
@@ -255,7 +284,8 @@ class MachineBuilder:
         # from a proc in its own script had no entry whatever: KQ6's realm cutscene is armed by
         # `proc344_1`, and the item-state test guarding it went with it.
         for pname, pbody in script.procs.items():
-            self._scan_setscript(pbody, [], m, source="proc")
+            self._scan_setscript(pbody, [], m, source="proc",
+                                 owner=X.any_guard(self.proc_calls.get(pname)))
         # ...and the same scan over the OTHER scripts that arm this machine by `(ScriptID s n)`.
         # Deduplicated per body: one method can arm the same machine on several branches, and
         # _scan_setscript already records one entry per arming site within a body.
@@ -325,7 +355,8 @@ class MachineBuilder:
         """`cast_conditions` for a script, computed once -- `_build` runs per machine."""
         c = self._cast_cache.get(script.number)
         if c is None:
-            c = self._cast_cache[script.number] = X.cast_conditions(script)
+            c = self._cast_cache[script.number] = X.cast_conditions(
+                script, proc_guard=lambda pn: X.any_guard(self.proc_calls.get(pn)))
         return c
 
     def _scan_setscript(self, node, pc, m, source, armer=None, owner=None):

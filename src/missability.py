@@ -784,18 +784,59 @@ def state_musts(info, regs):
     Forward dataflow over the machine's own transitions, intersecting where paths rejoin, so a
     constraint survives only if EVERY way of getting here established it. A register the machine
     WRITES on the way loses its constraint at that point -- the machine changed it, so what held
-    before says nothing after."""
-    out = {}
-    ents = list(info.get("entries", ())) + list(info.get("init_entries", ()))
+    before says nothing after.
+
+    The dataflow node is `(state, local valuation)`, NOT the state alone, and that distinction is
+    the whole point. A cutscene routinely decides something early, remembers it in a LOCAL, and
+    acts on it much later. KQ6's tapestry is the case:
+
+        (2  (if (rLab seenSecretLatch:) (= local1 1) ... else (self cue:)))
+        (18 (if local1 ... (rLab hiddenDoorOpen: 1) ... else (self cue:)))
+
+    so opening the secret door to the minotaur's lair requires having watched him through the
+    hole-in-the-wall. Keyed by state alone, both branches of state 2 reach state 18 and the merge
+    -- correctly, for "what holds on EVERY path here" -- throws `seenSecretLatch` away before the
+    local can discriminate. Split the node by the local and the two paths never meet: the branch
+    that reaches the write is the one that established the latch. (Tracking locals as extra FACTS
+    instead of as part of the node does not work, and was tried; the merge still erases them.)
+
+    Locals are the machine's own, resolved exactly as `compile_machine` resolves them -- same
+    `_apply_counters` / `_ctr_holds`, same "unset reads as 0", same seeding from the arming
+    context's `entry_locals` -- so the two views of one machine cannot drift. A path whose counter
+    guard is false at the current valuation is not walked at all.
+
+    Returns a mapping usable as before (`sm.get(K, {})` merges every valuation reaching K, the
+    conservative answer) plus `sm.at(K, guard)`, which keeps only the valuations that guard's own
+    counter conditions admit -- what a consumer holding a specific path should ask."""
+    import compile as C
+    out = {}                                       # (K, loc-key) -> {R: set(values)}
     work = []
-    for (K, _eg) in ents:
-        work.append((K, {}))
-        out.setdefault(K, {})
+
+    def key(loc):
+        return tuple(sorted(loc.items()))
+
+    def seed(K, loc):
+        k = (K, key(loc))
+        if k not in out:
+            out[k] = {}
+            work.append((K, dict(loc), {}))
+
+    ents = list(info.get("entries", ()))
+    elocs = list(info.get("entry_locals", ()))
+    for i, (K, _eg) in enumerate(ents):
+        seed(K, elocs[i] if i < len(elocs) else {})
+    ients = list(info.get("init_entries", ()))
+    ilocs = list(info.get("init_entry_locals", ()))
+    for i, (K, _eg) in enumerate(ients):
+        seed(K, ilocs[i] if i < len(ilocs) else {})
     seen = 0
-    while work and seen < 4000:
+    while work and seen < 20000:
         seen += 1
-        K, cur = work.pop()
+        K, loc, cur = work.pop()
         for (g, w, gg, c, tr) in info["states"].get(K, ()):
+            if any(isinstance(a, tuple) and a and a[0] == "CTR" and not C._ctr_holds(a, loc)
+                   for a in (g if isinstance(g, list) else [g])):
+                continue                           # this branch is not taken at this valuation
             nxt = dict(cur)
             for R in regs:
                 v = required_values(g, R)
@@ -813,15 +854,46 @@ def state_musts(info, regs):
                 dst = tr[1] + 1
             else:
                 continue
-            if dst in out:
-                merged = {R: out[dst][R] | nxt[R] for R in set(out[dst]) & set(nxt)}
-                if merged == out[dst]:
+            nloc = C._apply_counters(loc, c or ())
+            dk = (dst, key(nloc))
+            if dk in out:
+                merged = {R: out[dk][R] | nxt[R] for R in set(out[dk]) & set(nxt)}
+                if merged == out[dk]:
                     continue                       # fixpoint on this edge
-                out[dst] = merged
+                out[dk] = merged
             else:
-                out[dst] = nxt
-            work.append((dst, out[dst]))
-    return out
+                out[dk] = nxt
+            work.append((dst, nloc, out[dk]))
+    return _Musts(out)
+
+
+class _Musts(dict):
+    """`state -> musts`, merged over local valuations, with `at()` for a specific path.
+
+    Subclasses dict so every existing `sm.get(K, {})` reads the merged (conservative) answer and
+    nothing had to change to keep working."""
+
+    def __init__(self, by_node):
+        self._by_node = by_node
+        merged = {}
+        for (K, _lk), d in by_node.items():
+            merged[K] = d if K not in merged else \
+                {R: merged[K][R] | d[R] for R in set(merged[K]) & set(d)}
+        super().__init__(merged)
+
+    def at(self, K, guard):
+        """The musts at K over only the valuations `guard`'s own counter conditions admit."""
+        import compile as C
+        conds = [a for a in (guard if isinstance(guard, list) else [guard])
+                 if isinstance(a, tuple) and a and a[0] == "CTR"]
+        if not conds:
+            return self.get(K, {})
+        acc = None
+        for (K2, lk), d in self._by_node.items():
+            if K2 != K or not all(C._ctr_holds(a, dict(lk)) for a in conds):
+                continue
+            acc = dict(d) if acc is None else {R: acc[R] | d[R] for R in set(acc) & set(d)}
+        return acc if acc is not None else self.get(K, {})
 
 
 def entry_reqs(info, regs):
@@ -1002,7 +1074,7 @@ def edge_meta(em, regs):
                     # ...whatever every path THROUGH the machine to this state established, and
                     # the path condition of the flat edge this EXIT suppressed (see `suppressed`).
                     supp_rq, supp_own = _merged((info["room"], tr[1], info.get("inst")))
-                    for R, vals in (list(sm.get(K, {}).items()) + list(chain.items())
+                    for R, vals in (list(sm.at(K, g).items()) + list(chain.items())
                                     + list(inherited.items()) + list(supp_rq.items())):
                         rq[R] = (rq[R] & vals) if R in rq else set(vals)
                     meta[(info["room"], tr[1])].append(
@@ -1120,7 +1192,14 @@ class IrSccReach(SccReach):
                                 self._rstep[gi][info["room"]].add((frm, v))
                         else:
                             self._inroom[gi][info["room"]].add(v)
-                            self._inroom_own[(gi, info["room"], v)] = frozenset(_own_positive(g))
+                        # ...and the write's PRECONDITIONS either way. Learning that a write is an
+                        # ordered transition says nothing about what it costs, but `_rstep` recorded
+                        # only the ordering, so an ordered write became free: KQ6's tapestry sets
+                        # `hiddenDoorOpen` -- the secret door to the minotaur's lair -- and every
+                        # arming of that cutscene pins the same flag, so the write went to `_rstep`
+                        # and the hole-in-the-wall it depends on was dropped on the floor.
+                        self._inroom_own.setdefault((gi, info["room"], v),
+                                                    frozenset(_own_positive(g)))
         self._own_fixpoint()
         self._pstates = {R: self._walk(R, frozenset()) for R in self.regs}
 
@@ -1191,7 +1270,7 @@ class IrSccReach(SccReach):
                     for (gi, v) in w:
                         if gi not in regs or (gi, info["room"], v) not in self._inroom_own:
                             continue
-                        d = dict(sm.get(K, {}))
+                        d = dict(sm.at(K, g))
                         for S in self.regs:
                             vs = required_values(g, S)
                             if vs:
@@ -1242,8 +1321,10 @@ class IrSccReach(SccReach):
         r, st = node
         out = {(r, v) for v in self._inroom[R].get(r, ())
                if not (banned and self._inroom_own.get((R, r, v), frozenset()) & banned)}
-        # ...plus writes the game only makes FROM a particular value of R -- see _build_product
-        out |= {(r, to) for (frm, to) in self._rstep[R].get(r, ()) if frm == st}
+        # ...plus writes the game only makes FROM a particular value of R -- see _build_product.
+        # Same item cost as any other write: knowing WHEN the game makes it does not make it free.
+        out |= {(r, to) for (frm, to) in self._rstep[R].get(r, ()) if frm == st
+                and not (banned and self._inroom_own.get((R, r, to), frozenset()) & banned)}
         for b in self.edges.get(r, ()):
             for (req, sets, alts) in self._emeta.get((r, b), (self._FREE,)):
                 need = req.get(R)

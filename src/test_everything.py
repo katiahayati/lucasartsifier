@@ -223,6 +223,43 @@ def test_setscript():
     check("a pseudo-room named for a LIST of coordinates recovers all of them",
           listed.get(411) == {65, 103, 112, 130, 165, 183, 230}, repr(listed))
 
+    # A machine armed inside a PROCEDURE has no way in of its own -- the proc runs because someone
+    # called it. KQ6 puts the hole-in-the-wall up through one: `proc404_0` arms `holeOnWall`, and
+    # its call sites are `doVerb` cases on the hole itself. Scanned standalone the entry is
+    # unconditional, and one vacuous alternative erases the item gate.
+    b404 = MA.MachineBuilder(kir3, lambda *a: False)
+    hw = next((x for x in b404.machines(kir3.scripts[404]) if x.inst == "holeOnWall"), None)
+    check("a machine armed inside a procedure inherits its CALL SITES",
+          hw is not None and hw.entries
+          and all(g is not None and "own(18)" in str(g) for _k, g in hw.entries),
+          repr([str(g)[:80] for _k, g in (hw.entries if hw else [])]))
+
+    # `state_musts` splits its dataflow node by the machine's LOCALS. A cutscene decides something
+    # early, remembers it in a local, and acts on it much later -- KQ6's tapestry tests
+    # `seenSecretLatch` at state 2, keeps it in local1, and only opens the secret door at state 18.
+    # Keyed by state alone both branches reach 18 and the merge throws the fact away (correctly,
+    # for "what holds on EVERY path") before the local can discriminate.
+    import missability as MI
+    from guard_ast import Pred
+    LATCH = Pred("CMP", var=900, op="==", value="1")
+    info = {
+        "entries": [(0, None)], "init_entries": [], "entry_locals": [{}], "init_entry_locals": [],
+        "states": {
+            0: [([LATCH], [], [], [(("L", 1), "set", 1)], ("ADVANCE",)),   # saw it -> local1 := 1
+                ([], [], [], [], ("ADVANCE",))],                            # else, local1 stays 0
+            1: [([("CTR", ("L", 1), "!=", 0)], [(901, 1)], [], [], ("ADVANCE",))],
+        },
+    }
+    sm = MI.state_musts(info, {900})
+    check("merged musts lose the fact where the two branches rejoin",
+          sm.get(1, {}) == {}, repr(sm.get(1, {})))
+    check("...but the per-PATH view keeps it for the branch the local selects",
+          sm.at(1, [("CTR", ("L", 1), "!=", 0)]) == {900: {1}},
+          repr(sm.at(1, [("CTR", ("L", 1), "!=", 0)])))
+    check("...and the other branch of the same local is unconstrained",
+          sm.at(1, [("CTR", ("L", 1), "==", 0)]) == {},
+          repr(sm.at(1, [("CTR", ("L", 1), "==", 0)])))
+
 # ---- Part 3: fall-through hack removed (no free start bypass) ------------
 def test_no_fallthrough_bypass():
     print("Part 3: start-state fall-through hack removed")
