@@ -14,6 +14,11 @@ Same two rules as the KQ4 oracle, from the user:
   * An ADDITION is treated with SUSPICION -> confirm. It may be a real new catch to promote out of
     KNOWN_GAPS, or a false positive.
 
+FOUR columns, because "real softlock" and "we should flag it" are not the same question:
+EXPECTED_CAUGHT (real, and we catch it) · KNOWN_GAPS (real, and we miss it) · CONFIRMED_SAFE
+(re-obtainable -- flagging one is a false positive) · LONG_ENDING_ONLY (gates the long ending, not
+the credits -- deliberately not caught under the current goal).
+
 Provenance differs per item and is recorded inline, because it matters how much weight each
 carries: some are in-game user rulings, the rest are walkthrough-derived. See memory
 `kq6-softlock-ground-truth` and `docs/KQ6-SOFTLOCK-CANDIDATES.md`.
@@ -53,11 +58,33 @@ EXPECTED_CAUGHT = {
 # end of the run so a promotion is noticed. See docs/KQ6-SOFTLOCK-CANDIDATES.md for each row's
 # measured state.
 KNOWN_GAPS = {
-    "teaCup",           # B3 carry-in / Styx-water carry-out, long path
     "huntersLamp",      # the old lamp -- traded away, and befriending Jollo depends on it
-    "skull",            # B2 carry-down, AND the vessel for the B3 carry-in (amber + egg + hair)
+    "skull",            # the vessel for the B3 carry-in (amber + egg + hair); the loss is the
+                        # `throwSkull` spend at rm420, not a carry-down -- rm415 is the UPPER
+                        # catacombs, which the shield ruling says you can return to
     "peppermint",       # castle carry-in, short path; the oracle itself calls this one uncertain
 }
+
+# GATES THE LONG ENDING, NOT WINNABILITY -- deliberately NOT caught, and not a gap.
+#
+# Our question is "can you still reach the credits", and KQ6 has two castle entrances that are the
+# game's two paths: rm220->rm730 on the disguise (short) and rm230->rm710 on the magic paint
+# (long). An item needed only for the long path therefore does not make the game unwinnable, and
+# the model is right not to flag it.
+#
+#   teaCup: user, 2026-07-28, two rulings the same day and the second one narrows the first.
+#     First: "it's required for the long ending and we should not let you leave the realm of the
+#     dead without it." Then: "the tea cup is only needed outside the castle to get in" -- which is
+#     the same argument that put `clothes` in CONFIRMED_SAFE. What that argument does NOT cover is
+#     the Styx water: you draw it at rm660 during the Realm's single visit, and flag 58 is a hard
+#     conjunct on mixing the paint (`KqInv.sc:2136` arms `mixPaintScr` under
+#     `(and flag68 flag58 (not flag22))`). So if this ever becomes a softlock the boundary is the
+#     REALM EXIT, not the castle entrance. Parked by the user -- "we'll really figure it out later".
+#
+# Same class as the four island treasures, which gate the BEST ending (docs/KQ6-SOFTLOCK-CANDIDATES).
+# In ALLOWED, so catching one is a question rather than a hard failure -- but it IS a question:
+# under the current goal it should not fire, so if it does, the goal or the path model has moved.
+LONG_ENDING_ONLY = {"teaCup"}
 
 # CONFIRMED SAFE -- flagging one of these is a false positive, not a promotion.
 #   shield: user, 2026-07-27, after testing -- "you were completely right and I was completely
@@ -69,7 +96,7 @@ KNOWN_GAPS = {
 #     both on the open map -- so it was a KNOWN_GAP by association with a chain it does not travel.
 CONFIRMED_SAFE = {"shield", "clothes", "coal"}
 
-ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS
+ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS | LONG_ENDING_ONLY
 
 PASS, FAIL = [], []
 
@@ -134,6 +161,12 @@ def run():
           fronts.get("brick") and all(e.endswith("->rm420") for e in fronts["brick"]),
           repr(fronts.get("brick")))
 
+    check("a LONG-ENDING-only item is not flagged as unwinnable",
+          not (caught & LONG_ENDING_ONLY),
+          f"FLAGGED: {sorted(caught & LONG_ENDING_ONLY)} -- these gate the long ending, not the "
+          f"credits, so under the current goal they should not fire. If one does, the goal or the "
+          f"two-castle-entrance path model has moved; do not just promote it.")
+
     promoted = caught & KNOWN_GAPS
     if promoted:
         print(f"  [note] a KNOWN GAP is now being caught: {sorted(promoted)} -- if the user "
@@ -141,6 +174,7 @@ def run():
 
     print(f"\n  caught now: {sorted(caught)}")
     print(f"  still-missed ground truth: {sorted(KNOWN_GAPS - caught)}")
+    print(f"  long-ending-only (deliberately not caught): {sorted(LONG_ENDING_ONLY)}")
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 
