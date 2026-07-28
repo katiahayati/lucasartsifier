@@ -1081,14 +1081,16 @@ class Extractor:
                     dests.add(-v)
             if len(dests) < 2:                 # a lone negative is a sentinel, not a table
                 continue
-            cell = {}                          # room -> its grid coordinate
-            i = 0
+            cell = {}                          # room -> the grid coordinates it occupies
             locs = sorted(s.locals, key=lambda l: l["index"])
             for a, b in zip(locs, locs[1:]):
                 v = a["value"]
                 v = v - 65536 if v > 32767 else v
                 if v < 0 and -v in dests:
-                    cell.setdefault(-v, b["value"])
+                    cell.setdefault(-v, {b["value"]})
+            for r, cs in self._listed_pseudo_rooms(s, rooms).items():
+                cell.setdefault(r, set()).update(cs)
+                dests.add(r)
             reach = self._maze_reach(s, cell)
             if reach:
                 self._splice_dispatcher(s.number, reach, dests)
@@ -1096,6 +1098,36 @@ class Extractor:
                 for d in sorted(dests):        # no grid recovered: dispatcher reaches them all
                     self.ts.edges.append(Edge(s.number, d))
                     self.ts.rooms.add(d)
+
+    def _listed_pseudo_rooms(self, script, rooms):
+        """`room -> {coords}` for a pseudo-room named for a SET of cells rather than one.
+
+        The (room, coordinate) table pairs each room with a single cell, but a maze can also send a
+        whole LIST of coordinates to one room. KQ6's dispatcher does it right after the table walk:
+
+            (if (proc999_5 temp1 65 103 112 130 165 183 230) (return -411))
+
+        Same negative-means-a-room convention, same membership-test idiom the door lists use, so
+        nothing new is being recognised -- but rm411 is SEVEN cells, and without them it is a room
+        with no coordinate at all. `_splice_dispatcher` then falls back to "reaches every room in
+        the table", which is how the maze acquired a free edge into the minotaur's lair."""
+        out = {}
+        for o in script.objects:
+            for body in o.methods.values():
+                for n in I.walk(body):
+                    if not (isinstance(n, dict) and n.get("t") in ("PublicCall", "LocalCall")
+                            and n.get("name") in _ONEOF):
+                        continue
+                    vals = [I.as_int(k) for k in (n.get("kids") or [])[1:]]
+                    if len(vals) < 2 or any(v is None for v in vals):
+                        continue
+                    for r in I.walk(body):        # the room this membership test RETURNS
+                        if not (isinstance(r, dict) and r.get("t") == "Return" and r.get("kids")):
+                            continue
+                        v = I.as_int(r["kids"][0])
+                        if v is not None and v < 0 and -v in rooms and -v != script.number:
+                            out.setdefault(-v, set()).update(vals)
+        return out
 
     def _maze_reach(self, script, cell):
         """room -> the rooms it can WALK to, from the maze's own wall data. `{}` if not recovered.
@@ -1156,10 +1188,14 @@ class Extractor:
                 adj[c].add(c + d)
             for c in b:
                 adj[c].add(c - d)
-        room_at = {c: r for r, c in cell.items()}
+        for r, cs in cell.items():                # a named room speaks for its own cells
+            for delta in self._repurposed_dirs(script, r):
+                for c in cs:
+                    adj[c].discard(c + delta)
+        room_at = {c: r for r, cs in cell.items() for c in cs}
         out = {}
-        for r, c in cell.items():
-            seen, q = {c}, [c]
+        for r, cs in cell.items():
+            seen, q = set(cs), list(cs)
             while q:
                 u = q.pop()
                 for v in adj.get(u, ()):
@@ -1167,6 +1203,151 @@ class Extractor:
                         seen.add(v)
                         q.append(v)
             out[r] = {room_at[x] for x in seen if x in room_at} - {r}
+        return out
+
+    def _dir_table(self, script):
+        """`(key, {direction code: coordinate delta})` -- the maze's own direction table.
+
+        A coordinate maze has to turn "which way did you leave" into a step, and it does it in one
+        switch, so both the register and every offset are READ rather than assumed:
+
+            (switch ((ScriptID 30 0) prevEdgeHit:)          ; KQ6 LBRoom::init
+                (1 (-= temp0 16)) (3 (+= temp0 16)) (2 (++ temp0)) (4 (-- temp0)))
+
+        Recognised by shape: a switch whose every case adjusts one variable by a constant. The
+        direction register has TWO spellings by the time anyone asks -- the property above, and the
+        synthetic GLOBAL `lower_obj_props` rewrites it to, since it is exactly the kind of
+        written-and-read object property we model as state. `key` says which was found:
+        `("sel", name)` or `("glob", index)`. `(None, {})` if the script has no such switch."""
+        best = (None, {})
+        for o in script.objects:
+            for body in o.methods.values():
+                for n in I.walk(body):
+                    if not (isinstance(n, dict) and n.get("t") == "Switch" and n.get("kids")):
+                        continue
+                    head, sel = n["kids"][0], None
+                    if isinstance(head, dict) and head.get("t") == "Variable" \
+                            and head.get("vtype") == "Global":
+                        sel = ("glob", head["index"])
+                    else:
+                        for h in I.walk(head):
+                            if isinstance(h, dict) and h.get("t") == "Selector" and h.get("name"):
+                                sel = ("sel", h["name"])
+                    if not sel:
+                        continue
+                    tbl = {}
+                    for c in n["kids"][1:]:
+                        if not (isinstance(c, dict) and c.get("t") == "Case"):
+                            continue
+                        k = I.as_int(c["kids"][0])
+                        for x in I.walk(c["kids"][1]):
+                            if not isinstance(x, dict):
+                                continue
+                            t, ks = x.get("t"), x.get("kids") or []
+                            step = {"Increment": 1, "Decrement": -1}.get(t)
+                            if step is None and t in ("AssignmentAdd", "AssignmentSub") and len(ks) > 1:
+                                v = I.as_int(ks[1])
+                                step = None if v is None else (v if t == "AssignmentAdd" else -v)
+                            if step is not None and k is not None:
+                                tbl[k] = step
+                    if len(tbl) > len(best[1]):
+                        best = (sel, tbl)
+        return best
+
+    def _repurposed_dirs(self, disp_script, room):
+        """Coordinate deltas a NAMED maze room takes back for an exit of its OWN.
+
+        The generic door table is the DISPATCHER's, and it is right about the cells the dispatcher
+        draws. A cell that is a real room is drawn by that room's script instead, and a room may
+        use a screen edge for something else entirely. KQ6's rm405 is the catacombs entrance:
+
+            (method (init) ... (proc402_2)          ; its own layout, not the table's for cell 117
+               ((ScriptID 30 7) addToPic:)          ; topDoor  -> north
+               ((ScriptID 30 5) addToPic:))         ; leftDoor -> west ... and no south opening
+            (method (doit) (cond ((global2 script:))
+               ((== (global0 edgeHit:) 3)           ; the SOUTH edge...
+                  ((ScriptID 30 0) prevEdgeHit: 3)
+                  (global2 setScript: walkOut))))   ; ...LEAVES the catacombs: newRoom 340
+
+        The table says cell 117's south is open, so we emitted a descent into the LOWER level that
+        the game does not have -- and with it a way to reach the minotaur's lair while skipping both
+        rooms the player must survive to get there. Deleting it, the trapdoor becomes the only way
+        down and the crushing-ceiling room becomes unavoidable, which is what the game does.
+
+        Narrow, because removing movement is the unsafe direction: the direction is dropped only
+        when EVERY room the claiming branch can leave to is some other room. A branch that can still
+        reach the dispatcher is a maze move and is left alone -- KQ6's rm409 walks out either to the
+        dispatcher or through the secret door to the lair, and it keeps both."""
+        s = self.ir.scripts.get(room)
+        obj = _room_object(s, self.ir) if s else None
+        if obj is None or "doit" not in obj.methods:
+            return set()
+        sel, tbl = self._dir_table(disp_script)
+        if not sel or not tbl:
+            return set()
+        out = set()
+        arms = []                    # every branch arm anywhere in `doit` -- the exit cond is
+        #   typically wrapped in a seq alongside `(super doit:)`, so the top level is not a branch
+
+        def collect(node):
+            if not isinstance(node, dict):
+                return                   # an `if` with no else arm hands us a None body
+            sh = I.control_shape(node)
+            if sh[0] == "branch":
+                for _c, body in sh[1]:
+                    arms.append(body)
+                    collect(body)
+                return
+            for k in (sh[1] if sh[0] == "seq" else
+                      (sh[1:] if sh[0] == "loop" else (node.get("kids", ()) or ()))):
+                if isinstance(k, dict):
+                    collect(k)
+
+        collect(obj.methods["doit"])
+        for body in arms:
+            d, dests = None, set()
+            for n in I.walk(body):
+                if not isinstance(n, dict):
+                    continue
+                if (sel[0] == "glob" and n.get("t") == "Assignment"
+                        and len(n.get("kids") or []) > 1):
+                    lhs = n["kids"][0]
+                    if (isinstance(lhs, dict) and lhs.get("t") == "Variable"
+                            and lhs.get("vtype") == "Global" and lhs.get("index") == sel[1]
+                            and I.as_int(n["kids"][1]) is not None):
+                        d = I.as_int(n["kids"][1])
+                if n.get("t") != "Send":
+                    continue
+                _r, msgs = I.send_pairs(n)
+                for msel, params in msgs:
+                    if sel[0] == "sel" and msel == sel[1] and params \
+                            and I.as_int(params[0]) is not None:
+                        d = I.as_int(params[0])
+                    if msel == "setScript" and params:
+                        dests |= self._script_newrooms(s, params[0])
+                    if msel == "newRoom" and params and I.as_int(params[0]) is not None:
+                        dests.add(I.as_int(params[0]))
+            if d in tbl and dests and disp_script.number not in dests:
+                out.add(tbl[d])
+        return out
+
+    def _script_newrooms(self, script, ref):
+        """Every literal `newRoom:` destination the Script named by `ref` can reach."""
+        tgt = self.ir.script_id_target(ref) if isinstance(ref, dict) else None
+        name = tgt[1] if tgt else (ref.get("name") if isinstance(ref, dict) else None)
+        holder = self.ir.scripts.get(tgt[0]) if tgt and tgt[0] is not None else script
+        obj = next((o for o in holder.objects if o.name == name), None) if holder else None
+        if obj is None:
+            return set()
+        out = set()
+        for body in obj.methods.values():
+            for n in I.walk(body):
+                if not (isinstance(n, dict) and n.get("t") == "Send"):
+                    continue
+                _r, msgs = I.send_pairs(n)
+                for msel, params in msgs:
+                    if msel == "newRoom" and params and I.as_int(params[0]) is not None:
+                        out.add(I.as_int(params[0]))
         return out
 
     def _splice_dispatcher(self, disp, reach, dests):

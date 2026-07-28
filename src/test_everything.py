@@ -199,6 +199,30 @@ def test_setscript():
           and all(g is not None and want in str(g) for _k, g in lair.entries),
           repr([str(g)[:70] for _k, g in (lair.entries if lair else [])]))
 
+    # THE MAZE GRID. `makeDoors` is the DISPATCHER's door table and is right about the cells the
+    # dispatcher draws; a cell that is a real room is drawn by that room's own script, and may use
+    # a screen edge for something else. KQ6's rm405 is the catacombs entrance: the table says its
+    # south is open, but its own doit sends `edgeHit 3` to `walkOut -> newRoom 340`, i.e. OUT. With
+    # the invented descent the lower level is walkable from the entrance and both rooms the player
+    # must survive can be skipped; without it the trapdoor is the only way down.
+    ex = X.Extractor.__new__(X.Extractor)
+    ex.ir = kir
+    key, tbl = ex._dir_table(kir.scripts[400])
+    check("the maze's direction table is read out of its own re-entry switch",
+          key == ("sel", "prevEdgeHit") and tbl == {1: -16, 3: 16, 2: 1, 4: -1}, f"{key} {tbl}")
+    check("rm405 takes SOUTH back for its own exit; the other maze rooms take nothing",
+          ex._repurposed_dirs(kir.scripts[400], 405) == {16}
+          and all(not ex._repurposed_dirs(kir.scripts[400], r) for r in (406, 409, 420, 435)),
+          repr(sorted(ex._repurposed_dirs(kir.scripts[400], 405))))
+    check("...and a room whose walk-out can still reach the dispatcher keeps its direction",
+          not ex._repurposed_dirs(kir.scripts[400], 409))
+    # A pseudo-room named for a LIST of cells: `(if (proc999_5 temp1 65 103 ...) (return -411))`.
+    # Without them rm411 has no coordinate, and _splice_dispatcher's fallback gives a cell-less
+    # room every room in the table -- which is where the maze's free edge into the lair came from.
+    listed = ex._listed_pseudo_rooms(kir.scripts[400], X._room_numbers(kir))
+    check("a pseudo-room named for a LIST of coordinates recovers all of them",
+          listed.get(411) == {65, 103, 112, 130, 165, 183, 230}, repr(listed))
+
 # ---- Part 3: fall-through hack removed (no free start bypass) ------------
 def test_no_fallthrough_bypass():
     print("Part 3: start-state fall-through hack removed")
