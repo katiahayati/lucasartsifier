@@ -44,13 +44,17 @@ believe you can go back) · `not required` · `no source`.
 | **brick** | B1 carry-IN | **YES** | ✓ **CAUGHT 2026-07-28** | frontier = every way into rm420 (the crushing ceiling, a cut vertex on the only descent); src rm510, needed rm370/420 |
 | **hole-in-the-wall** | B1 carry-IN | **YES** | ✓ **CAUGHT 2026-07-28** | frontier rm340→rm370/405/440; src **rm480 only** — the sixteen maze "sources" were take-backs of a hole you put up yourself |
 
-**⭐ TALLY AS OF `68b6cc1` (2026-07-28): 10 caught of 16 real, 6 missed, 4 correctly skipped.**
+**⭐ TALLY AS OF `c340e1a` (2026-07-28): 10 caught of 15 real, 5 missed, 5 correctly skipped.**
 `brick, dagger, deadMansCoin, holeInTheWall, mint, mirror, nightingale, scarf, skeletonKey,
 tinderBox`. The **entire B1 carry-IN class is now closed** — all four items you must bring into the
 catacombs strand at the entrance (the brick at the crusher, which is a cut vertex on the way in).
-Still missed: `teacup, handkerchief, huntersLamp/old lamp, skull, coal, peppermint`. Mechanisms in
-`KQ6-CATACOMBS-PLAN.md`; pinned by `src/test_kq6_ground_truth.py`, which is where this table's
-verdicts are now enforced rather than merely recorded.
+Still missed: `teacup, handkerchief, huntersLamp/old lamp, skull, peppermint` — each root-caused in
+the next section. **`coal` left the denominator**: it buys the egg, and it is the egg that crosses
+into the Realm. Mechanisms in `KQ6-CATACOMBS-PLAN.md`; pinned by `src/test_kq6_ground_truth.py`,
+which is where this table's verdicts are now enforced rather than merely recorded.
+
+The per-row "model" column above is a MEASUREMENT dated 2026-07-27 and is now stale for the six
+rows that moved; the tally and the root-cause section below are the live reading.
 
 **Tally (2026-07-27, superseded): 7 caught, 10 missed, 3 correctly skipped.** The old table read "7 of 14" because it merged
 brick / hole-in-the-wall / red scarf into ONE row and filed `skeletonKey` under the vizier's letter.
@@ -72,6 +76,105 @@ additionally reported as
 
 which is the Realm of the Dead, named as a region, for the right reason: flag 15 is set on arrival
 at rm600 and the entry demands it clear.
+
+## ⭐ THE FIVE REMAINING MISSES, ROOT-CAUSED 2026-07-28 (`c340e1a`)
+
+Every one was checked against the scripts and against `docs/KQ6-ITEM-ORACLE.md`, item by item, to
+answer "is this actually a miss?". **All five are real misses**, `coal` was NOT and has been
+demoted, and the causes reduce to three mechanisms — none of which is the detector being wrong
+about reachability.
+
+| item | where you get it (verified) | where you use it (verified) | cause of the miss |
+|---|---|---|---|
+| **peppermint** | rm390 `getLeaf`, Sacred Mountain cave | rm270 clown · rm510 the genie eats it · rm750 give-genie; destroyed at rm510/rm750 | **(A) phantom debug sources.** Kill them and it is CAUGHT at `rm220->rm730 / rm230->rm710`, the B4 boundary the oracle predicted |
+| **handkerchief** | rm630, inside the Realm | `boyGhostScript.sc:75/93 has: 17`, `:484 put: 17 820` | **(B) script scope.** `required[17]` is EMPTY — we capture no use at all |
+| **huntersLamp** | rm520 `getLamp` | rm230 spellBook · rm580 makeRain; **traded away** at `lampTradeScr.sc:404 (global0 put: 19)` — no destination, i.e. destroyed | **(B) script scope**, on the LOSS rather than the use: `drops[19]` is empty, so nothing can strand |
+| **skull** | rm415 `getSkull`, upper catacombs | rm280 · rm420 `throwSkull` (which SPENDS it: `put: 11 global11`) · rm580 `getEmbers`, itself gated on a BIT in the skull's own `state:` | **(C) judged reachable**, plus a dangerous-ACTION shape: throwing the skull at the crusher instead of using the brick spends the vessel the oracle needs for B3 |
+| **teaCup** | rm480 `getBottle` (script 483) | **rm660 `riverStyx::doVerb 44 -> getWaterScr`** (Styx water, inside the Realm) · rm230 magic-paint chain · rm470 | **(C) judged reachable.** Sources clean up under (A) but the Realm seal still does not bite for it |
+| ~~coal~~ | rm560 `getCoal` | every use at rm490 (knightBlock, coalQueenTalk, coalToQueen, queensLeave) | **NOT A MISS.** Oracle rows 6 and 10: coal buys the spoiled EGG from the White Queen, and it is the EGG that crosses into the Realm. Demoted to CONFIRMED_SAFE |
+
+### (A) KQ6 has a developer cheat we do not recognise
+
+`Main.sc:521` sets `global100` from a file-existence probe for a developer marker:
+
+    (if (FileIO 10 @temp0) (= global100 1) else (= global100 0))
+
+It gates debug key handlers, a memory-fragmentation dialog, and **item hand-outs**. `rm470.sc:117`:
+
+    (if (and global100 (== global12 99) (FileIO 10 {g}))
+        (global0 get: 49 get: 46 get: 19 get: 11 get: 8))     ; five items at once
+
+`global12 == 99` is prevRoom == the intro room (`Main::init` ends `(self newRoom: 99)`), so this is
+unreachable in play. rm740 and rm750 carry the same shape; rm490 has a `prev == 99` + counter
+variant that hands over coal. **`vocab.derive_debug` returns `{}` for KQ6** — it looks for the `^=`
+debug-checkbox idiom, and KQ6 uses a FileIO probe. This is exactly the LSL2 rm82 landmine that
+`config.debug_globals` exists for.
+
+**Measured experiment (NOT committed):** pinning `global100` as a debug global gives
+
+    softlocks 10 -> 12: + peppermint (correct), + royalRing (a FALSE POSITIVE)
+    teaCup [470,480] -> [480]      skull [415,470] -> [415]
+    huntersLamp [470,520] -> [520] peppermint [390,740,750] -> [390]
+
+so it is **not a clean win** and must not be landed until the `royalRing` FP is understood. I did
+not isolate which effect of the debug gate surfaces the ring — the gate also filters debug-gated
+REGISTER writes, not only acquisitions.
+
+**`royalRing` is a false positive, settled two ways.** Oracle row 39: *"safe (reclaimable w/
+pearl)"* (row 30: the pearl buys it back from the pawn shop). And the script shows how we are
+fooled — `alexWedding.sc` (script 743, the rm740 wedding scene) state 6:
+
+    (cond ((proc999_5 ((global9 at: 39) owner:) 140 210)  (= state 10) (say ... 3 ...))
+          ((global0 has: 39)                              (= state 10) (say ... 4 ...))
+          (else                                           (say ... 2 1 ...)))
+
+It chooses **which line is spoken**, and the ring being AT rm140 or rm210 (given to the guards, or
+to Sing Sing) satisfies it as well as holding it. Both branches continue. `_own_positive` sees the
+bare `has: 39` arm and reads a requirement out of a narrative branch.
+
+### (B) `opmodel` is missing `extract`'s FOURTH script scope
+
+`extract.scriptid_refs` walks scripts loaded by `(ScriptID N)`; `opmodel`'s targets are only
+region / room / armed-by-proc-call. **132 of KQ6's 341 scripts are walked.** Two of the misses live
+in the gap:
+
+* `boyGhostScript` is **script 822**, referenced by `rm820.init` and `enterDungeon.changeState`.
+  `extract` reaches it, `opmodel` does not, so its machine is never lifted and the handkerchief's
+  only use never becomes a requirement.
+* `lampTradeScr` is **script 11**, referenced from **script 241** (`lampSeller.doVerb`) — which is
+  itself not a room, so `scriptid_refs` (which scans room scripts and Main only) never even sees
+  it. Two hops out, and neither walker arrives.
+
+This is a [[same-rule-two-places]] bug and it is general: every SCI1.1 title keeps real state in
+these scripts.
+
+### The guard we emit, and why it is NOT the emergency I first called it
+
+    edge rm220->rm730: (and (gEgo has: 8) (gEgo has: 23) (gEgo has: 27) (gEgo has: 44))
+    edge rm230->rm710: (and (gEgo has: 8) (gEgo has: 23) (gEgo has: 27) (gEgo has: 44))
+
+I read this as possibly unsatisfiable — a Realm-only `skeletonKey(44)` conjoined with a
+`nightingale(27)` the long path trades away. **Both halves of that worry are wrong**, measured:
+
+* The nightingale is a genuine castle-interior item (`rm850.sc:594 put: 27 850` releases the bird;
+  `rm880` branches on whether the guards took it to rm730), and it is **freely re-obtainable**: the
+  pawn shop is a generic exchange over a four-item table (`counterInset.sc:23`
+  `[local1 21] = [48 3 14 27 ...]`), and `rm280::init` re-inits each shelf item whenever the shop
+  owns it. Trade it for the flute, use the flute, trade back.
+* The skeletonKey demand is right in kind — **user ruling 2026-07-28**: *"Preventing you from
+  leaving the realm without it is the right thing."*
+
+What IS wrong is **placement**. The model has two distinct castle entrances and they are the game's
+two paths — `rm220->rm730` alts `{clothes(5)}` (the disguise) and `rm230->rm710` alts
+`{brush(3), teaCup(46)}` (the magic paint) — and we stamp the identical conjunction on both. A
+Realm-only literal belongs at the Realm's EXIT (`rm680->rm155`), the last edge where you can still
+comply, which is what `guards.py` claims to do. The user has explicitly deprioritised this behind
+detection work. See memory `path-forcing-guards`.
+
+### Next moves, in the agreed order
+1. **`opmodel`'s fourth script scope** — clean bug, two known payoffs, general across SCI1.1.
+2. **Guard placement** — push route-limited literals back to the last compliant edge.
+3. **Derive the FileIO-probe debug global** — held until the `royalRing` FP is understood.
 
 ## THE REALM IS NOW MODELLED AS A ONE-WAY POCKET (2026-07-27)
 
