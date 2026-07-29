@@ -72,11 +72,25 @@ def test_entry_alts():
     check("...and blocked() agrees it is open",
           not M.blocked(M.entry_alts(m2)[10], frozenset({30})))
 
-    # a state no entry reaches -> no alternatives -> treated as ungated, never over-blocked
+    # A state the entry-reach walk does not reach falls back to the machine's ARMING FLOOR: you
+    # cannot be executing any state of a machine without having armed it. This USED to come out
+    # `()` = ungated, on the reasoning "never over-block" -- but the walk stopping is ignorance
+    # about the internal path, not evidence the state is free, and the floor is the arming
+    # disjunction so it can never demand more than some arming genuinely did. KQ6's
+    # `wearClothingScr` is the case: its `newRoom: 730` sits one state past a `(x cue:)` handoff to
+    # another script, so the walk stopped and Beauty's clothes vanished from the castle's short door.
     m3 = _machine({**states, 20: [([], [], [], [], ("EXIT", 98))]},
                   entries=[(8, [_own(30)])])
-    check("unreachable-from-any-entry state stays ungated (never over-block)",
-          M.entry_alts(m3)[20] == () and not M.blocked(M.entry_alts(m3)[20], frozenset({30})))
+    check("a state the walk does not reach inherits the machine's ARMING FLOOR",
+          M.entry_alts(m3)[20] == (frozenset({30}),) and
+          M.blocked(M.entry_alts(m3)[20], frozenset({30})))
+
+    # ...but a machine with NO entries at all has no floor to inherit: we genuinely do not know
+    # how it is armed, and free is the only honest answer. This is what keeps the change from
+    # walling every homeless machine in the corpus.
+    m4 = _machine({**states, 20: [([], [], [], [], ("EXIT", 98))]}, entries=[])
+    check("no entries at all -> no floor, stays ungated",
+          M.entry_alts(m4)[20] == () and not M.blocked(M.entry_alts(m4)[20], frozenset({30})))
 
 
 def test_entry_musts():

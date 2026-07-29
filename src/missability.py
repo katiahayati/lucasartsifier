@@ -822,9 +822,28 @@ def entry_alts(info):
         return c
 
     per_entry = _entry_reach_walk(info, ents, carried, _ctr_ok, _apply)
+    # THE ARMING FLOOR. You cannot be executing ANY state of this machine without having armed it,
+    # so the machine's full arming disjunction bounds every state -- including one the walk above
+    # never reached. Falling off the end of the walk is IGNORANCE about the internal path, not
+    # evidence that the state is free; the same lesson `fatal_uses` had to learn ("falling off the
+    # end of the state graph is not evidence of survival"), in a different consumer.
+    #
+    # What stops the walk is idiom-specific and there are several: an elided state, a register
+    # handoff, or -- KQ6's `wearClothingScr` -- a state that cues ANOTHER script and is resumed by
+    # it, so the advance leaves this machine entirely. state 20 does `(secondGuardDoorScr cue:)`
+    # and state 21 is the `newRoom: 730` that puts on Beauty's clothes and walks into the castle.
+    # The walk stops at 20, so 21 came out ungated and the disguise requirement vanished from the
+    # castle's short door. A floor fixes the whole class at once rather than one idiom at a time.
+    #
+    # This can only ever ADD a requirement that some arming genuinely demands, never invent one:
+    # it is the disjunction OVER the entries, so an EXIT is blocked exactly when every way of
+    # arming the machine is blocked. A machine with NO entries keeps the empty tuple -- there we
+    # really do not know how it is armed, and free is the only honest answer.
+    floor = tuple({frozenset(_own_positive(eg)) for (_seen, eg, _loc) in per_entry})
     out = {}
     for K in info["states"]:
-        out[K] = tuple({frozenset(_own_positive(eg)) for (seen, eg, _loc) in per_entry if K in seen})
+        reached = tuple({frozenset(_own_positive(eg)) for (seen, eg, _loc) in per_entry if K in seen})
+        out[K] = reached or floor
     return out
 
 
