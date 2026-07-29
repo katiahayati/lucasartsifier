@@ -224,6 +224,20 @@ def run():
     #      separate the win from the loss here. See docs/KQ6-GOAL.md.
     #   2. The use site cannot be split by state either: it is `doVerb 37` on `floor`, a
     #      NewFeature cast UNCONDITIONALLY, so both product copies of rm850 carry it.
+    #      RE-MEASURED 2026-07-29, and this is the BINDING blocker -- sharper than it reads.
+    #      (a) `doVerb 37` really is the bird: the derived message table maps param 37 -> item 27,
+    #          so the attribution is right and there is no numbering bug to find here.
+    #      (b) The two doors are NOT separable by the interior. rm850 carries flag-15 (register
+    #          187) values [0, 1], and so do BOTH door rooms -- because once inside, rm730 and
+    #          rm710 are mutually reachable (long route 710->840->730; short route captured ->
+    #          820->710). The castle's own connectivity erases which door you came through.
+    #      (c) The long route reaches the bird's use site on its OWN path, without rm730:
+    #          230 -> 710 -> 720 -> 800 -> 810 -> 781 -> 850. And rm880, where the bird's flag
+    #          709:256 is consumed, has exactly ONE in-edge (rm850). So "the long route skips the
+    #          bird's room" is false; what is true is only that it does not NEED the bird there,
+    #          which is a statement about necessity and lands back on (1).
+    #      USER RULING 2026-07-29, asked directly rather than inferred: the bird IS optional on
+    #      the long route. So the guard is wrong, not the oracle -- this test stays RED.
     #   3. The dogs are not a flag-gated door. `spotEgoScr` is a REGION property (rgCastle:132
     #      `(if spotEgoScr (global2 setScript: spotEgoScr 0 param1))`) and the guards spot you
     #      POSITIONALLY -- the LSL2 rm47 henchmen shape. And capture is survivable: you escape
