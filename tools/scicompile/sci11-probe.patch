@@ -1,0 +1,64 @@
+diff --git a/tools/scicompile/main.cpp b/tools/scicompile/main.cpp
+index 5fae896..d807a13 100644
+--- a/tools/scicompile/main.cpp
++++ b/tools/scicompile/main.cpp
+@@ -33,6 +33,8 @@
+ #include <string>
+ #include <vector>
+ 
++bool g_probeSci11 = false;
++
+ namespace
+ {
+     // Synchronous task status: we never run the class-browser reload on a
+@@ -100,7 +102,9 @@ namespace
+             fprintf(stderr, "Failed to open game folder '%s': %s\n", gameDir.c_str(), e.what());
+             return false;
+         }
+-        resourceMap.SetVersion(sciVersion0);
++        resourceMap.SetVersion(g_probeSci11 ? sciVersion1_1 : sciVersion0);
++        fprintf(stderr, "[diag] version: SeparateHeap=%d\n",
++                (int)appState->GetVersion().SeparateHeapResources);
+ 
+         SyncTaskStatus status;
+         {
+@@ -487,6 +491,20 @@ namespace
+                         wroteOutput = true;
+                         fprintf(stderr, "Wrote script resource %d: %zu bytes -> %s\n",
+                                 (int)results.GetScriptNumber(), output.size(), outputPath.c_str());
++                        // PROBE: SCI1.1 splits a script into SCRIPT + HEAP resources; write both.
++                        if (appState->GetVersion().SeparateHeapResources)
++                        {
++                            std::vector<BYTE> &hp = results.GetHeapResource();
++                            std::string hpath = outputPath + ".hep";
++                            std::ofstream ho(hpath.c_str(), std::ios::out | std::ios::binary);
++                            if (!hp.empty())
++                            {
++                                ho.write(reinterpret_cast<const char *>(hp.data()), (std::streamsize)hp.size());
++                            }
++                            ho.close();
++                            fprintf(stderr, "Wrote heap resource %d: %zu bytes -> %s\n",
++                                    (int)results.GetScriptNumber(), hp.size(), hpath.c_str());
++                        }
+ 
+                         // Also refresh this script's .sco so a subsequent compile
+                         // of a dependent script sees the up-to-date interface.
+@@ -526,6 +544,18 @@ namespace
+ 
+ int main(int argc, char **argv)
+ {
++    // PROBE: --sci11 anywhere in argv pins sciVersion1_1.
++    {
++        std::vector<char *> filtered;
++        for (int i = 0; i < argc; ++i)
++        {
++            if (std::string(argv[i]) == "--sci11") { g_probeSci11 = true; continue; }
++            filtered.push_back(argv[i]);
++        }
++        static std::vector<char *> keep = filtered;
++        argv = keep.data();
++        argc = (int)keep.size();
++    }
+     if (argc == 3 && std::string(argv[1]) == "--sco")
+     {
+         return RunGenerateSCO(argv[2]);
