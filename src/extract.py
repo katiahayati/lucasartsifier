@@ -1040,8 +1040,134 @@ class Extractor:
                                     out.setdefault(v, set()).add(rn)
         return out
 
+    def _object_mentions(self, sc):
+        """`object name -> the sibling objects its methods name`, from `{"t": "Object"}` nodes.
+
+        This is how one object in a script hands control to another without going through the
+        export table: `(= next untieSelfAndStand)`, `(genie setScript: 0)`. Needed because
+        `ScriptID` names ONE export but SCI loads the whole script, so the rest of it runs only if
+        something inside reaches it."""
+        names = {o.name for o in sc.objects}
+        out = {}
+        for o in sc.objects:
+            hit = set()
+            for b in o.methods.values():
+                for n in I.walk(b):
+                    if isinstance(n, dict) and n.get("t") == "Object":
+                        nm = n.get("name")
+                        if nm in names and nm != o.name:
+                            hit.add(nm)
+            out[o.name] = hit
+        return out
+
+    def _scriptid_scope(self, sc, rows, present):
+        """`{object name -> guard}` for the objects of a ScriptID-loaded script that can RUN here.
+
+        Two oracles, deliberately separate, because they fail in opposite directions:
+
+          * `present` -- every export of this script NAMED from this room, from a plain `I.walk`.
+            This decides which objects EXIST in the scope, and it must not miss one.
+          * `rows` -- `[(export's object or None, that site's guard)]` from `walk_stream`, which
+            carries path conditions but does not reach every branch (KQ4's `Main.handleEvent` has
+            two `(ScriptID 306 N)` sites and the stream sees only one). This decides CONDITIONS.
+
+        An export in `present` with no row of its own gets the script-wide disjunction -- the
+        condition under which the script is loaded here at all -- rather than being dropped or
+        being made free. Dropping it would have lost KQ4's `readBook`; making it free would have
+        unlocked script 801, the debug menu that hands out every item.
+
+        Then two facts about the mechanism:
+
+          * `ScriptID(N, M)` returns export M, so a site's condition belongs to THAT object, not to
+            everything in script N. A site whose export cannot be resolved (a code export, a
+            non-literal index, an IR with no export table) falls back to seeding every object --
+            the old behaviour, and the permissive direction.
+          * SCI loads the script WHOLE, so anything a seeded object mentions can run too, under the
+            same condition; propagate to a fixpoint. A script-level PROCEDURE is not walked here,
+            but what it mentions is seeded with the script-wide disjunction, because we cannot see
+            whether the proc is called.
+
+        Conditions from several sites are OR'd -- a script reached two ways runs if EITHER way was
+        taken. Keeping one arbitrary site's condition (what `seen` used to do) is not an
+        approximation in either direction: on KQ6 it kept, for script 755 in room 750, the `else`
+        branch that arms `noDagger` -- `NOT (dagger owned by 870)` -- and applied it to
+        `cassimaHasDagger`, whose state 40 is `newRoom: 180`, the only edge into the winning
+        ending. The model then believed you win exactly when Cassima does NOT have the dagger.
+
+        An object that no export names and no sibling mentions is left OUT: for a script that is
+        neither a room nor a region there is no other way in. KQ6's `startEndingCartoon` is one --
+        a leftover instance nothing in the game references, which used to contribute a phantom
+        rm750 -> rm740 edge."""
+        FREE = None                       # a condition of None means "unconditional"
+        conds = {}                        # name -> None (free) | {repr: guard}
+        def as_cond(g):
+            return FREE if g is None else {repr(g): g}
+        def add(name, c):
+            if name not in conds:
+                conds[name] = c
+                return True
+            old = conds[name]
+            if old is FREE:
+                return False              # already the weakest
+            if c is FREE:
+                conds[name] = FREE
+                return True
+            merged = dict(old)
+            merged.update(c)
+            if len(merged) != len(old):
+                conds[name] = merged
+                return True
+            return False
+
+        script_cond = FREE if not rows else {}
+        for _name, g in rows:
+            script_cond = FREE if (script_cond is FREE or g is None) else \
+                {**script_cond, **as_cond(g)}
+        attributed = set()
+        for name, g in rows:
+            if name is None:              # unresolvable export -- seed the whole script
+                for o in sc.objects:
+                    add(o.name, as_cond(g))
+            elif name in sc.by_name:
+                add(name, as_cond(g))
+                attributed.add(name)
+        for name in present:              # seen by I.walk; may have no condition of its own
+            if name is None:
+                for o in sc.objects:
+                    add(o.name, script_cond)
+            elif name in sc.by_name and name not in attributed:
+                add(name, script_cond)
+        if not conds:
+            return {}
+        mentions = self._object_mentions(sc)
+        # A procedure's body is not walked in this scope, but naming an object there still means
+        # the object can be entered once the script is loaded.
+        names = set(mentions)
+        for b in sc.procs.values():
+            for n in I.walk(b):
+                if isinstance(n, dict) and n.get("t") == "Object" and n.get("name") in names:
+                    add(n["name"], script_cond)
+        changed = True
+        while changed:
+            changed = False
+            for p, qs in mentions.items():
+                if p not in conds:
+                    continue
+                for q in qs:
+                    if add(q, conds[p]):
+                        changed = True
+        out = {}
+        for name, c in conds.items():
+            if c is FREE:
+                out[name] = None
+            else:
+                gs = list(c.values())
+                out[name] = gs[0] if len(gs) == 1 else GOr(gs)
+        return out
+
     def scriptid_refs(self):
-        """`(target script, room, guard)` for every `(ScriptID N)` -- SCI's dynamic script load.
+        """`(target script, room, {object name -> guard})` for every `(ScriptID N M)` -- SCI's
+        dynamic script load.
 
         A fourth scope, after Main / region / room. `Main.sc:1116` answers `Said 'launch'` ANYWHERE
         with `(gEgo setScript: (ScriptID 305 0))`, and script 305 (`shootBow`) is where the arrow is
@@ -1050,10 +1176,15 @@ class Extractor:
         global from scripts that are neither rooms nor regions.
 
         The reference's PATH CONDITION comes with it, which is what keeps `DebugMenu` (script 801,
-        loaded from Main under a debug gate) from handing the player every item.
+        loaded from Main under a debug gate) from handing the player every item. Which OBJECT it
+        applies to, and what happens when a script is referenced more than once, is `_scriptid_scope`.
 
-        KQ4 has 8 such scripts; LSL2 has ZERO `ScriptID` call sites, so this cannot move it."""
-        out, seen = [], set()
+        Measured over the surviving references (`run` skips Main, rooms and regions): LSL2 has ZERO
+        `ScriptID` call sites; KQ4 has 8, no two of which disagree and none of which name a second
+        export, so neither game can move. KQ6 has 785 sites over 142 (script, room) pairs, 56 of
+        them disagreeing on condition and 54 naming more than one export."""
+        sites = collections.defaultdict(list)      # (tgt, room) -> [(object name | None, guard)]
+        present = collections.defaultdict(set)     # (tgt, room) -> {object name | None}
         for rn, sc in self.ir.scripts.items():
             if _room_object(sc, self.ir):
                 rooms = [rn]
@@ -1070,12 +1201,28 @@ class Extractor:
                     tgt = I.as_int(ks[0]) if ks else None
                     if tgt is None:
                         return
+                    hit = self.ir.script_id_target(n)
                     for room in _rooms:
-                        key = (tgt, room)
-                        if key not in seen:
-                            seen.add(key)
-                            out.append((tgt, room, list(pc)))
+                        sites[(tgt, room)].append((hit[1] if hit else None, _conj(list(pc))))
                 walk_stream(b, [], leaf)
+                # EXISTENCE, separately: walk_stream does not reach every branch, and under the
+                # export-aware scope a reference it misses is an object we would never walk.
+                for n in I.walk(b):
+                    if not (isinstance(n, dict) and n.get("t") == "KernelCall"
+                            and n.get("name") == "ScriptID"):
+                        continue
+                    ks = n.get("kids") or []
+                    tgt = I.as_int(ks[0]) if ks else None
+                    if tgt is None:
+                        continue
+                    hit = self.ir.script_id_target(n)
+                    for room in rooms:
+                        present[(tgt, room)].add(hit[1] if hit else None)
+        out = []
+        for (tgt, room), rows in sites.items():    # first-touch order, as the old `seen` had
+            sc = self.ir.scripts.get(tgt)
+            if sc is not None:
+                out.append((tgt, room, self._scriptid_scope(sc, rows, present[(tgt, room)])))
         return out
 
     def run(self):
@@ -1101,7 +1248,7 @@ class Extractor:
                 self._cur_obj = ""
         # SCRIPTS LOADED BY `ScriptID` -- see scriptid_refs. Walked with the referencing site's
         # path condition, in the scope that loaded them.
-        for tgt, room, pc in self.scriptid_refs():
+        for tgt, room, conds in self.scriptid_refs():
             ts_ = self.ir.scripts.get(tgt)
             # `(ScriptID 0 N)` is how a room reaches MAIN's public procedures -- Main is already
             # its own scope, and walking it into every referencing room attributed its debug
@@ -1109,9 +1256,12 @@ class Extractor:
             if ts_ is None or tgt == 0 or tgt in room_scripts or tgt in regions:
                 continue
             for o in ts_.objects:
+                if o.name not in conds:      # no export named it and no sibling reaches it
+                    continue
+                g = conds[o.name]
                 self._cur_obj = o.name
                 for mname, meth_ast in o.methods.items():
-                    self._walk(room, meth_ast, list(pc), tgt, set(),
+                    self._walk(room, meth_ast, [] if g is None else [g], tgt, set(),
                                movement=(mname != "changeState"),
                                verb_param=(_DOVERB_PARAM if mname == "doVerb" else None))
             self._cur_obj = ""
