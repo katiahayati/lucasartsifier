@@ -25,6 +25,7 @@ Run standalone to see what it derives:  python3 vocab.py
 from __future__ import annotations
 
 import collections
+import copy
 import re
 
 import ir as I
@@ -1036,10 +1037,30 @@ def lower_prop_flags(ir, accessors):
     A flag's identity is the triple (receiver, word-selector, BIT). Masks are decomposed to
     single bits so a multi-bit `setFlag` and a single-bit `tstFlag` agree on identity; a
     multi-bit TEST becomes an `Or` over the bits, which `atom` already understands. Unresolvable
-    receivers (bare `self`), non-literal arguments and chained sends are left alone -- a sound
-    gap, since an unmodelled condition can only miss a stranding, never invent one."""
+    receivers (bare `self`) and non-literal arguments are left alone -- a sound gap, since an
+    unmodelled condition can only miss a stranding, never invent one.
+
+    A CHAINED send keeps its other messages. `(<recv> clrFlag: 710 1 setFlag: 709 2)` used to be
+    skipped whole, because replacing the node would have dropped `clrFlag`'s siblings -- and that
+    is not a harmless gap: `rm880.sc:1505` is the only writer of KQ6's "the wedding has started"
+    flag, the state that decides whether rm740 runs `alexWedding` or `vizierWedding`. With the
+    write dropped, zero-init pins the flag at 0 and the vizier's wedding becomes unreachable, so
+    the game's central branch was collapsed by a syntactic accident. The chain now lowers to a
+    `List` in the ORIGINAL message order, flag messages becoming assignments and the rest staying
+    as single-message sends on the same receiver.
+
+    Only WRITES are lowered inside a chain. A chained `tstFlag` would need the send's VALUE, and a
+    `List` has none; measured, KQ6 has no such site, so this refuses rather than guesses."""
     if not accessors:
         return 0, 0, 0
+    def _bits(sel, params):
+        """(op, [(rid, word, bit)]) for one flag message, or None if it cannot be pinned."""
+        args = [I.as_int(p) for p in params]
+        if len(args) < 2 or any(a is None for a in args):
+            return None
+        bits = [(args[0], b) for m in args[1:] for b in range(16) if (m & 0xFFFF) >> b & 1]
+        return (accessors[sel], bits) if bits else None
+
     max_gi, sites = 0, []
     for s in ir.scripts.values():
         bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
@@ -1051,38 +1072,54 @@ def lower_prop_flags(ir, accessors):
                 if node.get("t") != "Send":
                     continue
                 recv, msgs = I.send_pairs(node)
-                if len(msgs) != 1:
-                    continue                          # chained send -- rewriting it would drop the rest
-                sel, params = msgs[0]
-                if sel not in accessors:
-                    continue
                 rid = _flag_receiver_id(recv)
-                args = [I.as_int(p) for p in params]
-                if rid is None or len(args) < 2 or any(a is None for a in args):
+                if rid is None or not any(sel in accessors for sel, _p in msgs):
                     continue
-                bits = [(args[0], b) for m in args[1:] for b in range(16) if (m & 0xFFFF) >> b & 1]
-                if bits:
-                    sites.append((node, accessors[sel], [(rid, w, b) for (w, b) in bits]))
+                plan, usable = [], True
+                for mnode, (sel, params) in zip([m for m in node["kids"][1:]
+                                                 if m.get("t") == "SendMessage"], msgs):
+                    if sel not in accessors:
+                        plan.append(("keep", mnode))
+                        continue
+                    hit = _bits(sel, params)
+                    if hit is None or (len(msgs) > 1 and hit[0] == "test"):
+                        usable = False       # unpinnable, or a test whose value the chain needs
+                        break
+                    plan.append(("flag", hit[0], [(rid, w, b) for (w, b) in hit[1]]))
+                if usable and any(p[0] == "flag" for p in plan):
+                    sites.append((node, recv, plan))
     synth_base, index = max_gi + 1, {}
-    for _n, _op, keys in sites:
-        for k in keys:
-            index.setdefault(k, synth_base + len(index))
+    for _n, _r, plan in sites:
+        for p in plan:
+            if p[0] == "flag":
+                for k in p[2]:
+                    index.setdefault(k, synth_base + len(index))
     BOOL_GLOBALS.update(index.values())
-    lowered = 0
-    for node, op, keys in sites:
+
+    def _lower_one(op, keys):
         gis = [index[k] for k in keys]
         if op == "test":
             reads = [{"t": "Variable", "vtype": "Global", "index": g} for g in gis]
-            new = reads[0] if len(reads) == 1 else {"t": "Or", "kids": reads}
-        else:
-            val = 1 if op == "set" else 0
-            asg = [{"t": "Assignment",
-                    "kids": [{"t": "Variable", "vtype": "Global", "index": g},
-                             {"t": "Number", "value": val}]} for g in gis]
-            new = asg[0] if len(asg) == 1 else {"t": "List", "kids": asg}
+            return [reads[0] if len(reads) == 1 else {"t": "Or", "kids": reads}]
+        val = 1 if op == "set" else 0
+        return [{"t": "Assignment",
+                 "kids": [{"t": "Variable", "vtype": "Global", "index": g},
+                          {"t": "Number", "value": val}]} for g in gis]
+
+    lowered = 0
+    for node, recv, plan in sites:
+        parts = []
+        for p in plan:
+            if p[0] == "flag":
+                parts += _lower_one(p[1], p[2])
+            else:
+                # deep-copied: the receiver would otherwise be one dict shared by every kept
+                # message, and the walkers assume a tree
+                parts.append({"t": "Send", "kids": [copy.deepcopy(recv), p[1]]})
+        new = parts[0] if len(parts) == 1 else {"t": "List", "kids": parts}
         node.clear()
         node.update(new)
-        lowered += 1
+        lowered += sum(1 for p in plan if p[0] == "flag")
     return synth_base, lowered, len(index)
 
 
