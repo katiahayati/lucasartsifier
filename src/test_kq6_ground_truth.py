@@ -52,19 +52,23 @@ EXPECTED_CAUGHT = {
     "dagger",           # Celeste's, taken from the catacombs and needed at rm800
     "mint",             # user-listed castle carry-in
     "nightingale",      # the short path's castle carry-in
+    "peppermint",       # the short path's other castle carry-in. Promoted 2026-07-28 with the
+                        # user's sign-off, once the phantom developer hand-outs stopped giving it
+                        # sources at rm740/rm750 -- frontier rm220->rm730 / rm230->rm710, the B4
+                        # boundary its oracle row predicted, plus a dangerous sink at rm180.
+    # DANGEROUS ACTIONS -- not boundary crossings. Both promoted 2026-07-28 with the user's sign-off.
+    "huntersLamp",      # trade the old lamp to the peddler and he LEAVES (flag 12, one writer,
+                        # never cleared). `rm580::init` wants it to cast rain instead of caging
+                        # you: (if (and (has: 19) (== global161 15)) makeRain else inTheCage).
+    "skull",            # throwing it into rm420's gears is a move the game invites and it looks
+                        # like the solution -- the gears eat it and state 24 re-arms `sqwishEm`.
+                        # User: "that's exactly the kind of bad use we need to prevent."
 }
 
-# Real per the oracle, still missed. NOT failures -- they are the live TODO list, reported at the
-# end of the run so a promotion is noticed. See docs/KQ6-SOFTLOCK-CANDIDATES.md for each row's
-# measured state.
-KNOWN_GAPS = {
-    "huntersLamp",      # the old lamp -- traded away, and befriending Jollo depends on it
-    "skull",            # the vessel for the B3 carry-in (amber + egg + hair); the loss is the
-                        # `throwSkull` spend at rm420, not a carry-down -- rm415 is the UPPER
-                        # catacombs, which the shield ruling says you can return to.
-                        # NOW CAUGHT by `fatal_uses` -- awaiting the user's OK to promote.
-    "peppermint",       # castle carry-in, short path; the oracle itself calls this one uncertain
-}
+# Real per the oracle and still missed. NOT failures -- the live TODO list, reported at the end of
+# the run so a promotion is noticed. **EMPTY as of 2026-07-28**: every item the oracle calls real is
+# caught. Kept, with its reporting, because the next KQ6 finding lands here first.
+KNOWN_GAPS = set()
 
 # GATES THE LONG ENDING, NOT WINNABILITY -- deliberately NOT caught, and not a gap.
 #
