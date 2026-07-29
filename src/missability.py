@@ -2760,6 +2760,92 @@ class IrSccReach(SccReach):
                     units.append(frozenset(G))
         return units
 
+    # ---- mutually EXCLUSIVE items (the other half of disjunctive_groups) ----
+    def _or_own_sets(self):
+        """room -> {frozenset(items)}: every `(or own(a) own(b) ...)` the model holds.
+
+        Pure OR of positive own()s only. Anything mixed in (a register test, a negation) means
+        the disjunction is about something else, so the set is not a statement about items."""
+        out = defaultdict(set)
+
+        def collect(g, room):
+            def w(x):
+                if isinstance(x, list):
+                    for y in x:
+                        w(y)
+                elif isinstance(x, GOr):
+                    if all(isinstance(k, Pred) and k.kind == "OWN" for k in x.kids):
+                        fs = frozenset(k.var for k in x.kids)
+                        if len(fs) > 1:
+                            out[room].add(fs)
+                    for k in x.kids:
+                        w(k)
+                elif isinstance(x, GAnd):
+                    for k in x.kids:
+                        w(k)
+                elif isinstance(x, GNot):
+                    w(x.kid)
+            w(g)
+
+        for info in self.em.machines:
+            for _K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+                collect(eg, info["room"])
+            for _K, paths in info["states"].items():
+                for (g, _w, _gg, _c, _tr) in paths:
+                    collect(g, info["room"])
+        for e in list(self.em.ts.edges) + list(self.em.ts.cs_edges):
+            collect(e.guard, e.src)
+        for a in self.em.ts.acqs:
+            collect(a.guard, a.room)
+        return out
+
+    def exchange_slots(self):
+        """Item sets at most ONE member of which you can be HOLDING -- `[(frozenset, room)]`.
+
+        The twin of `disjunctive_groups`: that one finds items the game accepts as alternatives to
+        each other, this one finds items the game will not let you have at the same time. Both are
+        reasons a guard must stop reading a set of item literals as a shopping list.
+
+        KQ6's pawn shop is the case, and it is a chain three trades long: the mechanical
+        nightingale buys the flute, the flute buys the tinderbox, the tinderbox buys the paint
+        brush. So the brush that paints the castle's magic door IS the nightingale, and a guard on
+        that door cannot demand both.
+
+        THREE facts, each already in the model and none sufficient alone:
+
+        1. A MENU -- one `get:` statement whose item is chosen at run time from a fixed set
+           (`vocab.item_menus`). One statement moves one item, so the set is a choice. This alone
+           does not stop you coming back for a second.
+        2. ONE COUNTER -- every member's sole source is the same room, and that room also DROPS
+           every member. So there is no other supply, and the supply takes members back. This is
+           why "sole" is not a hedge: a member obtainable elsewhere could be held alongside
+           another, and the exclusion would be false.
+        3. A REFUSAL -- that room guards on `(or own(a) own(b) ...)` over exactly the menu set:
+           the shopkeeper declining to deal while you already hold one. This is the coupling that
+           1 and 2 cannot supply, and it is only evidence because it names EXACTLY a menu --
+           MEASURED, KQ6 has 13 OR-of-own guard sets and 12 of them mean "show him anything"
+           (one is eight unrelated items), so the refusal alone would over-group wildly.
+
+        Inert wherever a game has no runtime-selected transfer: LSL2, KQ4 and the Dagger of Amon
+        Ra have zero menu sites, so this returns [] and cannot move their output."""
+        if hasattr(self, "_slots"):
+            return self._slots
+        menus = {S for (S, dest) in getattr(self.em.ts, "item_menus", ()) if dest == E.EGO}
+        refusals = self._or_own_sets()
+        out = []
+        for S in sorted(menus, key=sorted):
+            rooms = {r for it in S for r in self.sources.get(it, ())}
+            if len(rooms) != 1:
+                continue                       # not one counter: some member is sourced elsewhere
+            R = next(iter(rooms))
+            if not all(R in self.drops.get(it, ()) for it in S):
+                continue                       # the counter does not take every member back
+            if S not in refusals.get(R, ()):
+                continue                       # the game never refuses a second one
+            out.append((S, R))
+        self._slots = out
+        return out
+
     # ---- disjunctive requirement groups -------------------------------------
     def disjunctive_groups(self):
         """room -> {frozenset(items)}: sets that ALTERNATIVELY open the same gate.

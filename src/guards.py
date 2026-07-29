@@ -214,40 +214,62 @@ def frontier_guards(s):
     return out
 
 
-def incompatible_with_the_edge(s, a, b, items):
-    """Of `items`, those you CANNOT be holding when you cross a->b, because getting them costs
-    something the crossing itself demands.
+def unholdable_at(s, a, b, items):
+    """Of `items`, those you CANNOT be holding when you cross a->b -> `{item: why}`.
 
     A guard is a conjunction the player has to satisfy all at once, and `unsatisfiable` only ever
     asked each literal on its own ("is a source still reachable"). That misses an exclusion between
-    the guard and the EDGE: KQ6's castle has two doors, and the short one is
-    `rm220 -> rm730`, which needs Beauty's clothes. The Realm of the Dead is gated on flag 14, the
-    ONLY room that writes flag 14 is rm580 (the Druids), and rm580's escape burns the clothes --
-    so the handkerchief and the skeleton key, which exist only inside the Realm, can never be in
-    your hands at that door. Demanding them there does not close a softlock, it WALLS the route:
-    the exact failure this project holds to be worse than the bug.
+    the guard and the EDGE, and demanding something unholdable does not close a softlock -- it
+    WALLS the route, the exact failure this project holds to be worse than the bug.
 
-    The test: refuse the rooms that take away what the edge demands, walk gate-aware from the
-    start, and drop any item with no source left. A room that both SOURCES and DROPS the item is
-    an exchange COUNTER, not a loss -- the pawn shop is `sources[brush] == drops[brush] == 280`,
-    and pruning it would wrongly delete every item traded over that counter -- so it is kept.
+    TWO ways an edge's own demand can exclude a literal, and KQ6's castle has one of each, one per
+    door. They are separate rules because they are separate mechanisms, not two readings of one.
 
-    Deliberately narrow. It removes literals a guard could never get; it does NOT try to work out
-    which of two winning ROUTES you are on. KQ6's `mint` and `nightingale` are short-path castle
-    items and survive this test at the long door, because nothing about the long route makes them
-    unobtainable -- they are simply not needed. That is a per-route NEED question, and per-route
-    need is per-ending, which our goal (a set of ROOMS, and both endings end in rm94) cannot yet
-    express. See docs/SCI11-PATCHING-PLAN.md."""
+    ROOM COST -- getting what the edge demands means visiting somewhere that takes the literal
+    away. The short door `rm220 -> rm730` needs Beauty's clothes; the Realm of the Dead is gated on
+    flag 14; the ONLY room that writes flag 14 is rm580 (the Druids); and rm580's escape burns the
+    clothes. So the handkerchief and the skeleton key, which exist only inside the Realm, can never
+    be in your hands at that door. Test: refuse the rooms that take away what the edge demands,
+    walk gate-aware from the start, drop any literal with no source left. A room that both SOURCES
+    and DROPS the item is an exchange COUNTER, not a loss -- `sources[brush] == drops[brush] ==
+    280` -- and pruning it would wrongly delete every item traded over that counter, so it is kept.
+
+    EXCHANGE -- the literal and the edge's demand are the SAME OBJECT, traded. The long door
+    `rm230 -> rm710` needs the paint brush, and the brush is the mechanical nightingale after three
+    trades across the pawn shop counter (bird -> flute -> tinderbox -> brush). `missability.
+    exchange_slots` derives that at most one member of that set can be held, so demanding the brush
+    is demanding NOT the bird. This is the case the ROOM rule structurally cannot see, and for the
+    reason above: its counter exemption is what keeps the pawn shop off the prune list.
+
+    Still deliberately narrow, and now honestly so. It removes literals a guard could never hold;
+    it does NOT work out which of two winning ROUTES you are on. KQ6's `mint` survives at the long
+    door -- nothing about that route costs it, it is simply not needed there -- and that remains a
+    per-route NEED question we cannot express. See docs/SCI11-PATCHING-PLAN.md."""
     demanded = s.edge_demands(a, b)
     if not demanded:
-        return set()
+        return {}
+    out = {}
     prune = set()
     for q in demanded:
         prune |= (set(s.drops.get(q, ())) - {b}) - set(s.sources.get(q, ()))
-    if not prune:
-        return set()
-    keep = s.reach_avoiding(prune)
-    return {it for it in items if not (set(s.sources.get(it, ())) & keep)}
+    if prune:
+        keep = s.reach_avoiding(prune)
+        for it in items:
+            if not (set(s.sources.get(it, ())) & keep):
+                out[it] = ("every source of it is behind %s, which takes away %s -- and this "
+                           "crossing demands that"
+                           % (["rm%d" % r for r in sorted(prune)][:4],
+                              [s.g.item_name(i) for i in sorted(demanded)]))
+    for (S, R) in s.exchange_slots():
+        held = demanded & S
+        if not held:
+            continue
+        for it in (set(items) & S) - demanded:
+            out[it] = ("rm%d trades %s for one another, so holding it excludes %s, which this "
+                       "crossing demands"
+                       % (R, [s.g.item_name(i) for i in sorted(S)],
+                          [s.g.item_name(i) for i in sorted(held)]))
+    return out
 
 
 def joint_frontier(s):
@@ -457,7 +479,8 @@ def guard_specs(s):
         # Drop the literals that cannot be held AT this edge before asking whether the rest is
         # satisfiable -- demanding one of those does not close a softlock, it walls the route.
         # Reported, never silent: a guard that quietly asks for less is how an under-guard ships.
-        gone = incompatible_with_the_edge(s, a, b, set(rec["items"]))
+        why = unholdable_at(s, a, b, set(rec["items"]))
+        gone = set(why)
         if gone:
             rec = {"items": set(rec["items"]) - gone,
                    "groups": [g for g in rec["groups"] if not (g & gone)]}
@@ -468,9 +491,8 @@ def guard_specs(s):
               "refused": bad}
         if gone:
             sp["dropped_incompatible"] = sorted(gone)
-            sp["dropped_why"] = ("cannot be held here: getting %s costs %s, which this crossing "
-                                 "demands" % ([s.g.item_name(i) for i in sorted(gone)],
-                                              [s.g.item_name(i) for i in sorted(s.edge_demands(a, b))]))
+            sp["dropped_why"] = "cannot be held here: " + "; ".join(
+                sorted({f"{s.g.item_name(i)} -- {r}" for i, r in why.items()}))
         if not rec["items"] and not rec["groups"]:
             # Everything this edge would have demanded is unholdable here, so there is no guard to
             # place -- but say so. Dropping the row silently is how an edge stops being guarded
@@ -537,8 +559,12 @@ def apply_guards(s, specs):
                 base = [b | {m} for b in base for m in g]
             out.append((rq, sets, tuple(base)))
         s._emeta[key] = out
-    s._reob.clear(); s._rw.clear(); s._after.clear()
-    s._pstates = {R: s._walk(R, frozenset()) for R in s.regs}
+    s._reob.clear(); s._rw.clear(); s._after.clear(); s._avoid.clear()
+    # Over `proj`, NOT `regs`. `_pstates` is keyed by `self.proj` = regs + the death-trap JOINTS
+    # (missability._build_product), and every reachability walk iterates `proj` -- so rebuilding it
+    # from `regs` alone DELETES the joint keys and `rooms_after` dies with `KeyError: (12, 173)`.
+    # KQ6 has one joint, LSL2 has none, which is why `verify` looked fine for as long as it did.
+    s._pstates = {R: s._walk(R, frozenset()) for R in s.proj}
     return s
 
 

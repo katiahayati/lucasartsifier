@@ -172,6 +172,43 @@ def _literal_items(node):
     return out
 
 
+def item_menus(ir, vocab, item_of_receiver):
+    """Every transfer site whose ITEM is picked at run time -- `{frozenset(items), ...}`.
+
+    `_literal_items` already reads the case labels of `(gEgo get: (switch reg (0 48) (3 27)
+    (1 3) (2 14)))` and says the honest thing about them: "this site can yield any of them".
+    Read for SOURCES that is right, and every consumer unions the arms. Read for POSSESSION it
+    also quietly asserts you can walk away with all four, because the union is all the shape
+    that survives -- and ONE statement moves ONE item. So the grouping is kept here, and
+    `missability.exchange_slots` is what turns it into an exclusion.
+
+    Deliberately blind to WHERE the site is. A menu is a fact about the statement; which room
+    runs it is a question the callers already answer better (script 287 is reached by a nested
+    `ScriptID`, so the flat room walk never attributes it at all -- only the machine lift does).
+
+    MEASURED: 2 sites in KQ6, both the pawn counter's two halves (`getFromCounter`'s `get:` and
+    `placeOnCounter`'s `put:`) over the same four items; ZERO in LSL2, KQ4 and the Dagger of
+    Amon Ra, so nothing built on this can move their goldens."""
+    if vocab is None:
+        return set()
+    out = set()
+    for s in ir.scripts.values():
+        bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for node in I.walk(body):
+                if node.get("t") != "Send":
+                    continue
+                try:
+                    recv, msgs = I.send_pairs(node)
+                except Exception:                       # noqa: BLE001
+                    continue
+                for sel, params in msgs:
+                    tr = vocab.transfer(recv, sel, params, item_of_receiver)
+                    if tr and isinstance(tr[0], tuple) and len(set(tr[0])) > 1:
+                        out.add((frozenset(tr[0]), tr[1]))
+    return out
+
+
 def _arg_roles(ir, wrapper_cls, selector, core):
     """Where the ITEM and the DESTINATION live in a wrapper's own argument list.
 

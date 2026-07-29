@@ -181,15 +181,28 @@ these scripts.
     edge rm230->rm710: (and (gEgo has: 8) (gEgo has: 23) (gEgo has: 27) (gEgo has: 44))
 
 I read this as possibly unsatisfiable — a Realm-only `skeletonKey(44)` conjoined with a
-`nightingale(27)` the long path trades away. **Both halves of that worry are wrong**, measured:
+`nightingale(27)` the long path trades away. **⚠️ CORRECTION 2026-07-29: that worry was RIGHT about
+the nightingale, and the measurement below is the mistake.** Both halves, re-judged:
 
-* The nightingale is a genuine castle-interior item (`rm850.sc:594 put: 27 850` releases the bird;
-  `rm880` branches on whether the guards took it to rm730), and it is **freely re-obtainable**: the
-  pawn shop is a generic exchange over a four-item table (`counterInset.sc:23`
-  `[local1 21] = [48 3 14 27 ...]`), and `rm280::init` re-inits each shelf item whenever the shop
-  owns it. Trade it for the flute, use the flute, trade back.
+* <s>The nightingale is a genuine castle-interior item (`rm850.sc:594 put: 27 850` releases the
+  bird; `rm880` branches on whether the guards took it to rm730), and it is **freely
+  re-obtainable**: the pawn shop is a generic exchange over a four-item table
+  (`counterInset.sc:23` `[local1 21] = [48 3 14 27 ...]`), and `rm280::init` re-inits each shelf
+  item whenever the shop owns it. Trade it for the flute, use the flute, trade back.</s>
+  **Every fact in that bullet is true and the conclusion does not follow.** I read the four-item
+  table as evidence of *freedom* — you can always trade back — and it is the opposite: `itemTradeScr`
+  loops over exactly that table and REFUSES to deal while you hold any member
+  (`counterInset.sc:236`), so **at most one of `{tinderBox, brush, flute, nightingale}` can be in
+  your hands at a time**. The long door demands the `brush`, so it can never demand the bird too:
+  `(and (has: 3) (has: 27))` is unsatisfiable, and that guard **walled** the long route.
+  This is now derived — `missability.exchange_slots`, applied by `guards.unholdable_at` — and it is
+  what closed the last red assertion in `test_kq6_ground_truth.py`.
 * The skeletonKey demand is right in kind — **user ruling 2026-07-28**: *"Preventing you from
   leaving the realm without it is the right thing."*
+
+**Lesson.** "The shop re-inits each shelf item whenever it owns it" is a fact about the SHOP's
+stock, and I read it as a fact about the PLAYER's inventory. One statement moves one item; a
+four-way exchange table is a slot, not a supply.
 
 What IS wrong is **placement**. The model has two distinct castle entrances and they are the game's
 two paths — `rm220->rm730` alts `{clothes(5)}` (the disguise) and `rm230->rm710` alts

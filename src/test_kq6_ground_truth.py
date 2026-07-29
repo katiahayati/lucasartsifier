@@ -211,45 +211,46 @@ def run():
           short_door and set(short_door.get("dropped_incompatible", ())) and
           realm_only <= {s.g.item_name(i) for i in short_door.get("dropped_incompatible", ())},
           repr(short_door and short_door.get("dropped_why")))
-    # RED, and the mechanism is now known (2026-07-28) -- do NOT "fix" this by narrowing the guard.
-    # `nightingale` is the SHORT route's way past the castle guard dogs; the long route has Jollo
-    # win them over instead. Three things stand between us and deriving that, measured in order:
-    #   1. We have no notion of NECESSITY here. Banning the bird loses 0 rooms and the goal stays
-    #      reachable -- as it does for the handkerchief and the mint. Every KQ6 finding rests on
-    #      `edge_strandings`' proxy ("there is a USE SITE past the edge"), so "required to win"
-    #      cannot be the discriminator without deleting all fourteen. RE-MEASURED 2026-07-28 after
-    #      the goal was corrected from the credits to rm180 (`alexWedding`): still 0 rooms lost,
-    #      for all ten flagged items. The old goal being satisfied by DEFEAT was not what was
-    #      holding this up -- rm180/740/750/790 sit in one 18-room SCC, so no room-set goal can
-    #      separate the win from the loss here. See docs/KQ6-GOAL.md.
-    #   2. The use site cannot be split by state either: it is `doVerb 37` on `floor`, a
-    #      NewFeature cast UNCONDITIONALLY, so both product copies of rm850 carry it.
-    #      RE-MEASURED 2026-07-29, and this is the BINDING blocker -- sharper than it reads.
-    #      (a) `doVerb 37` really is the bird: the derived message table maps param 37 -> item 27,
-    #          so the attribution is right and there is no numbering bug to find here.
-    #      (b) The two doors are NOT separable by the interior. rm850 carries flag-15 (register
-    #          187) values [0, 1], and so do BOTH door rooms -- because once inside, rm730 and
-    #          rm710 are mutually reachable (long route 710->840->730; short route captured ->
-    #          820->710). The castle's own connectivity erases which door you came through.
-    #      (c) The long route reaches the bird's use site on its OWN path, without rm730:
-    #          230 -> 710 -> 720 -> 800 -> 810 -> 781 -> 850. And rm880, where the bird's flag
-    #          709:256 is consumed, has exactly ONE in-edge (rm850). So "the long route skips the
-    #          bird's room" is false; what is true is only that it does not NEED the bird there,
-    #          which is a statement about necessity and lands back on (1).
-    #      USER RULING 2026-07-29, asked directly rather than inferred: the bird IS optional on
-    #      the long route. So the guard is wrong, not the oracle -- this test stays RED.
-    #   3. The dogs are not a flag-gated door. `spotEgoScr` is a REGION property (rgCastle:132
-    #      `(if spotEgoScr (global2 setScript: spotEgoScr 0 param1))`) and the guards spot you
-    #      POSITIONALLY -- the LSL2 rm47 henchmen shape. And capture is survivable: you escape
-    #      twice (Jollo, then the skeleton key) and only the THIRD capture ends the game, so the
-    #      bird's necessity rests on a three-strikes COUNTER we do not model.
-    # Modelling the bit-array flag store (329 sites, inert on LSL2/KQ4/Dagger) is worth doing on
-    # its own merits but was MEASURED not to deliver this. See docs/SCI11-PATCHING-PLAN.md 6.4.
+    # ...and the LONG door is the SAME class of error, by a different mechanism. It used to demand
+    # `nightingale`, which the user ruled optional on that route (2026-07-29). It is stronger than
+    # optional: the bird is IMPOSSIBLE there. The paint brush that opens this door is the bird
+    # after three trades over the pawn-shop counter -- bird -> flute -> tinderbox -> brush -- and
+    # rm280's `itemTradeScr` refuses to hand over any of the four while you hold one of them. So
+    # demanding the bird here WALLED the route, exactly as the Realm items walled the short one.
+    #
+    # Three earlier readings of this, all superseded, kept only so nobody re-derives them:
+    #   * "We have no notion of NECESSITY." True and still true -- banning the bird loses 0 rooms
+    #     and the goal stays reachable -- but it was never the question. This is an EXCLUSION, and
+    #     exclusions do not need necessity.
+    #   * "The use site cannot be split by state." Also true: `doVerb 37` on `floor` is a
+    #     NewFeature cast unconditionally, rm850 carries flag-15 = [0, 1] under BOTH doors (rm730
+    #     and rm710 are mutually reachable once inside), and the long route reaches rm850 on its
+    #     own path, 230 -> 710 -> 720 -> 800 -> 810 -> 781 -> 850. Splitting the use site was the
+    #     wrong lever; the door's OWN demand was the lever.
+    #   * "It rests on a three-strikes capture counter we do not model." That is about why the bird
+    #     is needed on the SHORT route, which the oracle already asserts and which nothing here
+    #     has to derive.
     long_door = doors.get((230, 710))
     check("the LONG castle door does not demand the short route's items",
           long_door and not ({"mint", "nightingale"} &
                              {s.g.item_name(i) for i in long_door["items"]}),
           repr(long_door and sorted(s.g.item_name(i) for i in long_door["items"])))
+    check("...and it too says WHY, naming the trade rather than just dropping the item",
+          long_door and {"nightingale"} <= {s.g.item_name(i) for i in
+                                            long_door.get("dropped_incompatible", ())},
+          repr(long_door and long_door.get("dropped_why")))
+
+    # THE EXCHANGE SLOT itself, pinned separately from the guard it fixes: the guard could come
+    # right for some other reason and this fact would still be the thing we believe. All four are
+    # sourced ONLY at the pawn shop and dropped there too, which is what makes the set a counter's
+    # stock rather than four coincidences.
+    slots = {frozenset(s.g.item_name(i) for i in S): R for (S, R) in s.exchange_slots()}
+    check("the pawn shop's four traded items are ONE exchange slot",
+          slots == {frozenset({"brush", "flute", "nightingale", "tinderBox"}): 280},
+          f"exchange_slots = {slots} -- expected exactly the pawn counter's stock at rm280. "
+          f"A drop means the menu, the single-counter test or the refusal guard stopped being "
+          f"seen; an ADDITION means the rule is over-grouping (see missability.exchange_slots, "
+          f"which measured 13 OR-of-own guard sets in KQ6 of which only this one is a menu).")
 
     promoted = caught & KNOWN_GAPS
     if promoted:

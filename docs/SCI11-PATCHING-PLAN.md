@@ -255,7 +255,7 @@ last edge where the item can still be got rid of"). **Requirements need the mirr
 `rm340->rm405`, the catacombs entrance, which is where the user's own ruling puts it. Eight bad
 guards collapse into one right one, derived, with no room named.
 
-### 6.3 ✅ LANDED (part): a guard must not demand what it cannot hold
+### 6.3 ✅ LANDED: a guard must not demand what it cannot hold
 
 **The KQ6 castle, resolved as far as it is derivable.** Both doors are one-way into the same
 19-room terminal castle (`rooms_after(730) == rooms_after(710)`, and neither door room is in it),
@@ -266,33 +266,76 @@ wrong. Two things landed:
    state past a `(secondGuardDoorScr cue:)` handoff, so the entry-reach walk stopped short and
    `own(clothes)` had vanished from the short door. See the commit "You cannot be executing a
    machine you never armed".
-2. **`guards.incompatible_with_the_edge`** — an item may not be demanded at an edge when getting it
-   costs something the crossing itself requires. The Realm of the Dead is gated on flag 14; the
-   **only** room that writes flag 14 is rm580 (the Druids); rm580's escape burns Beauty's clothes;
-   the short door requires them. So `handkerchief` and `skeletonKey` — Realm-only items — are
-   dropped from the short door's guard, with the reason recorded on the spec.
+2. **`guards.unholdable_at`** (was `incompatible_with_the_edge`) — an item may not be demanded at
+   an edge when the crossing's own demand excludes it. **TWO mechanisms**, and the castle has one
+   at each door, which is why they are separate rules rather than two readings of one:
+
+   * **ROOM COST** — getting what the edge demands means visiting somewhere that takes the literal
+     away. The Realm of the Dead is gated on flag 14; the **only** room that writes flag 14 is
+     rm580 (the Druids); rm580's escape burns Beauty's clothes; the short door requires them. So
+     `handkerchief` and `skeletonKey` — Realm-only items — leave the SHORT door's guard.
+   * **EXCHANGE** — the literal and the demand are the same object, traded. The long door needs the
+     paint brush, and the brush *is* the mechanical nightingale after three trades over the pawn
+     counter (bird → flute → tinderbox → brush). `missability.exchange_slots` derives that at most
+     one of those four can be held, so `nightingale` leaves the LONG door's guard.
+
+   Either way the reason is recorded on the spec (`dropped_incompatible` / `dropped_why`); dropping
+   a literal silently is how an under-guard ships.
 
 | door | demands now |
 |---|---|
-| rm220 -> rm730 (dress, short) | dagger, mint, mirror, nightingale, peppermint |
-| rm230 -> rm710 (paint, long) | + handkerchief, skeletonKey |
+| rm220 -> rm730 (dress, short) | dagger, mirror, **nightingale**, (mint \| peppermint) |
+| rm230 -> rm710 (paint, long) | dagger, mirror, handkerchief, skeletonKey, (mint \| peppermint) |
 
-This mattered more than "over-strict": demanding a Realm item at the short door **walls** that
-route, since the short path never visits the Realm.
+Both mattered more than "over-strict": each demanded something the player on that route **cannot be
+holding**, so each **walled** its route rather than closing a softlock.
 
-**The exchange-counter discriminator** is what keeps the rule honest: a room that both SOURCES and
-DROPS an item is a counter, not a loss (`sources[brush] == drops[brush] == 280`, the pawn shop), so
-it is not pruned. Without it the rule got the right answer on the long door for the wrong reason.
+**The exchange-counter discriminator** is what keeps the ROOM rule honest: a room that both SOURCES
+and DROPS an item is a counter, not a loss (`sources[brush] == drops[brush] == 280`, the pawn shop),
+so it is not pruned. That exemption is also exactly why the ROOM rule structurally cannot see the
+long door's case — hence the second mechanism rather than a widening of the first.
 
-**⚠️ THE REMAINING HALF, pinned as a KNOWN LIMIT in `test_kq6_ground_truth.py`.** The long door
-still demands `mint` and `nightingale`, which the walkthroughs put on the SHORT route (the guard-dog
-distraction; the lower-score alternative to the lamp for Shamir). Nothing about the long route makes
-them *unobtainable* — they are merely *not needed* — and "not needed on this route" is a per-ENDING
-question. That needs 6.4.
+**How `exchange_slots` is derived** — three facts, each already in the model, none sufficient alone:
+a **MENU** (`vocab.item_menus`: one `get:` whose item is a run-time switch over four numbers — one
+statement moves one item); **ONE COUNTER** (all four sourced only at rm280, which also drops all
+four); and a **REFUSAL** (rm280 guards on `(or has:27 has:48 has:3 has:14)` — `itemTradeScr` will not
+deal while you hold one). MEASURED: 2 menu sites in KQ6, both halves of this counter; **zero in
+LSL2, KQ4 and the Dagger of Amon Ra**. And 13 OR-of-own guard sets in KQ6, of which only this one is
+a menu — so the refusal alone would over-group wildly (one of the twelve is eight unrelated items).
 
-### 6.4 Per-ending requirements — the goal is a set of ROOMS, and both endings end at rm94
+**What this did NOT need.** Not necessity (banning the bird still loses 0 rooms), not a per-ending
+goal, not the three-strikes capture counter, not splitting rm850 by state. An exclusion is a
+statement about what you can be *carrying*, which is orthogonal to all of those. `mint` survives at
+the long door and that is still a per-route NEED question — see 6.4 — but it is now the only one.
 
-`goal_rooms = {94, 205}`; rm94 is the credits and both endings reach it, so "can you still win" is
+**⚠️ THE RESIDUE, and it is a real open gap.** `guards.verify` on KQ6 now reports
+`remaining = [handkerchief, nightingale, skeletonKey]`, `NEW = NONE`. Each of the three is an item
+whose guard was dropped at ONE of its two frontier edges as unholdable, so `analyze()` still flags
+the finding while no spec closes it. Measured: **two of the three predate this change** (disable the
+exchange rule and `remaining` is `[handkerchief, skeletonKey]`, from the ROOM rule in `e30a480`), so
+this is the shape both exclusion rules produce, not a new failure. Two different remedies:
+
+* `handkerchief` / `skeletonKey` — the guard belongs at the **Realm's EXIT**, the last edge where
+  you can still comply. That is §7's `toll_strandings` remedy and the user has already ruled on it.
+* `nightingale` — there is nothing to place. Crossing the long door is **not a stranding** for an
+  item you cannot be carrying, so what is left is a report inaccuracy in `edge_strandings`' frontier
+  list, not a missing guard. Applying `unholdable_at` in the detection core would fix it and carries
+  golden risk (the ROOM half is NOT inert on LSL2/KQ4), so it wants its own measurement.
+
+`guards.verify` could not run on KQ6 at all before this commit: `apply_guards` rebuilt `_pstates`
+from `s.regs` when it is keyed by `s.proj = regs + joints`, so `rooms_after` died with
+`KeyError: (12, 173)`. LSL2 has no joints, which is why it went unnoticed. Fixed in the same commit;
+LSL2's `guards.main` still PASSes (15 softlocks + 1 group fixed, none remaining, none new).
+
+### 6.4 Per-ending requirements — the goal is a set of ROOMS
+
+⚠️ Written when `goal_rooms` was the discovered `{94, 205}` (the credits). It is now the derived
+`{180}` (see `docs/KQ6-GOAL.md`), and **that changed nothing here**: rm180/740/750/790 sit in one
+18-room SCC, so no room-set goal separates the two endings. The section stands as written.
+⚠️ The one case it was written for — `nightingale` at the long door — is **gone**, closed by 6.3's
+exchange rule instead. What is left needing 6.4 is `mint`, and the `teaCup` column.
+
+rm94 is the credits and both endings reach it, so "can you still win" is
 true on both routes and no per-route requirement can exist. The discriminator is known and already
 modelled: **`alexWedding.sc` branches on `proc913_0 15` eleven times**, flag 15 is "you entered the
 Realm" (= the King and Queen were revived), and **register = flag + 172**, so flag 15 is register
@@ -306,7 +349,10 @@ that is the piece to design.
 
 ### 6.5 Path-forcing: a guard must not demand one arm of a disjunction
 
-Both KQ6 castle entrances get the **same 7-item** guard. But the castle has two entrances —
+⚠️ Superseded in part: the two doors no longer get the same guard (6.3), and the difference is
+derived, not hand-checked. The rule below still stands for the items 6.3 does not separate.
+
+Both KQ6 castle entrances used to get the **same 7-item** guard. But the castle has two entrances —
 `rm220->rm730` (disguise, short ending) and `rm230->rm710` (magic paint, long ending) — and the
 `teaCup` ruling already settled the principle: *a long-ending-only item does not make the game
 unwinnable, so it is not a requirement.* Demanding the union at both doors forces a route the game

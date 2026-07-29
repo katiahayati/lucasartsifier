@@ -308,6 +308,10 @@ _DOVERB_PARAM = 1    # `(method (doVerb param1) ...)` -- param1 is Parameter ind
 _ONEOF = frozenset()   # membership procedures: `f(x, a, b, c)` == "is x one of a,b,c?" -- derived
 #   structurally by vocab.derive_oneof, since the proc's number differs per game. Empty on SCO0
 #   (LSL2/KQ4 have none), so the recognizer below is inert there.
+_MENUS = frozenset()   # transfer sites whose ITEM is picked at run time -- {(frozenset(items),
+#   dest)}. `item_transfers` expands a menu to one entry per item, which is the right reading for
+#   "where can this come from" and loses the one fact a guard needs: a single statement hands over
+#   a single item. See vocab.item_menus / missability.exchange_slots. Empty on LSL2/KQ4/Dagger.
 
 
 @contextlib.contextmanager
@@ -336,12 +340,13 @@ def install_vocabulary(ir):
     from the store wrapper's holder globals and the Game loop respectively, so the extraction reads
     the game's own layout instead of assuming the SCI template's 0/11. Both fall back to the
     template default only when a game has no derivable store or Game loop."""
-    global _VOCAB, _IPROPS, _EGO, _CURROOM, _ITEM_MSG, _ONEOF
+    global _VOCAB, _IPROPS, _EGO, _CURROOM, _ITEM_MSG, _ONEOF, _MENUS
     _VOCAB = V.Vocabulary.from_ir(ir)
     _IPROPS = (V.item_property_registers(ir, _VOCAB.store_class, _VOCAB.prop, _at_item)
                if _VOCAB else {})
     _ITEM_MSG = V.doverb_item_messages(ir)
     _ONEOF = frozenset(V.derive_oneof(ir))
+    _MENUS = frozenset(V.item_menus(ir, _VOCAB, _at_item))
     holders = frozenset().union(*_VOCAB.holders.values()) if _VOCAB and _VOCAB.holders else frozenset()
     _EGO = holders or frozenset({0})
     _CURROOM = current_room_global(ir)
@@ -723,6 +728,11 @@ class TS:
     #   value is an int or "inc". The FOURTH store -- state living in an item's own property.
     #   Breaking the shovel and spending an arrow are written here, and they mean the same thing
     #   as losing the item: its uses stop accepting it.
+    item_menus: set = field(default_factory=set)   # {(frozenset(items), dest)} -- transfer sites
+    #   that pick the item at run time (a shop counter's `get: (switch slot (0 48) (3 27) ...)`).
+    #   One statement moves ONE item, so a menu is an EXCLUSION as well as four sources; see
+    #   vocab.item_menus. Carried on TS rather than re-scanned, because the derivation is
+    #   IR-global and its consumers are not (script 287 is never attributed to a room).
     placed: dict = field(default_factory=dict)  # item -> {room, ...}: rooms the item's owner is
     #   WRITTEN to (a `put`/`moveTo` to a room, not to the ego). These are the owner STATE's
     #   transitions to a location: an owner-gate `owner == R` is a real item requirement only when R
@@ -1226,6 +1236,7 @@ class Extractor:
         return out
 
     def run(self):
+        self.ts.item_menus = set(_MENUS)      # derived per game in install_vocabulary
         # room universe: any script that has an rm<N> Room instance
         room_scripts = {n: s for n, s in self.ir.scripts.items() if _room_object(s, self.ir)}
         for n in room_scripts:
