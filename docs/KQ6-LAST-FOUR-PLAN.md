@@ -394,27 +394,33 @@ arms a machine that **cannot be survived**.
 byte-identical on the full snapshot surface; the `death_traps` refactor that shares `_trap_rooms` /
 `_trap_graph` with it is behaviour-preserving, measured.
 
-### ⚠️ One KNOWN FALSE POSITIVE, with a documented upstream cause
+### ✅ THE ONE FALSE POSITIVE IS FIXED — a register makes one machine into two
 
-    holeInTheWall(#18) @rm407 via putHoleOnWall
+    holeInTheWall(#18) @rm407 via putHoleOnWall      <- reported, and WRONG
 
-Putting the hole on the wall is the puzzle's solution, not a fatal use. The chain:
+Putting the hole on the wall is the puzzle's solution, not a fatal use. **User, on being shown it:
+*"wait we can't have a fatal use for putting it on the wall, that's what we need it for"*** — so it
+was fixed rather than documented. The chain:
 
-    rm407.sc:193  (gCurRoom setScript: putHoleOnWall 0 1)      ; armed with REGISTER 1
+    rm407.sc:193       (gCurRoom setScript: putHoleOnWall 0 1)     ; armed with REGISTER 1
     putHoleOnWall st4  (if (== register 1) (gEgo setScript: holeTimer) (handsOn:) (self dispose:)
                         else (client setScript: emptyHandedDeath))
-    holeTimer     st5  (emptyHandedDeath start: 2) (gCurRoom setScript: emptyHandedDeath)
 
-Two separate reasons it fires, and the second is the real one:
-1. `putHoleOnWall`'s own entry does not carry the register it was armed with (`0 1`), so the
-   `else` branch — the death — looks reachable. The death's entry DOES carry `¬(R0 == 1)`, so the
-   information exists; it is the armer's side that drops it.
-2. Even on the register-1 branch, `holeTimer` gives you 20 seconds and then kills you. The escape
-   is LOOKING THROUGH THE HOLE, and `kq6-catacombs-diagnosis` already records that gap:
-   *"`lookInHole`'s entry is `opaque()`, armed from `theHole`'s doVerb, and `theHole` is only
-   `init:`ed once the hole is on the wall."* Until `lookInHole` is recognised as the competing
-   escape, the model's honest view is that putting the hole up leads to death.
+SCI's `register` lets ONE machine be two, and here the two halves disagree about whether you die.
+The death is armed from `putHoleOnWall` only when its register is NOT 1 — and it is always 1.
 
-**It does not corrupt the item-level oracle** — `holeInTheWall` is already in EXPECTED_CAUGHT for
-the right reason (the B1 carry-in stranding), so this only adds a wrong REASON, not a wrong item.
-Recorded rather than suppressed.
+**Both halves were already in the model and nothing was missing except putting them together:**
+
+    emptyHandedDeath  entry from ('putHoleOnWall', 4):  GAnd([own(18), NOT (R0 == 1)])
+    putHoleOnWall     entry_locals[0]:                  {('R', 0): 1}
+
+So `_trap_graph`'s `handoff` now carries the entry GUARD alongside the armed name, and a handoff
+whose guard the armer's own register contradicts does not count (`_ctr_contradicted`, top-level AND
+spine only, `_armer_knowns` intersected across entries so a value only one arming provides cannot
+suppress a real hazard).
+
+**Corpus after the fix: LSL2 0, KQ4 0, Dagger 0, SQ3 0, Camelot 0, TCB 0, KQ6 1 — the skull.**
+Goldens byte-identical again. The second cause I had blamed (`holeTimer`'s escape being
+`lookInHole`, which `kq6-catacombs-diagnosis` records as unmodelled) turned out NOT to be load
+bearing: the register contradiction alone settles it, because the timer branch is reached by
+`(gEgo setScript: holeTimer)` and that arming is not recorded as a handoff at all.

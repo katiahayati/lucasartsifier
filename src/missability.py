@@ -1049,9 +1049,11 @@ def _trap_graph(infos):
     is the specimen -- it throws the skull into the gears, the gears are not jammed, and its last
     state arms `sqwishEm` again.
 
-    `handoff` is the same arming relation keyed by the ARMING STATE, `(armer, state) -> names`,
-    which is what tells a state that ends the machine apart from one that ends it by starting the
-    death. `entry_armers` already carries the state; only `arms` was throwing it away.
+    `handoff` is the same arming relation keyed by the ARMING STATE,
+    `(armer, state) -> {armed name: the entry guard IT gets from this site}`, which is what tells a
+    state that ends the machine apart from one that ends it by starting the death. `entry_armers`
+    already carries the state; only `arms` was throwing it away. The guard comes along because an
+    arming site can carry a condition the armer itself contradicts -- see `_ctr_contradicted`.
 
     Shared by `death_traps` and `fatal_uses`, which ask opposite questions of the same graph: one
     wants the machines that are NOT doomed (the escapes), the other wants the ones that ARE (the
@@ -1060,10 +1062,12 @@ def _trap_graph(infos):
     the same rule living in two places."""
     arms, handoff = {}, {}                         # machine name -> names it arms; + by state
     for info in infos:
-        for a in (info.get("entry_armers") or ()):
+        for j, a in enumerate(info.get("entry_armers") or ()):
             if a:
                 arms.setdefault(a[0], set()).add(info["inst"])
-                handoff.setdefault(a, set()).add(info["inst"])
+                ents = info.get("entries") or ()
+                g = ents[j][1] if j < len(ents) else None
+                handoff.setdefault(a, {})[info["inst"]] = g
     fatal = {i["inst"] for i in infos
              if any(tr and tr[0] == "DEATH"
                     for _K, ps in i["states"].items() for (_g, _w, _gg, _c, tr) in ps)}
@@ -1084,6 +1088,63 @@ def _succ_state(K, tr):
         return None
     return (K + 1 if tr[0] == "ADVANCE" else tr[1] if tr[0] == "JUMP" else
             tr[1] + 1 if tr[0] == "SETSTATE" else None)
+
+
+def _ctr_contradicted(guard, known):
+    """Does `guard` demand a local/register value that `known` says it does not have?
+
+    Only the top-level AND spine, and only leaves whose key we actually know -- the same discipline
+    as `_must_hold`. A demand under an OR is not a demand, and a key we have no value for tells us
+    nothing.
+
+    This exists because SCI's `register` lets ONE machine be two, and the two halves can disagree
+    about whether you die. KQ6's rm407 is the case, and it is why putting the hole on the wall --
+    the puzzle's solution -- looked like a fatal use:
+
+        rm407.sc:193       (gCurRoom setScript: putHoleOnWall 0 1)     ; armed with REGISTER 1
+        putHoleOnWall st4  (if (== register 1) (gEgo setScript: holeTimer) ... (self dispose:)
+                            else (client setScript: emptyHandedDeath))
+
+    so the death is armed from `putHoleOnWall` only when its register is NOT 1 -- and it is always
+    1. The model had both halves all along: the death's entry from that site carries
+    `NOT (R0 == 1)`, and `putHoleOnWall`'s own `entry_locals` carries `{('R',0): 1}`. Nothing was
+    missing except putting them together."""
+    if not known:
+        return False
+    out = []
+
+    def walk(g, pol):
+        if isinstance(g, list):
+            for k in g:
+                walk(k, pol)
+        elif isinstance(g, GAnd) and pol:
+            for k in g.kids:
+                walk(k, pol)
+        elif isinstance(g, GNot):
+            walk(g.kid, not pol)
+        elif isinstance(g, tuple) and len(g) == 4 and g[0] == "CTR" and g[1] in known:
+            got, op, want = known[g[1]], g[2], g[3]
+            holds = (got == want) if op == "==" else (got != want) if op == "!=" else None
+            if holds is not None and holds is not pol:
+                out.append(True)
+    walk(guard, True)
+    return bool(out)
+
+
+def _armer_knowns(info):
+    """Local/register values that EVERY arming of this machine establishes.
+
+    Intersected across entries, because one arming setting `register 1` says nothing about a second
+    arming that sets 0 -- and suppressing a death on a value only one way in provides is how you
+    lose a real hazard."""
+    ents, els = info.get("entries") or (), info.get("entry_locals") or ()
+    if not ents or len(els) != len(ents):
+        return {}
+    common = None
+    for d in els:
+        d = d or {}
+        common = dict(d) if common is None else {k: v for k, v in common.items() if d.get(k) == v}
+    return common or {}
 
 
 def _survivable(info, unavoidable, handoff, start=None):
@@ -1127,8 +1188,15 @@ def _survivable(info, unavoidable, handoff, start=None):
     if not states:
         return True
     inst = info["inst"]
-    hands_to_death = any(m in unavoidable
-                         for (a, _K), ms in handoff.items() if a == inst for m in ms)
+    known = _armer_knowns(info)
+
+    def _lethal_handoff(K):
+        """The deaths this state really starts -- an arming whose own guard this machine's
+        register contradicts is not one of them."""
+        return {m for m, g in (handoff.get((inst, K)) or {}).items()
+                if m in unavoidable and not _ctr_contradicted(g, known)}
+
+    hands_to_death = any(_lethal_handoff(K) for (a, K) in handoff if a == inst)
     safe, changed = set(), True
     while changed:
         changed = False
@@ -1137,7 +1205,7 @@ def _survivable(info, unavoidable, handoff, start=None):
                 continue
             # A state that hands the room's script slot to a death is not safe by ANY path: the
             # `setScript:` replaces whatever this machine would have done next.
-            if any(m in unavoidable for m in handoff.get((inst, K), ())):
+            if _lethal_handoff(K):
                 continue
             for (_g, _w, _gg, _c, tr) in paths:
                 if tr and tr[0] == "DEATH":
