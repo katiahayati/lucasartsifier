@@ -17,7 +17,14 @@ Same two rules as the KQ4 oracle, from the user:
 FOUR columns, because "real softlock" and "we should flag it" are not the same question:
 EXPECTED_CAUGHT (real, and we catch it) · KNOWN_GAPS (real, and we miss it) · CONFIRMED_SAFE
 (re-obtainable -- flagging one is a false positive) · LONG_ENDING_ONLY (gates the long ending, not
-the credits -- deliberately not caught under the current goal).
+the win itself -- deliberately not caught under the current goal).
+
+The goal changed under this test on 2026-07-28 and the verdicts did not move: it used to be the
+discovered `{94, 205}` (the CREDITS, which roll after the vizier's wedding too, so LOSING reached
+it) and is now the declared `{180}`, the post-fight kiss cutscene that is the only way to arrive at
+rm740 with prevRoom 180 and so the only thing that arms `alexWedding`. See docs/KQ6-GOAL.md. The
+long ending is a variant of that same win, gated on flag 15 inside `alexWedding`, so this column
+means the same thing it always did.
 
 Provenance differs per item and is recorded inline, because it matters how much weight each
 carries: some are in-game user rulings, the rest are walkthrough-derived. See memory
@@ -88,7 +95,8 @@ KNOWN_GAPS = set()
 #
 # Same class as the four island treasures, which gate the BEST ending (docs/KQ6-SOFTLOCK-CANDIDATES).
 # In ALLOWED, so catching one is a question rather than a hard failure -- but it IS a question:
-# under the current goal it should not fire, so if it does, the goal or the path model has moved.
+# under the current goal (rm180 = `alexWedding` armed) it should not fire, so if it does, the goal
+# or the path model has moved.
 LONG_ENDING_ONLY = {"teaCup"}
 
 # CONFIRMED SAFE -- flagging one of these is a false positive, not a promotion.
@@ -117,6 +125,17 @@ def run():
         print("  (skip: no KQ6 IR)")
         return True
     s = M.load(cfg=config.KQ6)
+
+    # THE GOAL, pinned here because every verdict below is measured against it and because it was
+    # wrong for the whole life of this file until 2026-07-29: discovery returned rm94, the CREDITS,
+    # which roll after the vizier's wedding too, so LOSING satisfied it. It is DERIVED, not
+    # declared -- `anchors._resolve_pass_through` reads rm740's rival endings. rm180 is the
+    # post-fight kiss, the only way to enter rm740 with prevRoom 180 and so the only thing that
+    # arms `alexWedding`. See docs/KQ6-GOAL.md; the derivation is flagged PROVISIONAL there.
+    check("the goal is the WIN, not the credits", set(s.em.cfg.goal_rooms) == {180},
+          f"goal_rooms = {sorted(s.em.cfg.goal_rooms)}; expected {{180}}. If this became "
+          f"{{94, 205}} the pass-through rule stopped firing and defeat satisfies the goal again.")
+
     cands = s.analyze()
     ids = ({c["item"] for c in cands} | {j["item"] for j in s.joint_strandings()}
            | {r["item"] for r in s.resource_exhaustion()} | {d["item"] for d in s.dangerous_sinks()}
@@ -170,8 +189,8 @@ def run():
     check("a LONG-ENDING-only item is not flagged as unwinnable",
           not (caught & LONG_ENDING_ONLY),
           f"FLAGGED: {sorted(caught & LONG_ENDING_ONLY)} -- these gate the long ending, not the "
-          f"credits, so under the current goal they should not fire. If one does, the goal or the "
-          f"two-castle-entrance path model has moved; do not just promote it.")
+          f"win itself, so under the current goal (rm180) they should not fire. If one does, the "
+          f"goal or the two-castle-entrance path model has moved; do not just promote it.")
 
     # THE TWO CASTLE DOORS. rm220->rm730 is the servant-girl disguise (short route) and
     # rm230->rm710 is the magic paint (long route); both are one-way into the same terminal castle,
@@ -198,7 +217,11 @@ def run():
     #   1. We have no notion of NECESSITY here. Banning the bird loses 0 rooms and the goal stays
     #      reachable -- as it does for the handkerchief and the mint. Every KQ6 finding rests on
     #      `edge_strandings`' proxy ("there is a USE SITE past the edge"), so "required to win"
-    #      cannot be the discriminator without deleting all fourteen.
+    #      cannot be the discriminator without deleting all fourteen. RE-MEASURED 2026-07-28 after
+    #      the goal was corrected from the credits to rm180 (`alexWedding`): still 0 rooms lost,
+    #      for all ten flagged items. The old goal being satisfied by DEFEAT was not what was
+    #      holding this up -- rm180/740/750/790 sit in one 18-room SCC, so no room-set goal can
+    #      separate the win from the loss here. See docs/KQ6-GOAL.md.
     #   2. The use site cannot be split by state either: it is `doVerb 37` on `floor`, a
     #      NewFeature cast UNCONDITIONALLY, so both product copies of rm850 carry it.
     #   3. The dogs are not a flag-gated door. `spotEgoScr` is a REGION property (rgCastle:132

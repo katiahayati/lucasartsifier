@@ -119,10 +119,24 @@ KQ6 = GameConfig(
     src_dir=os.path.join(_ROOT, "build", "sweep", "kq6", "src"),
     ir_path=os.path.join(_ROOT, "build", "sweep", "kq6", "Kings Quest 6.ir.json"),
     resource_dir=os.path.expanduser("~/sierra/Games/Kings Quest 6"),
-    # Everything else DISCOVERED, as for the other two. Named here only so the KQ6 oracle test and
-    # the snapshot tool can reach it the same way they reach LSL2 and KQ4, instead of each caller
-    # hand-rolling a GameConfig from a glob. Paths only -- no game logic, per this file's contract.
+    # start/death/debug DISCOVERED, as for the other two. Named here only so the KQ6 oracle test
+    # and the snapshot tool can reach it the same way they reach LSL2 and KQ4, instead of each
+    # caller hand-rolling a GameConfig from a glob.
     start_room=0,
+    # DISCOVERED -> rm180, like the other two, and it took a third rule to get there. The primary
+    # rule (terminal, reachable, survivable) accepted rm94, which is the CREDITS -- entered only
+    # from rm740's UNGATED `cue`, which fires after ANY of that room's three ending scripts,
+    # including `vizierWedding` where the vizier marries Cassima and you LOSE. So the goal was
+    # satisfied by DEFEAT, and every "is X still required?" question was being answered against it.
+    #
+    # `anchors._resolve_pass_through`: a terminal with a single predecessor tells you nothing its
+    # predecessor does not, and where the outcome is really decided is a branch -- rival machines
+    # in one room whose entry conditions contradict. rm740 runs `alexWedding` under `global12 ==
+    # 180` (global12 is prevRoom) against `vizierWedding` under its negation, and only the first
+    # asks what the player is carrying. That is the SAME achievement test KQ4's fallback uses,
+    # asked of a machine instead of a room. Its entry names a room, so the goal is one: rm180, the
+    # post-fight kiss cutscene, whose only scripted exit is `newRoom: 740` -- the one way to reach
+    # rm740 having won. Discovery reproduces rm180 exactly; see docs/KQ6-GOAL.md.
     goal_rooms=frozenset(),
     death_signal=(),          # DERIVED -> the SCI1.1 death-dialog signal (see vocab.derive_death_sci11)
     debug_globals=frozenset(),

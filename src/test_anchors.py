@@ -95,11 +95,78 @@ def test_discover_goal():
         A.death_rooms = A_death
 
 
+def _machine(room, inst, entry, own=False):
+    """A machine stand-in: one entry condition, optionally testing what the player carries."""
+    from guard_ast import Pred
+    return {"room": room, "inst": inst, "script": 0,
+            "entries": [(0, entry)], "init_entries": [],
+            "states": {0: [([Pred("OWN", var=7)] if own else [], [], [], None, None)]}}
+
+
+def test_resolve_pass_through():
+    """A terminal that only REPORTS the outcome yields to the branch that DECIDES it.
+
+    Synthetic, because pinning this against KQ6 alone would be re-measuring the game the rule was
+    designed on. Each check corresponds to one clause of the rule, so a clause cannot be dropped or
+    widened without a failure here. The real-game anchors are pinned by the LSL2 golden (which
+    carries `goal_rooms`) and by the KQ4/KQ6 oracles."""
+    print("\n-- _resolve_pass_through(): a credits screen is not an outcome --")
+    from guard_ast import GAnd, GNot, Pred
+    import extract as X
+    prev = Pred("CMP", var=12, op="==", value="180")     # CMP values arrive as strings
+    other = GAnd([GNot(prev), Pred("CMP", var=338, op="!=", value="0")])
+    real = X.prev_room_global
+    try:
+        X.prev_room_global = lambda ir: 12
+        # 1 -> 740 -> 94(terminal).  rm740 runs two rival endings; only one tests achievement.
+        em = _Em({1: {740}, 740: {94}}, rooms=[1, 94, 180, 740])
+        em.ir = object()
+        em.machines = [_machine(740, "win", prev, own=True), _machine(740, "lose", other)]
+        check("the winning ending's prevRoom entry becomes the goal",
+              A._resolve_pass_through(em, _edges(em), frozenset({94})) == frozenset({180}))
+
+        # KQ4's shape: the predecessor holds ONE machine, so there is no branch to read.
+        em1 = _Em({1: {693}, 693: {694}}, rooms=[1, 180, 693, 694])
+        em1.ir = object()
+        em1.machines = [_machine(693, "egoActions", prev, own=True)]
+        check("one machine is not a branch, so the terminal stands",
+              A._resolve_pass_through(em1, _edges(em1), frozenset({694})) == frozenset({694}))
+
+        # The signal has to SEPARATE the rivals: if they all test achievement it says nothing.
+        em2 = _Em({1: {740}, 740: {94}}, rooms=[1, 94, 180, 740])
+        em2.ir = object()
+        em2.machines = [_machine(740, "a", prev, own=True), _machine(740, "b", other, own=True)]
+        check("rivals that ALL test achievement leave the terminal alone",
+              A._resolve_pass_through(em2, _edges(em2), frozenset({94})) == frozenset({94}))
+
+        # A winner gated on a FLAG has no room-set equivalent -- that is TODO 6.1, not a goal.
+        flag = Pred("FLAG", var=15)
+        em3 = _Em({1: {740}, 740: {94}}, rooms=[1, 94, 180, 740])
+        em3.ir = object()
+        em3.machines = [_machine(740, "win", flag, own=True),
+                        _machine(740, "lose", GNot(flag))]
+        check("a winner not gated on prevRoom is left as-is rather than guessed",
+              A._resolve_pass_through(em3, _edges(em3), frozenset({94})) == frozenset({94}))
+
+        # Two ways in means the terminal is itself a choice, and carries its own information.
+        em4 = _Em({1: {740, 94}, 740: {94}}, rooms=[1, 94, 180, 740])
+        em4.ir = object()
+        em4.machines = [_machine(740, "win", prev, own=True), _machine(740, "lose", other)]
+        check("a terminal with more than one predecessor is untouched",
+              A._resolve_pass_through(em4, _edges(em4), frozenset({94})) == frozenset({94}))
+
+        check("contradiction is detected through a negated conjunct",
+              A._mutually_exclusive(prev, other) and not A._mutually_exclusive(prev, prev))
+    finally:
+        X.prev_room_global = real
+
+
 def run():
     print("=== test_anchors ===")
     test_engine_entry()
     test_discover_start()
     test_discover_goal()
+    test_resolve_pass_through()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 

@@ -188,6 +188,145 @@ def _tests_achievement(em, rooms):
     return out
 
 
+def _conjuncts(g):
+    """Top-level conjuncts of a guard, flattening nested GAnd and lists."""
+    from guard_ast import GAnd
+    if g is None:
+        return []
+    if isinstance(g, list):
+        return [c for x in g for c in _conjuncts(x)]
+    if isinstance(g, GAnd):
+        return [c for k in g.kids for c in _conjuncts(k)]
+    return [g]
+
+
+def _mutually_exclusive(a, b):
+    """Do these two guards contradict -- does one ASSERT a conjunct the other NEGATES?
+
+    Sound but incomplete, and that is the right direction: a missed contradiction leaves the
+    candidate goal where it was, while a false one would invent a branch. KQ6's two weddings are
+    `12 == 180` against `AND(NOT(12 == 180), NOT(12 == 790), 338 != 0)`, which this catches on the
+    first conjunct."""
+    from guard_ast import GNot
+    def split(g):
+        cs = _conjuncts(g)
+        return ({repr(x) for x in cs if not isinstance(x, GNot)},
+                {repr(x.kid) for x in cs if isinstance(x, GNot)})
+    pa, na = split(a)
+    pb, nb = split(b)
+    return bool((pa & nb) or (pb & na))
+
+
+def _machine_guards(info):
+    return ([g for _K, paths in info["states"].items() for (g, _w, _gg, _c, _tr) in paths]
+            + [eg for _K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ()))])
+
+
+def _machine_tests_achievement(info):
+    """Does this machine ask what the player is CARRYING? See `_tests_achievement`, which is the
+    same question asked of a whole room."""
+    from guard_ast import GAnd, GOr, GNot, Pred
+    def owns(g):
+        if isinstance(g, list):
+            return any(owns(x) for x in g)
+        if isinstance(g, Pred):
+            return g.kind == "OWN"
+        if isinstance(g, (GAnd, GOr)):
+            return any(owns(k) for k in g.kids)
+        if isinstance(g, GNot):
+            return owns(g.kid)
+        return False
+    return owns(_machine_guards(info))
+
+
+def _entry_rooms(info, prev):
+    """The rooms you must have come FROM for this machine to be armed, if that is what its entry
+    says. `prev` is the previous-room register. A machine whose entry is `prevRoom == N` is armed
+    exactly by arriving from rm N, so a goal expressed as that machine is the goal room N."""
+    from guard_ast import GNot, Pred
+    out = set()
+    for _K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+        for c in _conjuncts(eg):
+            pol, node = True, c
+            if isinstance(node, GNot):
+                pol, node = False, node.kid
+            if not (isinstance(node, Pred) and node.kind == "CMP" and node.var == prev):
+                continue
+            # `x == v`, and `not (x != v)`, both assert v -- SCI writes the negated spelling often
+            # enough that reading only the first would miss half of them.
+            if (node.op == "==") != pol:
+                continue
+            try:                              # CMP values arrive as strings; same as `_atoms`
+                out.add(int(node.value))
+            except (TypeError, ValueError):
+                pass
+    return out
+
+
+def _resolve_pass_through(em, edges, terminals):
+    """Replace a terminal that merely REPORTS the outcome with the state that DECIDES it.
+
+    A terminal with a single predecessor tells you nothing its predecessor does not: you cannot
+    arrive at it any other way, so reaching it is reaching the predecessor. KQ6's rm94 is the
+    credits, entered only from rm740, and rm740 runs one of three ending scripts with the credits
+    following ANY of them -- so "can you still reach rm94" was answered yes by DEFEAT.
+
+    Where the outcome is actually decided is a branch, and a branch looks like RIVAL machines:
+    two or more armed in the same room whose entry conditions CONTRADICT, so at most one can run.
+    If the achievement test -- the same "does this ending ask what you are carrying" that
+    `_tests_achievement` applies to rooms -- separates those rivals, splitting them into some that
+    do and some that do not, then it has told us which branch is the win and the goal is that
+    machine. If every rival tests achievement, or none does, it has told us nothing and the
+    terminal stands.
+
+    The goal must then be expressible as a ROOM, because that is what `goal_rooms` is. It is when
+    the winning machine's entry is a condition on the previous-room register: KQ6's `alexWedding`
+    is armed by `12 == 180`, so the goal is rm180, the post-fight cutscene that is the only way to
+    enter rm740 having won. A winner gated on a FLAG instead has no room-set equivalent and is
+    left alone -- see TODO 6.1, where the goal becomes a predicate.
+
+    Measured on all three oracle games. LSL2's rm86 and KQ4's rm694 each have a single predecessor
+    holding ONE machine, so there is no branch and neither moves; KQ6's rm740 holds `alexWedding`
+    (`12 == 180`, and the only machine there with an OWN predicate anywhere in it) against
+    `vizierWedding` (`AND(NOT(12 == 180), ...)`, none), so it resolves to rm180.
+
+    PROVISIONAL -- see docs/KQ6-GOAL.md. The achievement signal itself is confirmed on two games
+    only, and KQ6 is the one it was designed against."""
+    import extract as X
+    prev = X.prev_room_global(getattr(em, "ir", None)) if getattr(em, "ir", None) else None
+    if prev is None:
+        return terminals
+    preds_of = {}
+    for a, bs in edges.items():
+        for b in bs:
+            if a != b:
+                preds_of.setdefault(b, set()).add(a)
+    won = set()
+    for t in sorted(terminals):
+        p = preds_of.get(t) or set()
+        if len(p) != 1:                        # more than one way in: the terminal is a choice
+            continue
+        room = next(iter(p))
+        armed = [i for i in em.machines
+                 if i["room"] == room and (i.get("entries") or i.get("init_entries"))]
+        rivals = [i for i in armed
+                  if any(_mutually_exclusive(g, h)
+                         for j in armed if j is not i
+                         for _K, g in list(i.get("entries", ())) + list(i.get("init_entries", ()))
+                         for _K2, h in list(j.get("entries", ())) + list(j.get("init_entries", ())))]
+        if len(rivals) < 2:
+            continue
+        tests = [i for i in rivals if _machine_tests_achievement(i)]
+        if not tests or len(tests) == len(rivals):
+            continue                           # the signal separates nothing here
+        rooms = set().union(*(_entry_rooms(i, prev) for i in tests))
+        won |= {r for r in rooms if r in set(em.rooms)}
+    # An ending that tests what you achieved beats one that does not -- the rule KQ4's fallback
+    # already runs over terminals, applied once more to the resolved set. Without it KQ6 keeps
+    # rm205, the sail-home ending, alongside the win.
+    return frozenset(won) if won else terminals
+
+
 def discover_goal(em, edges=None, start=None):
     """Terminal, reachable, and never fatal -- the room you reach, cannot leave, and survive."""
     edges = edges if edges is not None else movement_edges(em)
@@ -205,7 +344,7 @@ def discover_goal(em, edges=None, start=None):
             continue
         (excluded if r in deadly else out).add(r)
     if out:
-        return frozenset(out)
+        return _resolve_pass_through(em, edges, frozenset(out))
     # FALLBACK for a game that ends the run through the SAME flag it uses for death. KQ4's
     # global127 does not mean "you died", it means "the game is over": it is set in 33 death rooms
     # AND in both endings, so the deadly filter above throws victory out with the losses and
@@ -217,7 +356,7 @@ def discover_goal(em, edges=None, start=None):
     # really a room: rm694 holds both outcomes, and it is the Magic Fruit requirement, captured
     # separately, that distinguishes them. Naming the room is the honest half of that; see
     # TODO 6.1 for making the goal a predicate.
-    return frozenset(_tests_achievement(em, excluded))
+    return _resolve_pass_through(em, edges, frozenset(_tests_achievement(em, excluded)))
 
 
 def discover(em):
