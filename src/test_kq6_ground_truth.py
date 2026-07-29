@@ -192,11 +192,22 @@ def run():
           short_door and set(short_door.get("dropped_incompatible", ())) and
           realm_only <= {s.g.item_name(i) for i in short_door.get("dropped_incompatible", ())},
           repr(short_door and short_door.get("dropped_why")))
-    # RED until the per-ending split lands. `mint` and `nightingale` are the SHORT route's castle
-    # items -- the guard-dog distraction, and the lower-score alternative to the lamp for Shamir --
-    # so the long door should not ask for them. They are not unobtainable on the long route, merely
-    # not needed, which is a per-ENDING question; both endings end at rm94 so a goal made of ROOMS
-    # cannot express it. See docs/SCI11-PATCHING-PLAN.md 6.4.
+    # RED, and the mechanism is now known (2026-07-28) -- do NOT "fix" this by narrowing the guard.
+    # `nightingale` is the SHORT route's way past the castle guard dogs; the long route has Jollo
+    # win them over instead. Three things stand between us and deriving that, measured in order:
+    #   1. We have no notion of NECESSITY here. Banning the bird loses 0 rooms and the goal stays
+    #      reachable -- as it does for the handkerchief and the mint. Every KQ6 finding rests on
+    #      `edge_strandings`' proxy ("there is a USE SITE past the edge"), so "required to win"
+    #      cannot be the discriminator without deleting all fourteen.
+    #   2. The use site cannot be split by state either: it is `doVerb 37` on `floor`, a
+    #      NewFeature cast UNCONDITIONALLY, so both product copies of rm850 carry it.
+    #   3. The dogs are not a flag-gated door. `spotEgoScr` is a REGION property (rgCastle:132
+    #      `(if spotEgoScr (global2 setScript: spotEgoScr 0 param1))`) and the guards spot you
+    #      POSITIONALLY -- the LSL2 rm47 henchmen shape. And capture is survivable: you escape
+    #      twice (Jollo, then the skeleton key) and only the THIRD capture ends the game, so the
+    #      bird's necessity rests on a three-strikes COUNTER we do not model.
+    # Modelling the bit-array flag store (329 sites, inert on LSL2/KQ4/Dagger) is worth doing on
+    # its own merits but was MEASURED not to deliver this. See docs/SCI11-PATCHING-PLAN.md 6.4.
     long_door = doors.get((230, 710))
     check("the LONG castle door does not demand the short route's items",
           long_door and not ({"mint", "nightingale"} &
