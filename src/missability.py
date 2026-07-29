@@ -1991,8 +1991,29 @@ class IrSccReach(SccReach):
         return self._rw[ban]
 
     def _need_rooms(self, item):
-        """Rooms where own(item) is actually FACED -- gate-aware. See _reach_without."""
+        """Rooms where own(item) is actually FACED -- gate-aware. See _reach_without.
+
+        Deliberately RAW with respect to disjunctions -- see `_unit_need_rooms`, which is where a
+        single item stops counting a room its group already covers. Subtracting here instead
+        emptied the GROUP's need as well (a group's need is the union over its members), and LSL2's
+        glacier guard `(or has:30 has:31)` disappeared entirely."""
         return {R for R in super()._need_rooms(item) if R in self._reach_without(item)}
+
+    def _unit_need_rooms(self, u):
+        """Rooms a requirement UNIT is faced in.
+
+        A GROUP keeps every room its members are faced in -- the group IS the requirement there.
+        A SINGLE item drops the rooms where it is merely one alternative of a group, because you
+        are not required to bring THAT member; the group unit already demands one of them. Without
+        this a guard asks for every solution to a puzzle at once: KQ6's castle demanded the mint
+        AND the peppermint, LSL2's glacier the Sand AND the Ashes."""
+        raw = set().union(*(self._need_rooms(i) for i in u)) if u else set()
+        if len(u) > 1:
+            return raw
+        it = next(iter(u))
+        groups = self.disjunctive_groups()
+        return {R for R in raw
+                if not any(it in G and len(G) > 1 for G in groups.get(R, ()))}
 
     def reobtainable_rooms(self, item):
         """Rooms from which `item` can still be ACQUIRED -- GATE-AWARE, intersected over every
@@ -2749,14 +2770,32 @@ class IrSccReach(SccReach):
         back in the jungle you can never return to. Losing EITHER is survivable; losing BOTH is
         the softlock."""
         out = defaultdict(set)
+
+        def offer(room, alts):
+            uniq = set(alts)
+            if len(uniq) < 2 or any(not x for x in uniq):
+                return                # one alternative is free -> the gate is not a requirement
+            if set.intersection(*map(set, uniq)):
+                return                # a common item is needed -> per-item sweep already sees it
+            out[room].add(frozenset().union(*uniq))
+
         for (a, b), variants in self._emeta.items():
             for (req, setv, alts) in variants:
-                uniq = set(alts)
-                if len(uniq) < 2 or any(not x for x in uniq):
-                    continue          # one alternative is free -> the gate is not a requirement
-                if set.intersection(*map(set, uniq)):
-                    continue          # a common item is needed -> per-item sweep already sees it
-                out[a].add(frozenset().union(*uniq))
+                offer(a, alts)
+        # A disjunction does not have to gate a MOVEMENT. SCI1.1's item-use idiom is a `doVerb`
+        # switch on the item's message, so rival ways of solving one puzzle are sibling cases that
+        # arm the SAME machine -- and that machine's ENTRIES are then exactly the DNF an edge's
+        # `alts` would be. KQ6's genie is the case: `rm750`'s doVerb has `(63 put:23 ... 753)` and
+        # `(67 put:31 ... 753)`, so `giveGenieMint` has entries [own(mint), own(peppermint)] and
+        # the two are ALTERNATIVES -- the walkthroughs agree ("you can also defeat Shamir by giving
+        # him some mint leaves"). Read off the entries rather than the edges, this is the same
+        # shape and the same rule; reading only edges made every such puzzle look like a
+        # conjunction of all its solutions.
+        for info in self.em.machines:
+            ents = list(info.get("entries", ())) + list(info.get("init_entries", ()))
+            if len(ents) < 2:
+                continue
+            offer(info["room"], tuple(frozenset(_own_positive(eg)) for _K, eg in ents))
         return out
 
     def group_strandings(self):

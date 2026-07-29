@@ -94,6 +94,11 @@ class SccReach:
                 out.add(c)
         return out
 
+    def _unit_need_rooms(self, u):
+        """Rooms a requirement UNIT is faced in. Plain union here; the gate-aware subclass
+        additionally stops a SINGLE item from counting a room its disjunctive group covers."""
+        return set().union(*(self._need_rooms(i) for i in u)) if u else set()
+
     def _need_rooms(self, item):
         """Rooms where OWN(item) is actually faced (region controllers -> members)."""
         out = set()
@@ -141,7 +146,7 @@ class SccReach:
         units = (self.requirement_units() if hasattr(self, "requirement_units")
                  else [frozenset({it}) for it in self.required if self.sources.get(it)])
         reob = {u: self.reobtainable_rooms(u if len(u) > 1 else next(iter(u))) for u in units}
-        need = {u: set().union(*(self._need_rooms(i) for i in u)) for u in units}
+        need = {u: self._unit_need_rooms(u) for u in units}
         out = []
         for a, bs in self.edges.items():
             if a not in self.reach_rooms:

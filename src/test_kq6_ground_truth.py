@@ -192,15 +192,16 @@ def run():
           short_door and set(short_door.get("dropped_incompatible", ())) and
           realm_only <= {s.g.item_name(i) for i in short_door.get("dropped_incompatible", ())},
           repr(short_door and short_door.get("dropped_why")))
-    # The long door keeps `mint` and `nightingale`, which the walkthroughs put on the SHORT route
-    # (the guard-dog distraction, and the lower-score alternative to the lamp for Shamir). Nothing
-    # about the long route makes them unobtainable -- they are merely not needed -- and "not needed
-    # on this route" is a per-ENDING question our goal (a set of ROOMS, and both endings end at
-    # rm94) cannot express yet. Pinned as a KNOWN LIMIT so that closing it is a deliberate act.
+    # RED until the per-ending split lands. `mint` and `nightingale` are the SHORT route's castle
+    # items -- the guard-dog distraction, and the lower-score alternative to the lamp for Shamir --
+    # so the long door should not ask for them. They are not unobtainable on the long route, merely
+    # not needed, which is a per-ENDING question; both endings end at rm94 so a goal made of ROOMS
+    # cannot express it. See docs/SCI11-PATCHING-PLAN.md 6.4.
     long_door = doors.get((230, 710))
-    check("KNOWN LIMIT: the long door still demands the short route's items",
-          long_door and {"mint", "nightingale"} <= {s.g.item_name(i) for i in long_door["items"]},
-          "if this FAILS the per-ending goal split has landed -- update this pin, do not delete it")
+    check("the LONG castle door does not demand the short route's items",
+          long_door and not ({"mint", "nightingale"} &
+                             {s.g.item_name(i) for i in long_door["items"]}),
+          repr(long_door and sorted(s.g.item_name(i) for i in long_door["items"])))
 
     promoted = caught & KNOWN_GAPS
     if promoted:
