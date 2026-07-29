@@ -173,6 +173,35 @@ def run():
           f"credits, so under the current goal they should not fire. If one does, the goal or the "
           f"two-castle-entrance path model has moved; do not just promote it.")
 
+    # THE TWO CASTLE DOORS. rm220->rm730 is the servant-girl disguise (short route) and
+    # rm230->rm710 is the magic paint (long route); both are one-way into the same terminal castle,
+    # so both are real commitment points. But the Realm of the Dead is gated on flag 14, the ONLY
+    # room that writes flag 14 is rm580 (the Druids), and rm580's escape BURNS Beauty's clothes --
+    # which the short door requires. So the handkerchief and the skeleton key, which exist only
+    # inside the Realm, can never be in hand at that door, and demanding them there would WALL the
+    # short route rather than close a softlock. A drop here is not a cosmetic regression.
+    import guards as G
+    doors = {(sp["from_room"], sp["to_room"]): sp for sp in G.guard_specs(s)
+             if sp["site"] == "edge" and (sp["from_room"], sp["to_room"]) in {(220, 730), (230, 710)}}
+    short_door = doors.get((220, 730))
+    realm_only = {"handkerchief", "skeletonKey"}
+    check("the SHORT castle door does not demand the Realm-only items",
+          short_door and not (realm_only & {s.g.item_name(i) for i in short_door["items"]}),
+          repr(short_door and sorted(s.g.item_name(i) for i in short_door["items"])))
+    check("...and it says WHY they were dropped, rather than dropping them silently",
+          short_door and set(short_door.get("dropped_incompatible", ())) and
+          realm_only <= {s.g.item_name(i) for i in short_door.get("dropped_incompatible", ())},
+          repr(short_door and short_door.get("dropped_why")))
+    # The long door keeps `mint` and `nightingale`, which the walkthroughs put on the SHORT route
+    # (the guard-dog distraction, and the lower-score alternative to the lamp for Shamir). Nothing
+    # about the long route makes them unobtainable -- they are merely not needed -- and "not needed
+    # on this route" is a per-ENDING question our goal (a set of ROOMS, and both endings end at
+    # rm94) cannot express yet. Pinned as a KNOWN LIMIT so that closing it is a deliberate act.
+    long_door = doors.get((230, 710))
+    check("KNOWN LIMIT: the long door still demands the short route's items",
+          long_door and {"mint", "nightingale"} <= {s.g.item_name(i) for i in long_door["items"]},
+          "if this FAILS the per-ending goal split has landed -- update this pin, do not delete it")
+
     promoted = caught & KNOWN_GAPS
     if promoted:
         print(f"  [note] a KNOWN GAP is now being caught: {sorted(promoted)} -- if the user "

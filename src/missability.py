@@ -1563,7 +1563,7 @@ class IrSccReach(SccReach):
         self.reach_rooms = reachable(self.edges, {em.cfg.start_room})
         self.members, self.room_region, self.controllers = {}, {}, set()   # no regions in IR
         self.goal_comps = {self.comp_of[r] for r in em.cfg.goal_rooms if r in self.comp_of}
-        self._reob, self._rw, self._after = {}, {}, {}
+        self._reob, self._rw, self._after, self._avoid = {}, {}, {}, {}
         self._build_product()
 
     # ---- gate-aware movement ------------------------------------------------
@@ -1929,6 +1929,49 @@ class IrSccReach(SccReach):
                     seen.add(v)
                     q.append(v)
         return seen
+
+    def reach_avoiding(self, rooms):
+        """Rooms reachable from the start WITHOUT ever ENTERING `rooms` -- gate-aware, intersected
+        over every projection. The room-pruning twin of `_reach_without` (which bans an ITEM).
+
+        Gate-awareness is the whole point and the flat graph gives the opposite answer: KQ6's Realm
+        of the Dead sits behind `flag14`, and rm580 is the ONLY room that writes it, so refusing
+        rm580 makes the entire Realm unreachable -- while the guard-ignoring graph happily routes
+        around rm580 and says the Realm is still there."""
+        key = frozenset(rooms)
+        if key in self._avoid:
+            return self._avoid[key]
+        out = None
+        for R in self.proj:
+            zero = tuple(0 for _ in R) if isinstance(R, tuple) else 0
+            start = (self.em.cfg.start_room, zero)
+            seen, q = {start}, [start]
+            while q:
+                u = q.pop()
+                for v in self._psucc(R, u, frozenset()):
+                    if v[0] in key or v in seen:
+                        continue
+                    seen.add(v)
+                    q.append(v)
+            got = {r for r, _ in seen}
+            out = got if out is None else (out & got)
+        self._avoid[key] = out if out is not None else set(self.reach_rooms)
+        return self._avoid[key]
+
+    def edge_demands(self, a, b):
+        """Items the edge a->b ITSELF requires -- the NECESSARY reading.
+
+        `_emeta` holds one row per way of making the move and each row's `alts` is a DNF of
+        item-sets, so an item is genuinely required only if it appears in EVERY alternative of
+        EVERY row. Anything weaker would read one arming's demand as the edge's."""
+        rows = self._emeta.get((a, b))
+        if not rows:
+            return frozenset()
+        need = None
+        for (_req, _sets, alts) in rows:
+            for alt in (alts or (frozenset(),)):
+                need = frozenset(alt) if need is None else (need & alt)
+        return need or frozenset()
 
     def _reach_without(self, item):
         """Rooms reachable from the start WITHOUT ever holding `item` (gate-aware forward walk),

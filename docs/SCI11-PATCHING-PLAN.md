@@ -255,7 +255,56 @@ last edge where the item can still be got rid of"). **Requirements need the mirr
 `rm340->rm405`, the catacombs entrance, which is where the user's own ruling puts it. Eight bad
 guards collapse into one right one, derived, with no room named.
 
-### 6.3 Path-forcing: a guard must not demand one arm of a disjunction
+### 6.3 ✅ LANDED (part): a guard must not demand what it cannot hold
+
+**The KQ6 castle, resolved as far as it is derivable.** Both doors are one-way into the same
+19-room terminal castle (`rooms_after(730) == rooms_after(710)`, and neither door room is in it),
+so both are genuine commitment points and the placement was already right — only the condition was
+wrong. Two things landed:
+
+1. **The arming floor** (`missability.entry_alts`) — `wearClothingScr`'s `newRoom: 730` sits one
+   state past a `(secondGuardDoorScr cue:)` handoff, so the entry-reach walk stopped short and
+   `own(clothes)` had vanished from the short door. See the commit "You cannot be executing a
+   machine you never armed".
+2. **`guards.incompatible_with_the_edge`** — an item may not be demanded at an edge when getting it
+   costs something the crossing itself requires. The Realm of the Dead is gated on flag 14; the
+   **only** room that writes flag 14 is rm580 (the Druids); rm580's escape burns Beauty's clothes;
+   the short door requires them. So `handkerchief` and `skeletonKey` — Realm-only items — are
+   dropped from the short door's guard, with the reason recorded on the spec.
+
+| door | demands now |
+|---|---|
+| rm220 -> rm730 (dress, short) | dagger, mint, mirror, nightingale, peppermint |
+| rm230 -> rm710 (paint, long) | + handkerchief, skeletonKey |
+
+This mattered more than "over-strict": demanding a Realm item at the short door **walls** that
+route, since the short path never visits the Realm.
+
+**The exchange-counter discriminator** is what keeps the rule honest: a room that both SOURCES and
+DROPS an item is a counter, not a loss (`sources[brush] == drops[brush] == 280`, the pawn shop), so
+it is not pruned. Without it the rule got the right answer on the long door for the wrong reason.
+
+**⚠️ THE REMAINING HALF, pinned as a KNOWN LIMIT in `test_kq6_ground_truth.py`.** The long door
+still demands `mint` and `nightingale`, which the walkthroughs put on the SHORT route (the guard-dog
+distraction; the lower-score alternative to the lamp for Shamir). Nothing about the long route makes
+them *unobtainable* — they are merely *not needed* — and "not needed on this route" is a per-ENDING
+question. That needs 6.4.
+
+### 6.4 Per-ending requirements — the goal is a set of ROOMS, and both endings end at rm94
+
+`goal_rooms = {94, 205}`; rm94 is the credits and both endings reach it, so "can you still win" is
+true on both routes and no per-route requirement can exist. The discriminator is known and already
+modelled: **`alexWedding.sc` branches on `proc913_0 15` eleven times**, flag 15 is "you entered the
+Realm" (= the King and Queen were revived), and **register = flag + 172**, so flag 15 is register
+**187**, already promoted. The two endings are therefore distinct PRODUCT states `(94, 187=1)` and
+`(94, 187=0)`.
+
+Making the goal a set of product states rather than rooms gives per-ending `required` for free, and
+dissolves the `teaCup` `LONG_ENDING_ONLY` column at the same time. The known obstacle is that
+`_need_rooms` is room-granular, so a use that is only reachable on one route still counts on both —
+that is the piece to design.
+
+### 6.5 Path-forcing: a guard must not demand one arm of a disjunction
 
 Both KQ6 castle entrances get the **same 7-item** guard. But the castle has two entrances —
 `rm220->rm730` (disguise, short ending) and `rm230->rm710` (magic paint, long ending) — and the

@@ -214,6 +214,42 @@ def frontier_guards(s):
     return out
 
 
+def incompatible_with_the_edge(s, a, b, items):
+    """Of `items`, those you CANNOT be holding when you cross a->b, because getting them costs
+    something the crossing itself demands.
+
+    A guard is a conjunction the player has to satisfy all at once, and `unsatisfiable` only ever
+    asked each literal on its own ("is a source still reachable"). That misses an exclusion between
+    the guard and the EDGE: KQ6's castle has two doors, and the short one is
+    `rm220 -> rm730`, which needs Beauty's clothes. The Realm of the Dead is gated on flag 14, the
+    ONLY room that writes flag 14 is rm580 (the Druids), and rm580's escape burns the clothes --
+    so the handkerchief and the skeleton key, which exist only inside the Realm, can never be in
+    your hands at that door. Demanding them there does not close a softlock, it WALLS the route:
+    the exact failure this project holds to be worse than the bug.
+
+    The test: refuse the rooms that take away what the edge demands, walk gate-aware from the
+    start, and drop any item with no source left. A room that both SOURCES and DROPS the item is
+    an exchange COUNTER, not a loss -- the pawn shop is `sources[brush] == drops[brush] == 280`,
+    and pruning it would wrongly delete every item traded over that counter -- so it is kept.
+
+    Deliberately narrow. It removes literals a guard could never get; it does NOT try to work out
+    which of two winning ROUTES you are on. KQ6's `mint` and `nightingale` are short-path castle
+    items and survive this test at the long door, because nothing about the long route makes them
+    unobtainable -- they are simply not needed. That is a per-route NEED question, and per-route
+    need is per-ending, which our goal (a set of ROOMS, and both endings end in rm94) cannot yet
+    express. See docs/SCI11-PATCHING-PLAN.md."""
+    demanded = s.edge_demands(a, b)
+    if not demanded:
+        return set()
+    prune = set()
+    for q in demanded:
+        prune |= (set(s.drops.get(q, ())) - {b}) - set(s.sources.get(q, ()))
+    if not prune:
+        return set()
+    keep = s.reach_avoiding(prune)
+    return {it for it in items if not (set(s.sources.get(it, ())) & keep)}
+
+
 def joint_frontier(s):
     """Commit edges for the JOINT-window strandings -- the grid / one-time-flag softlocks that
     `edge_strandings` structurally cannot see, so `frontier_guards` misses them.
@@ -418,11 +454,30 @@ def guard_specs(s):
         else:
             frontier[(a, b)] = rec
     for (a, b), rec in sorted(frontier.items()):
+        # Drop the literals that cannot be held AT this edge before asking whether the rest is
+        # satisfiable -- demanding one of those does not close a softlock, it walls the route.
+        # Reported, never silent: a guard that quietly asks for less is how an under-guard ships.
+        gone = incompatible_with_the_edge(s, a, b, set(rec["items"]))
+        if gone:
+            rec = {"items": set(rec["items"]) - gone,
+                   "groups": [g for g in rec["groups"] if not (g & gone)]}
         bad = unsatisfiable(s, a, b, rec)
-        specs.append({"site": "edge", "from_room": a, "to_room": b,
-                      "condition": render_frontier(rec),
-                      "items": sorted(rec["items"]), "groups": [sorted(g) for g in rec["groups"]],
-                      "refused": bad})
+        sp = {"site": "edge", "from_room": a, "to_room": b,
+              "condition": render_frontier(rec),
+              "items": sorted(rec["items"]), "groups": [sorted(g) for g in rec["groups"]],
+              "refused": bad}
+        if gone:
+            sp["dropped_incompatible"] = sorted(gone)
+            sp["dropped_why"] = ("cannot be held here: getting %s costs %s, which this crossing "
+                                 "demands" % ([s.g.item_name(i) for i in sorted(gone)],
+                                              [s.g.item_name(i) for i in sorted(s.edge_demands(a, b))]))
+        if not rec["items"] and not rec["groups"]:
+            # Everything this edge would have demanded is unholdable here, so there is no guard to
+            # place -- but say so. Dropping the row silently is how an edge stops being guarded
+            # without anyone noticing; `refused` is the channel that already exists for "we
+            # deliberately emit nothing", and every reporting path prints it.
+            sp["refused"] = [sp["dropped_why"] + " -- nothing left to demand at this edge"]
+        specs.append(sp)
     for gt in survival_gates(s):
         cp, cn, rest = factor(gt["alts"])
         pos_spec = render(cp, set(), rest)
