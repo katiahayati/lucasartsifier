@@ -37,8 +37,38 @@ import config
 import missability as M
 
 # --- The oracle -------------------------------------------------------------------------------
+#
+# EVERY COLUMN IS A SET OF REQUIREMENT **UNITS**, because that is what the tool produces.
+# `edge_strandings` speaks in units -- an `items` entry is a singleton, a `groups` entry is a
+# DISJUNCTION of rival solutions -- and `group_strandings` emits nothing else. This file used to
+# flatten all of that to a set of item NAMES, which cost real information twice over:
+#
+#   * A unit that CHANGES SHAPE could only ever surface as a DROP. When the genie's third solution
+#     (the lamp Jollo hands back) lands, `{mint, peppermint}` becomes `{mint, peppermint, newLamp}`
+#     -- strictly more correct, and the flattened oracle would have screamed regression.
+#   * It hid which DETECTOR is carrying a verdict. Measured: KQ6 emits `{mint, peppermint}` as an
+#     edge unit and NO singleton `{mint}` edge unit at all. The names `mint` and `peppermint`
+#     reached the old flat `caught` set only via `dangerous_sinks` -- so the oracle's claim to catch
+#     them as B4 carry-ins was being carried by a different finding class than the comment says.
+#
+# Write a singleton as a plain string and a disjunction as a tuple; `_unit` normalises both.
+# Shape changes are therefore LOUD: they show up as a drop AND an addition, naming both shapes.
 
-EXPECTED_CAUGHT = {
+def _unit(x):
+    """One requirement UNIT: a single item, or a disjunction of rival solutions to one puzzle."""
+    return frozenset({x}) if isinstance(x, str) else frozenset(x)
+
+
+def _units(xs):
+    return {_unit(x) for x in xs}
+
+
+def _names(units):
+    """Every item name any unit mentions -- the flat view, kept for the SAFE rules below."""
+    return {n for u in units for n in u}
+
+
+EXPECTED_CAUGHT = _units({
     # THE FOUR CATACOMBS CARRY-INS. User, 2026-07-27: "No, you cannot complete the labyrinth
     # without those items." The catacombs have no exit until the minotaur is dead, so anything you
     # need in there must be carried in.
@@ -57,12 +87,23 @@ EXPECTED_CAUGHT = {
                         # split and is deliberately left to the gater -- see [[path-forcing-guards]].
     # THE CASTLE (terminal).
     "dagger",           # Celeste's, taken from the catacombs and needed at rm800
-    "mint",             # user-listed castle carry-in
     "nightingale",      # the short path's castle carry-in
-    "peppermint",       # the short path's other castle carry-in. Promoted 2026-07-28 with the
-                        # user's sign-off, once the phantom developer hand-outs stopped giving it
-                        # sources at rm740/rm750 -- frontier rm220->rm730 / rm230->rm710, the B4
-                        # boundary its oracle row predicted, plus a dangerous sink at rm180.
+    ("mint", "peppermint"),
+                        # RIVAL SOLUTIONS to rm750's genie, and this is the unit the edge detector
+                        # actually emits -- `giveGenieMint` has entries [own(mint), own(peppermint)].
+                        # The walkthroughs agree ("you can also defeat Shamir by giving him some
+                        # mint leaves"). ⚠️ KNOWN INCOMPLETE: the genie has a THIRD solution,
+                        # `useLamp` (doVerb 92), which is invisible because the lamp's `message`
+                        # property is REWRITTEN at run time -- `jolloGivesLamp:99` sets item 25's
+                        # message from 57 to 92 when Jollo hands it back, and
+                        # `vocab.doverb_item_messages` reads only the declared value. When that is
+                        # fixed this unit becomes {mint, peppermint, newLamp} and will surface here
+                        # as a DROP plus an ADDITION, which is the point of comparing units.
+    "mint",             # user-listed castle carry-in. Reached as a SINGLETON only via
+    "peppermint",       # `dangerous_sinks` (a wasteful consumption), NOT via the edge detector --
+                        # which the old flattened oracle could not show. Both promoted 2026-07-28
+                        # with the user's sign-off; peppermint once the phantom developer hand-outs
+                        # stopped giving it sources at rm740/rm750.
     # DANGEROUS ACTIONS -- not boundary crossings. Both promoted 2026-07-28 with the user's sign-off.
     "huntersLamp",      # trade the old lamp to the peddler and he LEAVES (flag 12, one writer,
                         # never cleared). `rm580::init` wants it to cast rain instead of caging
@@ -70,7 +111,7 @@ EXPECTED_CAUGHT = {
     "skull",            # throwing it into rm420's gears is a move the game invites and it looks
                         # like the solution -- the gears eat it and state 24 re-arms `sqwishEm`.
                         # User: "that's exactly the kind of bad use we need to prevent."
-}
+})
 
 # Real per the oracle and still missed. NOT failures -- the live TODO list, reported at the end of
 # the run so a promotion is noticed. **EMPTY as of 2026-07-28**: every item the oracle calls real is
@@ -97,7 +138,7 @@ KNOWN_GAPS = set()
 # In ALLOWED, so catching one is a question rather than a hard failure -- but it IS a question:
 # under the current goal (rm180 = `alexWedding` armed) it should not fire, so if it does, the goal
 # or the path model has moved.
-LONG_ENDING_ONLY = {"teaCup"}
+LONG_ENDING_ONLY = _units({"teaCup"})
 
 # CONFIRMED SAFE -- flagging one of these is a false positive, not a promotion.
 #   shield: user, 2026-07-27, after testing -- "you were completely right and I was completely
@@ -107,6 +148,11 @@ LONG_ENDING_ONLY = {"teaCup"}
 #     Queen on the Isle of Mists in exchange for the spoiled EGG, and it is the egg that is carried
 #     into the Realm. Coal itself never crosses a boundary -- source rm560, every use at rm490,
 #     both on the open map -- so it was a KNOWN_GAP by association with a chain it does not travel.
+#
+# NAMES, not units, and deliberately: the DROP/ADDITION rules ask "is this the same requirement",
+# where shape matters, but "is a safe item being flagged" asks whether it is MENTIONED AT ALL. An
+# item the user tested and cleared has no business inside a disjunction either. Same reading is
+# applied to LONG_ENDING_ONLY below.
 CONFIRMED_SAFE = {"shield", "clothes", "coal"}
 
 ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS | LONG_ENDING_ONLY
@@ -136,26 +182,38 @@ def run():
           f"goal_rooms = {sorted(s.em.cfg.goal_rooms)}; expected {{180}}. If this became "
           f"{{94, 205}} the pass-through rule stopped firing and defeat satisfies the goal again.")
 
-    cands = s.analyze()
-    ids = ({c["item"] for c in cands} | {j["item"] for j in s.joint_strandings()}
-           | {r["item"] for r in s.resource_exhaustion()} | {d["item"] for d in s.dangerous_sinks()}
-           | {r["item"] for r in s.register_flip_strandings()}
-           | {f["item"] for f in s.fatal_uses()})
-    caught = {s.g.item_name(i) for i in ids}
+    # EVERY UNIT the tool emits, read in the shape each detector speaks. `edge_strandings` is used
+    # directly rather than through `analyze()` because `analyze()` is the per-(item, need-component)
+    # REPORT view and drops the groups on the floor -- which is how a disjunction became invisible
+    # to this file in the first place. The flattened name set is identical either way (measured).
+    caught = set()
+    for e in s.edge_strandings():
+        caught |= {_unit(s.g.item_name(i)) for i in e["items"]}
+        caught |= {frozenset(s.g.item_name(i) for i in g) for g in e["groups"]}
+    for r in s.group_strandings():
+        caught.add(frozenset(s.g.item_name(i) for i in r["items"]))
+    for rows in (s.joint_strandings(), s.resource_exhaustion(), s.dangerous_sinks(),
+                 s.register_flip_strandings(), s.fatal_uses()):
+        caught |= {_unit(s.g.item_name(r["item"])) for r in rows}
+    caught_names = _names(caught)
 
     missing = EXPECTED_CAUGHT - caught
     check("no confirmed softlock has DROPPED (regression)", not missing,
-          f"DROPPED: {sorted(missing)} -- STOP. Confirm with the user before touching "
-          f"EXPECTED_CAUGHT (see memory kq6-softlock-ground-truth).")
+          f"DROPPED: {sorted(sorted(u) for u in missing)} -- STOP. Confirm with the user before "
+          f"touching EXPECTED_CAUGHT (see memory kq6-softlock-ground-truth). If the same items "
+          f"appear under ADDITIONS below, the unit CHANGED SHAPE rather than vanishing -- still a "
+          f"ruling, not a rubber stamp.")
 
     surprises = caught - ALLOWED
-    check("no UNEXPECTED item flagged (suspicion)", not surprises,
-          f"NEW: {sorted(surprises)} -- an item not on the oracle is being flagged. If it is real, "
-          f"promote it with the user's OK; if not, it is a false positive. Either way, confirm.")
+    check("no UNEXPECTED unit flagged (suspicion)", not surprises,
+          f"NEW: {sorted(sorted(u) for u in surprises)} -- a requirement not on the oracle is being "
+          f"flagged. If it is real, promote it with the user's OK; if not, it is a false positive. "
+          f"Either way, confirm.")
 
     check("a re-obtainable item is not flagged (the shield ruling)",
-          not (caught & CONFIRMED_SAFE),
-          f"FLAGGED: {sorted(caught & CONFIRMED_SAFE)} -- the user tested these and they are safe.")
+          not (caught_names & CONFIRMED_SAFE),
+          f"FLAGGED: {sorted(caught_names & CONFIRMED_SAFE)} -- the user tested these and they are "
+          f"safe. By NAME, so hiding one inside a disjunction does not get it past this check.")
 
     # THE TWO STRUCTURAL FACTS the catacombs work rests on, pinned so a drop names its own cause
     # rather than showing up only as a missing item.
@@ -174,7 +232,7 @@ def run():
     #    makes them one class rather than four coincidences, and it is the shape a carry-IN must
     #    have -- the boundary is the entrance, not the room the item is used in.
     fronts = {s.g.item_name(c["item"]): set(c.get("frontier_edges") or ())
-              for c in cands if s.g.item_name(c["item"]) in
+              for c in s.analyze() if s.g.item_name(c["item"]) in
               ("scarf", "brick", "tinderBox", "holeInTheWall")}
     entry = {"rm340->rm370", "rm340->rm405", "rm340->rm440"}
     check("the carry-ins strand at the catacombs ENTRANCE, not inside",
@@ -187,10 +245,11 @@ def run():
           repr(fronts.get("brick")))
 
     check("a LONG-ENDING-only item is not flagged as unwinnable",
-          not (caught & LONG_ENDING_ONLY),
-          f"FLAGGED: {sorted(caught & LONG_ENDING_ONLY)} -- these gate the long ending, not the "
-          f"win itself, so under the current goal (rm180) they should not fire. If one does, the "
-          f"goal or the two-castle-entrance path model has moved; do not just promote it.")
+          not (caught_names & _names(LONG_ENDING_ONLY)),
+          f"FLAGGED: {sorted(caught_names & _names(LONG_ENDING_ONLY))} -- these gate the long "
+          f"ending, not the win itself, so under the current goal (rm180) they should not fire. If "
+          f"one does, the goal or the two-castle-entrance path model has moved; do not just "
+          f"promote it. By NAME, for the same reason as CONFIRMED_SAFE.")
 
     # THE TWO CASTLE DOORS. rm220->rm730 is the servant-girl disguise (short route) and
     # rm230->rm710 is the magic paint (long route); both are one-way into the same terminal castle,
@@ -254,12 +313,17 @@ def run():
 
     promoted = caught & KNOWN_GAPS
     if promoted:
-        print(f"  [note] a KNOWN GAP is now being caught: {sorted(promoted)} -- if the user "
-              f"confirms it is correct, promote it from KNOWN_GAPS into EXPECTED_CAUGHT.")
+        print(f"  [note] a KNOWN GAP is now being caught: {sorted(sorted(u) for u in promoted)} -- "
+              f"if the user confirms it is correct, promote it from KNOWN_GAPS into "
+              f"EXPECTED_CAUGHT.")
 
-    print(f"\n  caught now: {sorted(caught)}")
-    print(f"  still-missed ground truth: {sorted(KNOWN_GAPS - caught)}")
-    print(f"  long-ending-only (deliberately not caught): {sorted(LONG_ENDING_ONLY)}")
+    def show(units):
+        return sorted(next(iter(u)) if len(u) == 1 else "(" + " | ".join(sorted(u)) + ")"
+                      for u in units)
+
+    print(f"\n  caught now ({len(caught)} units): {show(caught)}")
+    print(f"  still-missed ground truth: {show(KNOWN_GAPS - caught)}")
+    print(f"  long-ending-only (deliberately not caught): {show(LONG_ENDING_ONLY)}")
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 
