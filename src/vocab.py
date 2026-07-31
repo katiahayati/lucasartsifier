@@ -1460,6 +1460,58 @@ def lower_obj_props(ir, pairs):
     return len(sites), len(index)
 
 
+def _handle_aliases(body, item_of_receiver):
+    """`{(vtype, index): item}` for SCI's cache-the-handle idiom, within ONE method body.
+
+        (= temp0 (global9 at: 11))                      ; temp0 IS the skull from here on
+        (temp0 setCursor: 990 0 9 loop: 0 cel: 10 state: (| (temp0 state:) $000c))
+
+    Without this the send above has no recognisable receiver, so the bit-SET is invisible while
+    the matching CLEAR (written `(self state: (& (self state:) $fff7))` inside the item's own
+    `cue`) is captured -- and half a store is worse than none. A register whose only modelled
+    write is the value every read REJECTS cannot open anything, so promoting it fabricates a
+    seal: KQ6's skull is the case, and with only the clear captured `catchNiteMare` -- the ONLY
+    way into the realm of the dead -- became unreachable.
+
+    Deliberately the weakest form that settles it. A variable counts only if EVERY assignment to
+    it in the body names the SAME item; one that is reassigned, or assigned anything else, is not
+    an alias and is left alone. No flow analysis, no ordering: an alias that is re-pointed
+    mid-body simply does not qualify.
+
+    Same "resolve the alias through what the game itself says" discipline the store vocabulary is
+    built on -- this is the local-variable spelling of it."""
+    out, spoilt = {}, set()
+    for n in I.walk(body):
+        if n.get("t") != "Assignment":
+            continue
+        dst, src = (n.get("kids") or [None, None])[:2]
+        if not (isinstance(dst, dict) and I.is_local_or_temp(dst)):
+            continue
+        key = (dst["vtype"][0], dst["index"])
+        it = item_of_receiver(src)
+        if it is None or (key in out and out[key] != it):
+            spoilt.add(key)                 # assigned something else too -- not a stable alias
+        else:
+            out[key] = it
+    return {k: v for k, v in out.items() if k not in spoilt}
+
+
+def _alias_resolver(body, item_of_receiver):
+    """`item_of_receiver` widened to see this body's cached item handles. See `_handle_aliases`."""
+    aliases = _handle_aliases(body, item_of_receiver)
+    if not aliases:
+        return item_of_receiver
+
+    def resolve(recv):
+        it = item_of_receiver(recv)
+        if it is not None:
+            return it
+        if isinstance(recv, dict) and I.is_local_or_temp(recv):
+            return aliases.get((recv["vtype"][0], recv["index"]))
+        return None
+    return resolve
+
+
 def derive_item_bit_flags(ir, item_of_receiver):
     """`{(item, prop, bit)}` for item state kept as BIT FLAGS in the item's own property.
 
@@ -1480,7 +1532,7 @@ def derive_item_bit_flags(ir, item_of_receiver):
     both set/cleared and tested."""
     read, written = set(), set()
 
-    def item_of(node, selfitem):
+    def item_of(node, selfitem, of_recv):
         """The item whose property this reads, plus the property name -- or None."""
         if not isinstance(node, dict):
             return None
@@ -1496,7 +1548,7 @@ def derive_item_bit_flags(ir, item_of_receiver):
             return None
         if isinstance(recv, dict) and recv.get("t") == "Self" and selfitem is not None:
             return (selfitem, msgs[0][0])
-        it = item_of_receiver(recv)
+        it = of_recv(recv)
         return (it, msgs[0][0]) if it is not None else None
 
     def bits(mask):
@@ -1511,13 +1563,14 @@ def derive_item_bit_flags(ir, item_of_receiver):
         scopes.append((None, list(s.procs.values())))
         for selfitem, bodies in scopes:
             for body in bodies:
+                of_recv = _alias_resolver(body, item_of_receiver)
                 for n in I.walk(body):
                     t = n.get("t")
                     if t == "BinAnd":                       # a TEST: `(& <prop> MASK)`
                         ks = n.get("kids") or []
                         for a, b in ((ks[0], ks[1]),) if len(ks) > 1 else ():
                             for x, y in ((a, b), (b, a)):
-                                got, m = item_of(x, selfitem), I.as_int(y)
+                                got, m = item_of(x, selfitem, of_recv), I.as_int(y)
                                 if got and got[1] and m is not None:
                                     read.update((got[0], got[1], bit) for bit in bits(m))
                     elif t == "Send":                       # a WRITE: `(x prop: (| <prop> MASK))`
@@ -1526,7 +1579,7 @@ def derive_item_bit_flags(ir, item_of_receiver):
                         except Exception:                   # noqa: BLE001
                             continue
                         holder = (selfitem if isinstance(recv, dict) and recv.get("t") == "Self"
-                                  else item_of_receiver(recv))
+                                  else of_recv(recv))
                         if holder is None:
                             continue
                         for sel, ps in msgs:
@@ -1584,7 +1637,7 @@ def lower_item_bit_flags(ir, flags, item_of_receiver):
         scopes.append((None, list(s.procs.values())))       # procs: no `self`, but `(Inv at: N)` works
         for selfitem, bodies in scopes:
 
-            def prop_of(node, selfitem=selfitem):
+            def prop_of(node, selfitem=selfitem, of_recv=None):
                 if not isinstance(node, dict):
                     return None
                 if node.get("t") == "Property" and selfitem is not None:
@@ -1599,17 +1652,21 @@ def lower_item_bit_flags(ir, flags, item_of_receiver):
                     return None
                 if isinstance(recv, dict) and recv.get("t") == "Self" and selfitem is not None:
                     return (selfitem, msgs[0][0])
-                it = item_of_receiver(recv)
+                it = (of_recv or item_of_receiver)(recv)
                 return (it, msgs[0][0]) if it is not None else None
 
             for body in bodies:
+                # The same cached-handle resolution the DISCOVERY half uses, and it has to be
+                # here too or the pair disagrees: a bit the discovery now calls state would have
+                # its `(temp0 state: (| ...))` write left unlowered. See [[same-rule-two-places]].
+                of_recv = _alias_resolver(body, item_of_receiver)
                 for n in I.walk(body):
                     if n.get("t") == "BinAnd":
                         ks = n.get("kids") or []
                         if len(ks) < 2:
                             continue
                         for x, y in ((ks[0], ks[1]), (ks[1], ks[0])):
-                            got, m = prop_of(x), I.as_int(y)
+                            got, m = prop_of(x, of_recv=of_recv), I.as_int(y)
                             if not (got and got[1] and m is not None):
                                 continue
                             gs = [index[(got[0], got[1], b)] for b in bits(m)
@@ -1628,7 +1685,7 @@ def lower_item_bit_flags(ir, flags, item_of_receiver):
                         except Exception:                   # noqa: BLE001
                             continue
                         holder = (selfitem if isinstance(recv, dict) and recv.get("t") == "Self"
-                                  else item_of_receiver(recv))
+                                  else of_recv(recv))
                         if holder is None:
                             continue
                         keep, asg = [], []
@@ -1746,6 +1803,72 @@ def derive_debug(ir):
     return out
 
 
+def _item_family(ir):
+    """The species set of the game's inventory-item class and every subclass of it.
+
+    Shared by `item_names` and `inventory_scripts` so both agree on what an item IS; the base
+    class comes from the class-table derivation `Vocabulary.store_class` performs, so no class
+    name is assumed. Empty set when the game has no recognisable store class."""
+    voc = Vocabulary.from_ir(ir)
+    if voc is None:
+        return set()
+    base = ir.find_class(voc.store_class)
+    if base is None:
+        return set()
+    sup = {o.species: o.super for s in ir.scripts.values() for o in s.objects if o.is_class}
+
+    def is_item(sp, seen=()):
+        if sp == base.species:
+            return True
+        if sp in seen or sp not in sup:
+            return False
+        return is_item(sup[sp], seen + (sp,))
+
+    return {sp for sp in sup if is_item(sp)} | {base.species}
+
+
+def inventory_scripts(ir):
+    """The scripts that DECLARE the game's inventory items -- a dispatch SCOPE, never a room.
+
+    SCI1 replaced SCO0's parser with an icon bar, and the icon bar is what dispatches an item's
+    `doVerb`: "use this item on that one". So nothing in the game ever ARMS the script the item
+    objects live in -- no room sets it, no cutscene casts it, no procedure calls it -- and
+    `opmodel.armed_rooms` leaves it homeless, dropping every effect it holds. KQ6's magic paint is
+    mixed there (`KqInv doVerb 30` -> `mixPaintScr`), which is the whole reason flag 22 had no
+    writer.
+
+    But "nothing arms it" is not "it never runs". An inventory action is available wherever the
+    player is standing, which makes this the same kind of always-live dispatch scope `Main`
+    already is (`opmodel.MAIN_SCRIPT`) -- and it must be lifted with the same care: its EFFECTS
+    are real everywhere, while its guards are evidence about no room in particular. See
+    `opmodel.global_homed` for the half that homes it and `missability.build_maps` for the half
+    that refuses to read a global guard as a per-room requirement.
+
+    Derived from the same species walk `item_names` does, so no script number and no game is
+    named. SCO0 titles declare their items in script 0, which IS `MAIN_SCRIPT`, so this returns
+    {0} on LSL2/KQ4 and the rule is inert on the goldens by construction. Measured: LSL2 {0},
+    KQ4 {0}, KQ5 {0}, KQ6 {907}, Dagger {15}.
+
+    A script counts only if it is where the items MOSTLY live: a game may declare a stray item
+    instance beside the room that hands it over, and one such instance does not make that room an
+    always-live scope. The threshold is a plurality of the declared items, which is what "the
+    inventory script" means and is not a tunable -- an inventory split evenly across two scripts
+    would return both."""
+    fam = _item_family(ir)
+    if not fam:
+        return frozenset()
+    per = {}
+    for sn in sorted(ir.scripts):
+        n = sum(1 for o in ir.scripts[sn].objects
+                if not o.is_class and (o.super in fam or o.species in fam))
+        if n:
+            per[sn] = n
+    if not per:
+        return frozenset()
+    top = max(per.values())
+    return frozenset(sn for sn, n in per.items() if n == top)
+
+
 def item_names(ir):
     """Item NUMBER -> readable name, derived per game (the last game-specific catalogue).
 
@@ -1763,22 +1886,9 @@ def item_names(ir):
 
     Numbering assumes item instances declare in one script in inventory order, as both known
     games do (all in script 0); scripts are visited in number order so this is deterministic."""
-    voc = Vocabulary.from_ir(ir)
-    if voc is None:
+    fam = _item_family(ir)
+    if not fam:
         return {}
-    base = ir.find_class(voc.store_class)
-    if base is None:
-        return {}
-    sup = {o.species: o.super for s in ir.scripts.values() for o in s.objects if o.is_class}
-
-    def is_item(sp, seen=()):
-        if sp == base.species:
-            return True
-        if sp in seen or sp not in sup:
-            return False
-        return is_item(sup[sp], seen + (sp,))
-
-    fam = {sp for sp in sup if is_item(sp)} | {base.species}
     # AUTHORITATIVE when present: the order the game ADDS items to its inventory list. `get:`/
     # `has:`/`at:` index THAT list, and it need not match declaration order -- KQ6 declares `map`
     # 22nd but adds it FIRST, so every item before it was named one place off. That mislabels the

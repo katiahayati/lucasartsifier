@@ -13,6 +13,12 @@ produces a confident wrong answer instead of an error.
   2  region scope   -- SCI dispatches at three scopes (Main / Rgn / room); the middle one was keyed
                        off the `rm<N>` naming convention, so KQ4 mapped 0 of its 26 regions.
   3  Main scope     -- script 0 is a scope, not a room, and only LSL2's happened to be walked.
+ 3b icon-bar scope -- SCI1 added a FOURTH always-live scope: nothing arms the script the inventory
+                       items live in, because the icon bar dispatches their `doVerb`. It is lifted
+                       for its REGISTER effects and their costs, and for nothing else -- KQ6's
+                       magic paint is mixed there and is written nowhere else in the game.
+ 3c handle alias   -- `(= temp0 (gInv at: 11))` then `(temp0 state: ...)`: half a bit-store is
+                       worse than none, because the half we had could only ever block.
   4  asserts_eq     -- `(if (not gX) ...)` IS an equality test, in both copies of the rule.
   5  cue arming     -- an edge fired from a Prop's `cue` inherits the guard that armed it.
   6  pending room   -- `(= global13 N)` IS `newRoom: N`, one layer down. KQ4 uses it 20 times.
@@ -223,6 +229,92 @@ def test_main_scope():
         n += sum(1 for x in em.handler_gets if x[1] == 0)
         n += sum(1 for x in em.handler_drops if x[1] == 0)
         check(f"{which}: Main (script 0) contributes handler effects", n > 0, f"{n} effects")
+
+
+def test_iconbar_scope():
+    print("\nPart 3b: the ICON BAR is a scope too -- and it contributes registers, nothing else")
+    import ir as I, vocab as V, config, os
+    # 3b.1 -- WHICH script, derived from the item class table and never named.
+    #   The whole reason the rule is safe on the goldens is that SCO0 titles declare their items
+    #   in script 0, which is ALREADY the Main scope, so nothing new is homed there.
+    want = {"LSL2": {0}, "KQ4": {0}, "KQ6": {907}}
+    for which, exp in want.items():
+        cfg = getattr(config, which)
+        if not (cfg.ir_path and os.path.exists(cfg.ir_path)):
+            print(f"  (skip {which}: no IR)")
+            continue
+        got = set(V.inventory_scripts(I.load_ir(cfg.ir_path)))
+        check(f"{which}: inventory script derives as {sorted(exp)}", got == exp, repr(sorted(got)))
+
+    em = real_em("KQ6")
+    if em is None:
+        return
+    # 3b.2 -- ...and only a script NOTHING ELSE ARMS is taken. `global_homed` closes over the
+    #   scripts the inventory arms and that live nowhere else -- KQ6's `mixPaintScr` (915) is
+    #   armed by `KqInv doVerb 30` and by nothing at all otherwise.
+    check("KQ6: the inventory script and what it arms are homed globally",
+          {907, 915} <= set(em.global_homed), repr(sorted(em.global_homed)))
+    check("...and a script that already had a home is NOT taken (241 is armed by rm240)",
+          241 not in em.global_homed and em.armed_rooms.get(241) == {240},
+          repr(em.armed_rooms.get(241)))
+
+    # 3b.3 -- THE POINT OF THE SCOPE: a register written nowhere else gets a writer. Flag 22 is
+    #   "the magic paint is mixed" and `KqInv doVerb 30` is its only writer in the whole game;
+    #   without this scope it has an EMPTY domain and the castle's long door reads as free.
+    import missability as M
+    s = M.load(cfg=config.KQ6)
+    check("KQ6: flag 22 (reg 194, the mixed paint) has a writer at last",
+          194 in s.regs and len(s._rstep.get(194, {})) > 0,
+          f"promoted={194 in s.regs} rstep_rooms={len(s._rstep.get(194, {}))}")
+
+    # 3b.4 -- AND NOTHING ELSE. Every other thing `machines` feeds is a claim about a PLACE, and
+    #   the icon bar has no place; the separate list is how that is said once instead of at each
+    #   consumer. Each of these broke a real verdict when the machine was left in `machines`:
+    #   `required` (five softlocks lost), `sources`/`drops`, EXIT (fabricated ways out of the dark
+    #   room), `death_traps` (an inventory action read as an ESCAPE from a trap).
+    check("KQ6: global-scope machines are kept OUT of em.machines",
+          em.global_machines and not any(i.get("global_scope") for i in em.machines),
+          f"{len(em.global_machines)} global, "
+          f"{sum(1 for i in em.machines if i.get('global_scope'))} leaked")
+    check("...so an always-available action is not a per-room requirement",
+          sorted(s.required.get(46, ())) == [230, 340, 470, 660],
+          f"required[teaCup]={sorted(s.required.get(46, ()))} -- if this is ~86 rooms the scope "
+          f"is being read as evidence about every room, which collapses every frontier.")
+
+    # 3b.5 -- the scope's EXTENT: `doVerb` is what the icon bar dispatches. `cue` is a callback,
+    #   and where it fires is the caller's business. Pinned on what the clause ASSERTS rather than
+    #   on an item list, because it is measured inert on today's corpus -- KQ6's `skull::cue`
+    #   clears the ember bit, and lifted whole it would say the skull can be emptied in any room.
+    check("KQ6: a callback in the inventory script is not lifted as a player action",
+          not [1 for (_r, sc, gi, _v, _g) in em.handler_writes
+               if sc in em.global_homed and gi in (489, 490)],
+          "skull::cue's bit-clear is being attributed to every room")
+
+
+def test_handle_aliases():
+    print("\nPart 3c: `(= temp0 (gInv at: 11))` -- the cached-handle alias")
+    import vocab as V
+    at = lambda n: (n.get("kids", [None])[0] or {}).get("_item") if isinstance(n, dict) else None
+
+    def item_expr(k):                               # a stand-in for `(gInv at: k)`
+        return {"t": "Send", "kids": [{"_item": k}]}
+    T0, T1 = V_("Temp", 0), V_("Temp", 1)
+    body = {"t": "List", "kids": [
+        {"t": "Assignment", "kids": [T0, item_expr(11)]},
+        {"t": "Assignment", "kids": [T1, item_expr(7)]},
+        {"t": "Assignment", "kids": [T1, {"t": "Number", "value": 3}]},   # reassigned: not an alias
+    ]}
+    al = V._handle_aliases(body, at)
+    check("a single-assignment handle resolves to its item", al.get(("T", 0)) == 11, repr(al))
+    check("a variable assigned anything else is NOT an alias", ("T", 1) not in al, repr(al))
+    r = V._alias_resolver(body, at)
+    check("the resolver still prefers a direct receiver", r(item_expr(4)) == 4)
+    check("...and falls back to the alias", r(T0) == 11)
+    check("...and refuses an unknown variable", r(T1) is None)
+
+
+def V_(vtype, index):
+    return {"t": "Variable", "vtype": vtype, "index": index}
 
 
 def test_asserts_eq():
@@ -517,6 +609,8 @@ def run():
     test_ownedby_spelling()
     test_region_scope()
     test_main_scope()
+    test_iconbar_scope()
+    test_handle_aliases()
     test_asserts_eq()
     test_cue_arming()
     test_pending_room()

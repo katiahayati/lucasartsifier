@@ -385,7 +385,27 @@ def build_maps(em):
     def req_item(it, room):
         if it not in trap_items:
             required[it].add(room)
-    def req(guard, room):
+    # THE ALWAYS-LIVE SCOPES CONTRIBUTE EFFECTS, NOT REQUIREMENTS. `required[X]` means "own(X) is
+    # FACED here, as a gate" -- it is the evidence a frontier is computed from, so it has to be a
+    # claim about a PLACE. An SCI1 inventory `doVerb` is dispatched by the icon bar and so is
+    # available in every room at once; attributing its guard per room converts an AVAILABILITY
+    # into a universal requirement, every frontier ends up with everything past it, and
+    # `edge_strandings` collapses. Measured on KQ6 when it was done that way: five confirmed
+    # softlocks LOST (brick, deadMansCoin, handkerchief, skeletonKey, tinderBox), thirteen false
+    # positives gained, and a 45-item guard on rm340->rm155.
+    #
+    # What such a scope legitimately contributes is kept in full, and elsewhere: the register write
+    # itself and its PRECONDITIONS, which land on the cost path (`cheapest((gi, room, v), ...)`).
+    # "What it costs to make flag 22 true" is exactly where `flag58 AND flag68` belongs, and that
+    # is what makes the teacup's Styx water reach the castle door.
+    #
+    # `opmodel.global_homed` is derived (`vocab.inventory_scripts`), and on SCO0 titles it is empty
+    # because their items live in script 0 -- so this test cannot move LSL2 or KQ4.
+    globalsc = getattr(em, "global_homed", ())
+
+    def req(guard, room, script=None):
+        if script is not None and script in globalsc:
+            return
         for it in _own_required(guard):     # OR-branch items are NOT required -- see _own_required
             req_item(it, room)
         for it in _loc_placed_required(guard, em.ts.placed):   # owner-gate on a PLACED room
@@ -397,16 +417,18 @@ def build_maps(em):
     for a in em.ts.acqs:
         req(a.guard, a.room)
     for room, script, it, g in em.handler_gets:
-        req(g, room)
+        req(g, room, script)
     for room, script, gi, v, g in em.handler_writes:
-        req(g, room)
+        req(g, room, script)
     # entry guards of machines we chose not to model -- see opmodel.dropped_entries
     for room, eg, _inst, _recv in getattr(em, "dropped_entries", ()):
         req(eg, room)
     # consuming an item in a HANDLER -- the Pamphlet handed to the bore on the plane (rm62) is a
     # Said-handler `put: 26 -1`, which the machine-body scan never sees. Held back; see below.
     for room, script, it, g, _dest in getattr(em, "handler_drops", ()):
-        consumed_at[it].add(room)
+        if script in globalsc:
+            continue        # ...and the same for the consumption fallback: an inventory `put:` is
+        consumed_at[it].add(room)   # spent wherever you do it, which is nowhere in particular.
     for i, info in enumerate(em.machines):
         gr = gr_maps[i]
         for K, paths in info["states"].items():
@@ -525,7 +547,11 @@ def gating_registers(em):
     # way in demands it clear.
     for room, vs in getattr(em, "init_writes", {}).items():
         written.update(vs)
-    for info in em.machines:
+    # BOTH lists: an always-live scope's writes are real writes -- KQ6's flag 22 (the magic
+    # paint) is written by the inventory `doVerb` and nowhere else, so without this it can never
+    # be promoted and the castle's long door reads as free. See opmodel.global_machines for why
+    # that scope is kept out of `machines` everywhere else.
+    for info in em.machines + list(getattr(em, "global_machines", ())):
         for K, paths in info["states"].items():
             for (g, w, gg, c, tr) in paths:
                 for (gi, v) in w:
@@ -1643,7 +1669,10 @@ class IrSccReach(SccReach):
                     self._inroom[gi][room].add(v)
                     cheapest((gi, room, v), ())
         self._rstep = {R: defaultdict(set) for R in self.regs}
-        for info in em.machines:
+        # ...and here, the one consumer an always-live scope is lifted FOR: what its action makes
+        # true, and what that costs. `cheapest` below is where "mixing the paint costs the Styx
+        # water" enters the model.
+        for info in em.machines + list(getattr(em, "global_machines", ())):
             entries = list(info.get("entries", ())) + list(info.get("init_entries", ()))
             emust = entry_musts(info)
             gates = {}

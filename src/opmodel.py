@@ -96,6 +96,14 @@ class OpEmitter:
         self.n_opaque = 0
         self._collect()
 
+    def _homeless(self, sn):
+        """Does script `sn` have no scope at all -- not a room, not a region, nothing arms it?
+
+        Read only by the icon-bar pass, which will not take a script that already earned a home
+        somewhere: its per-room evidence is real and must not be widened away."""
+        return (sn not in self.ts.rooms and sn not in self.region_rooms
+                and not self.armed_rooms.get(sn))
+
     # ---- collection --------------------------------------------------
     def _collect(self):
         ir = self.ir
@@ -103,6 +111,8 @@ class OpEmitter:
         self.items = sorted(self.ts.items)
         # machines with an effect, per room; each -> (room, inst, states-as-paths, entries, start)
         self.machines = []          # list of dict
+        self.global_machines = []   # ...lifted from an ALWAYS-LIVE scope (the icon bar). Register
+        #   effects and their costs only -- see where they are appended, and `global_homed`.
         self.reg_vals = {}          # global index -> set of int values (domain)
         self.loc_vals = {}          # (script, 'L'/'T', idx) -> set of int values
         self._loc_inc = set()       # counter keys with an inc op (need +1 saturation headroom)
@@ -236,6 +246,35 @@ class OpEmitter:
                     self.armed_rooms.setdefault(sn, set()).add(cn)
                 for r in self.region_rooms.get(cn, ()):
                     self.armed_rooms.setdefault(sn, set()).add(r)
+        # ...and the ALWAYS-LIVE dispatch scope SCI1 added: THE ICON BAR. An inventory item's
+        # `doVerb` -- "use this item on that one" -- is dispatched by the icon bar, so nothing in
+        # the game ever arms the script the item objects live in: no room sets it, no cutscene
+        # casts it, no procedure calls it, and every pass above leaves it homeless. KQ6 mixes the
+        # magic paint there (`KqInv doVerb 30` -> `(gCurRoom setScript: 915)` -> `mixPaintScr`),
+        # which is the whole reason flag 22 had no writer at all and an EMPTY teacup opened the
+        # long castle door. Derived in `vocab.inventory_scripts` from the item class table -- LSL2
+        # and KQ4 declare their items in script 0, which IS `MAIN_SCRIPT`, so both are inert here.
+        #
+        # It runs WHEREVER YOU ARE, so it is homed to every room. What that must NOT buy is a
+        # per-room REQUIREMENT: an action available everywhere is evidence about no room in
+        # particular, and reading it as one turns every item into "needed here" in all 86 rooms --
+        # measured, that costs five confirmed softlocks and gains thirteen false positives. The
+        # scripts homed this way are recorded in `global_homed`, and `missability.build_maps`
+        # refuses to read their guards as requirement evidence. Keep the EFFECT, drop the CLAIM.
+        #
+        # Only genuinely homeless scripts are taken, and transitively -- `mixPaintScr` is armed
+        # from the inventory and lives nowhere else either. A script something else already arms
+        # keeps the home it earned, and with it its per-room evidence.
+        self.global_homed = set()
+        frontier = [s for s in sorted(vocab.inventory_scripts(ir)) if self._homeless(s)]
+        while frontier:
+            sn = frontier.pop()
+            if sn in self.global_homed:
+                continue
+            self.global_homed.add(sn)
+            self.armed_rooms[sn] = set(self.ts.rooms)
+            frontier += [t for t, arms in sorted(cast_refs.items())
+                         if sn in arms and t not in self.global_homed and self._homeless(t)]
         # Hoisted above the init/machine pass: `_init_writes` records room-LOCAL
         # seeds too, and it runs first.
         self.handler_writes = []       # (room, script, gi, val, guard)  -- script for CTR-local resolve
@@ -267,8 +306,34 @@ class OpEmitter:
                 for room in sorted(targets):
                     info = self._machine_info(room, m)
                     if info:
-                        self.machines.append(info)
-                    else:
+                        # AN ALWAYS-LIVE SCOPE CONTRIBUTES REGISTER EFFECTS AND THEIR COSTS. THAT
+                        # IS ALL IT CONTRIBUTES, AND KEEPING IT OUT OF `machines` IS HOW WE SAY SO.
+                        #
+                        # Every other thing `machines` feeds is a claim about a PLACE, and the icon
+                        # bar has no place. Measured on KQ6, one consumer at a time, each of which
+                        # broke something real when the machine was left in the main list:
+                        #   `required`   -> every item needed in all 86 rooms; the rm340->rm155
+                        #                   guard grew to 45 items and five softlocks vanished
+                        #   `sources`/`drops` -> `feather` acquired 86 destruction sites
+                        #   EXIT         -> `newRoom:` from anywhere; two fabricated ways out of
+                        #                   the pitch-dark rm406
+                        #   `death_traps`-> an inventory action in a trap room read as an ESCAPE
+                        #                   from it, so the tinderbox stopped being needed to
+                        #                   survive the dark and a confirmed softlock vanished
+                        # A separate list settles all four at once and, more to the point, settles
+                        # the ones nobody has thought of: a new consumer of `machines` is right by
+                        # default instead of needing to remember to ask. See
+                        # [[same-rule-two-places]] -- this is that bug shape, four deep.
+                        #
+                        # The register build reads BOTH lists; nothing else reads this one.
+                        info["global_scope"] = rn in self.global_homed
+                        (self.global_machines if info["global_scope"]
+                         else self.machines).append(info)
+                    elif rn not in self.global_homed:
+                        # ...and for the same reason, a GLOBAL machine we do not model contributes
+                        # no dropped-entry evidence either. `dropped_entries` exists to say "you
+                        # still had to be holding something to start it HERE", and "here" is the
+                        # whole game for an inventory action.
                         # A machine with no effect WE TRACK is not modelled -- but being ENTERED
                         # under a guard is still evidence about what the player must be carrying.
                         # rm82's `shootLolotte` writes no global, gets no item and exits nowhere;
@@ -327,6 +392,25 @@ class OpEmitter:
                         # FOLLOWING calls into other scripts, so nothing is absent.
                         if mn in ("changeState", "init"):
                             continue
+                        # WHAT THE ICON BAR DISPATCHES IS `doVerb`, AND ONLY `doVerb`. That send
+                        # -- `(feature doVerb: (curIcon message:))`, the contract `extract` and
+                        # `vocab.doverb_item_messages` already key on -- is the entire reason this
+                        # script is live everywhere, so it is the entire extent of the claim. The
+                        # other methods are CALLBACKS: `cue` fires when whatever the item was
+                        # waiting on completes, and WHERE that happens is the caller's business.
+                        # Without this line the scope asserts that every method of the inventory
+                        # script is something the player can do in any room, which is not true of a
+                        # callback -- KQ6's `skull::cue` clears the ember bit
+                        # (`state: (& (self state:) $fff7)`), and lifted whole it says the skull
+                        # can be emptied anywhere.
+                        #
+                        # ⚠️ MEASURED INERT on today's corpus: removed, the KQ6 verdicts,
+                        # `reobtainable_rooms` and both goldens are unchanged. It is here because
+                        # it BOUNDS a claim this change introduces, not because a finding rests on
+                        # it -- so what it asserts is pinned directly (the `cue` write is not
+                        # attributed to every room), never via an item list.
+                        if rn in self.global_homed and mn != "doVerb":
+                            continue
                         # A `doVerb` body dispatches on the item the player used, so its guards
                         # only read as OWN inside that context -- `extract._walk` sets it and this
                         # walk did not, which is the same rule in two places. Without it KQ6's
@@ -353,8 +437,12 @@ class OpEmitter:
             self._scan_domains_guard(g, script)
         for room, script, it, g in self.handler_gets:
             self._scan_domains_guard(g, script)
-        # domains: include compared values for globals/locals too (scan all machine guards)
-        for info in self.machines:
+        # domains: include compared values for globals/locals too (scan all machine guards).
+        # BOTH lists: a register an always-live scope writes has to be in the domain or it can
+        # never be promoted, which is the whole point of lifting that scope (KQ6's flag 22, the
+        # magic paint, is written nowhere else). The other consumers below take `self.machines`
+        # alone, deliberately -- see where `global_machines` is filled.
+        for info in self.machines + self.global_machines:
             for K, paths in info["states"].items():
                 for (guard, writes, gets, counters, trans) in paths:
                     for gi, v in writes:
@@ -718,6 +806,24 @@ class OpEmitter:
             recv, msgs = I.send_pairs(node)
             for sel, params in msgs:
                 for (it, dest) in item_transfers(recv, sel, params):
+                    # AN ITEM TRANSFER IS A FACT ABOUT A PLACE, AND THE ICON BAR HAS NO PLACE.
+                    # `sources`, `drops` and every sink detector read these rows as "the game
+                    # hands X over / invites you to spend X *here*". An inventory `doVerb` is
+                    # dispatched wherever you are standing, so lifting it into all 86 rooms does
+                    # not make that reading true 86 times over -- it makes it meaningless, and
+                    # measured on KQ6 it is what collapses the analysis (the catacombs frontier
+                    # loses its brick guard, `feather` acquires 86 destruction sites).
+                    #
+                    # A REGISTER write from the same scope is a different claim and is kept: "you
+                    # can make flag 22 true in this room, at this cost" is true in every room, and
+                    # the cost path (`cheapest`) is exactly where the teacup's Styx water belongs.
+                    # That asymmetry is the whole point of the scope -- see `global_homed`.
+                    #
+                    # KNOWN LIMIT, stated rather than hidden: an item obtainable ONLY by an
+                    # inventory combination has no source here. That is the pre-existing
+                    # behaviour (the scope was not walked at all), not a new loss.
+                    if script in self.global_homed:
+                        continue
                     g = _conj_atoms(pc)
                     self.handler_moves.append((room, script, it, dest, g))
                     if dest == EGO:
