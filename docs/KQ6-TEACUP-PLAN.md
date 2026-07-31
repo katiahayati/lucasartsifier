@@ -295,3 +295,55 @@ than a shortcut. **Not built; recorded because it was measured, not assumed.**
 | Step 1 | still not caught | the whole inventory-`doVerb` effect class stops being dropped: flag 22 gets a writer, `hair`/`cassimaHair` get uses, and the 5th/6th arming-scope gaps stop compounding |
 | Step 1 + 2 | **caught**, at the Realm entrance, for the right reason | endings become first-class; `mint` at the long door (the last open castle-guard question) becomes answerable |
 | + Step 3 | patchable | the first register-valued edge guard |
+
+---
+
+## 9. Fix (1) attempted and PARKED — `docs/one-shot-sources.WIP.patch`, not committed
+
+**What the gap turned out to be, and it is not what §5 said.** The model already has the latch. It
+was never a missing one-time-cutscene rule:
+
+    rm540::init  (cond ((== prev 250)   ... beautyScript)     ; the wedding -> the clothes
+                       ((not flag46)    ... beastScript))     ; the Beast   -> the RING
+    beastScript  st21  flag46 := 1  +  (gEgo get: 37)         ; ...and it sets its own latch
+
+Measured: `beastScript`'s entry is `¬(prev==250) ∧ ¬flag46`, state 21 writes flag 46, and flag 46
+(reg 218) is a promoted register. All correct. The chain is
+**ring (one-shot) → spent at rm250 → arrive rm540 with prev==250 → clothes**, so the clothes really
+do have exactly one acquisition.
+
+**The gap is one level down**: `reobtainable_rooms` seeds its backward walk from every state whose
+ROOM is a source room, so the acquisition's own guard never gets a say.
+
+> A source room you can walk back to is not a source you can use again.
+
+The patch adds `source_reqs(em, regs, edges)` — per (item, room), the register requirements of each
+acquisition SITE, using the same site filters `build_maps` applies — and `_src_fires`, which seeds
+only from states that satisfy one of them. **LSL2 and KQ4 stay byte-identical.**
+
+### Why it is parked, two reasons and the second is the important one
+
+1. **It has a real defect.** `source_reqs` calls `guard_reqs` on a whole entry guard, and an entry
+   can be a DISJUNCTION. `freeCeleste`'s (the dagger) is
+   `(opaque ∧ flag258 ∧ ¬flag1) ∨ ¬CTR(L2≠0)` — the second arm constrains nothing, so the entry
+   requires nothing of flag 1, but the single call reads `{flag1: {0}}`. That is why KQ6 gained 13
+   `has: 8` guards on edges deeper into the catacombs, which would WALL the maze against the shield
+   ruling. `edge_meta` gets this right by emitting one ROW per alternative; `source_reqs` must split
+   the DNF the same way. Fixable, and not yet fixed.
+2. **⚠️ EVEN CORRECT, IT DOES NOT CLOSE THE TEACUP.** Measured with the patch applied:
+   `reobtainable_rooms(clothes)` is unchanged at 60, `destroyed_is_permanent(clothes)` is still
+   False, and KQ6 still catches the same 14. **The reason is structural, not a bug:**
+   `reobtainable_rooms` bans ONE item, and the clothes' unavailability is a CHAIN —
+
+       to re-get the clothes you must re-arrive at rm540 from rm250
+       to do that you must give Beauty the RING
+       and the ring was spent doing exactly that, and is one-shot
+
+   Banning `clothes` leaves the ring available, so the walk happily re-runs the whole sequence.
+   Seeing the truth needs the ban to propagate through **what a re-acquisition COSTS** — the
+   fixpoint shape `_own_fixpoint` already has for registers, applied to items. That, not the latch,
+   is the real remaining work for the teacup on this route.
+
+**So the route is still right and still cheaper than a goal change — but it is two fixes deep, not
+one.** The patch is kept because its first half (`source_reqs`) is correct and golden-inert; it
+needs the DNF split before it can land on its own merits.

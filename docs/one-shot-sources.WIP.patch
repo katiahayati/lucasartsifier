@@ -1,0 +1,123 @@
+diff --git a/src/missability.py b/src/missability.py
+index 2f824ec..773b246 100644
+--- a/src/missability.py
++++ b/src/missability.py
+@@ -1439,6 +1439,79 @@ def blocked(alts, banned):
+     return bool(alts) and all(a & banned for a in alts)
+ 
+ 
++def source_reqs(em, regs, edges):
++    """(item, room) -> a DNF of {reg: {values}}: what has to be TRUE for that acquisition to fire.
++
++    `sources` records the ROOM an item can be got in, and `reobtainable_rooms` reads that as "walk
++    back here and take it again". For a ONE-SHOT hand-out inside a room you can re-enter, that is
++    simply false, and the game says so in the ordinary way -- a latch:
++
++        rm540::init  (cond ((== prev 250) ... beautyScript)              ; the wedding, once
++                           ((not flag46)  ... beastScript))              ; the Beast, once
++        beastScript  st21  flag46 := 1   +   (gEgo get: 37)              ; ...and it sets its own
++
++    So the ring has exactly one acquisition, and giving it to Beauty is irreversible. Every part of
++    that is already modelled -- the entry carries `NOT flag46`, flag 46 is a promoted register, and
++    the backward walk is already per-projection -- but the walk seeds from every state whose ROOM
++    is a source room, so the guard never got a say. That is what made Beauty's clothes look
++    re-obtainable, and with them the whole short route to the castle re-openable after the Realm.
++
++    Same discipline as `build_maps`' source filter, which already refuses a take-back and an
++    unreachable `prev`: a `get:` is only a source if you can actually STAND there and have it fire.
++    This adds the third question -- and in what STATE.
++
++    A site with no register constraint contributes the empty requirement, which every state
++    satisfies, so an unlatched source behaves exactly as before. Per SITE, so several ways of
++    getting the same item in one room stay alternatives."""
++    out = defaultdict(list)
++    regset = set(regs)
++    pdom = {r for e in em.ts.edges for r in (e.src,)} | \
++           {r for e in em.ts.cs_edges for r in (e.src,)} | \
++           {i["room"] for i in em.machines} | {0}
++    dom = {prev_room_reg(em): pdom} if prev_room_reg(em) in regset else {}
++
++    def add(item, room, *guards):
++        req = {}
++        for g in guards:
++            for R, vals in guard_reqs(g, regset, dom).items():
++                req[R] = (req[R] & set(vals)) if R in req else set(vals)
++        out[(item, room)].append(req)
++    # The SAME site filters `build_maps` applies, and they have to be the same or this disagrees
++    # with `sources` about what a source even is. The one that matters here is the machine/acq
++    # duplicate: `extract` walks a `changeState` body for items too, so the ring's `get:` arrives
++    # twice -- once flat and GUARDLESS, once through the machine, which knows the latch. Keeping
++    # the flat copy hands every site a requirement-free alternative and the latch never bites.
++    prev = prev_room_reg(em)
++    mg = getattr(em, "machine_gets", set())
++    dbg = frozenset(em.cfg.debug_globals)
++    for a in em.ts.acqs:
++        if (a.room, a.via, a.item) in mg:
++            continue
++        if (not _debug_gated_guard(a.guard, dbg) and a.item not in _own_required(a.guard)
++                and not _prev_impossible(a.guard, a.room, prev, edges)):
++            add(a.item, a.room, a.guard)
++    for room, _script, it, g in em.handler_gets:
++        if (not _debug_gated_guard(g, dbg) and it not in _own_required(g)
++                and not _prev_impossible(g, room, prev, edges)):
++            add(it, room, g)
++    for info in em.machines:
++        # The arming is where a latch like `NOT flag46` lives -- the body of a cutscene usually
++        # carries no condition at all, the decision having been made where it was started. Each
++        # ENTRY is a separate way in, so each is its own alternative.
++        entries = [eg for _K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ()))
++                   if eg is not None] or [None]
++        em_ = entry_musts(info)
++        for K, paths in info["states"].items():
++            for (g, _w, gg, _c, _tr) in paths:
++                must = em_.get(K, frozenset())
++                for it in gg:
++                    if it in must | _own_required(g):
++                        continue
++                    for eg in entries:
++                        add(it, info["room"], *[x for x in (eg, g) if x is not None])
++    return dict(out)
++
++
+ def edge_meta(em, regs):
+     """(a,b) -> [(req, sets, alts)] for the discovered gating `regs`.
+ 
+@@ -1609,6 +1682,7 @@ class IrSccReach(SccReach):
+         em = self.em
+         self.regs = gating_registers(em)
+         self._emeta = edge_meta(em, self.regs)
++        self._src_req = source_reqs(em, self.regs, self.edges)
+         self._inroom = {R: defaultdict(set) for R in self.regs}
+         # OWN requirements on each in-room write. The writes themselves stay PERMISSIVE for
+         # registers (see below), but a write you can only perform by USING an item is not
+@@ -2081,7 +2155,7 @@ class IrSccReach(SccReach):
+                 for v in self._psucc(R, u, ban):
+                     if v in states:
+                         prev[v].add(u)
+-            back = {p for p in states if p[0] in srcs}
++            back = {p for p in states if p[0] in srcs and self._src_fires(ban, R, p)}
+             q = deque(back)
+             while q:
+                 u = q.popleft()
+@@ -2094,6 +2168,21 @@ class IrSccReach(SccReach):
+         self._reob[ban] = out if out is not None else set()
+         return self._reob[ban]
+ 
++    def _src_fires(self, ban, R, state):
++        """Can one of `ban`'s acquisitions actually FIRE in this state? See `source_reqs`.
++
++        Only the register(s) THIS projection tracks are judged; anything else is left free, which
++        is the permissive direction every projection already takes. A source site we recorded no
++        requirement for satisfies this trivially, so nothing that was re-obtainable before stops
++        being so unless the game latched it."""
++        room, val = state
++        vals = dict(zip(R, val)) if isinstance(R, tuple) else {R: val}
++        sites = [req for it in ban for req in self._src_req.get((it, room), ())]
++        if not sites:
++            return True                       # `sources` says this room is one; we know no better
++        return any(all(vals[Ri] in need for Ri, need in req.items() if Ri in vals)
++                   for req in sites)
++
+     def _freely_reversible(self, a, b):
+         """Gate-aware override: b->a is a FREE walk only if some DNF alternative on it needs no
+         item. An item-gated return -- the whale sneeze rm44->rm31 needs the Peacock Feather
