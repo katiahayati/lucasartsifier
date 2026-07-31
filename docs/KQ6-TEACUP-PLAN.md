@@ -200,6 +200,94 @@ tool, not enumerated in the test file.
 
 ---
 
+---
+
+## ✅ STEP 1 IS DONE — `44234bc`, and it cost one extra fix
+
+**Measured:** LSL2 + KQ4 **byte-identical** on the full snapshot surface *including placements*
+(baseline from a `git worktree` at `dbdfbb7`); Dagger identical; the whole suite green, 317 checks,
+`test_scopes` 77 → 91. KQ6's 14 verdicts unchanged and **flag 22 now has a writer**
+(`_rstep[194]` in 86 rooms, entry `own(12) ∧ flag68 ∧ flag58 ∧ ¬flag22`).
+
+KQ6's snapshot moved **one line**, and it is an improvement:
+
+    - rm340->rm155: (and (gEgo has: 7) (gEgo has: 24))
+    + rm340->rm155: (and (gEgo has: 7) (gEgo has: 11) (gEgo has: 24))
+
+Item 11 is the **skull** — you catch the nightmare with the ember-filled skull, and that is the only
+way into the Realm. It comes from the second fix, below.
+
+### What the scope contributes, and the four consumers that proved it
+The rule landed as `vocab.inventory_scripts` (derived from the item class table: LSL2 {0}, KQ4 {0},
+KQ6 {907}, Dagger {15}, QFG-VGA {206}) plus a **separate `global_machines` list** that only the
+register build reads. The separation is the whole design, and it was arrived at by breaking things:
+leaving those machines in `em.machines` cost, one consumer at a time, `required` (five confirmed
+softlocks, a 45-item guard), `sources`/`drops` (the feather gained 86 destruction sites), machine
+EXITs (two fabricated ways out of the pitch-dark rm406) and `death_traps` (an inventory action read
+as an ESCAPE from a trap, so the tinderbox stopped being needed to survive the dark).
+
+### The extra fix: half a bit-store can only ever block
+Surfaced, not caused, by the scope work. `rm580.sc:322` sets the skull's ember bits through SCI's
+cache-the-handle idiom — `(= temp0 (gInv at: 11))` then `(temp0 state: (| (temp0 state:) $000c))` —
+and with `temp0` unresolved that **set** was invisible while the matching **clear**
+(`(self state: (& (self state:) $fff7))`, written inside the item's own method) was captured. A
+register whose only modelled write is the value every read REJECTS cannot open anything, so
+promoting it fabricates a seal: `catchNiteMare`, the only way into the Realm, became unreachable.
+Fixed in both halves of the pair — `derive_item_bit_flags` and `lower_item_bit_flags` — or the
+discovery and the lowering disagree about what a bit is.
+
+## 8. Step 2, measured: the discriminator DERIVES, the goal plumbing does not exist yet
+
+The derivation the user chose is confirmed available, and it needs no new concept.
+`anchors._resolve_pass_through` already picks the WINNING machine out of the rivals at a terminal's
+predecessor. Measured at the machines reachable from each game's goal room:
+
+    KQ6  rm740  alexWedding   (the WIN)  branches on regs {182, 187}
+    KQ6  rm740  vizierWedding (the LOSS) branches on regs {182}
+    LSL2 rm86                            -- no rival machines at all
+    KQ4  rm694                           -- no rival machines at all
+
+> **The ending discriminator is the register the WINNER branches on that its RIVAL never mentions.**
+
+Winner minus rival is exactly `{187}` = flag 15 = "you entered the Realm of the Dead and revived the
+King and Queen" — the difference the walkthroughs describe. Register 182 is shared machinery and is
+correctly excluded. **Inert on the goldens by construction**: neither LSL2 nor KQ4 has rival endings,
+so both derive nothing.
+
+### What is NOT built, and the two obstacles — both real, neither guessed
+
+1. **`goal_ok` is computed before the projections exist.** `build_maps` calls
+   `goal_reaching_rooms(edges, cfg.goal_rooms)`, a FLAT backward reachability, and it runs inside
+   `build_maps` — before `IrSccReach.__init__` has built `_inroom`/`_rstep`/`_pstates`. Asking "from
+   which rooms can I still reach rm180 **with flag 15 set**" is a backward walk in the flag-15
+   projection, which is the shape `reobtainable_rooms` already uses — but it cannot be called from
+   where `goal_ok` is needed. Either the goal walk moves after the projection build, or the
+   projection build moves before `build_maps`. That ordering is the actual work.
+2. **⚠️ The long-ending goal makes the SHORT DOOR a dead end, and that is the documented wall
+   hazard.** From inside the castle by `rm220->rm730`, nothing writes flag 15 (its writers are
+   rm600, rm710, and the rm740 debug branch), so under goal `(180, 187=1)` every room past the short
+   door can never reach the goal. That is *true* — the short route really does forgo the good ending
+   — but our detectors report ITEMS, and a whole route going dark is not an item stranding. It has to
+   be reported as what it is (a point of no return that costs an ending) or it will come out as
+   noise, or as a guard that WALLS the short route. See [[path-forcing-guards]] and §5 of
+   `kq6-castle-two-doors`: *"never convert a softlock into a wall."*
+
+**Recommended order for Step 2:** land the discriminator derivation together with obstacle 1 (so it
+has a real consumer the moment it exists), then run the long-ending analysis and *look at the raw
+findings* before deciding how obstacle 2 is reported. Do not emit guards from the per-ending run
+until that reading has happened.
+
+### A cheaper alternative found while measuring — worth a decision before building the above
+The teacup does not actually need the goal to change to be *caught*; it needs the model to notice
+that **flag 58 becomes permanently unsettable when you leave the Realm**, and that its cost is
+`own(teaCup)` (`getWaterScr`'s entry). That is a REGISTER stranding, a class the codebase already
+has two detectors for (`register_strandings`, `register_flip_strandings`), and it reports "you can
+no longer take the long route" without reclassifying what winning means for the whole game. It
+would land the teacup at the right boundary with the right reason, and it does not touch the goal.
+It is a smaller build than per-ending goals and it does not carry obstacle 2 — but it also does not
+give the per-ending split the mint and the castle guards still want, so it is a genuine trade rather
+than a shortcut. **Not built; recorded because it was measured, not assumed.**
+
 ## 7. What each step buys, if you want to stop early
 
 | stop after | teaCup | other value |
