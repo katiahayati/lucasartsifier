@@ -20,8 +20,12 @@ import guards as G
 
 def snapshot(cfg, with_placements=False):
     s = M.load(cfg=cfg)
+    # `toll_strandings` is in here because for a long time it was NOT, and nothing watched it: four
+    # KQ6 rows existed with no golden, no oracle and no diff able to notice one appearing or
+    # vanishing. It is a detector like any other and its verdicts are verdicts.
     items = sorted({c["item"] for c in s.analyze()} | {j["item"] for j in s.joint_strandings()}
-                   | {r["item"] for r in s.register_flip_strandings()})
+                   | {r["item"] for r in s.register_flip_strandings()}
+                   | {t["item"] for t in s.toll_strandings()})
     snap = {
         "start_room": s.em.cfg.start_room,
         "goal_rooms": sorted(s.em.cfg.goal_rooms),
@@ -33,6 +37,9 @@ def snapshot(cfg, with_placements=False):
         "exhaustion": sorted(f"{r['item_name']}@{r.get('at_rooms', r['at_room'])}"
                              f"->{r['still_needed_at']}" for r in s.resource_exhaustion()),
         "joint": sorted(f"{f['item_name']}@{f['stranded_at']}" for f in s.joint_strandings()),
+        "tolls": sorted(f"{t['item_name']}@{t['pattern']}"
+                        f"/rm{t['toll_edge'][0]}->rm{t['toll_edge'][1]}"
+                        for t in s.toll_strandings()),
     }
     specs = G.guard_specs(s)
     snap["edge_specs"] = sorted(f"rm{sp['from_room']}->rm{sp['to_room']}: {sp['condition']}"

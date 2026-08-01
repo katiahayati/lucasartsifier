@@ -57,5 +57,6 @@
     "Pamphlet",
     "Airsick_Bag"
   ],
-  "start_room": 11
+  "start_room": 11,
+  "tolls": []
 }

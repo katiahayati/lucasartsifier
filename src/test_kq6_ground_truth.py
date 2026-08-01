@@ -111,6 +111,29 @@ EXPECTED_CAUGHT = _units({
     "skull",            # throwing it into rm420's gears is a move the game invites and it looks
                         # like the solution -- the gears eat it and state 24 re-arms `sqwishEm`.
                         # User: "that's exactly the kind of bad use we need to prevent."
+    # ONE-VISIT-POCKET CARRY-INS. Promoted 2026-07-31 with the toll rows, which nothing watched
+    # until then -- see the note above `_units` about detectors that emit into the dark.
+    "teaCup",           # THE LONG-STANDING GAP, closed at the boundary the user named. Its only
+                        # source is rm480, outside the Realm; `getWaterScr` faces own(46) at rm660,
+                        # inside; the Realm admits you once (flag 15, raised on arrival at rm600,
+                        # never cleared). Draw the Styx water or the magic paint can never be mixed.
+                        # Moved out of LONG_ENDING_ONLY -- see the note where that column was.
+    "gauntlet",         # USER, 2026-07-31, tested in-game: "you need the gauntlet. without it the
+                        # game refuses to show Death the mirror." rm690's `lord::doVerb 13` is
+                        # `(if local0 <brush-off> else holdUpMirror)`, `introScript` raises local0
+                        # before your only arrival window, and `issueChallenge` -- the gauntlet --
+                        # is the one thing that clears it with hands on. It sits in rm650, BEFORE
+                        # Charon's one-way crossing, which is why its boundary is rm660->rm670.
+                        # ⚠️ We catch it for a DIFFERENT reason than the game has (an incidental
+                        # register write); the real link is a room local we do not model. Pinned
+                        # RED in test_toll.test_local_latch_is_not_modelled.
+    "sacredWater",      # USER RULING 2026-07-31, from the script evidence rather than in-game:
+                        # rm380 is entered only from rm370 by a flyer cutscene gated on flag 175,
+                        # which the far side raises and nothing clears; rm380 holds `(gEgo get: 40)`
+                        # and its one exit is `newRoom: 300`; the water is poured from the
+                        # inventory outside. Fly up, leave without filling, and you cannot return.
+                        # PRE-EXISTING: this row was being emitted before the carry-in work; it was
+                        # simply never read by any oracle.
 })
 
 # Real per the oracle and still missed. NOT failures -- the live TODO list, reported at the end of
@@ -118,27 +141,26 @@ EXPECTED_CAUGHT = _units({
 # caught. Kept, with its reporting, because the next KQ6 finding lands here first.
 KNOWN_GAPS = set()
 
-# GATES THE LONG ENDING, NOT WINNABILITY -- deliberately NOT caught, and not a gap.
+# ✅ EMPTY as of 2026-07-31, and the column stays only to record why it is.
 #
-# Our question is "can you still reach the credits", and KQ6 has two castle entrances that are the
-# game's two paths: rm220->rm730 on the disguise (short) and rm230->rm710 on the magic paint
-# (long). An item needed only for the long path therefore does not make the game unwinnable, and
-# the model is right not to flag it.
+# It held `teaCup` from 2026-07-28, on the argument that our question is "can you still reach the
+# credits" and KQ6 has two castle entrances -- rm220->rm730 on the disguise (short) and
+# rm230->rm710 on the magic paint (long) -- so an item needed only for the long path does not make
+# the game unwinnable. The user parked it: "we'll really figure it out later."
 #
-#   teaCup: user, 2026-07-28, two rulings the same day and the second one narrows the first.
-#     First: "it's required for the long ending and we should not let you leave the realm of the
-#     dead without it." Then: "the tea cup is only needed outside the castle to get in" -- which is
-#     the same argument that put `clothes` in CONFIRMED_SAFE. What that argument does NOT cover is
-#     the Styx water: you draw it at rm660 during the Realm's single visit, and flag 58 is a hard
-#     conjunct on mixing the paint (`KqInv.sc:2136` arms `mixPaintScr` under
-#     `(and flag68 flag58 (not flag22))`). So if this ever becomes a softlock the boundary is the
-#     REALM EXIT, not the castle entrance. Parked by the user -- "we'll really figure it out later".
+# THE ARGUMENT WAS ANSWERING THE WRONG QUESTION. The teacup is not stranded by the castle door; it
+# is stranded by the REALM, which you may enter once. Its only source is outside, and the Styx
+# water is drawn inside. That is missability, and it holds whichever castle door you were heading
+# for. It is now caught as a one-visit-pocket carry-in at rm340->rm155, which is where the user's
+# FIRST ruling put it: "we should not let you leave the realm of the dead without it."
 #
-# Same class as the four island treasures, which gate the BEST ending (docs/KQ6-SOFTLOCK-CANDIDATES).
-# In ALLOWED, so catching one is a question rather than a hard failure -- but it IS a question:
-# under the current goal (rm180 = `alexWedding` armed) it should not fire, so if it does, the goal
-# or the path model has moved.
-LONG_ENDING_ONLY = _units({"teaCup"})
+# ⚠️ Recorded because it was measured and would otherwise be re-attempted: making the ENDING
+# first-class does NOT catch the teacup. `docs/KQ6-TEACUP-PLAN.md` §5/§8 recommended exactly that,
+# and the measurement refutes it -- flag 15, the ending discriminator, is raised on REALM ENTRY
+# (rm600), not by the paint, so banning the teacup still leaves the product state (rm180, flag15=1)
+# reachable. Per-ending goals remain worth building for `mint` at the long door; they were never
+# the teacup's answer.
+LONG_ENDING_ONLY = _units(set())
 
 # CONFIRMED SAFE -- flagging one of these is a false positive, not a promotion.
 #   shield: user, 2026-07-27, after testing -- "you were completely right and I was completely
@@ -193,7 +215,7 @@ def run():
     for r in s.group_strandings():
         caught.add(frozenset(s.g.item_name(i) for i in r["items"]))
     for rows in (s.joint_strandings(), s.resource_exhaustion(), s.dangerous_sinks(),
-                 s.register_flip_strandings(), s.fatal_uses()):
+                 s.register_flip_strandings(), s.fatal_uses(), s.toll_strandings()):
         caught |= {_unit(s.g.item_name(r["item"])) for r in rows}
     caught_names = _names(caught)
 
@@ -244,12 +266,31 @@ def run():
           fronts.get("brick") and all(e.endswith("->rm420") for e in fronts["brick"]),
           repr(fronts.get("brick")))
 
-    check("a LONG-ENDING-only item is not flagged as unwinnable",
-          not (caught_names & _names(LONG_ENDING_ONLY)),
-          f"FLAGGED: {sorted(caught_names & _names(LONG_ENDING_ONLY))} -- these gate the long "
-          f"ending, not the win itself, so under the current goal (rm180) they should not fire. If "
-          f"one does, the goal or the two-castle-entrance path model has moved; do not just "
-          f"promote it. By NAME, for the same reason as CONFIRMED_SAFE.")
+    # THE TEACUP, pinned by the SHAPE of its finding rather than by its name appearing somewhere.
+    # This replaces "a LONG-ENDING-only item is not flagged as unwinnable", which asserted the
+    # behaviour we have now deliberately changed and so could only ever have gone red silently.
+    # Each clause is a separate claim about the game, so a partial regression names itself:
+    #   * the REALM is a one-visit pocket, sealed by a flag its own far side raises;
+    #   * the cup comes from OUTSIDE it and is used INSIDE it;
+    #   * therefore the boundary is the Realm ENTRANCE -- not the castle door, where four days of
+    #     analysis looked for it, and not the exit, which alone would seal you in.
+    tolls = {(s.g.item_name(t["item"]), t["pattern"]): t for t in s.toll_strandings()}
+    cup = tolls.get(("teaCup", "one-visit-pocket-carry-in"))
+    check("the teaCup is caught as a carry-IN to a one-visit pocket",
+          cup is not None,
+          f"toll rows = {sorted(tolls)} -- the teacup is not among them as a carry-in. It is the "
+          f"item this whole detector was built for; see docs/KQ6-TEACUP-PLAN.md.")
+    check("...at the REALM ENTRANCE, beside the coin and the mirror",
+          cup and cup["toll_edge"] == [340, 155] and cup["source_rooms"] == [480],
+          repr(cup and (cup["toll_edge"], cup["source_rooms"])))
+    check("...because the Styx water is drawn INSIDE and the cup comes from outside",
+          cup and cup["need_rooms"] == [660] and 660 in cup["pocket"] and 480 not in cup["pocket"],
+          repr(cup and (cup["need_rooms"], cup["pocket"])))
+    # and the flavour uses of that same pocket stay out: playing Charon the flute or the
+    # nightingale writes nothing, moves nothing and goes nowhere.
+    check("...while playing Charon a tune is not a requirement",
+          not ({"flute", "nightingale"} & {n for (n, _p) in tolls}),
+          f"toll rows = {sorted(tolls)}")
 
     # THE TWO CASTLE DOORS. rm220->rm730 is the servant-girl disguise (short route) and
     # rm230->rm710 is the magic paint (long route); both are one-way into the same terminal castle,
