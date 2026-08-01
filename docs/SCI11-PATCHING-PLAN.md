@@ -399,6 +399,12 @@ Extend `snapshot.py --placements` to KQ6 and Dagger and commit goldens for all f
 `test_sci11_patch.py` as a red test listing §2.5's four dialect failures and §7's two missing
 remedy classes. *Gate: LSL2 + KQ4 byte-identical; 12 test files green.*
 
+> **Status 2026-07-31.** `test_sci11_patch.py` was never written — this line describes intent,
+> not a file that exists. Partially delivered since: `snapshot.py` now also freezes
+> `dangerous_sinks` and `fatal_uses`, and `tools/run_tests.py` runs all 12 test files with a
+> declared `KNOWN_RED` set, so "12 test files green" has a meaning it did not have before. The
+> per-game `--placements` goldens for KQ6 and Dagger are still outstanding.
+
 **Phase 1 — the back end (§2).** A1–A4, plus heap emission and the filename matrix.
 *Gate A: the null-patch runtime gate — an unmodified KQ6 room recompiled, wrapped, installed, and
 played in ScummVM.*
@@ -424,7 +430,7 @@ places as a side effect.*
 *Gate: `handkerchief`, `skeletonKey` and `skull` each carry a spec that survives Gate E.*
 
 **Phase 6 — emit and PLAY.** Full KQ6 patch set, then Dagger. Write the play-test plan in the shape
-of `docs/PATCH-TEST-PLAN-KQ4.md`: for each finding, (A) reproduce the trap unpatched, (B) confirm
+of `docs/archive/PATCH-TEST-PLAN-KQ4.md`: for each finding, (A) reproduce the trap unpatched, (B) confirm
 prevention, (C) confirm the game is still winnable.
 *Gate: KQ6 completed end to end on the patched build, as LSL2 was.*
 

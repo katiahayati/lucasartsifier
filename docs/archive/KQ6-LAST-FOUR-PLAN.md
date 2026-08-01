@@ -21,6 +21,10 @@ that is the user's to make.
 Live score at `a148cc8`: **11 caught of 15**, `test_kq6_ground_truth.py` green (6/6).
 Missed: `huntersLamp`, `skull`, `peppermint`, `teaCup`.
 
+> **STALE — this is the score the plan was written against, not the score now.** All four of
+> those are caught. As of 2026-07-31 KQ6 stands at 18 units and a 16/16 oracle, with `KNOWN_GAPS`
+> empty. See `../KQ6-STATUS.md`.
+
 Everything below is MEASURED on today's tree, not carried over from the handoff. Two of the
 handoff's claims about these four turned out to be stale, and both changed the plan — see
 "corrections" at the end.

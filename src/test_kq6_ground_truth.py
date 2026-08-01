@@ -155,7 +155,7 @@ KNOWN_GAPS = set()
 # FIRST ruling put it: "we should not let you leave the realm of the dead without it."
 #
 # ⚠️ Recorded because it was measured and would otherwise be re-attempted: making the ENDING
-# first-class does NOT catch the teacup. `docs/KQ6-TEACUP-PLAN.md` §5/§8 recommended exactly that,
+# first-class does NOT catch the teacup. `docs/archive/KQ6-TEACUP-PLAN.md` §5/§8 recommended exactly that,
 # and the measurement refutes it -- flag 15, the ending discriminator, is raised on REALM ENTRY
 # (rm600), not by the paint, so banning the teacup still leaves the product state (rm180, flag15=1)
 # reachable. Per-ending goals remain worth building for `mint` at the long door; they were never
@@ -279,7 +279,7 @@ def run():
     check("the teaCup is caught as a carry-IN to a one-visit pocket",
           cup is not None,
           f"toll rows = {sorted(tolls)} -- the teacup is not among them as a carry-in. It is the "
-          f"item this whole detector was built for; see docs/KQ6-TEACUP-PLAN.md.")
+          f"item this whole detector was built for; see docs/archive/KQ6-TEACUP-PLAN.md.")
     check("...at the REALM ENTRANCE, beside the coin and the mirror",
           cup and cup["toll_edge"] == [340, 155] and cup["source_rooms"] == [480],
           repr(cup and (cup["toll_edge"], cup["source_rooms"])))

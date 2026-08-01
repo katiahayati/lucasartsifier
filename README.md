@@ -61,15 +61,41 @@ compile.
    kidding!"* message and no score penalty.
 
 Longer version in [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md); per-file map in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); test plan in [`docs/TEST-PLAN.md`](docs/TEST-PLAN.md).
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); current KQ6 status in
+[`docs/KQ6-STATUS.md`](docs/KQ6-STATUS.md).
+
+## Running the tests
+
+```
+python3 tools/run_tests.py              # the whole suite
+python3 tools/run_tests.py toll scopes  # only files matching these names
+```
+
+Each `src/test_*.py` is also a standalone script you can run directly.
+
+**Some checks are RED on purpose, and the runner is built around that.** A test that asserts
+known-wrong behaviour would be worse than no test, so a known limitation is written as a failing
+check with its reason recorded in `KNOWN_RED` at the top of the runner. The suite therefore exits
+0 only when the failing set is **exactly** the declared one — which means a red check that starts
+*passing* is also a failure, reported as "a gap was closed, promote it". Currently three, all in
+`test_toll.py`: room locals are not modelled, register-valued pocket-exit guards cannot be placed,
+and `register_strandings` is degenerate on SCI1.1.
+
+Two regression nets sit behind that. `src/testdata/lsl2.golden.json` freezes the **full** LSL2
+output surface — findings, guard specs, sink specs — because "the item list did not change" is not
+the same as "nothing changed". `test_kq4_ground_truth.py` and `test_kq6_ground_truth.py` are
+per-game oracles of user-confirmed verdicts, where a **drop is a regression** and an **addition is
+treated with suspicion**; neither list may be edited without the user's sign-off.
 
 ## Layout
 
 ```
 src/                      the analysis (Python 3, standard library only)
+tools/run_tests.py        the test runner (see above)
 tools/sci-tools-fork/     patch adding JSON-IR output to sci-tools           [C#]
 tools/scicompile/         headless Linux port of SCICompanion's compiler     [C++, GPL-2.0+]
-docs/                     how it works, architecture, test plan, licensing
+docs/                     how it works, architecture, current status, licensing
+docs/archive/             superseded plans, kept for their measurements      [see its README]
 ```
 
 Per-game configuration is one small file, `src/config.py`. Start and victory rooms are **discovered**

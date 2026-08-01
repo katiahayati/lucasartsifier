@@ -249,6 +249,24 @@ def unholdable_at(s, a, b, items):
     if not demanded:
         return {}
     out = {}
+    # `prune` = rooms that would COST you what the edge demands: they drop `q` and do not hand it
+    # back. Refusing them is how "can you still be holding q here" is asked as a reachability
+    # question.
+    #
+    # TWO EXEMPTIONS, and they are different claims:
+    #   - {b}       -- the DESTINATION. You must be holding `q` AT THE CROSSING, which happens
+    #                  before you are in `b`, so whatever `b` does to `q` afterwards cannot stop
+    #                  you arriving with it. KQ6's rm730 takes Beauty's clothes on the way in;
+    #                  that is the door consuming its own key, not a reason the key is unholdable.
+    #                  Pruning `b` would ask you to reach `q`'s source without ever entering the
+    #                  room you are trying to enter.
+    #   - sources   -- an exchange COUNTER, a room that both takes the item and gives it back.
+    #                  `sources[brush] == drops[brush] == 280`; pruning the pawn shop would delete
+    #                  every item traded over it.
+    # MEASURED 2026-07-31: the first is inert on all three games (0 of 24 frontier edges change
+    # answer without it, including rm220->rm730 where `b` really does drop what the edge demands).
+    # Kept anyway, because it is the correct reading rather than a fitted one, and because
+    # dropping it can only ever prune MORE and so guard LESS.
     prune = set()
     for q in demanded:
         prune |= (set(s.drops.get(q, ())) - {b}) - set(s.sources.get(q, ()))
@@ -469,17 +487,12 @@ def _settable_frontier(s, R, v, sites, pocket, toll_reg=None):
 
     Judged in the JOINT projection of R with whatever gates the source rooms' own out-edges, since
     a funnel room splits its traffic on a register that is not R."""
-    # The pairing register is the PREVIOUS-ROOM one, and it is chosen because of what it does here
-    # rather than because it is convenient: a FUNNEL is a room whose out-edges are split by where
-    # you came from, and a funnel is exactly what makes "I will go back and fill it" false while
-    # every per-register projection still says it is true. Taking every register the pocket's edges
-    # mention instead would blow the joint past what a product can hold; taking only this one is
-    # bounded at two and derived (`prev_room_reg` reads the Game loop, and a model with no IR has
-    # none, so a synthetic emitter falls back to the scalar walk).
     # THREE registers, and each earns its place by a question the others cannot answer:
     #   R          -- has the flag been set;
     #   prevRoom   -- the FUNNEL. A transit room whose out-edges are split by where you came from
-    #                 is what makes "I will go back and fill it" false;
+    #                 is what makes "I will go back and fill it" false. DERIVED, not named:
+    #                 `prev_room_reg` reads the Game loop, and a synthetic emitter with no IR has
+    #                 none, so it drops out of the joint and the walk falls back to the scalar one;
     #   the TOLL   -- what makes the pocket one-visit AT ALL. Leave this out and the walk strolls
     #                 back in through the front door and reports that nothing was ever lost. It is
     #                 the pocket's own sealing register, so the row already carries it; nothing

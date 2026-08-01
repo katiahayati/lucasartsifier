@@ -265,6 +265,10 @@ class OpEmitter:
         # Only genuinely homeless scripts are taken, and transitively -- `mixPaintScr` is armed
         # from the inventory and lives nowhere else either. A script something else already arms
         # keeps the home it earned, and with it its per-room evidence.
+        #
+        # SIBLING, not replacement: `missability.GLOBAL_SCRIPTS` is the OTHER always-live scope
+        # (Main, hardcoded {0} because script 0 is Main in every dialect). Neither consults the
+        # other; see the comment there for why that is currently inert rather than wrong.
         self.global_homed = set()
         frontier = [s for s in sorted(vocab.inventory_scripts(ir)) if self._homeless(s)]
         while frontier:
@@ -326,6 +330,16 @@ class OpEmitter:
                         # [[same-rule-two-places]] -- this is that bug shape, four deep.
                         #
                         # The register build reads BOTH lists; nothing else reads this one.
+                        #
+                        # ⚠️ THE `doVerb`-ONLY BOUND DOES NOT APPLY HERE, and the handler pass
+                        # below says so in a way that reads as if it did. There, the icon-bar
+                        # scope is narrowed to `doVerb` because a `cue` is a callback and where it
+                        # fires is the caller's business. HERE the machine is the whole point:
+                        # `mixPaintScr` is a `changeState` machine armed from the inventory, and
+                        # narrowing this pass the same way would drop the one write the scope
+                        # exists to capture. So the two passes bound the scope DIFFERENTLY and on
+                        # purpose -- what protects this one is not the method name but the list
+                        # it lands in, which is why the separation above has to carry the weight.
                         info["global_scope"] = rn in self.global_homed
                         (self.global_machines if info["global_scope"]
                          else self.machines).append(info)
@@ -392,12 +406,18 @@ class OpEmitter:
                         # FOLLOWING calls into other scripts, so nothing is absent.
                         if mn in ("changeState", "init"):
                             continue
-                        # WHAT THE ICON BAR DISPATCHES IS `doVerb`, AND ONLY `doVerb`. That send
-                        # -- `(feature doVerb: (curIcon message:))`, the contract `extract` and
-                        # `vocab.doverb_item_messages` already key on -- is the entire reason this
-                        # script is live everywhere, so it is the entire extent of the claim. The
-                        # other methods are CALLBACKS: `cue` fires when whatever the item was
-                        # waiting on completes, and WHERE that happens is the caller's business.
+                        # WHAT THE ICON BAR DISPATCHES IS `doVerb`, AND ONLY `doVerb` -- IN THIS
+                        # PASS. That send -- `(feature doVerb: (curIcon message:))`, the contract
+                        # `extract` and `vocab.doverb_item_messages` already key on -- is the
+                        # entire reason this script is live everywhere, so it is the extent of the
+                        # claim a HANDLER may make. The other methods are CALLBACKS: `cue` fires
+                        # when whatever the item was waiting on completes, and WHERE that happens
+                        # is the caller's business.
+                        #
+                        # The MACHINE pass above deliberately does NOT apply this bound -- its
+                        # `changeState` machines are exactly what the scope is lifted for -- and
+                        # is protected instead by landing them in `global_machines`. Two passes,
+                        # two different bounds, each stated where it is enforced.
                         # Without this line the scope asserts that every method of the inventory
                         # script is something the player can do in any room, which is not true of a
                         # callback -- KQ6's `skull::cue` clears the ember bit

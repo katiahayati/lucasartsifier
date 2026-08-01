@@ -170,7 +170,14 @@ class SccReach:
 
     def analyze(self):
         """Report view over the single edge_strandings() core -- one row per
-        (item, need-component) so report and patcher never diverge."""
+        (item, need-component) so report and patcher never diverge.
+
+        "Never diverge" is a claim about the NEED ROOMS as much as about the edges, which is why
+        this reads `_unit_need_rooms` and not raw `_need_rooms`. The two differ for a member of a
+        disjunctive group: `edge_strandings` stops a single item counting a room its group already
+        covers (you are not required to bring THAT solution), and a report enumerating the raw
+        rooms would name a `need_room` the core deliberately discounted. MEASURED identical on
+        LSL2, KQ4 and KQ6 -- this closes a latent divergence rather than changing a verdict."""
         by_item = defaultdict(set)                       # item -> {stranding edges}
         for e in self.edge_strandings():
             for it in e["items"]:
@@ -179,7 +186,7 @@ class SccReach:
         for it in sorted(by_item):
             reob = self.reobtainable_rooms(it)
             frontier = sorted(f"rm{a}->rm{b}" for a, b in by_item[it])
-            for R in sorted(self._need_rooms(it)):
+            for R in sorted(self._unit_need_rooms(frozenset({it}))):
                 if R not in self.reach_rooms or R in reob:
                     continue
                 c = self.comp_of.get(R)

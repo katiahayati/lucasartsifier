@@ -151,7 +151,8 @@ Split what that scope contributes, which is the whole content of the fix:
 * LSL2 + KQ4 **byte-identical** on the full snapshot surface *including placements*, baselines taken
   from a `git worktree` at `dbdfbb7` — not from the live tree after editing it.
 * Dagger, SQ3, Camelot, TCB unmoved, or every move explained.
-* KQ6: the 14 stay caught, **no new item**, `test_kq6_ground_truth` 13/13. flag 22 becoming promoted
+* KQ6: the 14 stay caught, **no new item**, `test_kq6_ground_truth` 13/13. <!-- STALE: 18 units
+  and 16/16 as of 2026-07-31; see ../KQ6-STATUS.md --> flag 22 becoming promoted
   adds a register to the projection, so guard specs *may* move — every move explained, none accepted
   on the grounds that the item list did not change.
 * Positive checks that the fix did something: `mixPaintScr` lifted with its real entry, flag 22
@@ -298,7 +299,11 @@ than a shortcut. **Not built; recorded because it was measured, not assumed.**
 
 ---
 
-## 9. Fix (1) attempted and PARKED — `docs/one-shot-sources.WIP.patch`, not committed
+## 9. Fix (1) attempted and PARKED — `docs/archive/one-shot-sources.WIP.patch`
+
+> **Correction, 2026-07-31.** This heading said "not committed". It *is* committed, and has been
+> since the branch work; it sits beside this file in `docs/archive/`. It is still a parked
+> attempt rather than an applied fix — a `.patch` file, not something in effect.
 
 **What the gap turned out to be, and it is not what §5 said.** The model already has the latch. It
 was never a missing one-time-cutscene rule:

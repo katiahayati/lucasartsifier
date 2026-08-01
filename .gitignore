@@ -26,8 +26,9 @@ tools/pic-oracle/
 # GPL ScummVM SCI engine — local read-only reference for semantics study; NEVER commit
 tools/scummvm-ref/
 docs/ROADMAP.md
-docs/NOTES-control-oracle-integration.md
 docs/DESIGN-positional-model.md
-docs/findings-timed-and-forced-deaths.md
+# ...and the two of those that were archived 2026-07-31; still unversioned, new path
+docs/archive/NOTES-control-oracle-integration.md
+docs/archive/findings-timed-and-forced-deaths.md
 *.swp
 *.swo
