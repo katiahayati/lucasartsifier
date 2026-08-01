@@ -3126,31 +3126,40 @@ class IrSccReach(SccReach):
         return cached[key]
 
     def _use_escapes(self, item, pocket):
-        """Does using `item` INSIDE `pocket` do anything the pocket does not contain?
+        """Does using `item` inside `pocket` LEAVE A TRACE, or is it only a joke?
 
         The conjunct that separates a carry-in from a souvenir. A one-visit pocket is full of
-        things the game lets you do with what you brought, and most of them are flavour: KQ6 lets
+        things the game lets you do with what you brought, and some of them are flavour: KQ6 lets
         you play Charon the flute and the mechanical nightingale while you wait for the ferry, and
-        both scripts write nothing, move nothing and go nowhere. Demanding those at the entrance
+        both scripts write NOTHING, move nothing and go nowhere. Demanding those at the entrance
         would be inventing a requirement out of a joke.
 
-        Three ways an effect gets out, and each is something the pocket cannot take back:
-          1. it writes a register somebody OUTSIDE reads -- the Styx water, whose flag is what
-             mixes the magic paint that opens the castle's other door;
-          2. it moves an item that is needed outside -- what you bring in buys what you carry out;
+        Three traces, and the test is that there is one -- not where it ends up:
+          1. it writes a register;
+          2. it moves an item that is needed outside the pocket;
           3. it is a CROSSING. Paying Charon and holding up the mirror go somewhere, and movement
              you must make is not optional.
 
-        Measured on KQ6's Realm this keeps the teacup, the coin and the mirror and drops the flute,
-        the nightingale and the gauntlet -- the last of which writes a register, but one nothing
-        outside the pocket ever reads, which is why (1) asks WHERE it is read."""
+        ⚠️ (1) USED TO ASK WHERE THE REGISTER IS READ, and that qualifier was FITTED TO A WRONG
+        ANSWER. It was justified by KQ6's gauntlet -- thrown down at the Lord of the Dead, writing
+        a register only rm690 itself reads -- which I read out of the scripts as flavour worth two
+        points. The user tested it: **you need the gauntlet, because without it the game refuses to
+        show Death the mirror.** `lord::doVerb 13` is `(if local0 <brush-off> else holdUpMirror)`,
+        `introScript` sets `local0 := 1` before handing you control, and the ONLY thing that clears
+        it while you still have control is `issueChallenge` -- the gauntlet. So the challenge is
+        the precondition of the pocket's only exit.
+
+        We keep the gauntlet now, but on trace (1) -- an INCIDENTAL register write that merely
+        picks which death message you get -- and not on the reason the game actually has. The real
+        link runs through a room LOCAL, which we do not model at all; it is the third recorded
+        instance of that gap (`liftTapestry`'s L1 on the catacombs latch, `huntersLamp`'s rm520
+        approach-idiom `doit`). `test_toll` carries a RED assertion naming it so the verdict cannot
+        look better founded than it is."""
         writes, moved, exits = self._uses_in(item, pocket)
         if exits:
             return "it is a crossing you cannot make later"
-        readers = self._reg_readers()
-        for R in sorted(writes):
-            if readers.get(R, set()) - pocket:
-                return f"it sets reg{R}, which is read outside"
+        if writes:
+            return f"it sets reg{min(writes)}, and that write outlives the use"
         for it in sorted(moved):
             if self.required.get(it, set()) - pocket:
                 return f"it moves {self.g.item_name(it)}, which is needed outside"

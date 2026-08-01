@@ -149,9 +149,12 @@ def test_carry_in_logic():
     check("a use that does nothing the pocket keeps is not a requirement",
           not [r for r in _run(_fake(**b)) if r["pattern"] == "one-visit-pocket-carry-in"])
 
+    # ...but a register write COUNTS wherever it is read. This used to demand a reader OUTSIDE the
+    # pocket, and that qualifier was fitted to a wrong answer -- see the RED assertion below.
     b = _carry_in(machines=[_machine(2, _own(8), writes=[(99, 1)]), _machine(2, _cmp(99))])
-    check("...nor is one whose register only the pocket itself ever reads",
-          not [r for r in _run(_fake(**b)) if r["pattern"] == "one-visit-pocket-carry-in"])
+    check("a register write counts even where only the pocket reads it",
+          [r["item"] for r in _run(_fake(**b))
+           if r["pattern"] == "one-visit-pocket-carry-in"] == [8])
 
     # ...and the two other ways an effect gets out.
     b = _carry_in(machines=[_machine(2, _own(8), exits=3)])
@@ -163,6 +166,39 @@ def test_carry_in_logic():
     check("so does moving an item that is needed outside",
           [r["item"] for r in _run(_fake(**b))
            if r["pattern"] == "one-visit-pocket-carry-in"] == [8])
+
+
+def test_local_latch_is_not_modelled():
+    """🔴 DELIBERATELY RED -- a use whose only effect is a room LOCAL that gates the pocket's exit.
+
+    USER GROUND TRUTH (2026-07-31, tested in-game): *"you need the gauntlet. without it the game
+    refuses to show Death the mirror."* KQ6 rm690:
+
+        (method (doVerb param1) (switch param1
+            (48  ... (global2 setScript: issueChallenge))      ; the gauntlet -- NOT gated
+            (13  (if local0 (say <brush-off>) else ... (global2 setScript: holdUpMirror)))))
+        introScript  state 2:  (= local0 1)  handsOn:  (= seconds 15)
+        issueChallenge state 0: (= local0 0)
+
+    so `local0` is raised before the player's ONLY arrival window and the challenge is the one
+    thing that clears it with hands on. The gauntlet is therefore the precondition of
+    `holdUpMirror`, which is the pocket's only non-death exit.
+
+    WE DO NOT MODEL ROOM LOCALS, so that link is invisible: the model reads `holdUpMirror`'s entry
+    as `own(mirror)` alone. KQ6's gauntlet is currently kept by an INCIDENTAL register write (it
+    sets which death message you get), i.e. the right verdict for the wrong reason -- and an item
+    whose use touched a local and nothing else would be dropped outright. This is the third
+    recorded instance of the same gap (`liftTapestry`'s L1, `huntersLamp`'s rm520 `doit`).
+
+    Turn this green by making a use that writes a local READ BY a guard on the pocket's exit
+    escape, not by deleting the case."""
+    print("\n-- 🔴 RED: a room-local latch gating the pocket's exit --")
+    b = _carry_in(machines=[_machine(2, _own(8))])       # writes no REGISTER, only (notionally) a
+    #   local; our machine model has no way to say that, so this stands in for it: the effect the
+    #   game cares about is invisible, and the item is dropped.
+    got = [r["item"] for r in _run(_fake(**b)) if r["pattern"] == "one-visit-pocket-carry-in"]
+    check("🔴 KNOWN GAP: a use that only sets a room local is not seen as a requirement",
+          got == [8])
 
 
 def _kq5_cfg():
@@ -203,6 +239,7 @@ def test_ground_truth():
 if __name__ == "__main__":
     test_toll_logic()
     test_carry_in_logic()
+    test_local_latch_is_not_modelled()
     test_ground_truth()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
