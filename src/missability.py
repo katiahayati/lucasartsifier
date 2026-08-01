@@ -1836,14 +1836,36 @@ class IrSccReach(SccReach):
                 d = {S: vs for S in self.regs if (vs := required_values(g, S))}
                 if d:
                     guards[(gi, room, v)] = d
-        for info in self.em.machines:
+        # ...and the ALWAYS-LIVE scopes, exactly as `_build_product` iterates them. A machine the
+        # icon bar dispatches records its own cost through `cheapest` up there but was never a
+        # source of register-chain DEPENDENCIES down here, so half of what that scope contributes
+        # was landing: KQ6 mixes the magic paint from the inventory under
+        # `own(spellBook) AND flag68 AND flag58 AND NOT flag22`, and the cost of "the paint is
+        # mixed" came out as the spell book ALONE -- the Styx water and the mud, which are what
+        # the teacup buys, were dropped on the floor. The rule this scope shipped under is
+        # "effects AND THEIR COSTS"; a cost that cannot propagate along a chain is not the second
+        # half of it. Inert on SCO0 titles, whose items live in script 0 and which therefore have
+        # no global machines at all.
+        for info in self.em.machines + list(getattr(self.em, "global_machines", ())):
             sm = state_musts(info, self.regs)
+            # ...and what ARMING the machine established. `state_musts` walks the machine's own
+            # transitions and seeds each entry with nothing, so a decision made in the ENTRY GUARD
+            # -- which is where a cutscene's preconditions almost always live -- reached no write.
+            # This is the register twin of the `entry_musts` term `_build_product` already puts on
+            # the ITEM side of the very same write, and it is composed exactly as `edge_meta`
+            # composes it onto an EXIT: intersect, because both must hold.
+            er = entry_reqs(info, self.regs)
+            by_guard = er.get("_by_guard")
             for K, paths in info["states"].items():
                 for (g, w, gg, c, tr) in paths:
                     for (gi, v) in w:
                         if gi not in regs or (gi, info["room"], v) not in self._inroom_own:
                             continue
                         d = dict(sm.at(K, g))
+                        inherited = by_guard(K, g) if by_guard else er.get(K, {})
+                        for S, vs in list(inherited.items()):
+                            if vs:
+                                d[S] = (d[S] & vs) if S in d else set(vs)
                         for S in self.regs:
                             vs = required_values(g, S)
                             if vs:

@@ -290,6 +290,37 @@ def test_iconbar_scope():
                if sc in em.global_homed and gi in (489, 490)],
           "skull::cue's bit-clear is being attributed to every room")
 
+    # 3b.6 -- EFFECTS **AND THEIR COSTS**, and the costs have to travel. `_own_fixpoint` is where a
+    #   register's cost flows along a chain of registers, and it was collecting its dependencies
+    #   from `em.machines` alone -- so the scope's writes recorded their own cost and could never
+    #   pass one on. It also seeded each machine entry with NO register facts, and a cutscene's
+    #   preconditions live in its entry guard, not in its body.
+    #
+    #   Pinned as the CHAIN rather than as an item list, because the chain is the claim: flag 22
+    #   ("the paint is mixed") is written only by the inventory action, whose entry demands flag 58
+    #   ("the cup holds Styx water"), and flag 58's only writer demands the cup. So whatever
+    #   drawing the water costs, mixing the paint costs too. Removing EITHER half of the fix
+    #   breaks this -- the write is a global machine and its flag-58 condition is on its entry.
+    water, paint = 230, 194
+    entry_flags = set()
+    for i in em.global_machines:
+        if i.get("inst") == "mixPaintScr":
+            for _K, eg in list(i.get("entries", ())) + list(i.get("init_entries", ())):
+                # `structural_reqs`, the NECESSARY reading, and the one `entry_reqs` itself uses:
+                # this entry mentions the flag in both polarities across a DNF, so the flat
+                # `required_values` reads it as unconstrained.
+                entry_flags |= set(M.structural_reqs(eg, s.regs).get(water) or ())
+    check("KQ6: mixing the paint is gated on the water flag (the chain's premise)",
+          entry_flags == {1}, f"mixPaintScr's demand on reg{water} = {sorted(entry_flags)}")
+    cost_water = s._reg_cost(water, {1})
+    check("KQ6: drawing the Styx water costs an item you must be holding",
+          bool(cost_water), f"_reg_cost({water}) = {sorted(cost_water)} -- expected the teacup")
+    check("...and mixing the paint inherits what the flags its entry demands cost",
+          cost_water <= s._reg_cost(paint, {1}),
+          f"_reg_cost({paint}) = {sorted(s._reg_cost(paint, {1}))} does not contain "
+          f"_reg_cost({water}) = {sorted(cost_water)} -- an always-live scope's cost stopped at "
+          f"the write instead of propagating along the register chain.")
+
 
 def test_handle_aliases():
     print("\nPart 3c: `(= temp0 (gInv at: 11))` -- the cached-handle alias")
