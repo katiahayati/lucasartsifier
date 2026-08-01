@@ -7,6 +7,7 @@ whose every toll candidate is re-obtainable -- must stay empty (the regression g
 import os, sys, types, dataclasses
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import missability as M
+from guard_ast import Pred
 from scc_core import reachable
 
 PASS, FAIL = [], []
@@ -15,7 +16,7 @@ def check(name, cond):
     print(f"  [{'PASS' if cond else 'FAIL'}] {name}")
 
 
-def _fake(edges, emeta, drops, placed, sources, required, reob, start=0):
+def _fake(edges, emeta, drops, placed, sources, required, reob, start=0, machines=()):
     """A duck-typed IrSccReach carrying only what toll_strandings() reads."""
     f = types.SimpleNamespace()
     f.edges = edges
@@ -26,11 +27,31 @@ def _fake(edges, emeta, drops, placed, sources, required, reob, start=0):
     f.reach_rooms = reachable(edges, {start})
     f._reob = reob
     f.reobtainable_rooms = lambda X, _f=f: _f._reob.get(X, set())
-    f._pocket_leavable = lambda pocket, Y, _f=f: M.IrSccReach._pocket_leavable(_f, pocket, Y)
-    f.em = types.SimpleNamespace(cfg=types.SimpleNamespace(start_room=start),
-                                 ts=types.SimpleNamespace(placed=placed))
+    for name in ("_pocket_leavable", "edge_demands", "_reg_readers", "_uses_in", "_use_escapes"):
+        setattr(f, name, (lambda _n: lambda *a, _f=f: getattr(M.IrSccReach, _n)(_f, *a))(name))
+    f.em = types.SimpleNamespace(
+        cfg=types.SimpleNamespace(start_room=start),
+        ts=types.SimpleNamespace(placed=placed, acqs=(), edges=(), cs_edges=()),
+        machines=list(machines), global_machines=[],
+        handler_writes=(), handler_gets=(), handler_drops=())
     f.g = types.SimpleNamespace(item_name=lambda i: f"item{i}")
     return f
+
+
+def _own(n):
+    return Pred("OWN", n)
+
+
+def _cmp(reg):
+    return Pred("CMP", reg, "==", 1)
+
+
+def _machine(room, entry_guard, writes=(), exits=None, drops=()):
+    """The minimum a machine info needs for `_uses_in` and `_reg_readers` to read it."""
+    return {"room": room, "inst": f"m{room}", "entries": [(0, entry_guard)],
+            "init_entries": [], "drops": tuple(drops),
+            "states": {0: [(None, tuple(writes), None, (),
+                            ("EXIT", exits) if exits is not None else None)]}}
 
 
 def _run(f):
@@ -84,6 +105,65 @@ def test_toll_logic():
     b["edges"] = {0: {1, 2}, 1: {2, 3}, 2: {1}, 3: set()}  # 0->2 bypasses the toll
     check("target reachable another way -> not a sealed pocket", _run(_fake(**b)) == [])
 
+    # A TOLL YOU NEVER PICKED UP IS NOT A TOLL. An item with no source anywhere is a capture gap,
+    # not a one-way spend, and reading one as a paid toll invents a sealed pocket out of nothing.
+    b = dict(BASE); b["sources"] = {6: {2}}                # the gate item has no source at all
+    check("a gate item with no source is a capture gap, not a toll", _run(_fake(**b)) == [])
+
+
+def _carry_in(**over):
+    """BASE plus a carry-IN candidate: item 8, sourced OUTSIDE the pocket and used INSIDE."""
+    b = dict(BASE)
+    b["sources"] = dict(BASE["sources"]); b["sources"][8] = {0}
+    b["required"] = dict(BASE["required"]); b["required"][8] = {2}
+    # its use in the pocket sets reg99, and room 3 -- outside -- reads reg99
+    b["machines"] = [_machine(2, _own(8), writes=[(99, 1)]), _machine(3, _cmp(99))]
+    b.update(over)
+    return b
+
+
+def test_carry_in_logic():
+    """The MIRROR direction: obtained outside, needed inside, and the pocket admits you once."""
+    print("\n-- toll_strandings() carry-IN --")
+    rows = [r for r in _run(_fake(**_carry_in())) if r["pattern"] == "one-visit-pocket-carry-in"]
+    check("an item used inside a one-visit pocket must be carried in",
+          {(r["item"], tuple(r["toll_edge"])) for r in rows} == {(8, (1, 2))})
+
+    b = _carry_in(); b["sources"] = dict(b["sources"]); b["sources"][8] = {0, 2}
+    check("...unless it is obtainable INSIDE -- then fetch it there",
+          not [r for r in _run(_fake(**b)) if r["pattern"] == "one-visit-pocket-carry-in"])
+
+    b = _carry_in(); b["required"] = dict(b["required"]); b["required"][8] = {3}
+    check("...or is never used inside at all",
+          not [r for r in _run(_fake(**b)) if r["pattern"] == "one-visit-pocket-carry-in"])
+
+    # the mirror of `_pocket_leavable`: if the crossing itself demands it, you cannot arrive without
+    # it, so it is forced rather than missable.
+    b = _carry_in(); b["emeta"] = dict(b["emeta"])
+    b["emeta"][(1, 2)] = [({}, {}, (frozenset({7, 8}),))]
+    check("...or the crossing itself demands it -> forced, not missable",
+          not [r for r in _run(_fake(**b)) if r["pattern"] == "one-visit-pocket-carry-in"])
+
+    # THE CLAUSE THAT SEPARATES A CARRY-IN FROM A SOUVENIR, in its two failing shapes.
+    b = _carry_in(machines=[_machine(2, _own(8))])         # the use writes nothing, goes nowhere
+    check("a use that does nothing the pocket keeps is not a requirement",
+          not [r for r in _run(_fake(**b)) if r["pattern"] == "one-visit-pocket-carry-in"])
+
+    b = _carry_in(machines=[_machine(2, _own(8), writes=[(99, 1)]), _machine(2, _cmp(99))])
+    check("...nor is one whose register only the pocket itself ever reads",
+          not [r for r in _run(_fake(**b)) if r["pattern"] == "one-visit-pocket-carry-in"])
+
+    # ...and the two other ways an effect gets out.
+    b = _carry_in(machines=[_machine(2, _own(8), exits=3)])
+    check("a crossing you cannot make later escapes the pocket",
+          [r["item"] for r in _run(_fake(**b))
+           if r["pattern"] == "one-visit-pocket-carry-in"] == [8])
+
+    b = _carry_in(machines=[_machine(2, _own(8), drops=[6])])
+    check("so does moving an item that is needed outside",
+          [r["item"] for r in _run(_fake(**b))
+           if r["pattern"] == "one-visit-pocket-carry-in"] == [8])
+
 
 def _kq5_cfg():
     import config
@@ -122,6 +202,7 @@ def test_ground_truth():
 
 if __name__ == "__main__":
     test_toll_logic()
+    test_carry_in_logic()
     test_ground_truth()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))

@@ -3038,6 +3038,124 @@ class IrSccReach(SccReach):
                             "source_rooms": sorted(srcs), "doors": sorted(doors)})
         return out
 
+    def _reg_readers(self):
+        """`register -> rooms whose code READS it`. Cached; one sweep over every guard we hold.
+
+        A MENTION, not a necessary requirement: the question this answers is "does anything out
+        there care what this register says", and a register named in one arm of a disjunction is
+        still being consulted. `_cmp_atoms` is the flat comparison-atom collector the promotion
+        machinery already reads guards with.
+
+        The always-live scopes are swept too, and homed as they are lifted -- to every room. That
+        is not a technicality: KQ6's Styx-water flag has exactly ONE reader in the whole game, the
+        inventory action that mixes the magic paint, and the icon bar dispatches it everywhere.
+        Leave the global machines out and the flag looks like something nothing consults."""
+        if getattr(self, "_readers", None) is not None:
+            return self._readers
+        out = defaultdict(set)
+
+        def note(guard, room):
+            atoms = []
+            _cmp_atoms(guard, atoms)
+            for (R, _op, _const, _pol) in atoms:
+                out[R].add(room)
+        for (a, _b), metas in self._emeta.items():
+            for (req, _sets, _alts) in metas:
+                for R in req:
+                    out[R].add(a)
+        for e in list(self.em.ts.edges) + list(self.em.ts.cs_edges):
+            note(e.guard, e.src)
+        for a in self.em.ts.acqs:
+            note(a.guard, a.room)
+        for room, _script, _it, g in self.em.handler_gets:
+            note(g, room)
+        for room, _script, _gi, _v, g in self.em.handler_writes:
+            note(g, room)
+        for room, _script, _it, g, _dest in getattr(self.em, "handler_drops", ()):
+            note(g, room)
+        for info in self.em.machines + list(getattr(self.em, "global_machines", ())):
+            for _K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+                note(eg, info["room"])
+            for _K, paths in info["states"].items():
+                for (g, _w, _gg, _c, _tr) in paths:
+                    note(g, info["room"])
+        self._readers = out
+        return out
+
+    def _uses_in(self, item, rooms):
+        """Everything using `item` in `rooms` does: `(register writes, items moved, exits)`.
+
+        A use is a machine those rooms arm whose ENTRY presupposes the item -- `_own_positive`,
+        the same reading `_build_product` prices a write with -- plus the handler forms of the
+        same act. Machine BODIES are read whole: a cutscene decides at its entry and pays off
+        several states later."""
+        key = (item, frozenset(rooms))
+        cached = getattr(self, "_uses", None)
+        if cached is None:
+            cached = self._uses = {}
+        if key in cached:
+            return cached[key]
+        writes, moved, exits = set(), set(), False
+        for info in self.em.machines:
+            if info["room"] not in rooms:
+                continue
+            own = set()
+            for _K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+                own |= _own_positive(eg)
+            if item not in own:
+                continue
+            moved |= set(info.get("drops", ()))
+            for _K, paths in info["states"].items():
+                for (_g, w, _gg, _c, tr) in paths:
+                    writes |= {gi for (gi, _v) in w}
+                    if tr and tr[0] == "EXIT":
+                        exits = True
+        for a in self.em.ts.acqs:
+            if a.room in rooms and item in _own_positive(a.guard):
+                moved.add(a.item)
+        for room, _script, gi, _v, g in self.em.handler_writes:
+            if room in rooms and item in _own_positive(g):
+                writes.add(gi)
+        for room, _script, it, g in self.em.handler_gets:
+            if room in rooms and item in _own_positive(g):
+                moved.add(it)
+        for room, _script, it, g, _dest in getattr(self.em, "handler_drops", ()):
+            if room in rooms and item in _own_positive(g):
+                moved.add(it)
+        cached[key] = (writes, moved, exits)
+        return cached[key]
+
+    def _use_escapes(self, item, pocket):
+        """Does using `item` INSIDE `pocket` do anything the pocket does not contain?
+
+        The conjunct that separates a carry-in from a souvenir. A one-visit pocket is full of
+        things the game lets you do with what you brought, and most of them are flavour: KQ6 lets
+        you play Charon the flute and the mechanical nightingale while you wait for the ferry, and
+        both scripts write nothing, move nothing and go nowhere. Demanding those at the entrance
+        would be inventing a requirement out of a joke.
+
+        Three ways an effect gets out, and each is something the pocket cannot take back:
+          1. it writes a register somebody OUTSIDE reads -- the Styx water, whose flag is what
+             mixes the magic paint that opens the castle's other door;
+          2. it moves an item that is needed outside -- what you bring in buys what you carry out;
+          3. it is a CROSSING. Paying Charon and holding up the mirror go somewhere, and movement
+             you must make is not optional.
+
+        Measured on KQ6's Realm this keeps the teacup, the coin and the mirror and drops the flute,
+        the nightingale and the gauntlet -- the last of which writes a register, but one nothing
+        outside the pocket ever reads, which is why (1) asks WHERE it is read."""
+        writes, moved, exits = self._uses_in(item, pocket)
+        if exits:
+            return "it is a crossing you cannot make later"
+        readers = self._reg_readers()
+        for R in sorted(writes):
+            if readers.get(R, set()) - pocket:
+                return f"it sets reg{R}, which is read outside"
+        for it in sorted(moved):
+            if self.required.get(it, set()) - pocket:
+                return f"it moves {self.g.item_name(it)}, which is needed outside"
+        return None
+
     def _pocket_leavable(self, pocket, Y):
         """Can you exit `pocket` to an outside room WITHOUT owning Y? False only if every
         pocket-exit edge REQUIRES Y in all its alternatives (Y forced, so not missable)."""
@@ -3088,6 +3206,13 @@ class IrSccReach(SccReach):
                 if isinstance(X, tuple):
                     pass                         # a flag toll is one-time by construction
                 else:
+                    if not self.sources.get(X):
+                        continue                 # A TOLL YOU NEVER PICKED UP IS NOT A TOLL. An item
+                        #   with no source anywhere is a CAPTURE GAP, not a one-way spend -- KQ6's
+                        #   pawn-shop trades have no `get:` at all -- and reading one as a paid toll
+                        #   invents a sealed pocket around whatever lies past the edge that mentions
+                        #   it. Everything downstream (the carry-out rows, and the carry-in rows
+                        #   below) is then reasoning about a room the player can walk back into.
                     spent = a in self.drops.get(X, set()) or a in placed.get(X, set())
                     if not spent or a in self.reobtainable_rooms(X):
                         continue                 # not spent here, or spent but re-gettable -> benign
@@ -3118,6 +3243,42 @@ class IrSccReach(SccReach):
                                                    else self.g.item_name(X)),
                                 "toll_edge": [a, b], "pocket": sorted(pocket),
                                 "source_rooms": sorted(srcs)})
+                # ...AND THE OTHER DIRECTION, which is the same fact read the other way round. A
+                # pocket you may enter once strands what you obtain inside and need outside -- and
+                # equally what you must USE inside and can only obtain OUTSIDE. Every conjunct
+                # below is the mirror of one above; the fourth has no mirror because it has no
+                # counterpart in the carry-out case, where merely HOLDING the item on the way out
+                # is the whole requirement.
+                #
+                # KQ6's teacup is the case. Its only source is a room outside the Realm of the
+                # Dead; the Styx water is drawn at rm660, inside; the Realm admits you once
+                # (flag 15, raised on arrival, never cleared); and you may walk in without it. Come
+                # out with an empty cup and the magic paint can never be mixed.
+                for Y in sorted(self.required):
+                    if Y == X or not (self.required.get(Y, set()) & pocket):
+                        continue                 # not used in there
+                    srcs = self.sources.get(Y, set())
+                    if not srcs or (srcs & pocket):
+                        continue                 # no source, or obtainable INSIDE -> fetch it there
+                    if Y in self.edge_demands(a, b):
+                        continue                 # the crossing itself demands it -> forced, not
+                                                 # missable (the mirror of `_pocket_leavable`)
+                    why = self._use_escapes(Y, pocket)
+                    if not why:
+                        continue                 # what it does in there, the pocket keeps
+                    k = ("in", Y, a, b)
+                    if k in seen:
+                        continue
+                    seen.add(k)
+                    out.append({"pattern": "one-visit-pocket-carry-in", "item": Y,
+                                "item_name": self.g.item_name(Y),
+                                "toll_item": None if isinstance(X, tuple) else X,
+                                "toll_item_name": (f"flag{X[1]}" if isinstance(X, tuple)
+                                                   else self.g.item_name(X)),
+                                "toll_edge": [a, b], "pocket": sorted(pocket),
+                                "source_rooms": sorted(srcs),
+                                "need_rooms": sorted(self.required[Y] & pocket),
+                                "why": why})
         return out
 
 
