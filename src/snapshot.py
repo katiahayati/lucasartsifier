@@ -42,7 +42,11 @@ def snapshot(cfg, with_placements=False):
                         for t in s.toll_strandings()),
     }
     specs = G.guard_specs(s)
+    # REFUSED specs are marked, not hidden and not shown as if we emit them. `pipeline.py` prints
+    # them under a REFUSED banner and the patcher skips them, so a snapshot that lists a refused
+    # condition beside a real one claims we guard an edge we deliberately leave alone.
     snap["edge_specs"] = sorted(f"rm{sp['from_room']}->rm{sp['to_room']}: {sp['condition']}"
+                                + (" [REFUSED]" if sp["refused"] else "")
                                 for sp in specs if sp["site"] == "edge")
     snap["gate_specs"] = sorted(f"rm{sp['room']}/{sp['state']}: {sp['condition']}"
                                 for sp in specs if sp["site"] == "gate")

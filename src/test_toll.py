@@ -11,9 +11,10 @@ from guard_ast import Pred
 from scc_core import reachable
 
 PASS, FAIL = [], []
-def check(name, cond):
+def check(name, cond, detail=""):
     (PASS if cond else FAIL).append(name)
-    print(f"  [{'PASS' if cond else 'FAIL'}] {name}")
+    print(f"  [{'PASS' if cond else 'FAIL'}] {name}"
+          + (f"\n      {detail}" if detail and not cond else ""))
 
 
 def _fake(edges, emeta, drops, placed, sources, required, reob, start=0, machines=()):
@@ -216,6 +217,56 @@ def _kq5_cfg():
         start_room=0, goal_rooms=frozenset(), death_signal=(), debug_globals=frozenset())
 
 
+def test_exit_guard_placement():
+    """The register-valued EXIT guard: derived, correctly refusing, and one 🔴 for why.
+
+    USER RULING 2026-07-31: "it should be both; if you go in without the teacup you can't win; if
+    you go out without the water in the teacup you can't win; the exit guard doesn't really subsume
+    the entrance guard." The entrance half ships (`pocket_frontier`). The exit half is built and
+    currently emits NOTHING, which is the safe direction but not the finished one."""
+    import config, guards as G
+    print("\n-- the register-valued exit guard --")
+    if not os.path.exists(config.KQ6.ir_path):
+        print("  (skip: no KQ6 IR)")
+        return
+    s = M.load(cfg=config.KQ6)
+    specs = G.guard_specs(s)
+
+    # THE ENTRANCE GUARD, which is the half that works. The teacup joins the coin, the skull and
+    # the mirror on a guard the game's own boundary already carries.
+    door = next((sp for sp in specs if sp["site"] == "edge"
+                 and (sp["from_room"], sp["to_room"]) == (340, 155)), None)
+    cup = next((i for i in s.required if s.g.item_name(i) == "teaCup"), None)
+    check("the Realm entrance demands the teacup", bool(door) and cup in door["items"]
+          and not door["refused"])
+
+    # A REGISTER can be written back in the game's own spelling. Lowering a flag into a synthetic
+    # global is one-way for the analysis; a patch has to reverse it.
+    water = next((R for R in s.regs if s._reg_cost(R, {1}) == frozenset({cup})), None)
+    check("a lowered flag renders back as the game's own test",
+          water is not None and G.render_register(s, water, 1) is not None)
+
+    # 🔴 AND IT IS NOT PLACED, for a reason that is about the MODEL and not about KQ6. Register
+    # writes are added to each projection UNGUARDED on purpose (`_build_product`: "each projection
+    # stays permissive and can only remove movement the guards actually forbid"). That is right for
+    # finding strandings and fatal here: the walk believes you can re-enter the one-visit pocket
+    # with its own seal still clear, so no crossing ever commits and no placement can be proved
+    # safe. We refuse rather than wall -- but refusing is not closing.
+    #
+    # Turn this green by making the pocket's SEAL non-permissive for this question (the seal is
+    # already derived and carried on the row as `toll_reg`), not by relaxing the placement rule.
+    exits = [sp for sp in specs if sp.get("req") and not sp["refused"]]
+    check("🔴 KNOWN GAP: no exit guard is placed, so the water is demanded nowhere",
+          bool(exits),
+          f"every register-valued spec is refused: "
+          f"{sorted({w for sp in specs if sp.get('req') for w in sp['refused']})}")
+    # ...and the refusal must be LOUD. A guard that vanishes silently is how a half-closed
+    # softlock ships; this is the assertion that keeps the reason in the report.
+    refused = [sp for sp in specs if sp.get("req") and sp["refused"]]
+    check("...and every refusal says why, at a real edge",
+          bool(refused) and all(sp["condition"] and sp["refused"] for sp in refused))
+
+
 def test_ground_truth():
     print("\n-- ground truth (end-to-end) --")
     import config
@@ -240,6 +291,7 @@ if __name__ == "__main__":
     test_toll_logic()
     test_carry_in_logic()
     test_local_latch_is_not_modelled()
+    test_exit_guard_placement()
     test_ground_truth()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))

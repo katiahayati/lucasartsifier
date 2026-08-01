@@ -3083,7 +3083,7 @@ class IrSccReach(SccReach):
         return out
 
     def _uses_in(self, item, rooms):
-        """Everything using `item` in `rooms` does: `(register writes, items moved, exits)`.
+        """Everything using `item` in `rooms` does: `({(reg, value)}, items moved, exits)`.
 
         A use is a machine those rooms arm whose ENTRY presupposes the item -- `_own_positive`,
         the same reading `_build_product` prices a write with -- plus the handler forms of the
@@ -3107,15 +3107,15 @@ class IrSccReach(SccReach):
             moved |= set(info.get("drops", ()))
             for _K, paths in info["states"].items():
                 for (_g, w, _gg, _c, tr) in paths:
-                    writes |= {gi for (gi, _v) in w}
+                    writes |= {(gi, v) for (gi, v) in w}
                     if tr and tr[0] == "EXIT":
                         exits = True
         for a in self.em.ts.acqs:
             if a.room in rooms and item in _own_positive(a.guard):
                 moved.add(a.item)
-        for room, _script, gi, _v, g in self.em.handler_writes:
+        for room, _script, gi, v, g in self.em.handler_writes:
             if room in rooms and item in _own_positive(g):
-                writes.add(gi)
+                writes.add((gi, v))
         for room, _script, it, g in self.em.handler_gets:
             if room in rooms and item in _own_positive(g):
                 moved.add(it)
@@ -3159,7 +3159,8 @@ class IrSccReach(SccReach):
         if exits:
             return "it is a crossing you cannot make later"
         if writes:
-            return f"it sets reg{min(writes)}, and that write outlives the use"
+            R, v = min(writes)
+            return f"it sets reg{R}:={v}, and that write outlives the use"
         for it in sorted(moved):
             if self.required.get(it, set()) - pocket:
                 return f"it moves {self.g.item_name(it)}, which is needed outside"
@@ -3284,6 +3285,11 @@ class IrSccReach(SccReach):
                                 "toll_item": None if isinstance(X, tuple) else X,
                                 "toll_item_name": (f"flag{X[1]}" if isinstance(X, tuple)
                                                    else self.g.item_name(X)),
+                                # the REGISTER that seals the pocket, kept as a number and not only
+                                # as a label: it is what a consumer must put in a joint projection
+                                # to see the pocket as one-visit at all. Without it every walk
+                                # cheerfully re-enters and concludes you can go back for anything.
+                                "toll_reg": X[1] if isinstance(X, tuple) else None,
                                 "toll_edge": [a, b], "pocket": sorted(pocket),
                                 "source_rooms": sorted(srcs),
                                 "need_rooms": sorted(self.required[Y] & pocket),
@@ -3369,7 +3375,13 @@ def load(cfg=None, ir_path=None):
     # too. A no-op on games with no bit-array store -- LSL2/KQ4 have none, so they are untouched.
     flags = V.derive_flags(ir)
     if flags:
-        V.lower_flags(ir, flags[0], flags[1])
+        synth_base = V.lower_flags(ir, flags[0], flags[1])[0]
+        # Keep the mapping back. Lowering is deliberately one-way for the ANALYSIS -- nothing
+        # downstream should know what a "flag" is -- but a PATCH has to be written in the game's
+        # own spelling, and a synthetic register has none. `guards.render_register` reverses it:
+        # register R is flag `R - synth_base`, tested by the proc the derivation already named.
+        ir.flag_synth_base = synth_base
+        ir.flag_test_proc = next((n for n, op in flags[1].items() if op == "test"), None)
     # SECOND flag store: the same bit-in-a-word abstraction kept in an object's PROPERTY words
     # instead of a global array (SCI1.1 regions do this). Lowered to the same synthetic globals,
     # after lower_flags so the two synthetic blocks cannot overlap. Games without it are

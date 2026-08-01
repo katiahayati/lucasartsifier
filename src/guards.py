@@ -325,6 +325,205 @@ def joint_frontier(s):
     return dict(out)
 
 
+def pocket_frontier(s):
+    """Commit edges for the ONE-VISIT-POCKET carry-ins -- the third family `edge_strandings`
+    structurally cannot see, and the simplest of the three to place.
+
+    A carry-in row already names its own boundary. The toll edge IS the frontier: it is the one
+    crossing after which the pocket's use site can never be reached again, which is precisely what
+    made the item strandable. So there is no deep/shallow question to answer as `joint_frontier`
+    has to -- the detector did that work when it derived the pocket.
+
+    KQ6's teacup lands on `rm340 -> rm155`, the Realm entrance, joining the coin and the mirror
+    that are already demanded there. It cannot wall anything: the cup is freely obtainable at rm480
+    before the crossing, which `unsatisfiable` re-checks for every literal anyway.
+
+    LSL2 and KQ4 have no tolls at all, so this returns {} on both and cannot touch their specs."""
+    out = defaultdict(lambda: {"items": set(), "groups": []})
+    for r in s.toll_strandings():
+        if r["pattern"] != "one-visit-pocket-carry-in":
+            continue                          # carry-OUTs are a different placement question: the
+                                              # boundary is the pocket's EXITS, not its entrance
+        a, b = r["toll_edge"]
+        out[(a, b)]["items"].add(r["item"])
+    return dict(out)
+
+
+def render_register(s, R, value):
+    """`R == value` in the game's own spelling, or None if we cannot write it.
+
+    Registers are ours, not the game's: a boolean flag was lowered into a synthetic per-flag global
+    so the gating machinery could model it without knowing what a flag is. A PATCH has to be
+    written back in the game's spelling, so this reverses the lowering using the base and the test
+    proc `vocab.derive_flags` already named. A register that is not a lowered flag -- a real global,
+    an object property -- has no such spelling and returns None rather than a guess."""
+    ir = getattr(s.em, "ir", None)
+    base = getattr(ir, "flag_synth_base", None)
+    proc = getattr(ir, "flag_test_proc", None)
+    if base is None or proc is None or R < base:
+        return None
+    test = f"({proc} {R - base})"
+    return test if value else f"(not {test})"
+
+
+def pocket_exit_guards(s):
+    """Demand, at a one-visit pocket's EXITS, the state you can only reach INSIDE it.
+
+    The other half of a carry-in, and the half that actually closes the softlock. `pocket_frontier`
+    makes you BRING the teacup into the Realm of the Dead; nothing yet makes you FILL it, and the
+    Styx water can only be drawn in there. The user's ruling names both: "if you go in without the
+    teacup you can't win; if you go out without the water in the teacup you can't win."
+
+    ⚠️ AN EXIT GUARD ALONE IS A WALL, and this is why the two are emitted together rather than
+    separately. Refuse to leave until a flag is set, and a player who arrived without the means to
+    set it is sealed in the pocket forever -- a softlock converted into something strictly worse.
+    So the emission precondition is that the ENTRANCE guard demanding what the flag COSTS is going
+    out in the same patch. That is checked, not assumed.
+
+    Three more conditions, each derived and each refusing rather than guessing:
+      * the write must be CONFINED to the pocket -- if you can set it outside, leaving costs
+        nothing;
+      * it must be renderable in the game's spelling (see `render_register`);
+      * and the guard must sit where the player CAN STILL COMPLY. That is the whole placement
+        question and it is the mirror of `droppability_frontier`: a prohibition may only be
+        enforced while the item can still be dropped, so a requirement may only be enforced while
+        the flag can still be set. The frontier is therefore the last crossing after which no
+        writer is reachable -- NOT the pocket's outer boundary.
+
+    KQ6 is the case that forced that distinction, and getting it wrong ships a wall. The Realm's
+    outer boundary is `rm155 -> rm200`, and rm155 is a FUNNEL: its two exits are split by the
+    previous-room register (`155 -> 600` needs `prev == 340`), so a player arriving from rm680 with
+    an empty cup can no longer reach rm660 to fill it. Demanding the flag there would seal them in
+    the transit room. One edge earlier, at `rm680 -> rm155`, they can still walk back through
+    Charon's bank and fill it -- so that is where the guard belongs.
+
+    The reachability question is a JOINT one and cannot be answered per register: the fact that
+    closes rm155 lives in the previous-room register while the flag lives in its own. The joint is
+    self-selecting, exactly as `missability._trap_joints` selects one -- it is R together with the
+    registers the source room's own out-edges are gated on."""
+    entrance = pocket_frontier(s)
+    out = []
+    for r in s.toll_strandings():
+        if r["pattern"] != "one-visit-pocket-carry-in":
+            continue
+        pocket = set(r["pocket"])
+        demanded = entrance.get(tuple(r["toll_edge"]), {}).get("items", set())
+        writes, _moved, _exits = s._uses_in(r["item"], pocket)
+        for (R, v) in sorted(writes):
+            sites = {room for room, vals in s._inroom.get(R, {}).items() if v in vals}
+            sites |= {room for room, steps in s._rstep.get(R, {}).items()
+                      if any(to == v for (_frm, to) in steps)}
+            if not sites or (sites - pocket):
+                continue                      # settable outside -> leaving strands nothing
+            cost, cond = s._reg_cost(R, {v}), render_register(s, R, v)
+            base = []
+            if not cond:
+                base.append(f"reg{R} has no spelling in the game's own source")
+            if not cost:
+                base.append(f"reg{R}:={v} costs no item, so no entrance guard can pair with it")
+            elif not (cost <= demanded):
+                base.append(f"the entrance guard at rm{r['toll_edge'][0]}->rm{r['toll_edge'][1]} "
+                            f"does not demand {[s.g.item_name(i) for i in sorted(cost)]}, so this "
+                            f"would seal a player who arrived without it INTO the pocket")
+            note = (f"the last crossing after which reg{R}={v} can no longer be set -- only "
+                    f"{sorted(sites)} sets it, inside the one-visit pocket {sorted(pocket)}, and "
+                    f"{s.g.item_name(r['item'])} is what pays for it")
+            edges = _settable_frontier(s, R, v, sites, pocket, r.get("toll_reg"))
+            if not edges:
+                # NO PLACEMENT COULD BE JUSTIFIED, and that is reported rather than returned as
+                # silence -- an exit guard vanishing without a word is how a half-closed softlock
+                # ships. Say it at the pocket's outer boundary, which is where a reader will look.
+                a, b = next(iter(sorted({(p, q) for p in pocket for q in s.edges.get(p, ())
+                                         if q not in pocket})), (r["toll_edge"][0],
+                                                                 r["toll_edge"][1]))
+                out.append({"site": "edge", "from_room": a, "to_room": b, "condition": cond,
+                            "items": [], "groups": [], "req": {R: [v]},
+                            "pairs_with": list(r["toll_edge"]), "note": note,
+                            "refused": base + [
+                                f"no crossing commits reg{R}={v}: in-room register writes are "
+                                f"modelled PERMISSIVELY, so the walk believes the pocket can be "
+                                f"re-entered with its own seal still clear and the flag set on a "
+                                f"second visit. Refusing is the safe direction -- placing it "
+                                f"anyway would wall whoever cannot comply where it sits."]})
+                continue
+            for (a, b) in edges:
+                out.append({"site": "edge", "from_room": a, "to_room": b, "condition": cond,
+                            "items": [], "groups": [], "req": {R: [v]},
+                            "pairs_with": list(r["toll_edge"]), "refused": list(base),
+                            "note": note})
+    return out
+
+
+def _settable_frontier(s, R, v, sites, pocket, toll_reg=None):
+    """Edges after which `R == v` can never be reached again, and before which it always can.
+
+    The placement rule for a register-valued guard, and the reason it is not simply "the pocket's
+    exits": enforcing a requirement somewhere the player can no longer satisfy it is a WALL, which
+    this project holds to be worse than the softlock it would close.
+
+    Both halves are demanded, and the second is what rules rm155 out on KQ6:
+      * crossing `a -> b` must LOSE the writer -- no state at b can reach one, or there is nothing
+        to commit to yet;
+      * and EVERY reachable state at `a` that does not already satisfy the guard must still be able
+        to reach a writer, or that state's player is refused an exit they cannot earn.
+
+    Judged in the JOINT projection of R with whatever gates the source rooms' own out-edges, since
+    a funnel room splits its traffic on a register that is not R."""
+    # The pairing register is the PREVIOUS-ROOM one, and it is chosen because of what it does here
+    # rather than because it is convenient: a FUNNEL is a room whose out-edges are split by where
+    # you came from, and a funnel is exactly what makes "I will go back and fill it" false while
+    # every per-register projection still says it is true. Taking every register the pocket's edges
+    # mention instead would blow the joint past what a product can hold; taking only this one is
+    # bounded at two and derived (`prev_room_reg` reads the Game loop, and a model with no IR has
+    # none, so a synthetic emitter falls back to the scalar walk).
+    # THREE registers, and each earns its place by a question the others cannot answer:
+    #   R          -- has the flag been set;
+    #   prevRoom   -- the FUNNEL. A transit room whose out-edges are split by where you came from
+    #                 is what makes "I will go back and fill it" false;
+    #   the TOLL   -- what makes the pocket one-visit AT ALL. Leave this out and the walk strolls
+    #                 back in through the front door and reports that nothing was ever lost. It is
+    #                 the pocket's own sealing register, so the row already carries it; nothing
+    #                 here picks a register by name or number.
+    # Bounded at three, and every member is supplied by the finding rather than searched for.
+    prev = M.prev_room_reg(s.em)
+    split = any(prev in req for p in pocket for q in s.edges.get(p, ())
+                for (req, _sets, _alts) in s._emeta.get((p, q), ()))
+    named = {R}
+    if prev in s.regs and split:
+        named.add(prev)
+    if toll_reg in s.regs:
+        named.add(toll_reg)
+    J = tuple(sorted(named)) if len(named) > 1 else (R,)
+    idx = J.index(R)
+    states = s._walk(J, frozenset()) if len(J) > 1 else s._pstates[R]
+
+    def val(u):
+        return u[1][idx] if len(J) > 1 else u[1]
+    succ = {u: s._psucc(J if len(J) > 1 else R, u, frozenset()) & states for u in states}
+    safe = {u for u in states if u[0] in sites}          # standing where the write can happen
+    changed = True
+    while changed:                                        # ...or able to walk to one
+        changed = False
+        for u in states:
+            if u not in safe and (succ[u] & safe):
+                safe.add(u)
+                changed = True
+    out = []
+    for a in sorted(pocket):                              # the guard belongs to the pocket it
+        #   protects; past its boundary "the writer is unreachable" is true of the whole map and
+        #   says nothing about a commitment.
+        lacking = [u for u in states if u[0] == a and val(u) != v]
+        if not lacking or not all(u in safe for u in lacking):
+            continue                                      # nobody to guard, or somebody here could
+                                                          # not comply -- guarding traps them
+        for b in sorted(s.edges.get(a, ())):
+            after = [w for u in lacking for w in succ[u] if w[0] == b and val(w) != v]
+            if after and not any(w in safe for w in after):
+                out.append((a, b))                        # crossing loses the last writer, and
+                                                          # only for the players who still lack it
+    return out
+
+
 def unsatisfiable(s, a, b, rec):
     """Which parts of this guard CANNOT be satisfied before crossing a->b.
 
@@ -469,12 +668,13 @@ def guard_specs(s):
     # items on a shared commit -- KQ4's whale swallow rm31->44 gets the feather (edge) AND the fish
     # (joint), so one guard demands both before you are swallowed.
     frontier = frontier_guards(s)
-    for (a, b), rec in joint_frontier(s).items():
-        if (a, b) in frontier:
-            frontier[(a, b)] = {"items": set(frontier[(a, b)]["items"]) | rec["items"],
-                                "groups": frontier[(a, b)]["groups"] + rec.get("groups", [])}
-        else:
-            frontier[(a, b)] = rec
+    for src in (joint_frontier(s), pocket_frontier(s)):
+        for (a, b), rec in src.items():
+            if (a, b) in frontier:
+                frontier[(a, b)] = {"items": set(frontier[(a, b)]["items"]) | rec["items"],
+                                    "groups": frontier[(a, b)]["groups"] + rec.get("groups", [])}
+            else:
+                frontier[(a, b)] = rec
     for (a, b), rec in sorted(frontier.items()):
         # Drop the literals that cannot be held AT this edge before asking whether the rest is
         # satisfiable -- demanding one of those does not close a softlock, it walls the route.
@@ -500,6 +700,11 @@ def guard_specs(s):
             # deliberately emit nothing", and every reporting path prints it.
             sp["refused"] = [sp["dropped_why"] + " -- nothing left to demand at this edge"]
         specs.append(sp)
+    # ...and the REGISTER-valued half of a one-visit pocket: bringing the teacup in is one guard,
+    # having filled it on the way out is the other. Appended after the frontier specs because it
+    # READS them -- an exit guard may only ship alongside the entrance guard that makes it
+    # satisfiable, which `pocket_exit_guards` checks against `pocket_frontier`.
+    specs.extend(pocket_exit_guards(s))
     for gt in survival_gates(s):
         cp, cn, rest = factor(gt["alts"])
         pos_spec = render(cp, set(), rest)
@@ -557,6 +762,13 @@ def apply_guards(s, specs):
             base = [a | req for a in (alts or (frozenset(),))]
             for g in sp.get("groups", []):
                 base = [b | {m} for b in base for m in g]
+            # A REGISTER-valued guard conjoins onto the edge's register requirement rather than its
+            # item alternatives -- otherwise the one guard that closes a pocket carry-in would be
+            # invisible to `verify`, which is the pass that exists to catch a guard creating a new
+            # softlock. Intersect where the edge already constrains the same register: both hold.
+            rq = dict(rq)
+            for R, vals in (sp.get("req") or {}).items():
+                rq[R] = (rq[R] & set(vals)) if R in rq else set(vals)
             out.append((rq, sets, tuple(base)))
         s._emeta[key] = out
     s._reob.clear(); s._rw.clear(); s._after.clear(); s._avoid.clear()
