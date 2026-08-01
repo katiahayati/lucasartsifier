@@ -191,8 +191,17 @@ def test_local_latch_is_not_modelled():
     whose use touched a local and nothing else would be dropped outright. This is the third
     recorded instance of the same gap (`liftTapestry`'s L1, `huntersLamp`'s rm520 `doit`).
 
-    Turn this green by making a use that writes a local READ BY a guard on the pocket's exit
-    escape, not by deleting the case."""
+    ⚠️ THIS IS A MARKER, NOT A TEST OF THE THING IT NAMES, and saying so is the point. Its
+    fixture is IDENTICAL to the passing `a use that does nothing the pocket keeps is not a
+    requirement` above -- a machine that writes no register, moves nothing and goes nowhere --
+    because our machine model has no way to express "writes a room local" at all. So the two
+    assert opposite verdicts on the same input, and this one is the half that must fail.
+
+    That also means it CANNOT flip when the gap closes: there is nothing here to start passing.
+    Closing the gap means giving the machine model a room-local representation FIRST; at that
+    point this fixture gets rebuilt around a real local and the marker becomes a test. Until
+    then it exists so the gap is impossible to forget, and so no passing test claims we handle
+    it. Do not delete it, and do not make it green by weakening the assertion."""
     print("\n-- 🔴 RED: a room-local latch gating the pocket's exit --")
     b = _carry_in(machines=[_machine(2, _own(8))])       # writes no REGISTER, only (notionally) a
     #   local; our machine model has no way to say that, so this stands in for it: the effect the
@@ -290,11 +299,47 @@ def test_ground_truth():
           all(r["toll_item_name"] == "Staff" and r["toll_edge"] == [214, 18] for r in rows))
 
 
+def test_register_strandings_is_degenerate_on_sci11():
+    """🔴 DELIBERATELY RED -- `register_strandings` emits nonsense on SCI1.1 and nothing reads it.
+
+    Two separate problems that keep each other alive, which is why this is pinned rather than
+    left to be rediscovered:
+
+      * NOTHING CONSUMES IT. No golden, no oracle, no pipeline stage. A detector whose verdicts
+        reach no consumer cannot regress, so it can rot indefinitely -- exactly the hole
+        `toll_strandings` sat in until it was put on the snapshot surface.
+      * IT IS BROKEN HERE. Its point-of-no-return test now sees `prevRoom` (reg12), which every
+        room transition writes, and reads each value as an irreversible plot advance. Measured on
+        KQ6: 323 rows over 21 registers, the same handful of items repeated per room value.
+
+    Turn this green by giving the flip test a notion of which registers are PLOT STATE. Do NOT
+    turn it green with a filter that names prevRoom -- that is this bug with a lid on, and the
+    row count would still be wrong for every other transient register in the list.
+
+    Asserts the SHAPE (prevRoom is among the registers reported, and the output is absurdly
+    large), not a row count, so it stays meaningful as the model moves."""
+    print("\n-- 🔴 RED: register_strandings on SCI1.1 --")
+    import os
+    import config
+    if not (config.KQ6.ir_path and os.path.exists(config.KQ6.ir_path)):
+        print("  [SKIP] no KQ6 IR")
+        return
+    s = M.load(cfg=config.KQ6)
+    rows = s.register_strandings()
+    regs = {r["register"] for r in rows}
+    prev = M.prev_room_reg(s.em)
+    check("🔴 KNOWN GAP: register_strandings reports prevRoom flips as points of no return",
+          not (prev in regs and len(rows) > 50),
+          f"{len(rows)} rows over {len(regs)} registers; prevRoom is reg{prev} and it is "
+          f"{'IN' if prev in regs else 'not in'} the reported set. See the detector's docstring.")
+
+
 if __name__ == "__main__":
     test_toll_logic()
     test_carry_in_logic()
     test_local_latch_is_not_modelled()
     test_exit_guard_placement()
+    test_register_strandings_is_degenerate_on_sci11()
     test_ground_truth()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))

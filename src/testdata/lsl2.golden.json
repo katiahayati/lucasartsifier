@@ -1,4 +1,14 @@
 {
+  "dangerous": [
+    "Airsick_Bag@rm61->1 rooms",
+    "Airsick_Bag@rm62->1 rooms",
+    "Airsick_Bag@rm63->1 rooms",
+    "Hair_Rejuvenator@rm58->1 rooms",
+    "Hair_Rejuvenator@rm63->1 rooms",
+    "Hair_Rejuvenator@rm81->1 rooms",
+    "Matches@rm11->2 rooms",
+    "Parachute@rm58->1 rooms"
+  ],
   "death_signal": [
     101,
     1001
@@ -17,6 +27,7 @@
     "rm79->rm80: (or (gEgo has: 30) (gEgo has: 31))"
   ],
   "exhaustion": [],
+  "fatal_uses": [],
   "gate_specs": [
     "rm138/6: (or (and (gEgo has: 11) (not (gEgo has: 13))) (and (gEgo has: 12) (not (gEgo has: 13))) (gEgo has: 8))",
     "rm70/0: (gEgo has: 17)",

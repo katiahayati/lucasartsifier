@@ -2505,6 +2505,27 @@ class IrSccReach(SccReach):
     def register_strandings(self):
         """Softlocks caused by a REGISTER flipping, not by walking through a one-way door.
 
+        ⚠️ READ THIS BEFORE TRUSTING A ROW. Two facts about its standing today (2026-07-31):
+
+        NO PRODUCTION PATH READS IT. Not `snapshot.py`, not `pipeline.py`, not the KQ4 oracle,
+        not the KQ6 oracle. Its only consumer is `test_scopes` Part 7, on LSL2. So its verdicts
+        go nowhere, which also means no golden and no oracle can notice them changing -- the same
+        blind spot `toll_strandings` sat in until it was added to the snapshot surface.
+
+        AND IT IS DEGENERATE ON SCI1.1. Measured on KQ6: **323 rows across 21 registers**,
+        reporting the same 7-8 items over and over. The root cause is that its "point of no
+        return" test now sees registers it was never designed for -- above all reg12, `prevRoom`,
+        which every single room transition writes. "prevRoom flips to 180, so the flip is
+        irreversible and everything sourced earlier is stranded" is emitted once per room value,
+        and it is nonsense: prevRoom is not a plot flag, it is the room you just left. The
+        detector predates prevRoom being modelled at all (see `prevroom-is-the-realm-seal`) and
+        has never been revisited since.
+
+        The LSL2 behaviour below is still meaningful and still tested; the SCI1.1 behaviour is
+        pinned RED in `test_toll.test_register_strandings_is_degenerate_on_sci11` so it cannot be
+        forgotten. Fixing it means giving the flip test a notion of which registers are PLOT
+        state -- not a filter naming prevRoom, which would just be this bug with a lid on.
+
         The second class in the taxonomy, and one `edge_strandings` structurally cannot see: it
         reasons about crossing an edge, and here nothing is crossed. A plot flag advances -- you
         finish Lolotte's first errand, the sun goes down -- and a region that was open closes

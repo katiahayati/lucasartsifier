@@ -20,12 +20,28 @@ import guards as G
 
 def snapshot(cfg, with_placements=False):
     s = M.load(cfg=cfg)
-    # `toll_strandings` is in here because for a long time it was NOT, and nothing watched it: four
-    # KQ6 rows existed with no golden, no oracle and no diff able to notice one appearing or
-    # vanishing. It is a detector like any other and its verdicts are verdicts.
+    # EVERY DETECTOR THAT PRODUCES A VERDICT BELONGS IN HERE, and the reason is that each one
+    # added late was, until it was added, emitting into the dark: `toll_strandings` had four KQ6
+    # rows with no golden, no oracle and no diff able to notice one appearing or vanishing.
+    #
+    # ⚠️ THERE ARE THREE DEFINITIONS OF "CAUGHT" IN THIS CODEBASE and they are not the same set:
+    #     this file            -- the FROZEN surface, and the only one that is a regression net
+    #     test_kq4_ground_truth -- analyze | joint | exhaustion | dangerous_sinks | register_flip
+    #     test_kq6_ground_truth -- the above, plus fatal_uses and toll
+    # The oracles are per-game verdict lists and may legitimately differ; THIS one may not be the
+    # narrowest of the three, because a detector outside it cannot move any golden. That is what
+    # `dangerous_sinks` and `fatal_uses` were until 2026-07-31 -- both carry real LSL2 and KQ6
+    # verdicts (the rejuvenator sinks; KQ6's mint, peppermint and skull) and neither was frozen
+    # anywhere. Adding a detector? Add it here too, or it is not watched.
+    #
+    # `register_strandings` is DELIBERATELY still absent: it is degenerate on SCI1.1 and read by
+    # nothing, and freezing 323 junk rows would pin the breakage rather than reveal it. It is
+    # pinned RED instead -- see its docstring and test_toll.
     items = sorted({c["item"] for c in s.analyze()} | {j["item"] for j in s.joint_strandings()}
                    | {r["item"] for r in s.register_flip_strandings()}
-                   | {t["item"] for t in s.toll_strandings()})
+                   | {t["item"] for t in s.toll_strandings()}
+                   | {d["item"] for d in s.dangerous_sinks()}
+                   | {f["item"] for f in s.fatal_uses()})
     snap = {
         "start_room": s.em.cfg.start_room,
         "goal_rooms": sorted(s.em.cfg.goal_rooms),
@@ -40,6 +56,21 @@ def snapshot(cfg, with_placements=False):
         "tolls": sorted(f"{t['item_name']}@{t['pattern']}"
                         f"/rm{t['toll_edge'][0]}->rm{t['toll_edge'][1]}"
                         for t in s.toll_strandings()),
+        # The dangerous ACTIONS. Keyed by the WITNESS room rather than the room the clause was
+        # found in: a Main-scope sink is attributed to pseudo-room 0 and `_sink_rooms` widens it
+        # to every room, so `at_room` is the first place the consumption actually costs you the
+        # game -- which is the fact worth freezing.
+        #
+        # `still_needed_at` is frozen as a COUNT, not a list. The identity of the finding is
+        # (item, witness room); where it is still needed is derived from the room graph, and for
+        # a Main-scope sink it is most of the game -- KQ4's Magic_Fruit lists 96 rooms. Pinning
+        # those numbers would churn this golden on any room-graph change, which `edge_specs`
+        # already tracks properly, and would bury the signal that actually matters here: a
+        # dangerous action appearing or disappearing.
+        "dangerous": sorted(f"{s.g.item_name(d['item'])}@rm{d['at_room']}"
+                            f"->{len(d['still_needed_at'])} rooms" for d in s.dangerous_sinks()),
+        "fatal_uses": sorted(f"{s.g.item_name(f['item'])}@rm{f['room']}/{f['machine']}"
+                             for f in s.fatal_uses()),
     }
     specs = G.guard_specs(s)
     # REFUSED specs are marked, not hidden and not shown as if we emit them. `pipeline.py` prints
@@ -53,10 +84,11 @@ def snapshot(cfg, with_placements=False):
     snap["sinks"] = sorted(f"{s.g.item_name(sk['item'])} dest={sk.get('dest')} "
                            f"refused={bool(sk['refused'])}" for sk in G.sink_remedies(s))
     if with_placements:
-        import os
+        import tempfile
         import patcher as P
-        dest = "/tmp/claude-1001/-home-hayati-coding-sierra-softlock/" \
-               "cb80156b-500f-4df2-9e56-07e29b8b3ced/scratchpad/_snap_" + cfg.name[:4]
+        # A scratch project the patcher can assemble into. Was a hardcoded absolute path into one
+        # session's scratch directory, which stopped existing the moment that session ended.
+        dest = tempfile.mkdtemp(prefix="snap_" + cfg.name[:4].replace(" ", "_") + "_")
         sinks = G.sink_remedies(s)
         P.configure(s.em.ir)
         nums = P.assemble(dest, cfg)
