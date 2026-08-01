@@ -241,16 +241,3 @@ def _room_exits(em, room):
             yield e
 
 
-def _room_guards(em, room):
-    """Every guard associated with `room`: its exits and its machines' state/entry guards -- where
-    a drown death's `counter == bound` compare lives."""
-    for e in _room_exits(em, room):
-        yield e.guard
-    for info in em.machines:
-        if info.get("room") != room:
-            continue
-        for K, paths in info["states"].items():
-            for (g, w, gg, c, tr) in paths:
-                yield g
-        for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
-            yield eg

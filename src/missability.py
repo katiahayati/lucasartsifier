@@ -551,7 +551,7 @@ def gating_registers(em):
     # paint) is written by the inventory `doVerb` and nowhere else, so without this it can never
     # be promoted and the castle's long door reads as free. See opmodel.global_machines for why
     # that scope is kept out of `machines` everywhere else.
-    for info in em.machines + list(getattr(em, "global_machines", ())):
+    for info in all_machines(em):
         for K, paths in info["states"].items():
             for (g, w, gg, c, tr) in paths:
                 for (gi, v) in w:
@@ -565,6 +565,21 @@ def gating_registers(em):
     if prev is not None:
         written.add(prev)
     return sorted(compared & written)
+
+
+def all_machines(em):
+    """Room machines PLUS the always-live scopes' -- for the three consumers that want both.
+
+    EVERYTHING ELSE TAKES `em.machines` ALONE, DELIBERATELY. A machine the icon bar dispatches has
+    no place, and almost everything `machines` feeds is a claim about a place (`required`,
+    `sources`/`drops`, EXIT, `death_traps` -- each measured, each broken by lifting it). Only the
+    register build wants both lists, because "you can make flag 22 true here, at this cost" IS
+    true in every room. See `opmodel.global_machines` for the argument in full.
+
+    Written once so the exception is stated once instead of at each call site, and so the
+    defensive `getattr` -- which exists for the duck-typed emitters the unit tests build, not for
+    the real one -- lives in one place rather than three."""
+    return list(em.machines) + list(getattr(em, "global_machines", ()))
 
 
 def prev_room_reg(em):
@@ -1672,7 +1687,7 @@ class IrSccReach(SccReach):
         # ...and here, the one consumer an always-live scope is lifted FOR: what its action makes
         # true, and what that costs. `cheapest` below is where "mixing the paint costs the Styx
         # water" enters the model.
-        for info in em.machines + list(getattr(em, "global_machines", ())):
+        for info in all_machines(em):
             entries = list(info.get("entries", ())) + list(info.get("init_entries", ()))
             emust = entry_musts(info)
             gates = {}
@@ -1846,7 +1861,7 @@ class IrSccReach(SccReach):
         # "effects AND THEIR COSTS"; a cost that cannot propagate along a chain is not the second
         # half of it. Inert on SCO0 titles, whose items live in script 0 and which therefore have
         # no global machines at all.
-        for info in self.em.machines + list(getattr(self.em, "global_machines", ())):
+        for info in all_machines(self.em):
             sm = state_musts(info, self.regs)
             # ...and what ARMING the machine established. `state_musts` walks the machine's own
             # transitions and seeds each entry with nothing, so a decision made in the ENTRY GUARD
@@ -2315,7 +2330,21 @@ class IrSccReach(SccReach):
     def _groups(self):
         return {frozenset(g) for gs in self.disjunctive_groups().values() for g in gs}
 
-    GLOBAL_SCRIPTS = frozenset({0})   # Main: its handleEvent runs in EVERY room
+    # Main: its handleEvent runs in EVERY room. Hardcoded, and legitimately so -- script 0 IS
+    # Main in every SCI dialect, which is a fact about the format rather than about a game.
+    #
+    # ⚠️ THERE ARE TWO NOTIONS OF "ALWAYS-LIVE SCOPE" IN THIS CODEBASE AND THIS IS THE OLDER ONE.
+    # The other is `opmodel.global_homed`, DERIVED from the item class table
+    # (`vocab.inventory_scripts`), which covers SCI1's icon bar -- on KQ6 that is scripts
+    # {84, 90, 96, 97, 101, 907, 915}. The two do not intersect and neither consults the other:
+    #   * this one homes a scope's sinks to every room (`_sink_rooms` below) but is only ever
+    #     script 0, so it says nothing about the icon bar;
+    #   * `global_homed` homes its scope's REGISTER effects everywhere and deliberately drops its
+    #     item transfers entirely, so no sink from it ever reaches `_sink_rooms` to begin with.
+    # That is why the gap is currently inert rather than wrong. Unifying them is a REAL change
+    # (an icon-bar sink would become visible for the first time) and is deliberately not part of
+    # the cleanup pass -- see docs/KQ6-STATUS.md, known inconsistencies.
+    GLOBAL_SCRIPTS = frozenset({0})
 
     def _sink_rooms(self, sk):
         """Rooms a consumption can actually happen in.
@@ -3036,50 +3065,6 @@ class IrSccReach(SccReach):
                             "item_name": self.g.item_name(it), "register": R,
                             "trap": info["trap"], "reset_rooms": info["reset_rooms"],
                             "source_rooms": sorted(srcs), "doors": sorted(doors)})
-        return out
-
-    def _reg_readers(self):
-        """`register -> rooms whose code READS it`. Cached; one sweep over every guard we hold.
-
-        A MENTION, not a necessary requirement: the question this answers is "does anything out
-        there care what this register says", and a register named in one arm of a disjunction is
-        still being consulted. `_cmp_atoms` is the flat comparison-atom collector the promotion
-        machinery already reads guards with.
-
-        The always-live scopes are swept too, and homed as they are lifted -- to every room. That
-        is not a technicality: KQ6's Styx-water flag has exactly ONE reader in the whole game, the
-        inventory action that mixes the magic paint, and the icon bar dispatches it everywhere.
-        Leave the global machines out and the flag looks like something nothing consults."""
-        if getattr(self, "_readers", None) is not None:
-            return self._readers
-        out = defaultdict(set)
-
-        def note(guard, room):
-            atoms = []
-            _cmp_atoms(guard, atoms)
-            for (R, _op, _const, _pol) in atoms:
-                out[R].add(room)
-        for (a, _b), metas in self._emeta.items():
-            for (req, _sets, _alts) in metas:
-                for R in req:
-                    out[R].add(a)
-        for e in list(self.em.ts.edges) + list(self.em.ts.cs_edges):
-            note(e.guard, e.src)
-        for a in self.em.ts.acqs:
-            note(a.guard, a.room)
-        for room, _script, _it, g in self.em.handler_gets:
-            note(g, room)
-        for room, _script, _gi, _v, g in self.em.handler_writes:
-            note(g, room)
-        for room, _script, _it, g, _dest in getattr(self.em, "handler_drops", ()):
-            note(g, room)
-        for info in self.em.machines + list(getattr(self.em, "global_machines", ())):
-            for _K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
-                note(eg, info["room"])
-            for _K, paths in info["states"].items():
-                for (g, _w, _gg, _c, _tr) in paths:
-                    note(g, info["room"])
-        self._readers = out
         return out
 
     def _uses_in(self, item, rooms):

@@ -28,7 +28,7 @@ def _fake(edges, emeta, drops, placed, sources, required, reob, start=0, machine
     f.reach_rooms = reachable(edges, {start})
     f._reob = reob
     f.reobtainable_rooms = lambda X, _f=f: _f._reob.get(X, set())
-    for name in ("_pocket_leavable", "edge_demands", "_reg_readers", "_uses_in", "_use_escapes"):
+    for name in ("_pocket_leavable", "edge_demands", "_uses_in", "_use_escapes"):
         setattr(f, name, (lambda _n: lambda *a, _f=f: getattr(M.IrSccReach, _n)(_f, *a))(name))
     f.em = types.SimpleNamespace(
         cfg=types.SimpleNamespace(start_room=start),
@@ -48,7 +48,7 @@ def _cmp(reg):
 
 
 def _machine(room, entry_guard, writes=(), exits=None, drops=()):
-    """The minimum a machine info needs for `_uses_in` and `_reg_readers` to read it."""
+    """The minimum a machine info needs for `_uses_in` to read it."""
     return {"room": room, "inst": f"m{room}", "entries": [(0, entry_guard)],
             "init_entries": [], "drops": tuple(drops),
             "states": {0: [(None, tuple(writes), None, (),
@@ -203,8 +203,11 @@ def test_local_latch_is_not_modelled():
 
 
 def _kq5_cfg():
+    """KQ5 has no entry in `config`, so build one -- repo-relative, like `config` itself does.
+    Returns None when the KQ5 build is absent, and the caller skips."""
     import config
-    ird = "/home/hayati/coding/sierra_softlock/build/kq5/ir"
+    ird = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       "build", "kq5", "ir")
     if not os.path.isdir(ird):
         return None
     irs = [f for f in os.listdir(ird) if f.endswith(".ir.json")]
@@ -213,7 +216,7 @@ def _kq5_cfg():
     return dataclasses.replace(
         config.LSL2, name="King's Quest V",
         src_dir=os.path.join(ird, "src"), ir_path=os.path.join(ird, irs[0]),
-        resource_dir="/home/hayati/sierra/Games/Kings Quest 5",
+        resource_dir=os.path.expanduser("~/sierra/Games/Kings Quest 5"),
         start_room=0, goal_rooms=frozenset(), death_signal=(), debug_globals=frozenset())
 
 

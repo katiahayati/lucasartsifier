@@ -71,11 +71,6 @@ class _Lexer:
         self.i = 0
         self.filename = filename
 
-    def _pos(self) -> str:
-        line = self.s.count("\n", 0, self.i) + 1
-        col = self.i - (self.s.rfind("\n", 0, self.i))
-        return f"{self.filename}:{line}:{col}"
-
     def tokens(self):
         s, n = self.s, self.n
         while self.i < n:

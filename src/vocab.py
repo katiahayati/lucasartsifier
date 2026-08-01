@@ -641,54 +641,6 @@ def derive_death_send(ir):
     return out
 
 
-def lower_death_sends(ir, sites, death_value=1):
-    """Inject a synthetic death-flag write into each death dialog's `changeState` so that RUNNING the
-    script means death, regardless of how it was armed. The write goes into state 0 (the entry), so
-    the machine lift reads the machine as fatal from its start. Synthetic global one past the highest,
-    exactly as `lower_death_procs`. Returns (synth_index, count)."""
-    max_gi = 0
-    for s in ir.scripts.values():
-        bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
-        for body in bodies:
-            for n in I.walk(body):
-                if I.is_global(n):
-                    max_gi = max(max_gi, n["index"])
-    synth = max_gi + 1
-
-    def write():
-        return {"t": "Assignment", "kids": [
-            {"t": "Variable", "vtype": "Global", "index": synth},
-            {"t": "Number", "value": death_value}]}
-
-    n = 0
-    for (script_num, obj_name) in sites:
-        obj = ir.scripts[script_num].by_name.get(obj_name)
-        cs = obj.methods.get("changeState") if obj else None
-        if cs is None:
-            continue
-        injected = False
-        for node in I.walk(cs):
-            if node.get("t") != "Switch":
-                continue
-            for c in (node.get("kids") or [])[1:]:
-                ck = c.get("kids") or []
-                if c.get("t") == "Case" and ck and I.as_int(ck[0]) == 0 and len(ck) > 1:
-                    body0 = ck[1]
-                    if body0.get("t") == "List":
-                        body0.setdefault("kids", []).insert(0, write())
-                    else:
-                        ck[1] = {"t": "List", "kids": [write(), body0]}
-                    injected = True
-            break
-        if not injected:                               # no state-0 case: run on every entry
-            old = dict(cs)
-            cs.clear()
-            cs["t"] = "List"
-            cs["kids"] = [write(), old]
-        n += 1
-    return synth, n
-
-
 def is_sci11(ir):
     """Is this a SCI1.1 (heap-format) game? Instances carry the 0xffff species sentinel with the
     class species in `super`, where SCO0 and SCI1 put the class species directly in `species`. Same

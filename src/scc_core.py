@@ -85,15 +85,6 @@ def reachable(edges, start_set):
 
 
 class SccReach:
-    def comp_reach_source(self, item):
-        """comps from which item is still obtainable (this comp or a downstream one)."""
-        srcs = {self.comp_of[r] for r in self.sources.get(item, set()) if r in self.comp_of}
-        out = set()
-        for c in range(len(self.comps)):
-            if self.creach[c] & srcs:
-                out.add(c)
-        return out
-
     def _unit_need_rooms(self, u):
         """Rooms a requirement UNIT is faced in. Plain union here; the gate-aware subclass
         additionally stops a SINGLE item from counting a room its disjunctive group covers."""
