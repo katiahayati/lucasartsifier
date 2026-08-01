@@ -53,6 +53,30 @@ KNOWN_RED = {
             "reads it, which is why it could rot unnoticed. Fix = a notion of PLOT-state "
             "registers, not a filter naming prevRoom.",
     },
+    # THE ROAD TO A PATCHED KQ6. Each of these turns green when its phase lands, and that is the
+    # only mechanism that will notice -- a plan document goes stale in silence. Phases are in
+    # the approved plan; derivations in docs/SCI11-PATCHING-PLAN.md.
+    "test_sci11_patch.py": {
+        "🔴 KNOWN GAP: the refusal primitive is derived per game, not a module constant":
+            "PHASE 2. patcher.REFUSE is LSL2's print call hardcoded; KQ6's proc255_0 is an "
+            "unrelated boolean. Derive 'how does this game display a literal line?' per game, "
+            "and refuse to emit a refusal-bearing guard when it cannot be derived.",
+        "🔴 KNOWN GAP: a fatal use produces a remedy spec":
+            "PHASE 5. guard_specs does not consume fatal_uses, so KQ6's skull-in-the-gears is "
+            "flagged and nothing would stop the player doing it. Needs an `action` spec kind.",
+        "🔴 KNOWN GAP (KQ6): every non-refused spec places":
+            "PHASE 4 (and PHASE 3). 6 of 18 place. EIGHT of the twelve skips are the catacombs "
+            "rm*->rm420 edges, which Phase 3's obtainability_frontier DELETES rather than "
+            "places -- they are currently walls. The real placement backlog is four: the lamp "
+            "sink's spelling (§4) and three catacombs-entrance edges (§5.1, §5.2).",
+        "🔴 KNOWN GAP (dagger): every non-refused spec places":
+            "PHASE 4. 2 of 4 place, and the two that DO are 24-item guards placed as arm-event, "
+            "i.e. events that would never fire -- so Dagger is worse off than the count "
+            "suggests and Phase 3's §6.1 is what fixes it.",
+        "🔴 KNOWN GAP: every KQ6 finding is closed by a guard":
+            "PHASE 5. remaining=[handkerchief, nightingale, skeletonKey] + 4 refused exit "
+            "guards. While red, `pipeline --report` exits 1 on KQ6.",
+    },
 }
 
 CHECK = re.compile(r"^\s*\[(PASS|FAIL)\]\s*(.*?)\s*$")

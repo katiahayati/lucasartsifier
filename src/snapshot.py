@@ -84,27 +84,44 @@ def snapshot(cfg, with_placements=False):
     snap["sinks"] = sorted(f"{s.g.item_name(sk['item'])} dest={sk.get('dest')} "
                            f"refused={bool(sk['refused'])}" for sk in G.sink_remedies(s))
     if with_placements:
+        # THE OTHER HALF OF THE SURFACE. A spec is a claim; a PLACEMENT is whether the patcher
+        # could act on it, and the two move independently -- a correct spec that lands nowhere
+        # ships nothing, and the only record of that has been a tool's stdout.
+        #
+        # The SKIP REASON is frozen alongside the flag, because "it did not place" and "it did not
+        # place FOR A DIFFERENT REASON THAN LAST WEEK" are different facts and only the second one
+        # tells you a seam moved.
+        import shutil
         import tempfile
         import patcher as P
-        # A scratch project the patcher can assemble into. Was a hardcoded absolute path into one
-        # session's scratch directory, which stopped existing the moment that session ended.
         dest = tempfile.mkdtemp(prefix="snap_" + cfg.name[:4].replace(" ", "_") + "_")
-        sinks = G.sink_remedies(s)
-        P.configure(s.em.ir)
-        nums = P.assemble(dest, cfg)
-        titles = {n: t for t, n in nums.items()}
-        edits = P.apply_sink_remedies(dest, sinks, titles)
-        gedits = P.apply_guards(dest, specs, titles, nums, s_drops=lambda it: s.drops.get(it, set()))
-        snap["placements"] = sorted(
-            f"{e.get('title') or ('rm%s->rm%s' % (e.get('from_room'), e.get('to_room')))}: "
-            f"applied={e['applied']} kind={e.get('placement', {}).get('kind')}"
-            for e in edits + gedits)
+        try:
+            sinks = G.sink_remedies(s)
+            P.configure(s.em.ir)
+            nums = P.assemble(dest, cfg)
+            titles = {n: t for t, n in nums.items()}
+            edits = P.apply_sink_remedies(dest, sinks, titles)
+            gedits = P.apply_guards(dest, specs, titles, nums,
+                                    s_drops=lambda it: s.drops.get(it, set()))
+            snap["placements"] = sorted(
+                # The ITEM is in the key because a sink edit is identified by (script, item) and
+                # three of LSL2's land in Main -- without it they are three identical strings and
+                # a regression in one of them cannot be told from a regression in another.
+                f"{e.get('title') or ('rm%s->rm%s' % (e.get('from_room'), e.get('to_room')))}"
+                + (f"/{s.g.item_name(e['item'])}" if e.get("item") is not None else "")
+                + f": applied={e['applied']} kind={e.get('placement', {}).get('kind')}"
+                + (f" why={e['why']}" if not e["applied"] and e.get("why") else "")
+                for e in edits + gedits)
+        finally:
+            shutil.rmtree(dest, ignore_errors=True)   # a fresh project per run, not per session
     return snap
 
 
 def main():
     name = sys.argv[1] if len(sys.argv) > 1 else "LSL2"
-    cfg = getattr(config, name)
+    cfg = config.by_name(name)      # LSL2/KQ4/KQ6, or any build/sweep/<name> title
+    if cfg is None:
+        raise SystemExit(f"no such game: {name} (and no IR under build/sweep/{name})")
     overrides = {}
     if "--start" in sys.argv:
         overrides["start_room"] = int(sys.argv[sys.argv.index("--start") + 1])

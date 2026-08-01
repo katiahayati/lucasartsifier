@@ -142,6 +142,37 @@ KQ6 = GameConfig(
     debug_globals=frozenset(),
 )
 
+def sweep_config(name):
+    """A GameConfig for any decompiled game under `build/sweep/<name>/` -- PATHS ONLY, with every
+    anchor left blank so the derivations run.
+
+    Lets a caller reach a title this file does not name (the Dagger of Amon Ra, Camelot, ...)
+    without hand-rolling a config per game, which is how the same four lines came to be copied
+    into every tool that wanted a second title. It lives HERE rather than in a tool because a
+    GameConfig is what this module is for, and because two callers now need it (`snapshot.py`,
+    `tools/measure_specs.py`) -- see [[same-rule-two-places]].
+
+    The title comes from the IR filename, and the resource directory from the title, because that
+    is the layout `build.sh` produces; a game whose resources sit elsewhere wants a real entry
+    above, not this."""
+    import glob
+    d = os.path.join(_ROOT, "build", "sweep", name)
+    irs = sorted(glob.glob(os.path.join(d, "*.ir.json")))
+    if not irs:
+        return None
+    title = os.path.basename(irs[0])[:-len(".ir.json")]
+    return GameConfig(name=title, src_dir=os.path.join(d, "src"), ir_path=irs[0],
+                      resource_dir=os.path.expanduser(os.path.join("~", "sierra", "Games", title)),
+                      start_room=0, goal_rooms=frozenset(),
+                      death_signal=(), debug_globals=frozenset())
+
+
+def by_name(name):
+    """A named config (`LSL2`, `KQ4`, `KQ6`) or a swept one (`dagger`, `camelot`, ...)."""
+    return globals().get(name) if isinstance(globals().get(name), GameConfig) \
+        else sweep_config(name)
+
+
 # The config the pipeline runs against. Swap this (or set it from run.py) to target
 # a different game.
 ACTIVE = LSL2

@@ -67,25 +67,11 @@ def run(cfg):
     return out, s, specs
 
 
-def sweep_config(name):
-    """A GameConfig for any decompiled game under build/sweep/<name>/ -- paths only, every
-    anchor left blank so the derivations run. Lets this tool reach a title config.py does not
-    name (Dagger, Camelot, ...) without hand-rolling a config per game."""
-    import glob
-    d = os.path.join(_ROOT, "build", "sweep", name)
-    irs = glob.glob(os.path.join(d, "*.ir.json"))
-    if not irs:
-        raise SystemExit("no IR under %s" % d)
-    title = os.path.basename(irs[0])[:-len(".ir.json")]
-    res = os.path.expanduser(os.path.join("~", "sierra", "Games", title))
-    return config.GameConfig(name=title, src_dir=os.path.join(d, "src"), ir_path=irs[0],
-                             resource_dir=res, start_room=0, goal_rooms=frozenset(),
-                             death_signal=(), debug_globals=frozenset())
-
-
 def main():
     which = sys.argv[1] if len(sys.argv) > 1 else "KQ6"
-    cfg = getattr(config, which, None) or sweep_config(which)
+    cfg = config.by_name(which)      # moved into config.py; snapshot.py needs it too
+    if cfg is None:
+        raise SystemExit("no such game: %s (and no IR under build/sweep/%s)" % (which, which))
     out, s, specs = run(cfg)
     dest = os.path.join(OUT, "%s_specs.json" % which.lower())
     with open(dest, "w") as f:

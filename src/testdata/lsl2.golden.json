@@ -41,6 +41,20 @@
     "Ashes or Sand@81"
   ],
   "joint": [],
+  "placements": [
+    "Main/Hair_Rejuvenator: applied=True kind=None",
+    "Main/Matches: applied=True kind=None",
+    "Main/Parachute: applied=True kind=None",
+    "rm26: applied=True kind=trigger",
+    "rm38: applied=True kind=trigger",
+    "rm47: applied=True kind=edge-exit",
+    "rm57: applied=True kind=trigger",
+    "rm600/Airsick_Bag: applied=True kind=None",
+    "rm63/Hair_Rejuvenator: applied=True kind=None",
+    "rm63: applied=True kind=trigger",
+    "rm79: applied=True kind=trigger",
+    "rm81/Hair_Rejuvenator: applied=True kind=None"
+  ],
   "sinks": [
     "Airsick_Bag dest=-1 refused=False",
     "Airsick_Bag dest=-1 refused=False",

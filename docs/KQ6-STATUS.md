@@ -80,6 +80,29 @@ crossing ever *commits* the flag: the walk believes the pocket can be re-entered
 clear and the flag set on a second visit. Refusing is the safe direction — placing the guard
 anyway would seal in a player who cannot comply where it sits. Pinned RED in `test_toll`.
 
+### Placement — MEASURED 2026-08-01
+
+A correct spec that lands nowhere ships nothing, and this half had never been recorded outside a
+plan document. **KQ6: 6 applied / 18.** Dagger, which shares every seam: **2 of 4**.
+
+| applied | skipped | reason |
+|---|---|---|
+| `Main/mint`, `Main/peppermint` (sinks) | `lampTradeScr/huntersLamp` | looks for `put: 19 -1`; KQ6 writes `(global0 put: 19)` — no destination |
+| `rm220`, `rm230` (both castle doors) | `rm340->rm155`, `rm340->rm370` | trigger search reads only the FROM room's own file; rm155's entry lives in `nightMare.sc` |
+| `rm340`, `rm660` (setscript) | `rm340->rm405` | controllability is spelled for SCI0; SCI1.1 arms with `(global2 setScript: X)` |
+| | **8 × `rm*->rm420`** | the catacombs brick — no call site exists by construction |
+
+**Read the eight carefully: they are not a placement backlog.** Those guards are *walls* — from
+rm405 you cannot go back for a brick — and the fix deletes them rather than placing them (the
+plan's Phase 3, `obtainability_frontier`, collapses all eight to one at `rm340->rm405`). The real
+placement backlog is **four**: one spelling bug and three catacombs-entrance edges.
+
+Dagger is worse than its count: both of its *applied* guards are **24 items** placed as
+`arm-event`, i.e. events that would never fire. Its skips are safer than its successes.
+
+Frozen from here on: LSL2's placements are in its golden (12/12 applied, all `True`); KQ6's and
+Dagger's are printed and asserted by `test_sci11_patch.py`, RED until they all place.
+
 ---
 
 ## Three caveats on "18/18"

@@ -16,7 +16,13 @@ regenerate the golden to make a red test green without understanding, or without
 
 Regenerate deliberately (after a change you have confirmed is correct):
     python3 -c "import json, config; from snapshot import snapshot; \
-        json.dump(snapshot(config.LSL2), open('testdata/lsl2.golden.json','w'), indent=2, sort_keys=True)"
+        json.dump(snapshot(config.LSL2, with_placements=True), \
+                  open('testdata/lsl2.golden.json','w'), indent=2, sort_keys=True)"
+
+`with_placements=True` since 2026-08-01: a spec is a claim, a PLACEMENT is whether the patcher
+could act on it, and the two move independently. Nothing froze the placement half for any game
+until then, so the SCI1.1 placement work could have broken the placements of the one title that
+has been played end to end without a test noticing.
 """
 import json
 import os
@@ -57,8 +63,17 @@ def run():
         if not (os.path.exists(cfg.ir_path) and os.path.exists(path)):
             print(f"  (skip {name}: no IR or no golden)")
             continue
+        # PLACEMENTS ARE PART OF THE SURFACE. A correct spec that lands nowhere ships nothing, and
+        # until 2026-08-01 no game froze the placement half at all -- so the SCI1.1 placement work
+        # (`trigger.py`, `patcher.py`) could silently break the placements of the one title that
+        # has actually been played. Needs the game's own resources, because the patcher assembles
+        # a project from them; skip rather than fail if the drive is not mounted.
+        if not os.path.isdir(cfg.resource_dir):
+            print(f"  (skip {name}: resources not mounted at {cfg.resource_dir} -- "
+                  f"the placement half of the golden cannot be computed)")
+            continue
         golden = json.load(open(path))
-        got = snapshot(cfg)
+        got = snapshot(cfg, with_placements=True)
         check(f"{name}: full output surface matches the frozen golden",
               got == golden, _diff(golden, got))
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
