@@ -3504,17 +3504,24 @@ def load(cfg=None, ir_path=None):
     # state as BIT FLAGS in its own property, written from inside its own methods via `self` and
     # read as a bare property. KQ6's skull gates the realm-of-the-dead cutscene on exactly that.
     import extract as _X
-    # FIFTH store, BUILT AND DELIBERATELY NOT WIRED (2026-08-01): a ROOM script's LOCAL shared
-    # between that room's machines -- KQ6 rm690's local0, the gauntlet latch. The derivation and
-    # lowering exist (`vocab.derive_room_locals` / `lower_room_locals`, with entry-reset
-    # semantics via ir._room_local_resets -> init_writes) and the rm690 instance derives exactly.
-    # MEASURED wired-in: LSL2 and Dagger identical, but KQ4 LOSES Peacock_Feather, Golden_Bridle,
-    # Dead_Fish and Magic_Hen (the lowered whale latches reach `death_traps`' complement rows,
-    # where `_reg_cost`'s "0 is free" rule prices the escape at nothing -- a room local's 0 is
-    # re-established by RE-ENTRY, which is exactly what a death trap denies you), and KQ6 loses
-    # huntersLamp while `render_register` spells the new synthetic block as phantom flags (the
-    # flag base has no upper bound). Three consumers need reset-aware semantics BEFORE this can
-    # ship: _reg_cost, render_register, death_traps. Until then the gap stays RED in test_toll.
+    # FIFTH store, BUILT AND STILL NOT WIRED after TWO measured rounds: a ROOM script's LOCAL
+    # shared between that room's machines -- KQ6 rm690's local0, the gauntlet latch
+    # (`vocab.derive_room_locals` / `lower_room_locals`, entry-reset via ir._room_local_resets ->
+    # init_writes; rm690 derives exactly).
+    #
+    # ROUND 1 (2026-08-01): wired, KQ4 lost its whale items and KQ6 lost huntersLamp; blamed on
+    # death_traps' complement rows priced free and on phantom-flag rendering.
+    # ROUND 2 (2026-08-02): both named blockers landed on their own measurements (the trap-clock
+    # rule; store-aware render_register) -- and the whale items are STILL lost, for a deeper
+    # reason the first diagnosis missed: with locals lowered, KQ4's whale TRAPS VANISH ENTIRELY
+    # (`_joints == []`, no death_traps rows at rm43/rm44 at all), so every joint stranding dies
+    # at the source. The lowering changes the SHAPE of entry guards (opaque local reads become
+    # readable register atoms), and something in `_trap_rooms`/`_trap_graph`/`death_traps`' case
+    # split classifies the whale machinery differently. KQ6's huntersLamp loss is likely the
+    # same shape (its rm520 `doit` local is one of the three recorded instances).
+    #
+    # NEXT PROBE TARGET: `_trap_rooms(em)` on KQ4 rm43/rm44, wired vs not -- find which
+    # classification flips. Until that lands, wiring stays out; the gap stays RED in test_toll.
     #   V.lower_room_locals(ir, V.derive_room_locals(ir, _X._room_numbers(ir)))
     _X.install_vocabulary(ir)
     V.lower_item_bit_flags(ir, V.derive_item_bit_flags(ir, _X._at_item), _X._at_item)
