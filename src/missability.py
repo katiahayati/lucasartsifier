@@ -2053,6 +2053,48 @@ class IrSccReach(SccReach):
         self._avoid[key] = out if out is not None else set(self.reach_rooms)
         return self._avoid[key]
 
+    def edge_strandings(self):
+        """The shared core, minus the rows two existing rules already refute.
+
+        FORCED, NOT MISSABLE -- the crossing ITSELF demands the unit, so nobody crosses without
+        it and the crossing cannot strand it. The toll carry-in detector has stated this rule
+        since it existed (`if Y in self.edge_demands(a, b): continue`); the edge detector never
+        applied it to its own rows, which is why a guarded door kept "stranding" the very item
+        its guard demands and `verify` could not see its own fix.
+
+        UNHOLDABLE -- the crossing's demand EXCLUDES the item (`guards.unholdable_at`: a room
+        cost, or an exchange over one counter), so nobody arrives holding it and there is nothing
+        to lose. KQ6's castle is one of each: the short door's dress costs the Realm (so the
+        handkerchief and skeleton key cannot be in hand there), and the long door's route rides
+        the pawn chain (so the nightingale IS the brush). Their real boundaries -- the Realm exit
+        for the carry-outs, the short door for the nightingale -- carry the real guards.
+
+        GROUPS pass through untouched, twice over. `edge_demands` is the intersection over DNF
+        alternatives, so a demanded group's members distribute across alternatives and never
+        survive the intersection -- the filter could only ever fire on a group via a SINGLE
+        member demanded outright, and MEASURED (2026-08-02) that fires exactly once across the
+        corpus: LSL2's play-validated rm79->rm80 raft guard, which it deletes. That baseline is
+        ruled untouchable, and a filter whose one observable effect is wrong stays off."""
+        import guards as _G                    # module-level would be a cycle; resolved by now
+        out = []
+        drops = {}                             # (a, b) -> {item: why} -- a dropped row is never
+        #   silent: `guard_specs` folds these into the spec's dropped_incompatible/dropped_why,
+        #   which is where the castle-door tests pin the reasons.
+        for e in super().edge_strandings():
+            a, b = e["from_room"], e["to_room"]
+            dem = self.edge_demands(a, b)
+            why = {it: "the crossing itself demands it -- forced, not missable"
+                   for it in e["items"] if it in dem}
+            rest = set(e["items"]) - set(why)
+            why.update(_G.unholdable_at(self, a, b, rest) if rest else {})
+            if why:
+                drops.setdefault((a, b), {}).update(why)
+            items = [it for it in e["items"] if it not in why]
+            if items or e["groups"]:
+                out.append({**e, "items": items, "groups": e["groups"]})
+        self._stranding_drops = drops
+        return out
+
     def edge_demands(self, a, b):
         """Items the edge a->b ITSELF requires -- the NECESSARY reading.
 
@@ -3290,6 +3332,10 @@ class IrSccReach(SccReach):
                                 "toll_item": None if isinstance(X, tuple) else X,
                                 "toll_item_name": (f"flag{X[1]}" if isinstance(X, tuple)
                                                    else self.g.item_name(X)),
+                                # the sealing register, exactly as the carry-in rows carry it: a
+                                # consumer judging the pocket's EXITS (the carry-out placement)
+                                # needs the seal in its joint or every walk re-enters freely.
+                                "toll_reg": X[1] if isinstance(X, tuple) else None,
                                 "toll_edge": [a, b], "pocket": sorted(pocket),
                                 "source_rooms": sorted(srcs)})
                 # ...AND THE OTHER DIRECTION, which is the same fact read the other way round. A

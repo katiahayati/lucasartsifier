@@ -54,28 +54,35 @@ same fact.
 
 ---
 
-## Patching — this half is NOT done
+## Patching — every finding is CLOSED (2026-08-02)
 
 | | |
 |---|---|
-| guard specs | 14 total — **12 emitted, 2 refused** (13 edge + 1 `action`) |
+| guard specs | 15 total — **13 emitted, 2 refused** (14 edge + 1 `action`) |
 | the 2 refusals | the `flag == 0` half-questions (demand the mirror flag CLEAR) — they pair with no entrance guard and would close no softlock; refused with the reason stated |
 | the catacombs | **collapsed 2026-08-01**: the brick joined the capture guards (rm340→370/405/440 demand all FOUR carry-ins), and the 8 `rm*→rm420` wall-guards are GONE — see below |
-| sink remedies | 3 emitted — delete the mint, peppermint and huntersLamp destroy-verbs |
+| sink remedies | 3 emitted — mint + peppermint applied; huntersLamp refused at apply (a TRADE) |
 | fatal uses | 1 emitted — refuse `throwSkull` at rm420 |
-| `verify()` | fixed 7 + 1 group · **NEW 0** · **remaining 3** |
-| remaining | `handkerchief`, `nightingale`, `skeletonKey` |
+| `verify()` | fixed **10 + 1 group** · **NEW 0** · **remaining 0** |
 
-**`python -m pipeline <kq6> --report` therefore exits 1.** It fails at stage 3 (DERIVE), because
-`pipeline.main` treats a non-empty `remaining` as a failure. End-to-end KQ6 is red, and that is
-an accurate report of the state rather than a bug in the reporting.
+**`python -m pipeline <kq6> --report` exits 0.** The last three closed 2026-08-02, each by a
+principle already in the codebase rather than a route oracle:
 
-**Why the 3 remain, and why that is correct.** `guards.unholdable_at` drops them from the castle
-doors because you cannot be holding them when you cross: the handkerchief and the skeleton key
-exist only inside the Realm of the Dead, and reaching the short door costs Beauty's clothes,
-which rm580's Druids burn; the nightingale IS the paint brush after three trades, so the long
-door cannot demand both. Detection is right. There is nowhere to put the guard. Demanding them
-anyway would not close a softlock — it would wall the route, which this project holds to be worse.
+* **handkerchief + skeletonKey** are carry-OUTs of the Realm toll pocket, so the demand belongs
+  at the pocket's exit frontier: `pocket_carryout_frontier` (the item twin of
+  `_settable_frontier`, same committed walk) places both at **rm640→rm650** — the last crossing
+  after which their sources are unreachable. ⚠️ **This is tighter than the guard oracle's row 4
+  site (rm680→rm155)**: the model has no 650→640 return edge (the Realm interior is one-way in
+  the room graph), so the oracle's site would demand compliance where none is possible. Either
+  the interior really is one-way (oracle site unplaceable, ours right) or a return edge is
+  missing from extraction (then the frontier moves outward on its own when that lands). The
+  engine took the provable site; the divergence is recorded here rather than papered over.
+* **the wrong-door stranding rows** (all six) died to two rules `edge_strandings` now applies to
+  its own output: an edge that ITSELF demands an item cannot strand it ("forced, not missable" —
+  the toll detector's own rule), and an edge where the item CANNOT BE HELD cannot strand it
+  (`unholdable_at`, the same call that already shapes the specs). Both filters are
+  **singleton-only**: on groups the forced-filter fires exactly once corpus-wide — deleting
+  LSL2's play-validated rm79→rm80 raft guard — and that baseline is ruled untouchable.
 
 **The exit guards PLACE now (2026-08-01).** The placement walk commits what is genuinely
 committed: an **unconditional entry write** (`em.init_writes`, unconditional by construction)
@@ -88,7 +95,7 @@ shape harmless). The former 🔴 is promoted; each placement edge is pinned GREE
 
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
-**KQ6: 13 applied / 15, 8 scripts compiled and written as SCI1.1 loose patches** (the three
+**KQ6: 13 applied / 16, 8 scripts compiled and written as SCI1.1 loose patches** (the three
 register-valued exit guards landed 2026-08-01: rm670 as `edge-exit`, rm680 ×2 as `arm-event` —
 ⚠️ the kind Dagger shows can be misplaced; not yet played). The first patch
 set this project has produced for anything but LSL2:
@@ -134,6 +141,7 @@ do not are decompiler-dialect issues in scripts we do not edit.
 | still skipped | reason |
 |---|---|
 | `rm420->rm435` | holeInTheWall's tighter nested demand at the last crossing before the one-way drop — a maze edge with no call site; its demand is already covered by the capture guard (the oracle's redundancy doctrine, minus the redundant copy) |
+| `rm640->rm650` | the Realm carry-out guard (handkerchief + skeletonKey) — same no-trigger seam; the finding it closes is real and `verify` counts it closed in the model |
 
 (`rm340->rm370` — the sacred-water pocket — used to sit in this table with "no armer we can
 locate". It now places as a `proc-call` edit: `trigger.find_proc_calls`/`reaching_procs` follow
@@ -219,9 +227,18 @@ cleanup pass that recorded them was scoped to close no gaps.
 
 ## Open work, in rough order of value
 
-1. **Place the 3 remaining guards.** Needs a per-route notion of need — "which of two winning
-   routes are you on" — which nothing in the model can express today. See `SCI11-PATCHING-PLAN.md`.
-2. **Commit-modelling for in-room register writes**, which is what makes all 4 exit guards
-   placeable and closes the teacup's second half.
-3. **Room locals in the machine model** — 3rd recorded instance of the gap (`liftTapestry`'s L1,
-   `huntersLamp`'s rm520 `doit`, rm690's `lord::doVerb`).
+(1 and 2 of the old list LANDED — commitment 2026-08-01, the last three guards 2026-08-02. The
+"per-route notion of need" turned out unnecessary: carry-out placement + two stranding-row rules
+closed all three without expressing routes at all.)
+
+1. **Room locals: wire the fifth store.** The representation exists
+   (`vocab.derive_room_locals` / `lower_room_locals`) and is deliberately unwired; three
+   consumers need reset-aware semantics first — `_reg_cost` (0 is start-of-VISIT, not free, for
+   a reset register), `render_register` (bound the flag block), `death_traps` (re-entry is not
+   an escape). Measured wired-in it loses KQ4's whale items and KQ6's huntersLamp.
+2. **The two no-trigger placement skips** (`rm420->rm435`, `rm640->rm650`) — the trigger seam
+   for maze/realm edges with no `newRoom` call site.
+3. **Settle the rm640→rm650 vs rm680→rm155 divergence** with the guard oracle (is the Realm
+   interior really one-way past rm650?) — an in-game question.
+4. **register_strandings' prevRoom degeneracy** — derive PLOT-state registers; pinned RED.
+5. **Play the patch set in ScummVM** — deliberately last (user, 2026-08-01).

@@ -68,18 +68,21 @@ KNOWN_RED = {
         # it on the arming of the fatal machine (KQ6: rm420's `setScript: throwSkull`). Inert on
         # LSL2, KQ4 and the Dagger, which have no fatal uses.
         "🔴 KNOWN GAP (KQ6): every non-refused spec places":
-            "PHASE 4. **13 of 15** place since 2026-08-01 and eight scripts emit as "
-            "NNN.SCR+NNN.HEP. The catacombs collapse LANDED (the 8 rm*->rm420 walls are gone; "
-            "the brick rides the capture guards, pinned GREEN in test_toll). Two skips remain: "
-            "rm420->rm435 (a maze edge with no call site; its demand is already covered by the "
-            "capture guard) and the huntersLamp sink (a TRADE, correctly refused at apply).",
+            "PHASE 4. **13 of 16** place since 2026-08-02 and eight scripts emit as "
+            "NNN.SCR+NNN.HEP. Three skips: rm420->rm435 (a maze edge with no call site; its "
+            "demand is already covered by the capture guard), rm640->rm650 (the new Realm "
+            "carry-out guard -- same no-trigger seam), and the huntersLamp sink (a TRADE, "
+            "correctly refused at apply).",
         "🔴 KNOWN GAP (dagger): every non-refused spec places":
             "PHASE 4. 2 of 4 place, and the two that DO are 24-item guards placed as arm-event, "
             "i.e. events that would never fire -- so Dagger is worse off than the count "
             "suggests and Phase 3's §6.1 is what fixes it.",
-        "🔴 KNOWN GAP: every KQ6 finding is closed by a guard":
-            "PHASE 5. remaining=[handkerchief, nightingale, skeletonKey] + 4 refused exit "
-            "guards. While red, `pipeline --report` exits 1 on KQ6.",
+        # ✅ PHASE 5 LANDED 2026-08-02 -- "every KQ6 finding is closed by a guard" is GREEN and no
+        # longer listed. The last three: handkerchief + skeletonKey placed at the Realm's exit
+        # frontier (pocket_carryout_frontier, rm640->rm650), and the wrong-door stranding rows
+        # died to edge_strandings applying two of its own siblings' rules to its output (forced-
+        # not-missable, unholdable-cannot-strand; SINGLETON-only -- the group form deletes LSL2's
+        # play-validated raft guard and is ruled out). `pipeline --report` exits 0 on KQ6.
     },
 }
 

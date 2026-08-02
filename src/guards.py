@@ -367,6 +367,79 @@ def pocket_frontier(s):
     return dict(out)
 
 
+def pocket_carryout_frontier(s):
+    """Commit edges for the one-visit pocket CARRY-OUTS -- obtained inside, needed outside, so
+    the demand belongs at the pocket's EXITS: the last crossing after which the item's source can
+    never be reached again, and before which every player can still walk back for it.
+
+    The guard oracle states the KQ6 instance outright (row 4, user-tested): "we should not let
+    you leave the realm of the dead without it" -- the handkerchief (rm630) and the skeleton key
+    (rm640) demanded at rm680 -> rm155, beside the cup-filled and mirror-shown flags the register
+    half already places there. Their castle-door demands were never the right site: the door is
+    four days of walking past the last place a lacking player could comply.
+
+    LSL2 and KQ4 have no tolls at all, so this returns {} on both and cannot touch their specs."""
+    out = defaultdict(lambda: {"items": set(), "groups": []})
+    for r in s.toll_strandings():
+        if r["pattern"] != "one-visit-toll-pocket":
+            continue                          # carry-INs are placed at the toll edge instead
+        edges = _carryout_frontier(s, r["item"], set(r["pocket"]), r.get("toll_reg"),
+                                   tuple(r["toll_edge"]) if r.get("toll_item") is not None
+                                   else None)
+        for (a, b) in edges:
+            out[(a, b)]["items"].add(r["item"])
+    return dict(out)
+
+
+def _carryout_frontier(s, item, pocket, toll_reg=None, toll_edge=None):
+    """Edges after which `item`'s SOURCE is lost for good -- the ITEM twin of
+    `_settable_frontier`, and deliberately its mirror line for line: same joint (the pocket's
+    seal, plus prevRoom when a funnel splits on it), same committed walk, same spent-toll
+    compliance fixpoint. The one semantic difference: an item is not a walk dimension, so
+    "lacking" cannot be read off a state -- EVERY state at `a` counts as possibly lacking, which
+    is the conservative direction (the guard only places where even the worst state can still
+    walk back and comply)."""
+    sites = set(s.sources.get(item, ())) & set(pocket)
+    if not sites:
+        return []
+    prev = M.prev_room_reg(s.em)
+    split = any(prev in req for p in pocket for q in s.edges.get(p, ())
+                for (req, _sets, _alts) in s._emeta.get((p, q), ()))
+    named = set()
+    if toll_reg in s.regs:
+        named.add(toll_reg)
+    if prev in s.regs and split:
+        named.add(prev)
+    if not named:
+        return []                             # no seal to judge in -- nothing provable, refuse
+    J = tuple(sorted(named)) if len(named) > 1 else next(iter(named))
+    commit = frozenset(named)
+    states = s._walk(J, frozenset(), commit=commit)
+    succ = {u: s._psucc(J, u, frozenset(), commit) & states for u in states}
+    csucc = (succ if toll_edge is None else
+             {u: {w for w in succ[u] if not (u[0] == toll_edge[0] and w[0] == toll_edge[1])}
+              for u in states})
+    safe = {u for u in states if u[0] in sites}
+    changed = True
+    while changed:
+        changed = False
+        for u in states:
+            if u not in safe and (csucc[u] & safe):
+                safe.add(u)
+                changed = True
+    out = []
+    for a in sorted(pocket):
+        here = [u for u in states if u[0] == a]
+        if not here or not all(u in safe for u in here):
+            continue                          # nobody can stand here, or somebody here could not
+                                              # comply -- guarding would trap them
+        for b in sorted(s.edges.get(a, ())):
+            after = [w for u in here for w in succ[u] if w[0] == b]
+            if after and not any(w in safe for w in after):
+                out.append((a, b))            # crossing loses the last source
+    return out
+
+
 def render_register(s, R, value):
     """`R == value` in the game's own spelling, or None if we cannot write it.
 
@@ -703,7 +776,7 @@ def guard_specs(s):
     # items on a shared commit -- KQ4's whale swallow rm31->44 gets the feather (edge) AND the fish
     # (joint), so one guard demands both before you are swallowed.
     frontier = frontier_guards(s)
-    for src in (joint_frontier(s), pocket_frontier(s)):
+    for src in (joint_frontier(s), pocket_frontier(s), pocket_carryout_frontier(s)):
         for (a, b), rec in src.items():
             if (a, b) in frontier:
                 frontier[(a, b)] = {"items": set(frontier[(a, b)]["items"]) | rec["items"],
@@ -716,6 +789,12 @@ def guard_specs(s):
         # Reported, never silent: a guard that quietly asks for less is how an under-guard ships.
         why = unholdable_at(s, a, b, set(rec["items"]))
         gone = set(why)
+        # ...plus what the stranding core already dropped from its own rows at this edge, for the
+        # same reasons: the row filter must not turn a reported drop into a silent one, so those
+        # reasons ride through to dropped_incompatible/dropped_why. ANNOTATION ONLY -- a row drop
+        # is not in this rec by construction, and it must not prune a GROUP that legitimately
+        # shares a member with it, so only `why`/`gone` (this spec's own exclusions) prune.
+        ann = {**getattr(s, "_stranding_drops", {}).get((a, b), {}), **why}
         if gone:
             rec = {"items": set(rec["items"]) - gone,
                    "groups": [g for g in rec["groups"] if not (g & gone)]}
@@ -724,10 +803,10 @@ def guard_specs(s):
               "condition": render_frontier(rec),
               "items": sorted(rec["items"]), "groups": [sorted(g) for g in rec["groups"]],
               "refused": bad}
-        if gone:
-            sp["dropped_incompatible"] = sorted(gone)
+        if ann:
+            sp["dropped_incompatible"] = sorted(ann)
             sp["dropped_why"] = "cannot be held here: " + "; ".join(
-                sorted({f"{s.g.item_name(i)} -- {r}" for i, r in why.items()}))
+                sorted({f"{s.g.item_name(i)} -- {r}" for i, r in ann.items()}))
         if not rec["items"] and not rec["groups"]:
             # Everything this edge would have demanded is unholdable here, so there is no guard to
             # place -- but say so. Dropping the row silently is how an edge stops being guarded

@@ -137,23 +137,33 @@ def test_fatal_uses_produces_a_remedy():
 
 
 def test_verify_closes_every_kq6_finding():
-    """🔴 `guards.verify` must report nothing remaining and nothing new.
+    """`guards.verify` reports nothing remaining and nothing new -- GREEN since 2026-08-02.
 
-    Three items remain: `handkerchief` and `skeletonKey` (the guard belongs at the Realm's EXIT,
-    the last edge where the player can still comply) and `nightingale` (nothing to place --
-    crossing the long door is not a stranding for an item you cannot be carrying, so what is left
-    is a report inaccuracy in `edge_strandings`' frontier list). Plus two REFUSED register-valued
-    rows -- the `flag == 0` half-questions, which pair with no entrance guard and would close no
-    softlock. (The four "no crossing ever commits" refusals were closed 2026-08-01: the placement
-    walk now commits unconditional entry writes and spent item tolls -- see test_toll.)
+    The last three closed by three principles, each already in the codebase:
+      * handkerchief + skeletonKey -- carry-OUTs of the Realm toll pocket, so the demand belongs
+        at the pocket's exit frontier: `pocket_carryout_frontier` places both at rm640->rm650,
+        the last crossing after which their sources are unreachable (the model has no 650->640
+        return edge -- the interior is one-way -- so this sits TIGHTER than the guard oracle's
+        rm680->rm155, which presumed a walk-back the room graph does not have);
+      * the wrong-door stranding rows died to two rules `edge_strandings` now applies to its own
+        output: an edge that ITSELF demands an item cannot strand it (the toll detector's
+        "forced, not missable"), and an edge where the item CANNOT BE HELD cannot strand it
+        (`unholdable_at` -- the same call that already shapes the specs).
+    Both filters are SINGLETON-only: measured on groups they fire exactly once corpus-wide, on
+    LSL2's play-validated raft guard, which is ruled untouchable.
 
-    While this is red, `python -m pipeline <kq6> --report` exits 1."""
+    With this green, `python -m pipeline <kq6> --report` exits 0."""
     print("\nPhase 5 -- VERIFY: the guards must close every finding and create none")
     if not (config.KQ6.ir_path and os.path.exists(config.KQ6.ir_path)):
         print("  (skip: no KQ6 IR)")
         return
     s = M.load(cfg=config.KQ6)
     specs = G.guard_specs(s)
+    co = [sp for sp in specs if sp["site"] == "edge"
+          and (sp["from_room"], sp["to_room"]) == (640, 650)]
+    check("the Realm carry-outs are demanded at the pocket's exit frontier (rm640->rm650)",
+          len(co) == 1 and set(co[0]["items"]) == {17, 44} and not co[0]["refused"],
+          f"{[(sp['condition'], sp['refused']) for sp in co]}")
     refused = [sp for sp in specs if sp["refused"]]
     v = G.verify(s, specs)          # NOTE: mutates `s`; nothing may read it after this
     print(f"  fixed {len(v['fixed'])} + {len(v['groups_fixed'])} group(s); "
@@ -162,10 +172,15 @@ def test_verify_closes_every_kq6_finding():
     check("no guard INTRODUCES a softlock (this one must never go red)",
           not v["NEW"] and not v["groups_new"],
           f"NEW={[s.g.item_name(i) for i in v['NEW']]} groups_new={v['groups_new']}")
-    check("🔴 KNOWN GAP: every KQ6 finding is closed by a guard",
-          not v["remaining"] and not refused,
-          f"remaining={[s.g.item_name(i) for i in v['remaining']]}, {len(refused)} refused. "
-          f"While this is red, `pipeline --report` exits 1 on KQ6.")
+    check("every KQ6 finding is closed by a guard (remaining is empty)",
+          not v["remaining"],
+          f"remaining={[s.g.item_name(i) for i in v['remaining']]}")
+    # ...and what stays refused is exactly the two `flag == 0` half-questions -- deliberate
+    # negatives that close nothing, not unshipped findings. A third refusal appearing here is a
+    # regression wearing a polite face.
+    check("the only refusals are the flag==0 half-questions",
+          all(sp.get("req") and all(vs == [0] for vs in sp["req"].values()) for sp in refused),
+          f"{[(sp.get('from_room'), sp.get('to_room'), sp.get('req')) for sp in refused]}")
 
 
 def run():
