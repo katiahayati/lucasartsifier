@@ -68,11 +68,11 @@ KNOWN_RED = {
         # it on the arming of the fatal machine (KQ6: rm420's `setScript: throwSkull`). Inert on
         # LSL2, KQ4 and the Dagger, which have no fatal uses.
         "🔴 KNOWN GAP (KQ6): every non-refused spec places":
-            "PHASE 4 (and PHASE 3). **10 of 19** place since 2026-08-01, and seven scripts now "
-            "compile and emit as NNN.SCR+NNN.HEP. EIGHT of the nine skips are the catacombs "
-            "rm*->rm420 edges, which Phase 3's obtainability_frontier DELETES rather than "
-            "places -- they are currently walls. The ninth is rm340->rm370, the sacred-water "
-            "pocket, whose newRoom lives in n342.sc with no locatable armer.",
+            "PHASE 4. **13 of 15** place since 2026-08-01 and eight scripts emit as "
+            "NNN.SCR+NNN.HEP. The catacombs collapse LANDED (the 8 rm*->rm420 walls are gone; "
+            "the brick rides the capture guards, pinned GREEN in test_toll). Two skips remain: "
+            "rm420->rm435 (a maze edge with no call site; its demand is already covered by the "
+            "capture guard) and the huntersLamp sink (a TRADE, correctly refused at apply).",
         "🔴 KNOWN GAP (dagger): every non-refused spec places":
             "PHASE 4. 2 of 4 place, and the two that DO are 24-item guards placed as arm-event, "
             "i.e. events that would never fire -- so Dagger is worse off than the count "

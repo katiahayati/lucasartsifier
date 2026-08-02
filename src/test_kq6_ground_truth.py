@@ -257,13 +257,20 @@ def run():
               for c in s.analyze() if s.g.item_name(c["item"]) in
               ("scarf", "brick", "tinderBox", "holeInTheWall")}
     entry = {"rm340->rm370", "rm340->rm405", "rm340->rm440"}
-    check("the carry-ins strand at the catacombs ENTRANCE, not inside",
-          all(entry <= fronts.get(it, set()) for it in ("scarf", "tinderBox", "holeInTheWall")),
+    check("ALL FOUR carry-ins strand at the catacombs ENTRANCE, not inside",
+          all(entry <= fronts.get(it, set())
+              for it in ("scarf", "brick", "tinderBox", "holeInTheWall")),
           repr(fronts))
-    # The brick is the exception and correctly so: with the grid corrected, rm420 (the crushing
-    # ceiling) is a cut vertex INSIDE the maze, so its frontier is every way into that room.
-    check("...except the brick, whose frontier is the crusher it is used in",
-          fronts.get("brick") and all(e.endswith("->rm420") for e in fronts["brick"]),
+    # The brick used to be pinned as the exception ("its frontier is the crusher it is used in",
+    # every edge into rm420) -- and that pin recorded an extraction artifact, not the game.
+    # `_maze_reach` flooded THROUGH other rooms' cells, inventing a rm405->rm435 corridor around
+    # the crusher; in the maze's own door lists cell 20 (rm420) is a CUT VERTEX between the
+    # entrance (cell 117) and the trapdoor (cell 7), so with rooms-are-not-corridors fixed
+    # (2026-08-01) the brick's last obtainable edge is the capture crossing like the other three.
+    # That is the guard oracle's row 1 verbatim: "The brick belongs here too, not at rm420: from
+    # inside there is no way back for it." The wall-guard absence is pinned in test_toll.
+    check("...and no brick frontier survives inside the maze",
+          not any(e.endswith("->rm420") for e in fronts.get("brick", ())),
           repr(fronts.get("brick")))
 
     # THE TEACUP, pinned by the SHAPE of its finding rather than by its name appearing somewhere.

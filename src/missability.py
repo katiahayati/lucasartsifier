@@ -2136,11 +2136,15 @@ class IrSccReach(SccReach):
             # `(rm406, minotaur dead)` exists and reaches the pawn shop; unlit you die there.
             #
             # This is the more correct universe for EVERY projection, and it is applied only to the
-            # joints deliberately. Measured on the scalar ones it moves LSL2 -- a `has: 2` guard on
-            # rm101->rm102, a second literal on the rm79->rm80 raft guard, and two Vine sinks -- and
-            # that baseline is play-test-validated, so widening it needs its own evidence rather
-            # than riding along here. A joint exists precisely because a trap needs two registers
-            # judged together, and the stale universe defeats exactly that.
+            # joints deliberately. WIDENED TO SCALARS AND REVERTED 2026-08-01: measured, it moves
+            # LSL2 (two Vine dangerous-sinks, a refused rm101->rm102 spec) and KQ4 (three
+            # rm20/26/27->rm333 specs demanding item 21), and the USER RULED those verdicts
+            # incorrect -- "anything that moves LSL2 and KQ4 is incorrect and should not be
+            # relitigated". The direction of the error: a banned walk UNDER-approximates movement
+            # (blocked() over-requires), and reobtainability read from an under-approximation
+            # invents sinks. Do not widen this again; a trap that needs the tight universe must
+            # come through a JOINT, which exists precisely to be judged tightly -- KQ6's catacombs
+            # (the brick) is the standing case, see test_toll.
             states = self._walk(R, ban) if isinstance(R, tuple) else self._pstates[R]
             prev = defaultdict(set)               # reverse edges, minus own(item)-gated ones
             for u in states:

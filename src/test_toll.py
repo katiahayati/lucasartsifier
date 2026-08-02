@@ -288,6 +288,24 @@ def test_exit_guard_placement():
     check("no refusal claims permissive modelling any more",
           all("PERMISSIVELY" not in w for sp in refused for w in sp["refused"]))
 
+    # THE CATACOMBS CAPTURE GUARD -- the guard oracle's row 1. All four carry-ins (brick 2,
+    # holeInTheWall 18, scarf 41, tinderBox 48) on every rm340 exit guard, whose placement wraps
+    # the capture arming `(and (not (proc913_0 1)) (proc913_0 2))` in rm340::init. The brick
+    # joined 2026-08-01 when `_maze_reach` stopped flooding THROUGH other rooms' cells: in the
+    # maze's own door lists cell 20 (rm420, the crushing ceiling) is a CUT VERTEX between the
+    # entrance (117) and the trapdoor (7), so with the phantom rm405->rm435 corridor gone the
+    # brick's last obtainable edge is the capture crossing itself.
+    four = {2, 18, 41, 48}
+    cap = [sp for sp in specs if sp["site"] == "edge" and sp["from_room"] == 340
+           and sp["to_room"] in (370, 405, 440)]
+    check("the three capture guards demand all four catacombs carry-ins",
+          len(cap) == 3 and all(four <= set(sp["items"]) for sp in cap),
+          f"{[(sp['to_room'], sorted(sp['items'])) for sp in cap]}")
+    # ...and the eight rm*->rm420 wall-guards they replaced stay gone: a guard there stops a
+    # CAPTIVE who cannot go back for the brick, which is a wall, not a fix.
+    check("no wall-guard into rm420 remains",
+          not any(sp.get("to_room") == 420 for sp in specs if sp["site"] == "edge"))
+
 
 def test_ground_truth():
     print("\n-- ground truth (end-to-end) --")

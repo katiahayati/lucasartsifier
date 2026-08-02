@@ -1516,13 +1516,23 @@ class Extractor:
         room_at = {c: r for r, cs in cell.items() for c in cs}
         out = {}
         for r, cs in cell.items():
+            # A cell that belongs to ANOTHER room is a destination, not a corridor: stepping onto
+            # it is what fires that room's `newRoom`, so the player never walks THROUGH it. The
+            # flood therefore stops there -- the room is recorded as reached and contributes no
+            # further movement. Flooding straight through used to assert a direct walk between
+            # rooms on opposite sides of one (KQ6: rm405 -> rm435 "around" rm420, whose cell is a
+            # cut vertex in the game's own door lists -- and whose ceiling is the reason you would
+            # not be walking through), which handed the maze a corridor the game does not have.
             seen, q = set(cs), list(cs)
             while q:
                 u = q.pop()
                 for v in adj.get(u, ()):
-                    if v not in seen:
-                        seen.add(v)
-                        q.append(v)
+                    if v in seen:
+                        continue
+                    seen.add(v)
+                    if v in room_at:
+                        continue
+                    q.append(v)
             out[r] = {room_at[x] for x in seen if x in room_at} - {r}
         return out
 

@@ -58,8 +58,9 @@ same fact.
 
 | | |
 |---|---|
-| guard specs | 21 total — **19 emitted, 2 refused** (20 edge + 1 `action`) |
+| guard specs | 14 total — **12 emitted, 2 refused** (13 edge + 1 `action`) |
 | the 2 refusals | the `flag == 0` half-questions (demand the mirror flag CLEAR) — they pair with no entrance guard and would close no softlock; refused with the reason stated |
+| the catacombs | **collapsed 2026-08-01**: the brick joined the capture guards (rm340→370/405/440 demand all FOUR carry-ins), and the 8 `rm*→rm420` wall-guards are GONE — see below |
 | sink remedies | 3 emitted — delete the mint, peppermint and huntersLamp destroy-verbs |
 | fatal uses | 1 emitted — refuse `throwSkull` at rm420 |
 | `verify()` | fixed 7 + 1 group · **NEW 0** · **remaining 3** |
@@ -87,7 +88,7 @@ shape harmless). The former 🔴 is promoted; each placement edge is pinned GREE
 
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
-**KQ6: 13 applied / 22, 8 scripts compiled and written as SCI1.1 loose patches** (the three
+**KQ6: 13 applied / 15, 8 scripts compiled and written as SCI1.1 loose patches** (the three
 register-valued exit guards landed 2026-08-01: rm670 as `edge-exit`, rm680 ×2 as `arm-event` —
 ⚠️ the kind Dagger shows can be misplaced; not yet played). The first patch
 set this project has produced for anything but LSL2:
@@ -132,11 +133,24 @@ do not are decompiler-dialect issues in scripts we do not edit.
 
 | still skipped | reason |
 |---|---|
-| **8 × `rm{405..435}->rm420`** | the catacombs brick — no call site exists by construction |
+| `rm420->rm435` | holeInTheWall's tighter nested demand at the last crossing before the one-way drop — a maze edge with no call site; its demand is already covered by the capture guard (the oracle's redundancy doctrine, minus the redundant copy) |
 
 (`rm340->rm370` — the sacred-water pocket — used to sit in this table with "no armer we can
 locate". It now places as a `proc-call` edit: `trigger.find_proc_calls`/`reaching_procs` follow
 the room into `n342.sc`'s procedure and guard the call site.)
+
+**The catacombs collapse (2026-08-01).** The 8 `rm*->rm420` brick wall-guards were an extraction
+artifact: `_maze_reach` flooded THROUGH other rooms' cells as if they were corridors, inventing a
+direct `rm405->rm435` walk around the crushing ceiling. In the game's own door lists, cell 20
+(rm420) is a **cut vertex** between the entrance (cell 117) and the trapdoor (cell 7) — measured,
+and matching the user's ruling. With room-cells-are-destinations fixed, the brick's last
+obtainable edge becomes the capture crossing itself, so it joins scarf/tinderBox/holeInTheWall on
+all three rm340 exit guards — which place on the capture arming (`(and (not (proc913_0 1))
+(proc913_0 2))` in rm340::init), the guard oracle's row 1, all four items. En route, TWO
+measured-and-rejected paths are recorded in the code: widening `reobtainable_rooms`' banned
+universe to scalar projections moves LSL2/KQ4 (user: incorrect, do not relitigate), and the
+capture-state distinction (tourist vs captive at rm405) is carried by the maze topology + death
+traps + polygon gates rather than by any new state.
 
 **Read the eight carefully: they are not a placement backlog.** Those guards are *walls* — from
 rm405 you cannot go back for a brick — and the fix deletes them rather than placing them (the
