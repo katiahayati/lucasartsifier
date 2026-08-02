@@ -43,10 +43,12 @@ KNOWN_RED = {
             "room LOCALs are not in the machine model at all (3rd recorded instance: "
             "liftTapestry's L1, huntersLamp's rm520 doit, rm690's lord::doVerb). KQ6's gauntlet "
             "is currently kept by an INCIDENTAL register write -- right verdict, wrong reason.",
-        "🔴 KNOWN GAP: no exit guard is placed, so the water is demanded nowhere":
-            "in-room register writes are modelled PERMISSIVELY, so no crossing ever commits the "
-            "flag and every register-valued exit guard is refused. The teacup's carry-IN ships; "
-            "the 'come out with it filled' half does not.",
+        # ✅ PROMOTED 2026-08-01 -- "no exit guard is placed, so the water is demanded nowhere" is
+        # GREEN and no longer listed. The placement walk now COMMITS what is genuinely committed:
+        # unconditional entry writes (`_psucc(commit=...)` from `em.init_writes`) and consumed item
+        # tolls (`_settable_frontier`'s compliance fixpoint loses the spent toll edge). The water
+        # is demanded at rm680->rm155 -- the guard oracle's own site -- and the mirror-shown flag
+        # at rm670->rm660 and rm680->rm155. Detection walks stay permissive.
         "🔴 KNOWN GAP: register_strandings reports prevRoom flips as points of no return":
             "the detector predates prevRoom being a modelled register and reads each of its "
             "values as an irreversible plot advance -- 323 rows on KQ6. Nothing in production "

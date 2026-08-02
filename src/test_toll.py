@@ -230,12 +230,12 @@ def _kq5_cfg():
 
 
 def test_exit_guard_placement():
-    """The register-valued EXIT guard: derived, correctly refusing, and one 🔴 for why.
+    """The register-valued EXIT guard: derived, PLACED, and pinned per clause.
 
     USER RULING 2026-07-31: "it should be both; if you go in without the teacup you can't win; if
     you go out without the water in the teacup you can't win; the exit guard doesn't really subsume
-    the entrance guard." The entrance half ships (`pocket_frontier`). The exit half is built and
-    currently emits NOTHING, which is the safe direction but not the finished one."""
+    the entrance guard." The entrance half ships (`pocket_frontier`); the exit half ships since
+    2026-08-01 (commitment in the placement walk -- see below)."""
     import config, guards as G
     print("\n-- the register-valued exit guard --")
     if not os.path.exists(config.KQ6.ir_path):
@@ -258,25 +258,35 @@ def test_exit_guard_placement():
     check("a lowered flag renders back as the game's own test",
           water is not None and G.render_register(s, water, 1) is not None)
 
-    # 🔴 AND IT IS NOT PLACED, for a reason that is about the MODEL and not about KQ6. Register
-    # writes are added to each projection UNGUARDED on purpose (`_build_product`: "each projection
-    # stays permissive and can only remove movement the guards actually forbid"). That is right for
-    # finding strandings and fatal here: the walk believes you can re-enter the one-visit pocket
-    # with its own seal still clear, so no crossing ever commits and no placement can be proved
-    # safe. We refuse rather than wall -- but refusing is not closing.
-    #
-    # Turn this green by making the pocket's SEAL non-permissive for this question (the seal is
-    # already derived and carried on the row as `toll_reg`), not by relaxing the placement rule.
-    exits = [sp for sp in specs if sp.get("req") and not sp["refused"]]
-    check("🔴 KNOWN GAP: no exit guard is placed, so the water is demanded nowhere",
-          bool(exits),
-          f"every register-valued spec is refused: "
-          f"{sorted({w for sp in specs if sp.get('req') for w in sp['refused']})}")
-    # ...and the refusal must be LOUD. A guard that vanishes silently is how a half-closed
-    # softlock ships; this is the assertion that keeps the reason in the report.
+    # PLACED, and pinned per clause -- promoted 2026-08-01 from a 🔴 KNOWN GAP. What closed it is
+    # two commitments in the placement walk (`_settable_frontier`), each a true fact of the game
+    # rather than a relaxation of the rule:
+    #   * an UNCONDITIONAL entry write commits (`_psucc(commit=...)` reads `em.init_writes`, a
+    #     class that is unconditional by construction) -- entering the sealing room forces the
+    #     seal, so "re-enter with it clear and comply on a second visit" stops being credited;
+    #   * an ITEM toll commits in the other store: the row itself proved the crossing consumes
+    #     its payment unrecoverably, so compliance may not be proved THROUGH a second crossing.
+    # Detection walks stay permissive; only this placement proof changed direction.
+    exits = {(sp["from_room"], sp["to_room"], R, tuple(vs))
+             for sp in specs if sp.get("req") and not sp["refused"]
+             for R, vs in sp["req"].items()}
+    check("the water is demanded at the Realm exit -- the oracle's own site (rm680->rm155)",
+          water is not None and (680, 155, water, (1,)) in exits)
+    # The mirror-shown flag places TWICE, at nested boundaries, and the guard oracle blesses
+    # exactly that shape ("the later one is the tighter and the redundancy is harmless"): once at
+    # the Charon pocket's own boundary, once at the Realm's.
+    shown = {(a, b) for (a, b, R, vs) in exits if (R, vs) != (water, (1,))}
+    check("the mirror-shown flag is demanded at rm670->rm660 and rm680->rm155",
+          shown == {(670, 660), (680, 155)})
+    # ...and what stays refused, stays refused for a stated reason at a real edge: the two
+    # `flag == 0` half-questions pair with no entrance guard (demanding a flag CLEAR on the way
+    # out closes no softlock), and a refusal must be LOUD -- a guard that vanishes silently is
+    # how a half-closed softlock ships.
     refused = [sp for sp in specs if sp.get("req") and sp["refused"]]
-    check("...and every refusal says why, at a real edge",
+    check("every refusal says why, at a real edge",
           bool(refused) and all(sp["condition"] and sp["refused"] for sp in refused))
+    check("no refusal claims permissive modelling any more",
+          all("PERMISSIVELY" not in w for sp in refused for w in sp["refused"]))
 
 
 def test_ground_truth():

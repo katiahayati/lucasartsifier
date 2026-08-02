@@ -1923,13 +1923,24 @@ class IrSccReach(SccReach):
 
     _FREE = ({}, {}, (frozenset(),))
 
-    def _psucc(self, R, node, banned):
+    def _psucc(self, R, node, banned, commit=frozenset()):
         """Successors of a (room, value-of-R) node in projection R. `banned` is a set of items you
         do not hold, so edges needing them are false -- the ITEM dimension of gate-awareness, and
         what the old `_sealed` heuristic crudely approximated: you cannot use the parachute to
-        walk back to the parachute."""
+        walk back to the parachute.
+
+        `commit` reverses the direction of soundness for the registers it names, and exists for
+        the PLACEMENT question only. Detection over-approximates movement (in-room writes are
+        optional successors) so it can never miss a stranding; a placement proof must not CREDIT
+        movement the game does not have, or "the player can walk back and comply" is asserted of a
+        player who cannot. The one class of write that can be committed exactly is the
+        UNCONDITIONAL entry write -- `em.init_writes`, unconditional by construction (a guarded
+        init write goes to `init_seq` instead): entering the room forces the value, so a state
+        that carries the old value past that door does not exist in play. For a register in
+        `commit`, crossing into such a room arrives AT the written value instead of keeping the
+        carried one. Every detection caller leaves `commit` empty and is bit-for-bit unchanged."""
         if isinstance(R, tuple):
-            return self._psucc_joint(R, node, banned)
+            return self._psucc_joint(R, node, banned, commit)
         r, st = node
         out = {(r, v) for v in self._inroom[R].get(r, ())
                if not (banned and self._inroom_own.get((R, r, v), frozenset()) & banned)}
@@ -1946,13 +1957,19 @@ class IrSccReach(SccReach):
                     continue                      # every way through needs a banned item
                 if self._reg_unreachable(req, banned):
                     continue                      # a register it needs can never reach that value
-                out.add((b, sets.get(R, st)))
+                arrive = sets.get(R, st)
+                if R in commit:
+                    # the destination's own unconditional entry write wins over anything carried
+                    # or set in transit -- init runs LAST on the way in.
+                    arrive = self.em.init_writes.get(b, {}).get(R, arrive)
+                out.add((b, arrive))
         return out
 
-    def _psucc_joint(self, Rs, node, banned):
+    def _psucc_joint(self, Rs, node, banned, commit=frozenset()):
         """`_psucc` over a TUPLE of registers tracked together -- see `_trap_joints`.
 
-        Same rules, one value per register. Deliberately a separate body rather than a generalised
+        Same rules, one value per register (`commit` included -- see `_psucc` for its contract).
+        Deliberately a separate body rather than a generalised
         one: the scalar path is walked millions of times and every corpus baseline is pinned to it,
         so it stays untouched."""
         r, st = node
@@ -1980,17 +1997,29 @@ class IrSccReach(SccReach):
                     continue
                 if self._reg_unreachable(req, banned):
                     continue
-                out.add((b, tuple(sets.get(Ri, st[i]) for i, Ri in enumerate(Rs))))
+                ivs = self.em.init_writes.get(b, {})
+                out.add((b, tuple(ivs.get(Ri, sets.get(Ri, st[i])) if Ri in commit
+                                  else sets.get(Ri, st[i]) for i, Ri in enumerate(Rs))))
         return out
 
-    def _walk(self, R, banned, starts=None):
+    def _walk(self, R, banned, starts=None, commit=frozenset()):
         """Forward reachable (room, value) states in projection R."""
-        zero = tuple(0 for _ in R) if isinstance(R, tuple) else 0
-        seen = set(starts) if starts else {(self.em.cfg.start_room, zero)}
+        if starts:
+            seen = set(starts)
+        else:
+            # The start room's own unconditional entry write is as committed as any other room's:
+            # the game runs its init before the player moves, so 0 is only the initial value of a
+            # register the start room does not write.
+            iv = self.em.init_writes.get(self.em.cfg.start_room, {})
+            if isinstance(R, tuple):
+                zero = tuple(iv.get(Ri, 0) if Ri in commit else 0 for Ri in R)
+            else:
+                zero = iv.get(R, 0) if R in commit else 0
+            seen = {(self.em.cfg.start_room, zero)}
         q = list(seen)
         while q:
             u = q.pop()
-            for v in self._psucc(R, u, banned):
+            for v in self._psucc(R, u, banned, commit):
                 if v not in seen:
                     seen.add(v)
                     q.append(v)

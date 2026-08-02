@@ -142,9 +142,10 @@ def test_verify_closes_every_kq6_finding():
     Three items remain: `handkerchief` and `skeletonKey` (the guard belongs at the Realm's EXIT,
     the last edge where the player can still comply) and `nightingale` (nothing to place --
     crossing the long door is not a stranding for an item you cannot be carrying, so what is left
-    is a report inaccuracy in `edge_strandings`' frontier list). Plus four REFUSED register-valued
-    pocket-exit guards, all blocked on one thing: in-room register writes are modelled
-    permissively, so no crossing ever COMMITS a flag.
+    is a report inaccuracy in `edge_strandings`' frontier list). Plus two REFUSED register-valued
+    rows -- the `flag == 0` half-questions, which pair with no entrance guard and would close no
+    softlock. (The four "no crossing ever commits" refusals were closed 2026-08-01: the placement
+    walk now commits unconditional entry writes and spent item tolls -- see test_toll.)
 
     While this is red, `python -m pipeline <kq6> --report` exits 1."""
     print("\nPhase 5 -- VERIFY: the guards must close every finding and create none")

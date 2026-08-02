@@ -58,8 +58,8 @@ same fact.
 
 | | |
 |---|---|
-| guard specs | 20 total — **16 emitted, 4 refused** (19 edge + 1 `action`) |
-| the 4 refusals | all pocket **exit** guards (fill the cup at rm155→200, hold up the mirror at rm670→660) |
+| guard specs | 21 total — **19 emitted, 2 refused** (20 edge + 1 `action`) |
+| the 2 refusals | the `flag == 0` half-questions (demand the mirror flag CLEAR) — they pair with no entrance guard and would close no softlock; refused with the reason stated |
 | sink remedies | 3 emitted — delete the mint, peppermint and huntersLamp destroy-verbs |
 | fatal uses | 1 emitted — refuse `throwSkull` at rm420 |
 | `verify()` | fixed 7 + 1 group · **NEW 0** · **remaining 3** |
@@ -76,14 +76,20 @@ which rm580's Druids burn; the nightingale IS the paint brush after three trades
 door cannot demand both. Detection is right. There is nowhere to put the guard. Demanding them
 anyway would not close a softlock — it would wall the route, which this project holds to be worse.
 
-**Why the 4 exit guards are refused.** In-room register writes are modelled permissively, so no
-crossing ever *commits* the flag: the walk believes the pocket can be re-entered with its seal
-clear and the flag set on a second visit. Refusing is the safe direction — placing the guard
-anyway would seal in a player who cannot comply where it sits. Pinned RED in `test_toll`.
+**The exit guards PLACE now (2026-08-01).** The placement walk commits what is genuinely
+committed: an **unconditional entry write** (`em.init_writes`, unconditional by construction)
+forces its value on arrival, and a **consumed item toll** cannot prove compliance through a
+second crossing (the row itself established the payment is unrecoverable). Both are true game
+facts, no register or item is named, and every detection walk stays permissive. Result: the
+cup-filled flag (58) is demanded at **rm680→rm155** — the guard oracle's own site — and the
+mirror-shown flag (294) at **rm670→rm660** and **rm680→rm155** (nested; the oracle calls that
+shape harmless). The former 🔴 is promoted; each placement edge is pinned GREEN in `test_toll`.
 
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
-**KQ6: 10 applied / 19, 6 scripts compiled and written as SCI1.1 loose patches.** The first patch
+**KQ6: 13 applied / 22, 8 scripts compiled and written as SCI1.1 loose patches** (the three
+register-valued exit guards landed 2026-08-01: rm670 as `edge-exit`, rm680 ×2 as `arm-event` —
+⚠️ the kind Dagger shows can be misplaced; not yet played). The first patch
 set this project has produced for anything but LSL2:
 
 ```
@@ -94,7 +100,13 @@ set this project has produced for anything but LSL2:
                                  catacombs entrance (405), lair (440)
 420.SCR + 420.HEP  rm420         the skull into the gears -- refused
 660.SCR + 660.HEP  rm660         Charon's crossing
+670.SCR + 670.HEP  rm670         exit guard: the mirror must have been shown
+680.SCR + 680.HEP  rm680         exit guards: cup filled + mirror shown (Realm boundary)
 ```
+
+With `--emit-unclosed`, `pipeline` on KQ6 now **exits 0** and emits the set above while listing
+the 3 route-need items as open; without the flag it still exits 1, which remains the honest
+default.
 
 "10 applied / 19" counts placement ROWS — the 2 **applied** sink remedies (mint, peppermint)
 plus 8 guard placements. The third sink remedy — huntersLamp — is emitted as a spec but REFUSED

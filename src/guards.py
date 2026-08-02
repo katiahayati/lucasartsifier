@@ -446,7 +446,9 @@ def pocket_exit_guards(s):
             note = (f"the last crossing after which reg{R}={v} can no longer be set -- only "
                     f"{sorted(sites)} sets it, inside the one-visit pocket {sorted(pocket)}, and "
                     f"{s.g.item_name(r['item'])} is what pays for it")
-            edges = _settable_frontier(s, R, v, sites, pocket, r.get("toll_reg"))
+            edges = _settable_frontier(s, R, v, sites, pocket, r.get("toll_reg"),
+                                       toll_edge=(tuple(r["toll_edge"])
+                                                  if r.get("toll_item") is not None else None))
             if not edges:
                 # NO PLACEMENT COULD BE JUSTIFIED, and that is reported rather than returned as
                 # silence -- an exit guard vanishing without a word is how a half-closed softlock
@@ -458,11 +460,11 @@ def pocket_exit_guards(s):
                             "items": [], "groups": [], "req": {R: [v]},
                             "pairs_with": list(r["toll_edge"]), "note": note,
                             "refused": base + [
-                                f"no crossing commits reg{R}={v}: in-room register writes are "
-                                f"modelled PERMISSIVELY, so the walk believes the pocket can be "
-                                f"re-entered with its own seal still clear and the flag set on a "
-                                f"second visit. Refusing is the safe direction -- placing it "
-                                f"anyway would wall whoever cannot comply where it sits."]})
+                                f"no crossing is a last chance for reg{R}={v}: judged with "
+                                f"committed entry writes and a spent toll, every edge either "
+                                f"never loses the writer or would stop a player who can no "
+                                f"longer comply where it sits. Refusing is the safe direction -- "
+                                f"placing it anyway would wall that player in."]})
                 continue
             for (a, b) in edges:
                 out.append({"site": "edge", "from_room": a, "to_room": b, "condition": cond,
@@ -472,7 +474,7 @@ def pocket_exit_guards(s):
     return out
 
 
-def _settable_frontier(s, R, v, sites, pocket, toll_reg=None):
+def _settable_frontier(s, R, v, sites, pocket, toll_reg=None, toll_edge=None):
     """Edges after which `R == v` can never be reached again, and before which it always can.
 
     The placement rule for a register-valued guard, and the reason it is not simply "the pocket's
@@ -508,17 +510,37 @@ def _settable_frontier(s, R, v, sites, pocket, toll_reg=None):
         named.add(toll_reg)
     J = tuple(sorted(named)) if len(named) > 1 else (R,)
     idx = J.index(R)
-    states = s._walk(J, frozenset()) if len(J) > 1 else s._pstates[R]
+    # COMMITTED, not permissive. This is the walk whose whole product is a placement PROOF, and
+    # the detection default credits the player with movement the game does not have: an in-room
+    # write is an optional successor, so the walk kept a state outside the pocket with the seal
+    # still clear and strolled back in to "comply later" -- which is why every register-valued
+    # exit guard refused. `commit` forces exactly the writes that are unconditional on arrival
+    # (`em.init_writes` -- the class is derived, no register is named), so a one-visit pocket's
+    # seal actually seals. Detection walks stay permissive; only this proof changes direction.
+    commit = frozenset(J)
+    states = s._walk(J if len(J) > 1 else R, frozenset(), commit=commit)
 
     def val(u):
         return u[1][idx] if len(J) > 1 else u[1]
-    succ = {u: s._psucc(J if len(J) > 1 else R, u, frozenset()) & states for u in states}
+    succ = {u: s._psucc(J if len(J) > 1 else R, u, frozenset(), commit) & states
+            for u in states}
+    # An ITEM toll commits the same way an entry write does, in the other store: the row
+    # established that the crossing CONSUMES its payment and nothing re-supplies it (that is what
+    # made the pocket one-visit at all), so "walk back in and comply" is not available to any
+    # player this guard addresses. The walk cannot say "once" -- it is memoryless -- but it can
+    # say the next-best true thing: compliance may not be proved THROUGH a second crossing.
+    # `states` keeps the toll edge (the first crossing is real; it is how the pocket's states
+    # exist); only the compliance fixpoint below loses it. Register-sealed pockets need nothing
+    # here -- `commit` already keeps their seal honest -- so this is exactly the item-toll half.
+    csucc = (succ if toll_edge is None else
+             {u: {w for w in succ[u] if not (u[0] == toll_edge[0] and w[0] == toll_edge[1])}
+              for u in states})
     safe = {u for u in states if u[0] in sites}          # standing where the write can happen
     changed = True
     while changed:                                        # ...or able to walk to one
         changed = False
         for u in states:
-            if u not in safe and (succ[u] & safe):
+            if u not in safe and (csucc[u] & safe):
                 safe.add(u)
                 changed = True
     out = []
