@@ -49,11 +49,11 @@ KNOWN_RED = {
         # tolls (`_settable_frontier`'s compliance fixpoint loses the spent toll edge). The water
         # is demanded at rm680->rm155 -- the guard oracle's own site -- and the mirror-shown flag
         # at rm670->rm660 and rm680->rm155. Detection walks stay permissive.
-        "🔴 KNOWN GAP: register_strandings reports prevRoom flips as points of no return":
-            "the detector predates prevRoom being a modelled register and reads each of its "
-            "values as an irreversible plot advance -- 323 rows on KQ6. Nothing in production "
-            "reads it, which is why it could rot unnoticed. Fix = a notion of PLOT-state "
-            "registers, not a filter naming prevRoom.",
+        # ✅ PROMOTED 2026-08-02 -- "register_strandings reports prevRoom flips as points of no
+        # return" is GREEN and no longer listed. The causality conjunct landed: a flip strands
+        # only what the pre-flip state could still reach, judged by the same walk from the
+        # pre-flip states (no register named). KQ6 323 rows -> 1 (the flag-166 `letter` lead,
+        # held for user review); LSL2/KQ4 -> 0, every old row diagnosed as region-junk.
     },
     # THE ROAD TO A PATCHED KQ6. Each of these turns green when its phase lands, and that is the
     # only mechanism that will notice -- a plan document goes stale in silence. Phases are in

@@ -418,7 +418,14 @@ def test_register_strandings():
     # the user, not a passing test.
     check("LSL2: register-flip findings introduce no new items",
           not (found - known), f"new: {sorted(found - known)}")
-    check("LSL2: the register detector finds something at all", bool(found), f"{len(found)} items")
+    # "Finds something at all" used to pass here -- on ~300 rows that were ALL the same junk
+    # shape (prevRoom values and timer registers condemning items analyze() already carries),
+    # diagnosed row by row on 2026-08-02 when the causality conjunct landed: every one failed
+    # "could the pre-flip player still reach a source". LSL2 has no register-flip stranding the
+    # region detectors do not already own, and pinning noise non-empty was pinning a limitation
+    # green. LSL2's production surfaces (golden, oracle, snapshot) never read this detector.
+    check("LSL2: the causal register detector reports nothing the region detectors do not own",
+          not found, f"{sorted(found)}")
     for r in s.register_strandings():
         if r["source_rooms"] and set(r["source_rooms"]) & set(r["still_needed_at"]):
             check("a finding must not have a source inside its own post-flip region", False,

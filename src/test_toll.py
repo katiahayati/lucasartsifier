@@ -336,25 +336,23 @@ def test_ground_truth():
 
 
 def test_register_strandings_is_degenerate_on_sci11():
-    """🔴 DELIBERATELY RED -- `register_strandings` emits nonsense on SCI1.1 and nothing reads it.
+    """`register_strandings` is CAUSAL since 2026-08-02 -- promoted from a 🔴 KNOWN GAP.
 
-    Two separate problems that keep each other alive, which is why this is pinned rather than
-    left to be rediscovered:
+    The cure was the docstring's own missing conjunct, derived rather than named: A FLIP STRANDS
+    ONLY WHAT THE PRE-FLIP STATE COULD STILL REACH. The same walk is run from the pre-flip states
+    at the seed rooms; a source unreachable from there too was stranded by the REGION (the edge
+    and toll detectors own that), not by the flip -- and a room only ever seen at the new value
+    has no pre-flip player, so its "flip" is an arrival, i.e. an edge crossing wearing a
+    register. No register is named anywhere.
 
-      * NOTHING CONSUMES IT. No golden, no oracle, no pipeline stage. A detector whose verdicts
-        reach no consumer cannot regress, so it can rot indefinitely -- exactly the hole
-        `toll_strandings` sat in until it was put on the snapshot surface.
-      * IT IS BROKEN HERE. Its point-of-no-return test now sees `prevRoom` (reg12), which every
-        room transition writes, and reads each value as an irreversible plot advance. Measured on
-        KQ6: 323 rows over 21 registers, the same handful of items repeated per room value.
-
-    Turn this green by giving the flip test a notion of which registers are PLOT STATE. Do NOT
-    turn it green with a filter that names prevRoom -- that is this bug with a lid on, and the
-    row count would still be wrong for every other transient register in the list.
-
-    Asserts the SHAPE (prevRoom is among the registers reported, and the output is absurdly
-    large), not a row count, so it stays meaningful as the model moves."""
-    print("\n-- 🔴 RED: register_strandings on SCI1.1 --")
+    MEASURED: KQ6 323 rows -> 1 (zero on prevRoom), and the survivor is a real lead -- flag 166
+    strands the `letter` (what the skeleton key unlocks), needed at rm730/rm870. NOT promoted to
+    the oracle: an addition is a suspicion until the user rules (see the KQ6 oracle's contract).
+    LSL2 and KQ4 drop to ZERO rows -- diagnosed row by row, every LSL2 row was the same junk
+    shape (prevRoom values and timer registers condemning items analyze() already carries, all
+    failing the causality test), so the old non-empty output was duplication, not detection.
+    test_scopes Part 7 pins the LSL2 side."""
+    print("\n-- register_strandings on SCI1.1: causal, not degenerate --")
     import os
     import config
     if not (config.KQ6.ir_path and os.path.exists(config.KQ6.ir_path)):
@@ -364,10 +362,15 @@ def test_register_strandings_is_degenerate_on_sci11():
     rows = s.register_strandings()
     regs = {r["register"] for r in rows}
     prev = M.prev_room_reg(s.em)
-    check("🔴 KNOWN GAP: register_strandings reports prevRoom flips as points of no return",
-          not (prev in regs and len(rows) > 50),
+    check("no prevRoom flip is reported as a point of no return, and the output is small",
+          prev not in regs and len(rows) <= 5,
           f"{len(rows)} rows over {len(regs)} registers; prevRoom is reg{prev} and it is "
           f"{'IN' if prev in regs else 'not in'} the reported set. See the detector's docstring.")
+    # ...and the survivor is pinned by SHAPE: the letter row is a lead under user review, and a
+    # different row appearing here is a new claim about KQ6 that needs the same review.
+    check("the only KQ6 row is the flag-166 letter lead",
+          len(rows) == 1 and rows[0]["item_name"] == "letter" and rows[0]["register"] == 338,
+          repr([(r["register"], r["value"], r["item_name"]) for r in rows]))
 
 
 if __name__ == "__main__":

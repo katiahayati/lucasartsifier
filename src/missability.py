@@ -2580,26 +2580,17 @@ class IrSccReach(SccReach):
     def register_strandings(self):
         """Softlocks caused by a REGISTER flipping, not by walking through a one-way door.
 
-        ⚠️ READ THIS BEFORE TRUSTING A ROW. Two facts about its standing today (2026-07-31):
+        ⚠️ NO PRODUCTION PATH READS IT. Not `snapshot.py`, not `pipeline.py`, not the KQ4 oracle,
+        not the KQ6 oracle. Its consumers are `test_scopes` Part 7 (LSL2) and
+        `test_toll.test_register_strandings_is_degenerate_on_sci11` (KQ6), which pin its output
+        exactly. Promotion to the snapshot surface is deliberate future work: its one surviving
+        KQ6 row (the flag-166 `letter` lead) is under user review, and freezing a verdict nobody
+        has ruled on would promote a suspicion.
 
-        NO PRODUCTION PATH READS IT. Not `snapshot.py`, not `pipeline.py`, not the KQ4 oracle,
-        not the KQ6 oracle. Its only consumer is `test_scopes` Part 7, on LSL2. So its verdicts
-        go nowhere, which also means no golden and no oracle can notice them changing -- the same
-        blind spot `toll_strandings` sat in until it was added to the snapshot surface.
-
-        AND IT IS DEGENERATE ON SCI1.1. Measured on KQ6: **323 rows across 21 registers**,
-        reporting the same 7-8 items over and over. The root cause is that its "point of no
-        return" test now sees registers it was never designed for -- above all reg12, `prevRoom`,
-        which every single room transition writes. "prevRoom flips to 180, so the flip is
-        irreversible and everything sourced earlier is stranded" is emitted once per room value,
-        and it is nonsense: prevRoom is not a plot flag, it is the room you just left. The
-        detector predates prevRoom being modelled at all (see `prevroom-is-the-realm-seal`) and
-        has never been revisited since.
-
-        The LSL2 behaviour below is still meaningful and still tested; the SCI1.1 behaviour is
-        pinned RED in `test_toll.test_register_strandings_is_degenerate_on_sci11` so it cannot be
-        forgotten. Fixing it means giving the flip test a notion of which registers are PLOT
-        state -- not a filter naming prevRoom, which would just be this bug with a lid on.
+        CAUSAL SINCE 2026-08-02 (was: degenerate on SCI1.1, 323 junk rows on KQ6 -- above all
+        reg12, `prevRoom`, whose every crossing-write was read as an irreversible plot advance).
+        The cure is the causality conjunct below, derived from the projection alone; the history
+        and the diagnosis live in the promoted test's docstring.
 
         The second class in the taxonomy, and one `edge_strandings` structurally cannot see: it
         reasons about crossing an edge, and here nothing is crossed. A plot flag advances -- you
@@ -2642,6 +2633,23 @@ class IrSccReach(SccReach):
                 # includes whatever the register does next, so if a source is still reachable the
                 # flip stranded nothing, and if it is not, the flip stranded it. The source test
                 # below IS the irreversibility test.
+                #
+                # ...but THE FLIP MUST BE THE CAUSE, and that half was missing -- the SCI1.1
+                # degeneracy (2026-08-02, was 323 rows on KQ6). A seed inside an already-sealed
+                # region cannot reach the outside sources WHATEVER the register does, so blaming
+                # the flip reported every register ever written inside the Realm -- and prevRoom,
+                # which every crossing writes, once per room value. The causality test is the
+                # same walk from the PRE-flip states at the same rooms: what the pre-flip player
+                # could not reach either, the flip did not strand (that is the REGION's doing,
+                # and the edge/toll detectors own it). A room only ever seen at `w` has no
+                # pre-flip player, and its "flip" is an arrival -- an edge crossing wearing a
+                # register, owned by edge_strandings. Derived from the projection alone; no
+                # register is named.
+                seed_rooms = {r for (r, _v) in seeds}
+                before = {(r, v) for (r, v) in states if r in seed_rooms and v != w}
+                if not before:
+                    continue                        # no pre-flip player exists -> an arrival
+                rooms_before = {r for (r, _v) in self._walk(R, frozenset(), starts=before)}
                 rooms_after = {r for (r, _v) in after}
                 if goal and not (goal & rooms_after):
                     continue                        # already unwinnable: a dead end, not a softlock
@@ -2649,6 +2657,9 @@ class IrSccReach(SccReach):
                     srcs = self.sources.get(it, set())
                     if not srcs or (srcs & rooms_after):
                         continue                    # obtainable after the flip, or never obtainable
+                    if not (srcs & rooms_before):
+                        continue                    # the pre-flip player could not reach one either
+                                                    # -- the flip is not what stranded it
                     ahead = self.required[it] & rooms_after
                     if ahead:
                         out.append({"pattern": "register-flip-point-of-no-return",
