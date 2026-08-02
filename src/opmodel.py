@@ -306,6 +306,12 @@ class OpEmitter:
                 continue
             if rn in self.ts.rooms:
                 self._init_writes(rn, s)
+                # A lowered ROOM LOCAL resets when the script reloads, i.e. on every entry --
+                # exactly an unconditional entry write, so it rides the same channel (and the
+                # same commit semantics) as any other arrival write. vocab.lower_room_locals
+                # recorded the declared initial values per room.
+                for gi, v in getattr(ir, "_room_local_resets", {}).get(rn, {}).items():
+                    self.init_writes.setdefault(rn, {}).setdefault(gi, v)
             for m in self.mb.machines(s):
                 for room in sorted(targets):
                     info = self._machine_info(room, m)

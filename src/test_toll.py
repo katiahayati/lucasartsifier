@@ -201,7 +201,15 @@ def test_local_latch_is_not_modelled():
     Closing the gap means giving the machine model a room-local representation FIRST; at that
     point this fixture gets rebuilt around a real local and the marker becomes a test. Until
     then it exists so the gap is impossible to forget, and so no passing test claims we handle
-    it. Do not delete it, and do not make it green by weakening the assertion."""
+    it. Do not delete it, and do not make it green by weakening the assertion.
+
+    STATUS 2026-08-01: the REPRESENTATION exists -- `vocab.derive_room_locals` (cross-scope,
+    constant-write, taint-on-computed) + `lower_room_locals` (synthetic registers, entry-reset
+    via init_writes), and rm690's local0 derives exactly. It is NOT WIRED, because measured
+    wired-in it regresses KQ4 (whale items lost through `death_traps` + `_reg_cost`'s "0 is
+    free") and KQ6 (huntersLamp lost; `render_register` spells the new block as phantom flags).
+    The three consumers need reset-aware semantics first -- see the note at the call site in
+    `missability.load`."""
     print("\n-- 🔴 RED: a room-local latch gating the pocket's exit --")
     b = _carry_in(machines=[_machine(2, _own(8))])       # writes no REGISTER, only (notionally) a
     #   local; our machine model has no way to say that, so this stands in for it: the effect the

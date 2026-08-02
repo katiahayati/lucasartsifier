@@ -1412,6 +1412,126 @@ def lower_obj_props(ir, pairs):
     return len(sites), len(index)
 
 
+def derive_room_locals(ir, rooms):
+    """`{(script, idx)}` -- ROOM-script LOCALs the game uses as cross-machine state.
+
+    The FIFTH container for the same idea, and the 3rd-recorded gap it closes: a latch shared
+    between a room's machines through a script local. KQ6's rm690 is the motivating case --
+    `introScript` raises `local0` before the player's only window, `issueChallenge` (the gauntlet)
+    is the one thing that clears it, and `lord::doVerb 13` arms `holdUpMirror` only while it is
+    clear -- so the local IS the gauntlet's requirement, and a store we do not model made that
+    link invisible (the earlier instances: `liftTapestry`'s L1, `huntersLamp`'s rm520 `doit`).
+
+    Discovered by the same rule as every other store -- written with a CONSTANT and read back --
+    plus the one discriminator this container needs: the value must CROSS a method scope (some
+    scope reads it that did not write it, or writes it that did not read it). A loop counter or
+    a cue-latch confined to one body is a machine-internal counter, which the machine compiler
+    already carries as a CTR; lowering those too would re-plumb state that is modelled and
+    validated. A local with any NON-constant write (`++`, arithmetic, a copied value) is skipped
+    outright rather than half-lowered: a register missing one of its writes can fabricate a seal,
+    and half a store is worse than none."""
+    out = set()
+    for sn in sorted(set(rooms) & set(ir.scripts)):
+        s = ir.scripts[sn]
+        if not s.locals:
+            continue
+        writes = collections.defaultdict(set)      # idx -> scopes writing a constant
+        reads = collections.defaultdict(set)       # idx -> scopes reading it
+        tainted = set()                            # idx with a non-constant write
+        scopes = [((o.name, mn), b) for o in s.objects for mn, b in o.methods.items()]
+        scopes += [(("proc", pn), b) for pn, b in s.procs.items()]
+        for sid, body in scopes:
+            def visit(n):
+                if not isinstance(n, dict):
+                    return
+                kids = n.get("kids") or []
+                if n.get("t", "").startswith("Assignment") and kids:
+                    lhs = kids[0]
+                    if (isinstance(lhs, dict) and lhs.get("t") == "Variable"
+                            and lhs.get("vtype") == "Local"):
+                        idx = lhs["index"]
+                        rhs = kids[1] if len(kids) > 1 else None
+                        v = I.as_int(rhs) if rhs is not None else None
+                        # `(= local0 1)` is a constant write. A compound op (`AssignmentAdd`,
+                        # `AssignmentSub`, ...) or a computed rhs taints the local outright.
+                        if n["t"] == "Assignment" and v is not None:
+                            writes[idx].add(sid)
+                        else:
+                            tainted.add(idx)
+                        for k in kids[1:]:
+                            visit(k)
+                        return
+                if (n.get("t") == "Variable" and n.get("vtype") == "Local"):
+                    reads[n["index"]].add(sid)
+                for k in kids:
+                    visit(k)
+            visit(body)
+        for idx in sorted((set(writes) & set(reads)) - tainted):
+            if len(writes[idx] | reads[idx]) > 1:
+                out.add((sn, idx))
+    return out
+
+
+def lower_room_locals(ir, keys):
+    """Rewrite the derived room locals into synthetic globals, IN PLACE -- same shape as
+    `lower_flags` / `lower_prop_flags` / `lower_obj_props`, so nothing downstream learns a new
+    concept. Every `Variable Local` node of a lowered (script, idx) becomes the synthetic global,
+    which turns constant assignments into register writes and guard reads into register tests.
+
+    The one semantics a local adds: the script UNLOADS when the player leaves the room, so the
+    local resets to its declared initial value on every entry. That is exactly an unconditional
+    entry write, so the reset is recorded per room in `ir._room_local_resets` and opmodel merges
+    it into `init_writes` -- the same channel arrival writes already use, commit semantics and
+    all."""
+    if not keys:
+        return 0, 0
+    max_gi = 0
+    for s in ir.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for n in I.walk(body):
+                if I.is_global(n):
+                    max_gi = max(max_gi, n["index"])
+    base = max_gi + 1
+    index = {k: base + i for i, k in enumerate(sorted(keys))}
+    resets = {}
+    written = collections.defaultdict(set)
+    sites = 0
+    for (sn, idx), gi in index.items():
+        s = ir.scripts[sn]
+        init = 0
+        for l in s.locals:
+            if l.get("index") == idx:
+                v = l.get("value", 0)
+                init = v - 65536 if isinstance(v, int) and v > 32767 else (v or 0)
+                break
+        resets.setdefault(sn, {})[gi] = init
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for n in I.walk(body):
+                if (isinstance(n, dict) and n.get("t") == "Assignment" and n.get("kids")):
+                    lhs, rhs = n["kids"][0], (n["kids"][1] if len(n["kids"]) > 1 else None)
+                    if (isinstance(lhs, dict) and lhs.get("t") == "Variable"
+                            and lhs.get("vtype") == "Local" and lhs.get("index") == idx):
+                        v = I.as_int(rhs) if rhs is not None else None
+                        if v is not None:
+                            written[gi].add(v)
+                if (isinstance(n, dict) and n.get("t") == "Variable"
+                        and n.get("vtype") == "Local" and n.get("index") == idx):
+                    n["vtype"] = "Global"
+                    n["index"] = gi
+                    sites += 1
+    for gi, vals in written.items():
+        if vals <= {0, 1}:
+            BOOL_GLOBALS.add(gi)
+    try:
+        ir._room_local_index = {gi: k for k, gi in index.items()}
+        ir._room_local_resets = resets
+    except Exception:                                      # noqa: BLE001
+        pass
+    return sites, len(index)
+
+
 def _handle_aliases(body, item_of_receiver):
     """`{(vtype, index): item}` for SCI's cache-the-handle idiom, within ONE method body.
 
