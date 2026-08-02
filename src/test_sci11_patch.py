@@ -48,7 +48,8 @@ def _placements(cfg):
         titles = {n: t for t, n in nums.items()}
         rows = (P.apply_sink_remedies(dest, sinks, titles)
                 + P.apply_guards(dest, specs, titles, nums,
-                                 s_drops=lambda it: s.drops.get(it, set())))
+                                 s_drops=lambda it: s.drops.get(it, set()),
+                                 rooms=set(s.rooms)))
     finally:
         shutil.rmtree(dest, ignore_errors=True)
     def where(e):

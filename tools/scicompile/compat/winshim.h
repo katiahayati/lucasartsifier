@@ -454,11 +454,14 @@ DWORD GetPrivateProfileSectionA(const char *section, char *buffer, DWORD size, c
 #ifndef GetPrivateProfileSection
 #define GetPrivateProfileSection GetPrivateProfileSectionA
 #endif
-// File enumeration -- source-only projects have no compiled resources, so the
-// stub reports "no matches" (INVALID_HANDLE_VALUE), which is the correct result.
-inline HANDLE FindFirstFileA(const char *, WIN32_FIND_DATA *) { return INVALID_HANDLE_VALUE; }
-inline int    FindNextFileA(HANDLE, WIN32_FIND_DATA *) { return 0; }
-inline int    FindClose(HANDLE) { return 1; }
+// File enumeration -- REAL. This used to be a stub returning "no matches", on the reasoning that
+// a source-only project has no compiled resources. That is wrong for a project assembled from a
+// real game: it is the only way SCICompanion discovers LOOSE PATCH FILES, so with the stub in
+// place the game's own `420.SCR` and a synthesised `999.VOC` were both invisible, and KQ6's
+// `Portrait` kernel came out as `Unknown procedure`.
+HANDLE FindFirstFileA(const char *spec, WIN32_FIND_DATA *data);
+int    FindNextFileA(HANDLE h, WIN32_FIND_DATA *data);
+int    FindClose(HANDLE h);
 #ifndef FindFirstFile
 #define FindFirstFile FindFirstFileA
 #endif

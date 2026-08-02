@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 
@@ -33,12 +34,20 @@ import guards as G
 import ir as I
 import missability as M
 from sexpr import read_file
-from trigger import find_trigger, wrap_trigger_in_source, _block_span, _enclosing_clause_body
+from trigger import (find_trigger, find_arming, find_proc_calls, exports_of,
+                     reaching_procs, wrap_trigger_in_source, _block_span,
+                     _enclosing_clause_body)
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 SCICOMPILE = os.path.join(_ROOT, "tools", "scicompile", "build", "scicompile")
 RES_TYPE_SCRIPT = 2
+RES_TYPE_HEAP = 17
+
+# How this game stores a replaced script as a loose patch -- DERIVED from its own resource map by
+# assemble() (see sci_resource.Sci0Game.patch_scheme), never declared. SCI0's `script.NNN` is the
+# default so an un-assembled caller behaves exactly as before.
+_SCHEME = {"name": "sci0", "script": "script.%03d", "heap": None}
 
 # The SCI object globals the emitted patches reference, DERIVED per game by configure():
 #   ego  -- the get/put/has receiver (the store wrapper's holder global)
@@ -47,12 +56,21 @@ RES_TYPE_SCRIPT = 2
 # LSL2 and KQ4 both use 0 / 1 / 2 -- the SCI template layout, kept as the defaults below -- but a
 # game that laid its object globals out differently would still get correct patches.
 _EGO, _GAME, _ROOM = 0, 1, 2
+_IR = None                     # the analysed IR, stashed by configure() for assemble()
 
 
 def configure(ir):
     """Derive this game's object-global layout so the patcher emits its real indices, not the
     template's 0/1/2. Call once before apply_*()."""
-    global _EGO, _GAME, _ROOM
+    global _EGO, _GAME, _ROOM, _IR, REFUSE, _JUST_KIDDING
+    _IR = ir
+    form = refusal_form(ir)
+    # No derivable way to show a line -> emit NO refusal text at all. A guard that refuses
+    # silently is the "the game lied to the player" class that only play-testing caught last time,
+    # so `apply_guards` treats an empty refusal as a reason not to place a refusal-bearing guard.
+    REFUSE = (form % "Not yet!") if form else None
+    _JUST_KIDDING = (form % "Just kidding! You still need it.") if form else None
+    globals()["_RETRACTION_FORM"] = form or "%s"
     import extract as X
     X.install_vocabulary(ir)                       # sets X._EGO = the ego holder global(s)
     _EGO = min(X._EGO) if X._EGO else 0
@@ -96,6 +114,7 @@ def _script_numbers(src_dir):
 
 def assemble(dest, cfg=None):
     """Build a compilable project directory from our decompilation + the pristine resources."""
+    global _SCHEME
     cfg = cfg or config.ACTIVE
     src = cfg.src_dir
     if os.path.isdir(dest):
@@ -104,10 +123,19 @@ def assemble(dest, cfg=None):
     for fn in os.listdir(src):
         if fn.endswith(".sc"):
             shutil.copy(os.path.join(src, fn), os.path.join(dest, "src", fn))
-    # the compiler reads vocab.997/996/000 out of the game's own volumes
+    # the compiler reads vocab.997/996/000 out of the game's own volumes...
     for fn in os.listdir(cfg.resource_dir):
         if fn.lower().startswith("resource."):
             shutil.copy(os.path.join(cfg.resource_dir, fn), os.path.join(dest, fn))
+    # ...and the game's OWN loose patches, which override those volumes. KQ6 ships Sierra's late
+    # bug fixes for 420/425/460/470 (+65535.MAP) and sci-tools decompiled the PATCHED versions, so
+    # without these we would pair our patched source against the unpatched mapped resource. One
+    # decompilation, one set of resources, or nothing is provable.
+    for fn in os.listdir(cfg.resource_dir):
+        if _is_loose_patch(fn):
+            shutil.copy(os.path.join(cfg.resource_dir, fn), os.path.join(dest, fn))
+    _SCHEME = _patch_scheme(cfg)
+    _write_kernel_vocab(dest, cfg)
 
     nums = _script_numbers(os.path.join(dest, "src"))
     with open(os.path.join(dest, "game.ini"), "w") as f:
@@ -116,6 +144,119 @@ def assemble(dest, cfg=None):
             f.write("n%03d=%s\n" % (n, title))
     _declare_missing_globals(os.path.join(dest, "src"))
     return nums
+
+
+def _is_loose_patch(fn):
+    """A file in the game folder that the interpreter reads INSTEAD of the mapped resource.
+
+    Both naming schemes, because a game may ship either: SCI0's `script.042` / `view.001`, and
+    SCI1's `420.SCR` / `420.HEP` / `65535.MAP`. Recognised by shape -- a resource-type extension
+    with a numeric stem -- so no game's patch list is written down."""
+    stem, _, ext = fn.rpartition(".")
+    if stem and ext.isdigit():                     # script.042, view.001
+        return stem.lower() in _TYPE_EXT
+    return stem.isdigit() and ext.lower() in _TYPE_EXT   # 420.SCR, 65535.MAP
+
+
+_TYPE_EXT = {"script", "view", "pic", "text", "sound", "vocab", "font", "cursor", "patch",
+             "scr", "hep", "v56", "p56", "snd", "voc", "fon", "cur", "pat", "msg", "map"}
+
+
+def _patch_scheme(cfg):
+    """This game's loose-patch naming, derived from its resource map. Falls back to SCI0's
+    `script.NNN` if the map cannot be read -- the shape every existing golden was built with."""
+    try:
+        import sci_resource as R
+        return R.Sci0Game(cfg.resource_dir).patch_scheme()
+    except Exception:                              # noqa: BLE001 -- no map, or an unreadable one
+        return {"name": "sci0", "script": "script.%03d", "heap": None}
+
+
+def _write_kernel_vocab(dest, cfg):
+    """Give the compiler the kernel vocabulary OUR DECOMPILER SPOKE, as a `999.VOC` loose patch.
+
+    A ROUND-TRIP PROPERTY, not a per-game table: every `KernelCall` node in the IR carries both a
+    `func` index and a `name`, so the set of kernel names the source can possibly mention is
+    exactly the set the analysis already read out of the game. Synthesising the table from that
+    cannot drift from the analysis, and needs no data written down anywhere.
+
+    Why it is needed: SCICompanion falls back to a hardcoded SCI0/SCI1 name list when the game
+    ships no vocab.999, and KQ6 displaces `SetSynonyms` (kernel 0x26) with `Portrait` -- so five
+    scripts fail to compile with `Unknown procedure 'Portrait'`. LSL2 and KQ4 both ship their own
+    vocab.999, so this writes nothing for them: the condition is the absence of the resource, not
+    the version.
+
+    Format, READ OFF SIERRA'S OWN `vocab.999` (LSL2's, decoded with `sci_resource`) rather than
+    guessed: uint16 count, then `count` x uint16 offset into the resource data, then at each
+    offset a uint16 LENGTH followed by that many raw characters -- no terminator. LSL2's first
+    offset is 226 == 2 + 2*112, and 226 -> `04 00 'Load'`, 232 -> `06 00 'UnLoad'`, so the entries
+    pack end to end. Wrapped in the same `[0x80|type][0x00]` patch header as any other loose
+    patch. (Writing NUL-terminated names instead puts every name two bytes out and the compiler
+    reports `Unknown procedure 'ScriptID'` -- which is how this format was found.)"""
+    if _IR is None:
+        return None
+    try:
+        import sci_resource as R
+        if 999 in R.Sci0Game(cfg.resource_dir).list_type(R.VOCAB):
+            return None                            # the game has its own table; do not shadow it
+    except Exception:                              # noqa: BLE001 -- unreadable map: leave it alone
+        return None
+    names = {}
+    for s in _IR.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for n in I.walk(body):
+                if I.t(n) == "KernelCall" and isinstance(n.get("func"), int) and n.get("name"):
+                    names[n["func"]] = n["name"]
+    if not names:
+        return None
+    # Dense 0..max: the reader indexes by position, and an index the game never calls can never be
+    # named in the source either -- so a placeholder there is unreachable by construction.
+    table = [names.get(i, "Unused%d" % i) for i in range(max(names) + 1)]
+    head = 2 + 2 * len(table)
+    offsets, blob, at = [], bytearray(), head
+    for nm in table:
+        raw = nm.encode("ascii", "replace")
+        offsets.append(at)
+        blob += struct.pack("<H", len(raw)) + raw
+        at += 2 + len(raw)
+    data = struct.pack("<H", len(table)) + b"".join(struct.pack("<H", o) for o in offsets) + blob
+    path = os.path.join(dest, "999.VOC")
+    with open(path, "wb") as f:
+        f.write(bytes([0x80 | 6, 0x00]))           # 6 = ResourceType::Vocab
+        f.write(data)
+    return path
+
+
+def _ensure_refusal_use(text, titles_by_num):
+    """Make sure a file that now CALLS the refusal procedure declares the script it comes from.
+
+    SCI resolves `procNNN_M` as export M of script NNN, and the caller must say `(use <that
+    script>)` or the compiler reports `Unknown procedure 'proc921_0'. Did you forget to use
+    "Print"?`. LSL2's rooms happen to `(use Interface)` already, which is why this never came up;
+    KQ6's rooms do not all `(use Print)`. The owning script number is read off the derived form
+    itself, so nothing is named here either."""
+    m = re.search(r"proc(\d+)_\d+", _RETRACTION_FORM or "")
+    if not m:
+        return text
+    owner = titles_by_num.get(int(m.group(1)))
+    if not owner or re.search(r"\(use\s+%s\s*\)" % re.escape(owner), text):
+        return text
+    uses = list(re.finditer(r"^\(use\s+\w+\s*\)\s*$", text, re.M))
+    if uses:
+        at = uses[-1].end()
+    else:
+        inc = re.search(r"^\(include\s+[^)]*\)\s*$", text, re.M)
+        if not inc:
+            return text
+        at = inc.end()
+    return text[:at] + "\n(use %s)" % owner + text[at:]
+
+
+def _version_args():
+    """`--version` for scicompile, from the same derivation. SCI1.1 must be pinned or the map
+    never parses and every selector comes out unknown (793 bogus errors on KQ6)."""
+    return ["--version", _SCHEME["name"]]
 
 
 def _declare_missing_globals(src_dir):
@@ -179,16 +320,39 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
             continue
         path = os.path.join(dest, "src", title + ".sc")
         lines = open(path, errors="replace").read().splitlines(True)
-        # The disposal DESTINATION is derived per game (LSL2 -1, KQ4 999), carried on the sink spec.
+        # The disposal DESTINATION is derived per game (LSL2 -1, KQ4 999), carried on the sink
+        # spec -- and it may be ABSENT: SCI's `(gEgo put: 19)` with no second argument means
+        # NOWHERE, which is how KQ6 destroys the hunter's lamp. Accept either spelling of the same
+        # disposal rather than only the one the first game happened to use.
         disposal = sk.get("dest", -1)
-        pat = re.compile(r"^\s*\(global%d\s+put:\s*%d\s+%d\)\s*$" % (_EGO, sk["item"], disposal))
+        pat = re.compile(r"^\s*\(global%d\s+put:\s*%d\s*(?:%d\s*)?\)\s*$"
+                         % (_EGO, sk["item"], disposal))
         hits = [i for i, l in enumerate(lines) if pat.match(l)]
         if len(hits) != 1:
             edits.append({**sk, "applied": False,
-                          "why": "expected exactly one `put: %d -1` in %s, found %d"
-                                 % (sk["item"], title, len(hits))})
+                          "why": "expected exactly one `put: %d %d` (or with no destination) in "
+                                 "%s, found %d" % (sk["item"], disposal, title, len(hits))})
             continue
         i = hits[0]
+        # ⚠️ VERIFY THE PURITY CLAIM AT THE EDIT SITE. "A pure sink does nothing except destroy the
+        # item" is what makes deleting the `put:` provably safe -- but `pure_sinks` keys a clause by
+        # (room, positive-owns), and in a big dispatch script a sibling `cond` arm gets a different
+        # key, so a TRADE can reach here looking pure. KQ6's lamp peddler is exactly that: the same
+        # doVerb hands over `(get: 25)` and sets the flag that makes the peddler leave, so deleting
+        # the `put:` left the player keeping the old lamp AND taking the new one -- reported from
+        # live play. Read the clause we are about to edit and refuse if it moves any other item.
+        cbody = _enclosing_form("".join(lines), sum(len(l) for l in lines[:i]))
+        if cbody:
+            clause = "".join(lines)[cbody[0]:cbody[1]]
+            others = [m for m in re.finditer(r"\b(get|put):\s*(\d+)", clause)
+                      if int(m.group(2)) != sk["item"]]
+            if others:
+                edits.append({**sk, "applied": False,
+                              "why": "not a pure sink: the same clause also moves item(s) %s -- "
+                                     "this is a TRADE, and deleting the disposal would hand the "
+                                     "player both sides of it"
+                                     % sorted({int(m.group(2)) for m in others})})
+                continue
         # Replace the consumption with a LINE OF TEXT, not silence. The clause has just announced
         # an IRREVERSIBLE act -- "You carefully pour your bottle ... on the padlock", "You dump the
         # bottle ... on the ice", "You do so and immediately discard the now-soiled airsick bag" --
@@ -198,8 +362,22 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
         # within this game's register. Wording is the user's.
         # No apostrophes: a single quote opens a Said spec.
         indent = re.match(r"[ \t]*", lines[i]).group(0)
-        lines[i] = ("%s(proc255_0 {Just kidding! You hold on to it because you still need it.})\n"
-                    % indent)
+        if _JUST_KIDDING is None:
+            edits.append({**sk, "applied": False,
+                          "why": "no literal-display form derives for this game"})
+            continue
+        # Spelled with the game's OWN display form (see `refusal_form`) -- this line used to
+        # hardcode LSL2's `proc255_0` a second time, which is the same defect in two places.
+        #
+        # AND IT GOES LAST IN THE CLAUSE, not where the `put:` stood. The retraction only makes
+        # sense after the game has said the thing it is retracting, and SCI1.1 puts the disposal
+        # FIRST: KQ6's `(63 (gEgo put: 23 280) (say: ...))` printed "Just kidding!" before the joke
+        # it was answering. LSL2 happened to order them the other way, which is why this shipped.
+        retraction = "%s%s\n" % (indent, _RETRACTION_FORM
+                                 % "Just kidding! You hold on to it because you still need it.")
+        del lines[i]
+        end = _clause_end_line(lines, i)
+        lines.insert(end, retraction)
         # Drop the penalty too. It was the price of DESTROYING the item, and the destruction is
         # gone -- charging for something that did not happen also caps the reachable score
         # permanently, which is a small unwinnable state of its own in a scored game. Only ever a
@@ -210,10 +388,142 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
             if sm:
                 dropped_score = int(sm.group(1))
                 del lines[i + 1]
-        open(path, "w").write("".join(lines))
+        open(path, "w").write(_ensure_refusal_use("".join(lines), titles_by_num))
         edits.append({**sk, "applied": True, "title": title, "line": i + 1,
                       "score_removed": dropped_score})
     return edits
+
+
+def _enclosing_form(text, pos):
+    """(start, end) of the innermost balanced form that CONTAINS `pos`.
+
+    `trigger._enclosing_clause_body` only understands `cond`, and SCI1.1's item verbs are a
+    `switch` -- KQ6's lamp trade is `(5 (put: 19) ... (get: 25))`, a switch case -- so asking it
+    about them silently answered "no clause", which is how a trade got read as a pure sink."""
+    stack = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == "{":
+            j = text.find("}", i)
+            i = n if j < 0 else j + 1
+            continue
+        if c == "'":
+            j = text.find("'", i + 1)
+            i = n if j < 0 else j + 1
+            continue
+        if c == ";":
+            j = text.find("\n", i)
+            i = n if j < 0 else j + 1
+            continue
+        if i == pos:
+            return _block_span(text, stack[-1]) if stack else None
+        if c == "(":
+            stack.append(i)
+        elif c == ")" and stack:
+            stack.pop()
+        i += 1
+    return None
+
+
+def _clause_end_line(lines, i):
+    """The line index just past the statement list `lines[i]` belongs to.
+
+    Walks forward tracking parenthesis depth relative to the deleted line's position: the clause
+    ends where depth would go negative, i.e. at its own closing paren. Used to put a retraction
+    AFTER the text it retracts."""
+    depth = 0
+    for j in range(i, len(lines)):
+        for ch in _strip_literals(lines[j]):
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth < 0:
+                    return j
+    return len(lines)
+
+
+def _strip_literals(line):
+    """`line` with {…} strings, 'said' specs and ; comments removed, so paren counting is honest."""
+    out, i, n = [], 0, len(line)
+    while i < n:
+        c = line[i]
+        if c == "{":
+            i = line.find("}", i)
+            i = n if i < 0 else i + 1
+            continue
+        if c == "'":
+            i = line.find("'", i + 1)
+            i = n if i < 0 else i + 1
+            continue
+        if c == ";":
+            break
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def refusal_form(ir):
+    """The call form THIS GAME uses to display a literal line -- `"(procN_M {%s})"`, or None.
+
+    `REFUSE` used to be LSL2's print procedure spelled out. **KQ6 has a `proc255_0` too and it is
+    an unrelated procedure** (`Dialog.sc:199` calls it with no arguments, as a boolean), so the
+    hardcode emits a call to something arbitrary. Here we get lucky and it fails loudly at compile
+    time; in a game that exports a compatible `proc255_0` it would fail silently.
+
+    DERIVATION, from the game's own code and in the SCI vocabulary the rest of this codebase
+    already speaks: a candidate is a GLOBAL procedure whose body DISPLAYS TEXT -- it sends an
+    `addText`-family or `text` selector, or calls the `Display`/`GetFarText`/`Format` kernels.
+    Of those, take the one the game CALLS MOST; a literal first argument breaks ties.
+
+    Call sites alone are not enough, which is why the body is what is read: LSL2's own code never
+    passes `proc255_0` a bare literal (it passes a module/number pair), yet a literal works,
+    because the procedure branches on `[param1 0] < 1000` and treats anything above that as a text
+    pointer. Ranking by literal call sites instead picks `proc255_3` -- the PROMPT, whose result is
+    assigned and tested.
+
+    MEASURED, whole corpus: LSL2 `proc255_0` (2400 calls) over `proc255_3` (14); KQ4 `proc255_0`
+    (2782); KQ6 and the Dagger of Amon Ra both `proc921_0`, which is
+    `(procedure (proc921_0 &tmp temp0) (= temp0 (Print new:)) (temp0 addText: &rest init:))`.
+    So LSL2 and KQ4 keep the exact text they have always emitted, and the two SCI1.1 titles stop
+    emitting a call to a procedure that in KQ6 is an unrelated boolean."""
+    from collections import Counter
+    _SEL = ("addText", "addTextF", "text")
+    _KERN = ("Display", "GetFarText", "Format")
+    calls, lit = Counter(), Counter()
+    for s in ir.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for n in I.walk(body):
+                if I.t(n) not in ("LocalCall", "PublicCall"):
+                    continue
+                name = n.get("name") or ""
+                if not name.startswith("proc"):     # script-local: not callable from elsewhere
+                    continue
+                calls[name] += 1
+                args = n.get("kids") or []
+                if args and I.t(args[0]) == "String":
+                    lit[name] += 1
+    cands = set()
+    for s in ir.scripts.values():
+        for name, body in s.procs.items():
+            if not name.startswith("proc"):
+                continue
+            for n in I.walk(body):
+                if I.t(n) == "KernelCall" and n.get("name") in _KERN:
+                    cands.add(name)
+                elif I.t(n) == "Send":
+                    try:
+                        _recv, msgs = I.send_pairs(n)
+                    except Exception:               # noqa: BLE001 -- malformed send
+                        continue
+                    if any(sel in _SEL for sel, _ in msgs):
+                        cands.add(name)
+    if not cands:
+        return None
+    best = max(cands, key=lambda nm: (calls[nm], lit[nm], nm))
+    return "(%s {%%s})" % best
 
 
 REFUSE = "(proc255_0 {Not yet!})"
@@ -221,6 +531,7 @@ REFUSE = "(proc255_0 {Not yet!})"
 # announcement is not left lying. Generic on PURPOSE -- it must fit any wasted item, counter or
 # flag, so it says nothing about what the item does. No apostrophes -- a single quote opens a Said.
 _JUST_KIDDING = "(proc255_0 {Just kidding! You still need it.})"
+_RETRACTION_FORM = "(proc255_0 {%s})"   # the same form, un-worded; set by configure()
 # NOT the stock refusals. proc0_20 ("You don't have it.") LIES -- reported from live play at rm26,
 # where the player was holding the very item they had just used; what they lacked was something
 # else, needed later. proc0_15 ("Not now!") is honest but misleads in a different way: it reads as
@@ -241,7 +552,7 @@ EDGEHIT = {"north": 1, "east": 2, "south": 3, "west": 4}   # Game.sc Rm.doit swi
 
 # Placements find_trigger can actually wrap in a controllable handler: a direct newRoom, a
 # changeState cutscene, or a setScript-started Script. Anything else falls back to the exit idiom.
-_PLACED_KINDS = ("trigger", "direct", "setscript", "arm-event")
+_PLACED_KINDS = ("trigger", "direct", "setscript", "arm-event", "proc-call")
 
 
 def guard_edgehit_clause(text, direction, cond):
@@ -369,6 +680,12 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
         except Exception as e:
             out.append({**r, "applied": False, "why": "no file %s: %s" % (title, e)})
             continue
+        if _JUST_KIDDING is None:
+            # The retraction is printed after the game's own "you spent it" line; with no derived
+            # way to print, leaving the announcement standing would be a lie about the fix.
+            out.append({**r, "applied": False,
+                        "why": "no literal-display form derives for this game"})
+            continue
         valpat = r"\(\+" if r["counter"] else r"%d\b" % r["value"]     # increment vs literal dead value
         pat = re.compile(r"\(\([^()]*\bat:\s*%d\s*\)\s*%s:\s*%s" % (it, re.escape(prop), valpat))
         hits = [i for i, l in enumerate(lines) if pat.search(l)]
@@ -486,7 +803,11 @@ def guard_edge_exit(text, inst_name, to_room, cond):
 
     Silent by nature: a disabled edge behaves as a wall, with no refusal text. That is how the game
     already does it, and it is the only lever available for this kind of exit."""
-    m = re.search(r"\(instance\s+%s\s+of\s+Rm\b" % re.escape(inst_name), text)
+    # ANY room class: LSL2/KQ4 rooms are `of Rm`, KQ6's are `of KQ6Room`, the Dagger's `of LBRoom`.
+    # Nothing needs deriving -- the instance NAME is the script's own room object, so the class it
+    # inherits from is not what identifies it, and hardcoding `Rm` meant this fallback could never
+    # fire on any SCI1.1 title.
+    m = re.search(r"\(instance\s+%s\s+of\s+\w+" % re.escape(inst_name), text)
     if not m:
         return text, 0, None
     props = re.search(r"\(properties(.*?)\)", text[m.start():], re.S)
@@ -583,7 +904,35 @@ def guard_register_write(text, register, trap, cond):
     return text, 0
 
 
-def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set()):
+_SOURCE_CACHE = {}
+
+
+def _edit_candidates(dest, titles_by_num, sp, rooms):
+    """Files that could hold the `newRoom: <to>` this spec guards, best first.
+
+    The FROM room's own script always comes first -- that is where the edit belongs when it is
+    there at all. After it come scripts that perform the same `newRoom` and are NOT another room's
+    script: helper scripts a room arms (KQ6's `nightMare.sc`, script 344, delivers the Realm
+    entry attributed to rm340). Another ROOM's script is excluded because a room sends you
+    somewhere on its own account, and guarding its exit would guard a different crossing."""
+    own = titles_by_num.get(sp["from_room"])
+    out = [own] if own else []
+    pat = re.compile(r"newRoom:\s*%d\b" % sp["to_room"])
+    for num, title in sorted(titles_by_num.items()):
+        if title in out or (rooms and num in rooms and num != sp["from_room"]):
+            continue
+        path = os.path.join(dest, "src", title + ".sc")
+        if path not in _SOURCE_CACHE:
+            try:
+                _SOURCE_CACHE[path] = open(path, errors="replace").read()
+            except Exception:                      # noqa: BLE001 -- missing source
+                _SOURCE_CACHE[path] = ""
+        if pat.search(_SOURCE_CACHE[path]):
+            out.append(title)
+    return out
+
+
+def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), rooms=None):
     """Place each EDGE guard at its CONTROLLABLE TRIGGER.
 
     A frontier `newRoom: N` usually sits at the last state of a changeState cutscene -- an
@@ -636,6 +985,43 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set()):
         host.setdefault("merged", []).append(sp["condition"])
 
     out = out_unplaced
+    # FATAL USES -- refuse the ACTION. The site is the arming of the machine that kills you, in the
+    # room that offers the move: KQ6's rm420 `(gCurRoom setScript: throwSkull)`. `find_arming`
+    # already locates an arming by name, so this reuses the Realm-entry path rather than adding a
+    # third way to find a setScript.
+    for sp in specs:
+        if sp["site"] != "action" or sp["refused"]:
+            continue
+        title = titles_by_num.get(sp["room"])
+        path = os.path.join(dest, "src", title + ".sc") if title else None
+        if not path or not os.path.exists(path):
+            out.append({**sp, "applied": False, "why": "no source for rm%s" % sp["room"]})
+            continue
+        arm = find_arming(read_file(path), {sp["machine"]})
+        if not arm:
+            out.append({**sp, "applied": False,
+                        "why": "no arming of %s found in %s" % (sp["machine"], title)})
+            continue
+        if _RETRACTION_FORM is None or REFUSE is None:
+            out.append({**sp, "applied": False,
+                        "why": "no literal-display form derives for this game"})
+            continue
+        # Always a REFUSAL, never a silent arm-event gate: the player chose this move, so they are
+        # owed a reason. `find_arming` reports `arm-event` when the arming sits outside a handler,
+        # and that shape has no `else` -- force the refusing form here.
+        arm = {**arm, "kind": "setscript", "target_room": None}
+        text = open(path, errors="replace").read()
+        # A FATAL USE gets its own wording. "Not yet!" is the edge-guard line and it means "come
+        # back with the missing thing" -- but there is no later moment at which throwing the skull
+        # into the gears is a good idea, so that line would be a lie. Say what is true instead.
+        refuse = _RETRACTION_FORM % "Better not. You are going to need that."
+        new_text, n = wrap_trigger_in_source(text, arm, to_source_syntax(sp["condition"]), refuse)
+        if not n:
+            out.append({**sp, "applied": False, "why": "arming found but no site rewritten",
+                        "placement": arm})
+            continue
+        open(path, "w").write(_ensure_refusal_use(new_text, titles_by_num))
+        out.append({**sp, "applied": True, "title": title, "sites": n, "placement": arm})
     # register-flip guards edit the game class's always-live method (script 0 = Main), not a room.
     for sp in specs:
         if sp["site"] != "register-write" or sp["refused"]:
@@ -653,14 +1039,62 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set()):
             out.append({**sp, "applied": False, "why": "no free-running trap write found",
                         "from_room": None, "to_room": None})
     for title, group in sorted((k, v) for k, v in by_title.items() if k):
-        path = os.path.join(dest, "src", title + ".sc")
         for sp in group:
-            try:
-                forms = read_file(path)
-            except Exception as e:
-                out.append({**sp, "applied": False, "why": "parse failed: %s" % e})
-                continue
-            placement = find_trigger(forms, sp["to_room"])
+            # The edit does not always live in the FROM room's own file. KQ6's Realm entry
+            # `rm340 -> rm155` is delivered by `nightMare.sc` (script 344), a helper the room
+            # arms, and looking only at rm340.sc reports `not-found` for that reason alone. Try
+            # the room's own file first, then any OTHER script that performs this `newRoom` and
+            # is not itself some other room's script -- a room that sends you somewhere is a
+            # source of its own edge, never of this one.
+            title_used, path, forms, placement = None, None, None, None
+            for cand in _edit_candidates(dest, titles_by_num, sp, rooms):
+                cpath = os.path.join(dest, "src", cand + ".sc")
+                try:
+                    cforms = read_file(cpath)
+                except Exception as e:
+                    out.append({**sp, "applied": False, "why": "parse failed: %s" % e})
+                    break
+                p = find_trigger(cforms, sp["to_room"])
+                # Best first: a placeable trigger, else a file that at least CONTAINS the newRoom
+                # (its instance is what the cross-file arming search below needs), else nothing.
+                def rank(q):
+                    return (2 if q["kind"] in _PLACED_KINDS else (1 if q.get("instance") else 0))
+                if placement is None or rank(p) > rank(placement):
+                    title_used, path, forms, placement = cand, cpath, cforms, p
+                if p["kind"] in _PLACED_KINDS:
+                    break
+            if placement is None:
+                continue                            # parse failure, already reported
+            title = title_used
+            if placement["kind"] not in _PLACED_KINDS and placement.get("instance"):
+                # The cutscene that performs the `newRoom` is in one file and the ARMING that
+                # starts it is in another: KQ6's rm340 does `(setScript: (ScriptID 344 3))` and
+                # script 344's `catchNiteMare` does the `newRoom: 155`. Look for that arming in the
+                # other candidate files -- under either spelling, the instance's name or its
+                # export number -- and guard it there.
+                # Targets: the instance itself, and EVERY export of the script it lives in. The
+                # second is needed because a cutscene script hands off internally -- KQ6's rm340
+                # arms `(ScriptID 344 3)` (`blowinIt`), which several states later becomes
+                # `catchNiteMare`, and only that last one performs the `newRoom`. The arming a
+                # room can be guarded at is the one that starts the SCRIPT, so any export of it
+                # is the right commit point; staying inside one script keeps that tight.
+                snum, exps = exports_of(forms)
+                targets = {placement["instance"]}
+                if snum is not None:
+                    targets |= {("ScriptID", snum, idx) for idx in exps}
+                    targets.add(("proc", snum))    # ...or the room just CALLS one of its procedures
+                for cand in _edit_candidates(dest, titles_by_num, sp, rooms):
+                    if cand == title:
+                        continue
+                    cpath = os.path.join(dest, "src", cand + ".sc")
+                    try:
+                        arm = find_arming(read_file(cpath), targets)
+                    except Exception:               # noqa: BLE001 -- unparseable candidate
+                        continue
+                    if arm:
+                        arm["target_room"] = sp["to_room"]
+                        title, path, placement = cand, cpath, arm
+                        break
             if placement["kind"] not in _PLACED_KINDS:
                 # fall back to the room-property exit idiom before giving up
                 text = open(path, errors="replace").read()
@@ -677,6 +1111,14 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set()):
                                    % placement["kind"],
                             "placement": placement})
                 continue
+            if REFUSE is None and placement["kind"] != "arm-event":
+                # An `arm-event` gate has no `else` branch and so says nothing either way; every
+                # other placement REFUSES the player's command, and refusing without a word is the
+                # "the game lied to the player" failure only play-testing catches.
+                out.append({**sp, "applied": False, "placement": placement,
+                            "why": "no literal-display form derives for this game, so a refusal "
+                                   "would be silent"})
+                continue
             text = open(path, errors="replace").read()
             new_text, n = wrap_trigger_in_source(
                 text, placement, to_source_syntax(sp["condition"]), REFUSE)
@@ -684,10 +1126,56 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set()):
                 out.append({**sp, "applied": False, "why": "trigger found but no site rewritten",
                             "placement": placement})
                 continue
-            open(path, "w").write(new_text)
-            out.append({**sp, "applied": True, "title": title, "sites": n,
-                        "placement": placement})
+            open(path, "w").write(_ensure_refusal_use(new_text, titles_by_num))
+            row = {**sp, "applied": True, "title": title, "sites": n, "placement": placement}
+            also = _also_place_capture(dest, sp, titles_by_num, rooms, placement)
+            if also:
+                row["also_placed"] = also
+            out.append(row)
     return out
+
+
+def _also_place_capture(dest, sp, titles_by_num, rooms, primary):
+    """Guard the OTHER way through the same edge: the one the game takes FOR you.
+
+    An edge can have two implementations and only one of them is a move the player makes. KQ6's
+    catacombs are the case, reported from live play: `rm340::doit` walks you in when you step on
+    the cave mouth (guarded), and `rm340::init` has the guards SEIZE you on arrival, via
+    `(proc342_2)` -> `toGehenna` -> `tossEmIn` -> `newRoom: 405` (not guarded, so climbing the
+    cliff without the four items still threw the player in).
+
+    Derived: for each helper script that performs this edge's `newRoom`, look in the FROM room's
+    own file for a call to one of that script's procedures and guard the clause around it. Returns
+    the extra placements, which are reported on the row -- a second edit made silently is how a
+    patch stops being reviewable."""
+    if REFUSE is None:
+        return []
+    own = titles_by_num.get(sp["from_room"])
+    if not own:
+        return []
+    own_path = os.path.join(dest, "src", own + ".sc")
+    cond = to_source_syntax(sp["condition"])
+    extra = []
+    for cand in _edit_candidates(dest, titles_by_num, sp, rooms):
+        if cand == own:
+            continue
+        try:
+            names = reaching_procs(read_file(os.path.join(dest, "src", cand + ".sc")),
+                                   sp["to_room"])
+        except Exception:                          # noqa: BLE001 -- unparseable candidate
+            continue
+        if not names:
+            continue
+        for arm in find_proc_calls(read_file(own_path), names):
+            if primary.get("target_script") == arm.get("target_script"):
+                continue                           # already guarded as the primary site
+            text = open(own_path, errors="replace").read()
+            new_text, n = wrap_trigger_in_source(text, arm, cond, REFUSE)
+            if not n:
+                continue
+            open(own_path, "w").write(_ensure_refusal_use(new_text, titles_by_num))
+            extra.append({"title": own, "placement": arm, "sites": n})
+    return extra
 
 
 def run(args, cwd):
@@ -698,9 +1186,9 @@ def run(args, cwd):
 def compile_project(dest):
     """--sco (interfaces from source + game) then --all (compile everything)."""
     parent, name = os.path.dirname(dest) or ".", os.path.basename(dest)
-    rc, out = run(["--sco", name], parent)
+    rc, out = run(_version_args() + ["--sco", name], parent)
     sco = re.search(r"Generate SCO: (\d+) written", out)
-    rc2, out2 = run(["--all", name], parent)
+    rc2, out2 = run(_version_args() + ["--all", name], parent)
     allr = re.search(r"result: (\d+)/(\d+) scripts compiled", out2)
     failed = re.findall(r"^  (\S+)\s+line \d+: Error: (.*)$", out2, re.M)
     return {"sco_written": int(sco.group(1)) if sco else 0,
@@ -710,14 +1198,24 @@ def compile_project(dest):
 
 
 def compile_one(dest, title, out_bin):
-    """Compile a single script to its raw resource bytes (--all only writes .sco)."""
+    """Compile a single script to its raw resource bytes (--all only writes .sco).
+
+    On a SeparateHeapResources version the compiler also writes `<out_bin>.hep`; a missing heap
+    there is a FAILURE, not a partial success, because the interpreter reads objects out of it."""
     parent, name = os.path.dirname(dest) or ".", os.path.basename(dest)
-    rc, out = run([name, os.path.join(name, "src", title + ".sc"), out_bin], parent)
-    return os.path.exists(out_bin), out
+    rc, out = run(_version_args() + [name, os.path.join(name, "src", title + ".sc"), out_bin],
+                  parent)
+    ok = os.path.exists(out_bin) and (not _SCHEME["heap"] or os.path.exists(out_bin + ".hep"))
+    return ok, out
 
 
 def emit_patches(dest, titles, nums, out_dir):
-    """Compile each edited script and wrap it as a ScummVM loose patch `script.NNN`.
+    """Compile each edited script and wrap it as a ScummVM loose patch.
+
+    The FILENAME and whether a heap accompanies it come from `_SCHEME`, derived from the game's own
+    resource map: `script.NNN` for SCI0, `NNN.SCR` for SCI1, `NNN.SCR` + `NNN.HEP` for SCI1.1. The
+    two-byte header is `[0x80|type][0x00]` either way -- confirmed against KQ6's own shipped
+    patches, `82 00` for 420.SCR and `91 00` for 420.HEP.
 
     The output dir is CLEARED first: a build must never leave a previous run's patches (or another
     game's) sitting alongside this one's -- a stale script.NNN silently overrides the game just as a
@@ -734,13 +1232,20 @@ def emit_patches(dest, titles, nums, out_dir):
             written.append({"title": title, "script": num, "ok": False,
                             "error": log.strip().splitlines()[-1] if log.strip() else "no output"})
             continue
-        data = open(raw, "rb").read()
-        dst = os.path.join(out_dir, "script.%03d" % num)
-        with open(dst, "wb") as f:
-            f.write(bytes([0x80 | RES_TYPE_SCRIPT, 0x00]))
-            f.write(data)
+        parts, total = [], 0
+        for src_path, fmt, rtype in ((raw, _SCHEME["script"], RES_TYPE_SCRIPT),
+                                     (raw + ".hep", _SCHEME["heap"], RES_TYPE_HEAP)):
+            if not fmt:
+                continue
+            data = open(src_path, "rb").read()
+            dst = os.path.join(out_dir, fmt % num)
+            with open(dst, "wb") as f:
+                f.write(bytes([0x80 | rtype, 0x00]))
+                f.write(data)
+            parts.append(dst)
+            total += len(data) + 2
         written.append({"title": title, "script": num, "ok": True,
-                        "path": dst, "bytes": len(data) + 2})
+                        "path": parts[0], "paths": parts, "bytes": total})
     return written
 
 
@@ -773,7 +1278,7 @@ def main():
     specs = G.guard_specs(s)
     print("\napplying %d guard specs:" % sum(1 for x in specs if x["site"] == "edge"))
     gedits = apply_guards(dest, specs, titles_by_num, nums,
-                          s_drops=lambda it: s.drops.get(it, set()))
+                          s_drops=lambda it: s.drops.get(it, set()), rooms=set(s.rooms))
     for e in gedits:
         mark = "ok " if e["applied"] else "SKIP"
         pl = e.get("placement", {})
@@ -800,9 +1305,10 @@ def main():
     print("\nemitting loose patch files for %d edited scripts:" % len(touched))
     for w in emit_patches(dest, touched, nums, out_dir):
         if w["ok"]:
-            print("  script.%03d  %-10s %d bytes" % (w["script"], w["title"], w["bytes"]))
+            print("  %-24s %-10s %d bytes"
+                  % (" + ".join(os.path.basename(p) for p in w["paths"]), w["title"], w["bytes"]))
         else:
-            print("  FAILED script.%03d %s: %s" % (w["script"], w["title"], w["error"]))
+            print("  FAILED script %d %s: %s" % (w["script"], w["title"], w["error"]))
     print("\npatch files in: %s" % out_dir)
     print("copy them into a COPY of the game folder; delete them to revert.")
     return 0

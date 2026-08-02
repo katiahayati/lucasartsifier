@@ -57,18 +57,20 @@ KNOWN_RED = {
     # only mechanism that will notice -- a plan document goes stale in silence. Phases are in
     # the approved plan; derivations in docs/SCI11-PATCHING-PLAN.md.
     "test_sci11_patch.py": {
-        "🔴 KNOWN GAP: the refusal primitive is derived per game, not a module constant":
-            "PHASE 2. patcher.REFUSE is LSL2's print call hardcoded; KQ6's proc255_0 is an "
-            "unrelated boolean. Derive 'how does this game display a literal line?' per game, "
-            "and refuse to emit a refusal-bearing guard when it cannot be derived.",
-        "🔴 KNOWN GAP: a fatal use produces a remedy spec":
-            "PHASE 5. guard_specs does not consume fatal_uses, so KQ6's skull-in-the-gears is "
-            "flagged and nothing would stop the player doing it. Needs an `action` spec kind.",
+        # ✅ PHASE 2 LANDED 2026-08-01 -- "the refusal primitive is derived per game" is GREEN and
+        # is therefore no longer listed. `patcher.refusal_form` reads the game's own text-display
+        # procedure out of its scripts (LSL2/KQ4 `proc255_0`, KQ6 and the Dagger `proc921_0`), and
+        # a game with no derivable form emits no refusal-bearing guard at all.
+        # ✅ PHASE 5's fatal-use half LANDED 2026-08-01 -- "a fatal use produces a remedy spec" is
+        # GREEN. `guard_specs` emits an `action` spec per `fatal_uses` row and the patcher places
+        # it on the arming of the fatal machine (KQ6: rm420's `setScript: throwSkull`). Inert on
+        # LSL2, KQ4 and the Dagger, which have no fatal uses.
         "🔴 KNOWN GAP (KQ6): every non-refused spec places":
-            "PHASE 4 (and PHASE 3). 6 of 18 place. EIGHT of the twelve skips are the catacombs "
+            "PHASE 4 (and PHASE 3). **10 of 19** place since 2026-08-01, and seven scripts now "
+            "compile and emit as NNN.SCR+NNN.HEP. EIGHT of the nine skips are the catacombs "
             "rm*->rm420 edges, which Phase 3's obtainability_frontier DELETES rather than "
-            "places -- they are currently walls. The real placement backlog is four: the lamp "
-            "sink's spelling (§4) and three catacombs-entrance edges (§5.1, §5.2).",
+            "places -- they are currently walls. The ninth is rm340->rm370, the sacred-water "
+            "pocket, whose newRoom lives in n342.sc with no locatable armer.",
         "🔴 KNOWN GAP (dagger): every non-refused spec places":
             "PHASE 4. 2 of 4 place, and the two that DO are 24-item guards placed as arm-event, "
             "i.e. events that would never fire -- so Dagger is worse off than the count "

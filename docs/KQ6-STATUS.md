@@ -58,9 +58,10 @@ same fact.
 
 | | |
 |---|---|
-| guard specs | 19 total — **15 emitted, 4 refused** |
+| guard specs | 20 total — **16 emitted, 4 refused** (19 edge + 1 `action`) |
 | the 4 refusals | all pocket **exit** guards (fill the cup at rm155→200, hold up the mirror at rm670→660) |
 | sink remedies | 3 emitted — delete the mint, peppermint and huntersLamp destroy-verbs |
+| fatal uses | 1 emitted — refuse `throwSkull` at rm420 |
 | `verify()` | fixed 7 + 1 group · **NEW 0** · **remaining 3** |
 | remaining | `handkerchief`, `nightingale`, `skeletonKey` |
 
@@ -80,28 +81,67 @@ crossing ever *commits* the flag: the walk believes the pocket can be re-entered
 clear and the flag set on a second visit. Refusing is the safe direction — placing the guard
 anyway would seal in a player who cannot comply where it sits. Pinned RED in `test_toll`.
 
-### Placement — MEASURED 2026-08-01
+### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
-A correct spec that lands nowhere ships nothing, and this half had never been recorded outside a
-plan document. **KQ6: 6 applied / 18.** Dagger, which shares every seam: **2 of 4**.
+**KQ6: 10 applied / 19, 6 scripts compiled and written as SCI1.1 loose patches.** The first patch
+set this project has produced for anything but LSL2:
 
-| applied | skipped | reason |
-|---|---|---|
-| `Main/mint`, `Main/peppermint` (sinks) | `lampTradeScr/huntersLamp` | looks for `put: 19 -1`; KQ6 writes `(global0 put: 19)` — no destination |
-| `rm220`, `rm230` (both castle doors) | `rm340->rm155`, `rm340->rm370` | trigger search reads only the FROM room's own file; rm155's entry lives in `nightMare.sc` |
-| `rm340`, `rm660` (setscript) | `rm340->rm405` | controllability is spelled for SCI0; SCI1.1 arms with `(global2 setScript: X)` |
-| | **8 × `rm*->rm420`** | the catacombs brick — no call site exists by construction |
+```
+0.SCR   + 0.HEP    Main          mint + peppermint destroy-verbs deleted
+220.SCR + 220.HEP  rm220         castle short door
+230.SCR + 230.HEP  rm230         castle long door
+340.SCR + 340.HEP  rm340         Realm entry (155), sacred-water flyer (370),
+                                 catacombs entrance (405), lair (440)
+420.SCR + 420.HEP  rm420         the skull into the gears -- refused
+660.SCR + 660.HEP  rm660         Charon's crossing
+```
+
+"10 applied / 19" counts placement ROWS — the 2 **applied** sink remedies (mint, peppermint)
+plus 8 guard placements. The third sink remedy — huntersLamp — is emitted as a spec but REFUSED
+at apply time: the clause it would edit also moves item 25 (the lamp you receive), i.e. it is a
+TRADE, and live play showed that deleting the disposal hands the player both sides of it. That
+refusal is general (any sink whose clause moves another item), not a lamp rule.
+
+The 20th spec is the new **`action`** kind: `fatal_uses` now produces a remedy instead of a
+finding nobody could ship. It is placed on the arming of the fatal machine — rm420's
+`(gCurRoom setScript: throwSkull)` — as `(if (not (gEgo has: 11)) … else <refusal>)`, so the move
+the game invites is answered with a line rather than a death. Inert on LSL2, KQ4 and the Dagger,
+which have no fatal uses. ⚠️ rm420 is also one of Sierra's own shipped patches, so this one
+overwrites their bug fix with our recompile of the decompiled *patched* script.
+
+What the back end needed, all of it derived rather than declared: the SCI version and the
+`NNN.SCR`+`NNN.HEP` scheme come from the shape of the game's own resource map
+(`sci_resource.patch_scheme`); the kernel table is synthesised from our own IR as a `999.VOC`
+loose patch (KQ6 displaces `SetSynonyms` with `Portrait`, which cost 5 scripts, `Main` among
+them); the refusal line is the game's own display procedure, derived per game
+(`patcher.refusal_form` → KQ6 `(proc921_0 {…})`, LSL2/KQ4 unchanged at `proc255_0`); and the
+file gets `(use Print)` added when it does not already have it. **Compiles 336/341** — the 5 that
+do not are decompiler-dialect issues in scripts we do not edit.
+
+| still skipped | reason |
+|---|---|
+| **8 × `rm{405..435}->rm420`** | the catacombs brick — no call site exists by construction |
+
+(`rm340->rm370` — the sacred-water pocket — used to sit in this table with "no armer we can
+locate". It now places as a `proc-call` edit: `trigger.find_proc_calls`/`reaching_procs` follow
+the room into `n342.sc`'s procedure and guard the call site.)
 
 **Read the eight carefully: they are not a placement backlog.** Those guards are *walls* — from
 rm405 you cannot go back for a brick — and the fix deletes them rather than placing them (the
-plan's Phase 3, `obtainability_frontier`, collapses all eight to one at `rm340->rm405`). The real
-placement backlog is **four**: one spelling bug and three catacombs-entrance edges.
+plan's Phase 3, `obtainability_frontier`, collapses all eight to one at `rm340->rm405`).
 
 Dagger is worse than its count: both of its *applied* guards are **24 items** placed as
 `arm-event`, i.e. events that would never fire. Its skips are safer than its successes.
 
-Frozen from here on: LSL2's placements are in its golden (12/12 applied, all `True`); KQ6's and
-Dagger's are printed and asserted by `test_sci11_patch.py`, RED until they all place.
+**Mostly not yet played.** Structural validity is not runtime validity, and the LSL2 history is
+unambiguous about that. The one edit that HAS seen live play — the lampTradeScr destroy-verb
+deletion — handed the player both lamps, which is where the trade refusal above came from.
+Everything else has not been loaded by ScummVM. (Deprioritised by the user 2026-08-01: play the
+set only after the placement details settle.)
+
+Frozen from here on: LSL2's placements are in its golden (12/12 applied, all `True`, and
+**byte-identical through every commit in this work**); KQ6's and Dagger's are printed and asserted
+by `test_sci11_patch.py`.
 
 ---
 

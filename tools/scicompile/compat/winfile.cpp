@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 
 namespace
@@ -267,8 +268,87 @@ const char *PathFindFileNameA(const char *path)
 
 int PathMatchSpecA(const char *file, const char *spec)
 {
+    // Win32's PathMatchSpec takes a SEMICOLON-SEPARATED LIST of patterns and matches if any of
+    // them does; fnmatch takes one. Callers rely on the list form -- the resource enumerator asks
+    // for "script.*;*.scr" and "vocab.*;*.voc" -- so treating the whole string as a single
+    // pattern silently found no loose patch files of any type.
     if (!file || !spec) return 0;
-    return fnmatch(spec, file, FNM_CASEFOLD) == 0 ? 1 : 0;
+    const char *p = spec;
+    while (*p)
+    {
+        const char *sep = strchr(p, ';');
+        std::string one(p, sep ? (size_t)(sep - p) : strlen(p));
+        if (!one.empty() && fnmatch(one.c_str(), file, FNM_CASEFOLD) == 0) return 1;
+        if (!sep) break;
+        p = sep + 1;
+    }
+    return 0;
+}
+
+// ---- directory enumeration ------------------------------------------------
+// FindFirstFile/FindNextFile over opendir/readdir. This is how SCICompanion discovers LOOSE PATCH
+// FILES (`script.NNN`, `420.SCR`, `999.VOC`), which override the packed volumes -- the stub these
+// replace reported "no matches", so a project assembled from a real game never saw the game's own
+// patches nor any we write.
+namespace
+{
+    struct FindState
+    {
+        DIR *dir = nullptr;
+        std::string pattern;                      // the file part of the spec, e.g. "*.*"
+    };
+
+    bool FindFillNext(FindState *st, WIN32_FIND_DATA *data)
+    {
+        while (struct dirent *de = ::readdir(st->dir))
+        {
+            std::string name(de->d_name);
+            if (name == "." || name == "..") continue;
+            if (fnmatch(st->pattern.c_str(), name.c_str(), FNM_CASEFOLD) != 0) continue;
+            memset(data, 0, sizeof(*data));
+            snprintf(data->cFileName, sizeof(data->cFileName), "%s", name.c_str());
+            return true;
+        }
+        return false;
+    }
+}
+
+HANDLE FindFirstFileA(const char *spec, WIN32_FIND_DATA *data)
+{
+    if (!spec || !data) return INVALID_HANDLE_VALUE;
+    std::string s = normPath(spec);
+    size_t slash = s.find_last_of('/');
+    std::string dir = (slash == std::string::npos) ? "." : s.substr(0, slash);
+    std::string pat = (slash == std::string::npos) ? s : s.substr(slash + 1);
+    if (dir.empty()) dir = "/";
+    DIR *d = ::opendir(dir.c_str());
+    if (!d) return INVALID_HANDLE_VALUE;
+    FindState *st = new FindState();
+    st->dir = d;
+    // Win32's "*.*" means every file, dot or not; fnmatch would require the dot.
+    st->pattern = (pat == "*.*") ? "*" : pat;
+    if (!FindFillNext(st, data))
+    {
+        ::closedir(d);
+        delete st;
+        return INVALID_HANDLE_VALUE;
+    }
+    return reinterpret_cast<HANDLE>(st);
+}
+
+int FindNextFileA(HANDLE h, WIN32_FIND_DATA *data)
+{
+    if (h == INVALID_HANDLE_VALUE || !h || !data) return 0;
+    return FindFillNext(reinterpret_cast<FindState *>(h), data) ? 1 : 0;
+}
+
+int FindClose(HANDLE h)
+{
+    if (h == INVALID_HANDLE_VALUE || !h) return 1;
+    FindState *st = reinterpret_cast<FindState *>(h);
+    if (st->dir) ::closedir(st->dir);
+    delete st;
+    return 1;
 }
 
 const char *PathFindExtensionA(const char *path)

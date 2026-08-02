@@ -102,7 +102,8 @@ def snapshot(cfg, with_placements=False):
             titles = {n: t for t, n in nums.items()}
             edits = P.apply_sink_remedies(dest, sinks, titles)
             gedits = P.apply_guards(dest, specs, titles, nums,
-                                    s_drops=lambda it: s.drops.get(it, set()))
+                                    s_drops=lambda it: s.drops.get(it, set()),
+                                    rooms=set(s.rooms))
             snap["placements"] = sorted(
                 # The ITEM is in the key because a sink edit is identified by (script, item) and
                 # three of LSL2's land in Main -- without it they are three identical strings and

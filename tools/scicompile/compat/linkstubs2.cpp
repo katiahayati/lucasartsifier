@@ -49,8 +49,32 @@ ResourceEntity *CreateDefaultMapResource(SCIVersion, int) { return nullptr; }
 // don't compile. Not used to generate bytecode -- benign defaults. ----
 RGBQUAD  g_egaColors[16] = {};
 COLORREF g_egaColorsCR[16] = {};
+// The loose-patch filename patterns, one per ResourceType, copied verbatim from the PATCH_FILE_*
+// macros in MainFrm.cpp (which lives in the GUI we do not compile). These are NOT cosmetic and
+// must not be stubbed out: PatchFilesResourceSource builds its file filter from this table, so an
+// empty entry means loose patch files of that type are invisible -- which silently hid both the
+// game's own shipped patches (KQ6's 420.SCR) and the vocab.999 kernel table we synthesise.
 const TCHAR *g_szResourceSpecByType[(int)ResourceType::Max] =
-{ "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "" };
+{
+    "view.*;*.v56",     // View
+    "pic.*;*.p56",      // Pic
+    "script.*;*.scr",   // Script
+    "text.*;*.tex",     // Text
+    "sound.*;*.snd",    // Sound
+    "",                 // Memory
+    "vocab.*;*.voc",    // Vocab
+    "font.*;*.fon",     // Font
+    "cursor.*;*.cur",   // Cursor
+    "patch.*;*.pat",    // Patch
+    "*.bit",            // Bitmap
+    "*.pal",            // Palette
+    "*.cda",            // CDAudio
+    "*.aud",            // Audio
+    "*.syn",            // Sync
+    "*.msg",            // Message
+    "*.map",            // AudioMap
+    "*.hep",            // Heap
+};
 
 // startsWith: declared (non-inline) in StringUtil.h, defined in a GUI .cpp.
 bool startsWith(const std::string &text, const std::string &prefix)

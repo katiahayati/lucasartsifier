@@ -23,6 +23,7 @@ import struct
 import glob
 
 VIEW, PIC, SCRIPT, TEXT, SOUND, MEMORY, VOCAB, FONT, CURSOR, PATCH = range(10)
+HEAP = 17                      # SCI1.1 splits a script's data half into its own resource type
 _TYPE_NAME = {SCRIPT: "script", VOCAB: "vocab", VIEW: "view", PIC: "pic", TEXT: "text",
               SOUND: "sound", FONT: "font", CURSOR: "cursor", PATCH: "patch", MEMORY: "memory"}
 
@@ -186,6 +187,29 @@ class Sci0Game:
 
     def list_type(self, rtype):
         return sorted(num for (t, num) in self.entries if t == rtype)
+
+    def patch_scheme(self):
+        """How this game wants a replaced script written as a LOOSE PATCH, derived from its map.
+
+        Three answers, and the map itself distinguishes them -- the same "recognised by shape
+        rather than declared" rule `_sci1_sections` already follows:
+
+            no SCI1 directory              -> ('script.%03d', script only)      SCI0: LSL2, KQ4
+            SCI1 directory, no type 17     -> ('%d.SCR',      script only)      SCI1:  KQ5
+            SCI1 directory, type 17 present-> ('%d.SCR' + '%d.HEP')             SCI1.1: KQ6, LB2
+
+        A type-17 (HEAP) section means every script is stored as a script/heap PAIR, and shipping
+        the script half alone is a crash rather than a partial patch -- the interpreter reads
+        objects out of the heap at offsets the new code assumes.
+
+        ScummVM's `readResourcePatches` accepts both naming schemes at any version, so this is a
+        convention choice, not a compatibility one: use the scheme the game itself uses.
+        """
+        if self._sci1_sections(open(self.map_path, "rb").read()) is None:
+            return {"name": "sci0", "script": "script.%03d", "heap": None}
+        if not self.list_type(HEAP):
+            return {"name": "sci1", "script": "%d.SCR", "heap": None}
+        return {"name": "sci11", "script": "%d.SCR", "heap": "%d.HEP"}
 
 
 def _decompress(method, body, decomp_size):

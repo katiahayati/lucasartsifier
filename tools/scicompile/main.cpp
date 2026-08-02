@@ -33,6 +33,12 @@
 #include <string>
 #include <vector>
 
+// The SCI version to compile for, set by --version on the command line. The caller DERIVES it
+// (from the shape of the game's own resource map) and tells us; sniffing it here would be a second
+// oracle for something the analysis already knows. Pinning sciVersion0 unconditionally, as this
+// tool used to, means an SCI1.1 game's map never parses and every selector comes out unknown.
+SCIVersion g_targetVersion = sciVersion0;
+
 namespace
 {
     // Synchronous task status: we never run the class-browser reload on a
@@ -89,7 +95,8 @@ namespace
         CResourceMap &resourceMap = appState->GetResourceMap();
 
         // Point the resource map at the game project. We skip the version sniff
-        // (which relies on compiled resource.map/volume files) and pin version 0.
+        // (which relies on compiled resource.map/volume files) and pin the version the caller
+        // derived from the map's own shape -- see --version.
         resourceMap.SkipNextVersionSniff();
         try
         {
@@ -100,7 +107,7 @@ namespace
             fprintf(stderr, "Failed to open game folder '%s': %s\n", gameDir.c_str(), e.what());
             return false;
         }
-        resourceMap.SetVersion(sciVersion0);
+        resourceMap.SetVersion(g_targetVersion);
 
         SyncTaskStatus status;
         {
@@ -488,6 +495,31 @@ namespace
                         fprintf(stderr, "Wrote script resource %d: %zu bytes -> %s\n",
                                 (int)results.GetScriptNumber(), output.size(), outputPath.c_str());
 
+                        // SCI1.1 splits a script into a SCRIPT and a HEAP resource, and the
+                        // interpreter reads objects out of the heap at offsets the new code
+                        // assumes. A script patch shipped without its heap is not a partial
+                        // patch, it is a crash -- so write both, next to each other.
+                        if (appState->GetVersion().SeparateHeapResources)
+                        {
+                            std::vector<BYTE> &heap = results.GetHeapResource();
+                            std::string heapPath = outputPath + ".hep";
+                            std::ofstream hout(heapPath.c_str(), std::ios::out | std::ios::binary);
+                            if (!hout.is_open())
+                            {
+                                fprintf(stderr, "Failed to open heap output '%s'\n", heapPath.c_str());
+                                delete appState; appState = nullptr;
+                                return 1;
+                            }
+                            if (!heap.empty())
+                            {
+                                hout.write(reinterpret_cast<const char *>(heap.data()),
+                                           (std::streamsize)heap.size());
+                            }
+                            hout.close();
+                            fprintf(stderr, "Wrote heap resource %d: %zu bytes -> %s\n",
+                                    (int)results.GetScriptNumber(), heap.size(), heapPath.c_str());
+                        }
+
                         // Also refresh this script's .sco so a subsequent compile
                         // of a dependent script sees the up-to-date interface.
                         SaveSCOWithDiff(helper, scriptId, results);
@@ -526,6 +558,31 @@ namespace
 
 int main(int argc, char **argv)
 {
+    // --version {sci0|sci1|sci11} anywhere in argv, stripped before the mode dispatch below so
+    // every mode accepts it. Default sci0 keeps every existing caller byte-identical.
+    std::vector<char *> args;
+    for (int i = 0; i < argc; ++i)
+    {
+        std::string a(argv[i]);
+        if (a.rfind("--version", 0) == 0)
+        {
+            std::string v = (a.size() > 9 && a[9] == '=') ? a.substr(10)
+                            : (i + 1 < argc ? argv[++i] : std::string());
+            if (v == "sci0")        { g_targetVersion = sciVersion0; }
+            else if (v == "sci1")   { g_targetVersion = sciVersion1_Late; }
+            else if (v == "sci11")  { g_targetVersion = sciVersion1_1; }
+            else
+            {
+                fprintf(stderr, "unknown --version '%s' (want sci0|sci1|sci11)\n", v.c_str());
+                return 2;
+            }
+            continue;
+        }
+        args.push_back(argv[i]);
+    }
+    argc = (int)args.size();
+    argv = args.data();
+
     if (argc == 3 && std::string(argv[1]) == "--sco")
     {
         return RunGenerateSCO(argv[2]);
@@ -542,7 +599,10 @@ int main(int argc, char **argv)
             "usage:\n"
             "  %s <gameProjectDir> <input.sc> <output.bin>   compile one script\n"
             "  %s --sco <gameProjectDir>                      Generate .sco from source + game resources\n"
-            "  %s --all <gameProjectDir>                      Compile All (write .sco files)\n",
+            "  %s --all <gameProjectDir>                      Compile All (write .sco files)\n"
+            "\n"
+            "  --version {sci0|sci1|sci11}  (default sci0) may precede any of the above; sci11\n"
+            "                               also writes <output.bin>.hep, the heap resource\n",
             argv[0], argv[0], argv[0]);
     return 2;
 }

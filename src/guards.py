@@ -737,6 +737,24 @@ def guard_specs(s):
                               "condition": f"(not (gEgo has: {it}))", "items": [], "forbid": [it],
                               "refused": [f"{s.g.item_name(it)} cannot be dropped anywhere -- "
                                           f"guarding this would wall the game"]})
+    # FATAL USES -- the dangerous ACTION, which strands nothing and spends nothing because you do
+    # not survive to notice. Nothing else here produces a spec for one, so KQ6's skull-in-the-gears
+    # was a finding with no remedy: flagged, and nothing would stop the player doing it.
+    #
+    # The remedy is to refuse the ACTION, spelled as a prohibition on the item that pays for it --
+    # `(not (gEgo has: X))` on the arming of the fatal machine. Holding it, you are told no; not
+    # holding it, the move was never available. The wording matters as much as the guard: the
+    # player is being stopped from a move the game itself invited, so it goes through the same
+    # derived refusal line as every other guard rather than failing silently.
+    #
+    # No new placement machinery: the arming of a named machine inside a room is what
+    # `trigger.find_arming` already locates, which is how the Realm entry got placed.
+    for f in s.fatal_uses():
+        specs.append({"site": "action", "room": f["room"], "machine": f["machine"],
+                      "item": f["item"], "forbid": [f["item"]],
+                      "condition": f"(not (gEgo has: {f['item']}))",
+                      "why": f"using {s.g.item_name(f['item'])} here is always fatal and spends it",
+                      "refused": []})
     # register-flip strandings: HOLD the free-running trap's flip until every item it would seal is
     # in hand. KQ4's nightfall (global100:=1) shuts the day-only doors to the Diamond_Pouch and
     # Fishing_Pole; gate that one write on holding both, so the sunset waits for the day list. One
@@ -854,7 +872,8 @@ def main():
     print(f"MERGED SPECS -- one per placement site: {len(specs)}\n")
     for sp in specs:
         where = (f"rm{sp['from_room']} -> rm{sp['to_room']}" if sp["site"] == "edge"
-                 else f"rm{sp['room']} state {sp['state']}")
+                 else f"rm{sp['room']} {sp['machine']}" if sp["site"] == "action"
+                 else f"rm{sp['room']} state {sp.get('state')}")
         print(f"  {where:<22} {'REFUSED ' + str(sp['refused']) if sp['refused'] else sp['condition']}")
         if sp.get("note"):
             print(f"  {'':<22} ^ {sp['note']}")

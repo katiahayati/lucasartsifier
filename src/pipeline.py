@@ -76,6 +76,9 @@ def main(argv=None):
     ap.add_argument("game_dir", help="game directory (RESOURCE.MAP + RESOURCE.00x)")
     ap.add_argument("--out", default=os.path.join(_ROOT, "build"), help="output root")
     ap.add_argument("--report", action="store_true", help="analyse only; write no patch")
+    ap.add_argument("--emit-unclosed", action="store_true",
+                    help="emit even when some findings have no placeable guard (they are listed). "
+                         "A guard that INTRODUCES a softlock still stops the run.")
     ap.add_argument("--skip-decompile", action="store_true", help="reuse <out>/ir")
     a = ap.parse_args(argv)
 
@@ -135,12 +138,24 @@ def main(argv=None):
         print(f"    REFUSED: {x['refused']}")
     print(f"    verifying against the guarded model...")
     v = G.verify(s, specs)
-    ok = not v["remaining"] and not v["NEW"] and not v["groups_new"]
+    introduced = bool(v["NEW"] or v["groups_new"])
+    ok = not v["remaining"] and not introduced
     print(f"    fixed {len(v['fixed'])} + {len(v['groups_fixed'])} group(s); "
           f"NEW softlocks introduced: {[s.g.item_name(i) for i in v['NEW']] or 'none'}")
-    if not ok:
-        print("    \033[31mFAIL: the guards do not close every softlock, or create one\033[0m")
+    if introduced:
+        # NEVER overridable. Converting a softlock into a different softlock -- or into a wall --
+        # is the one outcome this project treats as worse than shipping nothing.
+        print("    \033[31mFAIL: a guard INTRODUCES a softlock\033[0m")
         return 1
+    if not ok:
+        remaining = [s.g.item_name(i) for i in v["remaining"]]
+        if not a.emit_unclosed:
+            print(f"    \033[31mFAIL: no guard closes {remaining}\033[0m")
+            print("    (--emit-unclosed patches the rest anyway and lists what is left open)")
+            return 1
+        print(f"    \033[33m--emit-unclosed: NOT closed by any guard: {remaining}\033[0m")
+        for x in refused:
+            print(f"      still open, guard refused: {x['refused'][0][:110]}")
     print(f"    analysis took {time.time() - t0:.1f}s")
 
     if a.report:
@@ -155,7 +170,8 @@ def main(argv=None):
     nums = P.assemble(dest, cfg)
     titles = {n: t for t, n in nums.items()}
     edits = P.apply_sink_remedies(dest, sinks, titles)
-    gedits = P.apply_guards(dest, specs, titles, nums, s_drops=lambda it: s.drops.get(it, set()))
+    gedits = P.apply_guards(dest, specs, titles, nums, s_drops=lambda it: s.drops.get(it, set()),
+                            rooms=set(s.rooms))
     for e in edits + gedits:
         where = e.get("title") or (f"rm{e['from_room']}->rm{e['to_room']}" if "from_room" in e
                                    else f"script{e.get('script', '?')}")
@@ -170,11 +186,13 @@ def main(argv=None):
         return 1
     written = P.emit_patches(dest, touched, nums, out_dir)
     for w in written:
-        print(f"    script.{w['script']:03d}  {w['title']}"
+        name = (" + ".join(os.path.basename(p) for p in w["paths"]) if w["ok"]
+                else f"script {w['script']}")
+        print(f"    {name}  {w['title']}"
               + (f"  {w['bytes']} bytes" if w["ok"] else f"  FAILED {w['error']}"))
 
     print(f"\n\033[1mDone.\033[0m {len(written)} patch files in {out_dir}")
-    print(f"  install:  cp {out_dir}/script.* <copy-of-game>/")
+    print(f"  install:  cp {out_dir}/* <copy-of-game>/")
     print(f"  revert :  delete those files (the game's own resources were never touched)")
     return 0
 
