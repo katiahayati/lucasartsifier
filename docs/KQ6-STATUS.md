@@ -90,7 +90,10 @@ forces its value on arrival, and a **consumed item toll** cannot prove complianc
 second crossing (the row itself established the payment is unrecoverable). Both are true game
 facts, no register or item is named, and every detection walk stays permissive. Result: the
 cup-filled flag (58) is demanded at **rm680→rm155** — the guard oracle's own site — and the
-mirror-shown flag (294) at **rm670→rm660** and **rm680→rm155** (nested; the oracle calls that
+mirror-shown state (`(rgDead stateOf690:) == 2` — ⚠️ NOT a flag: reg466 is an object-property
+register, and until 2026-08-02 `render_register`'s unbounded flag block spelled it as phantom
+`(proc913_0 294)` in two compiled patches; the renderer is store-aware now and emits the game's
+own property test via the owner's export) at **rm670→rm660** and **rm680→rm155** (nested; the oracle calls that
 shape harmless). The former 🔴 is promoted; each placement edge is pinned GREEN in `test_toll`.
 
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS

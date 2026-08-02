@@ -1354,7 +1354,19 @@ def death_traps(em, regs, dom):
                 # `prev == 490` to reach rm490, so the scarf's own source became unreachable and the
                 # scarf stopped being a softlock at all.
                 sreq = structural_reqs(g, regs, dom)
+                # ...but a register the trap room's OWN machinery writes is the trap's CLOCK, not
+                # an escape lever. The complement row asserts "hold the register at another value
+                # and the death never fires" -- true for PLOT state written elsewhere (KQ4's dawn
+                # is Room82's to bring), and false for a value the room's machines advance on
+                # their own: the walk would 'escape' the whale by standing in the state the timer
+                # is actively leaving. KQ4's whale taught this the day room locals were lowered
+                # into visibility -- the sneeze timer's states pinned the death, their complement
+                # priced free, and the feather stopped being required.
+                clock = {gi for i2 in infos for _K, paths in i2["states"].items()
+                         for p in paths for (gi, _v) in p[1]}
                 for R, vs in sreq.items():
+                    if R in clock:
+                        continue
                     d = dom.get(R)
                     if vs and d and set(vs) < set(d):
                         rows.append(({R: set(d) - set(vs)}, (frozenset(),)))

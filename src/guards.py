@@ -443,12 +443,35 @@ def _carryout_frontier(s, item, pocket, toll_reg=None, toll_edge=None):
 def render_register(s, R, value):
     """`R == value` in the game's own spelling, or None if we cannot write it.
 
-    Registers are ours, not the game's: a boolean flag was lowered into a synthetic per-flag global
-    so the gating machinery could model it without knowing what a flag is. A PATCH has to be
-    written back in the game's spelling, so this reverses the lowering using the base and the test
-    proc `vocab.derive_flags` already named. A register that is not a lowered flag -- a real global,
-    an object property -- has no such spelling and returns None rather than a guess."""
+    Registers are ours, not the game's: each store was lowered into synthetic globals so the
+    gating machinery could model it without knowing what a flag or a property is. A PATCH has to
+    be written back in the game's spelling, so this reverses the lowering PER STORE, using the
+    maps each lowering already records. A register with no reversible spelling -- a real global,
+    a lowered room local (its spelling would be a local another script cannot see) -- returns
+    None rather than a guess.
+
+    THE STORE IS CHECKED BEFORE THE FLAG BLOCK, and the order is load-bearing: the flag base had
+    no upper bound, so an OBJECT-PROPERTY register rendered as a phantom flag test -- KQ6's
+    reg466 is `(rgDead stateOf690:)`, and it shipped in two compiled guards as
+    `(proc913_0 294)`, a flag the game never reads. Caught 2026-08-02 by classifying the shipped
+    conditions against the stores' own maps; the spelling below is the game's, via the owner's
+    export (`((ScriptID 70 0) stateOf690:)`), so the guard needs no `use` header."""
     ir = getattr(s.em, "ir", None)
+    op = getattr(ir, "_obj_prop_index", {}) if ir is not None else {}
+    if R in op:
+        sn, sel = op[R]
+        sc = ir.scripts.get(sn)
+        inst = next((o for o in (sc.objects if sc else ()) if sel in getattr(o, "props", {})),
+                    None)
+        exports = list(getattr(sc, "exports", ()) or ())
+        if inst is None or inst.name not in exports:
+            return None                        # not a named export -> no cross-script spelling
+        test = f"((ScriptID {sn} {exports.index(inst.name)}) {sel}:)"
+        if value == 0:
+            return f"(not {test})"
+        return test if value == 1 else f"(== {test} {value})"
+    if R in (getattr(ir, "_room_local_index", {}) if ir is not None else {}):
+        return None
     base = getattr(ir, "flag_synth_base", None)
     proc = getattr(ir, "flag_test_proc", None)
     if base is None or proc is None or R < base:
