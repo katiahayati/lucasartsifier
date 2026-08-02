@@ -28,7 +28,12 @@ so for a long time the goal was satisfied by *losing*. See `KQ6-GOAL.md`.
 
 ---
 
-## Detection — 18 requirement units, oracle 16/16
+## Detection — 19 requirement units, oracle 16/16
+
+**The 19th (2026-08-02): the `letter`**, user-confirmed the day `register_strandings` turned
+causal — flag 166's flip is a point of no return past which the vizier's letter's source is
+unreachable, while rm730/rm870 still demand showing it. The flip detector joined the oracle's
+caught set and the snapshot surface with it. No guard spec exists for the letter yet.
 
 `test_kq6_ground_truth` passes all 16 checks. `KNOWN_GAPS` is empty and `LONG_ENDING_ONLY` is
 empty, so every unit the oracle calls real is caught and nothing outside the oracle is flagged.
@@ -71,12 +76,10 @@ principle already in the codebase rather than a route oracle:
 * **handkerchief + skeletonKey** are carry-OUTs of the Realm toll pocket, so the demand belongs
   at the pocket's exit frontier: `pocket_carryout_frontier` (the item twin of
   `_settable_frontier`, same committed walk) places both at **rm640→rm650** — the last crossing
-  after which their sources are unreachable. ⚠️ **This is tighter than the guard oracle's row 4
-  site (rm680→rm155)**: the model has no 650→640 return edge (the Realm interior is one-way in
-  the room graph), so the oracle's site would demand compliance where none is possible. Either
-  the interior really is one-way (oracle site unplaceable, ours right) or a return edge is
-  missing from extraction (then the frontier moves outward on its own when that lands). The
-  engine took the provable site; the divergence is recorded here rather than papered over.
+  after which their sources are unreachable. ✅ **Divergence with the guard oracle SETTLED in the
+  engine's favor, user-tested in-game 2026-08-02**: "you can go 640→650, but not the other way
+  back" (the knight's room; the rm640 ticket taker keeps your ticket). The oracle's old row-4
+  site (rm680→rm155) presumed a walk-back that does not exist; the oracle is corrected.
 * **the wrong-door stranding rows** (all six) died to two rules `edge_strandings` now applies to
   its own output: an edge that ITSELF demands an item cannot strand it ("forced, not missable" —
   the toll detector's own rule), and an edge where the item CANNOT BE HELD cannot strand it

@@ -55,6 +55,7 @@
     "rm79: applied=True kind=trigger",
     "rm81/Hair_Rejuvenator: applied=True kind=None"
   ],
+  "register_strandings": [],
   "sinks": [
     "Airsick_Bag dest=-1 refused=False",
     "Airsick_Bag dest=-1 refused=False",

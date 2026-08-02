@@ -127,6 +127,13 @@ EXPECTED_CAUGHT = _units({
                         # ⚠️ We catch it for a DIFFERENT reason than the game has (an incidental
                         # register write); the real link is a room local we do not model. Pinned
                         # RED in test_toll.test_local_latch_is_not_modelled.
+    "letter",           # USER, 2026-08-02: "yes you need the letter and can't get back to get
+                        # it." Found by the CAUSAL register_strandings the day it stopped being
+                        # degenerate: flag 166's flip is a point of no return past which the
+                        # letter's source is unreachable, while rm730/rm870 still demand showing
+                        # it. The one register-flip row on KQ6, and the detector's first
+                        # confirmed find -- which is why the detector joined the caught set and
+                        # the snapshot surface the same day. No guard spec exists for it yet.
     "sacredWater",      # USER RULING 2026-07-31, from the script evidence rather than in-game:
                         # rm380 is entered only from rm370 by a flyer cutscene gated on flag 175,
                         # which the far side raises and nothing clears; rm380 holds `(gEgo get: 40)`
@@ -215,7 +222,11 @@ def run():
     for r in s.group_strandings():
         caught.add(frozenset(s.g.item_name(i) for i in r["items"]))
     for rows in (s.joint_strandings(), s.resource_exhaustion(), s.dangerous_sinks(),
-                 s.register_flip_strandings(), s.fatal_uses(), s.toll_strandings()):
+                 s.register_flip_strandings(), s.fatal_uses(), s.toll_strandings(),
+                 # register_strandings joined the caught set 2026-08-02, the day it turned causal
+                 # and its one surviving row was USER-CONFIRMED (the letter). A detector carrying
+                 # a confirmed verdict may not live outside the oracle.
+                 s.register_strandings()):
         caught |= {_unit(s.g.item_name(r["item"])) for r in rows}
     caught_names = _names(caught)
 

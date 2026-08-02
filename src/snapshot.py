@@ -34,14 +34,15 @@ def snapshot(cfg, with_placements=False):
     # verdicts (the rejuvenator sinks; KQ6's mint, peppermint and skull) and neither was frozen
     # anywhere. Adding a detector? Add it here too, or it is not watched.
     #
-    # `register_strandings` is DELIBERATELY still absent: it is degenerate on SCI1.1 and read by
-    # nothing, and freezing 323 junk rows would pin the breakage rather than reveal it. It is
-    # pinned RED instead -- see its docstring and test_toll.
+    # `register_strandings` joined 2026-08-02, the day it turned CAUSAL and its one surviving KQ6
+    # row was user-confirmed (the letter). It had been deliberately absent while degenerate --
+    # freezing 323 junk rows would have pinned the breakage rather than revealed it.
     items = sorted({c["item"] for c in s.analyze()} | {j["item"] for j in s.joint_strandings()}
                    | {r["item"] for r in s.register_flip_strandings()}
                    | {t["item"] for t in s.toll_strandings()}
                    | {d["item"] for d in s.dangerous_sinks()}
-                   | {f["item"] for f in s.fatal_uses()})
+                   | {f["item"] for f in s.fatal_uses()}
+                   | {r["item"] for r in s.register_strandings()})
     snap = {
         "start_room": s.em.cfg.start_room,
         "goal_rooms": sorted(s.em.cfg.goal_rooms),
@@ -71,6 +72,12 @@ def snapshot(cfg, with_placements=False):
                             f"->{len(d['still_needed_at'])} rooms" for d in s.dangerous_sinks()),
         "fatal_uses": sorted(f"{s.g.item_name(f['item'])}@rm{f['room']}/{f['machine']}"
                              for f in s.fatal_uses()),
+        # The register-flip points of no return -- one frozen row per (register, value, item).
+        # Empty on LSL2/KQ4 (measured when the causality conjunct landed: every old row there was
+        # region-junk); KQ6 carries the user-confirmed letter.
+        "register_strandings": sorted(f"{r['item_name']}@reg{r['register']}={r['value']}"
+                                      f"->{r['still_needed_at']}"
+                                      for r in s.register_strandings()),
     }
     specs = G.guard_specs(s)
     # REFUSED specs are marked, not hidden and not shown as if we emit them. `pipeline.py` prints
