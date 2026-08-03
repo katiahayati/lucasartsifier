@@ -39,11 +39,10 @@ the flip until the letter is in hand — and the patcher places it on both `(Scr
 setFlag: 709 2` sites (rm740, rm880), split out of their chained sends so the scenes still play,
 matching the exact receiver (rm710/720's `(ScriptID 81 0)` writes the same word/mask for a
 different region and must not be touched).
-⚠️ Two caveats: flag 166 is "the wedding has started", the game's central plot branch — this
-guard has NOT been play-tested and goes first when the ScummVM pass runs. And **on disk the hold
-is PARTIAL**: rm880 is one of the 5 pre-existing decompiler-dialect compile failures, so its
-edit is reverted at emission (pristine-check, stated on the run) and only rm740's site ships
-until the decompiler gap closes.
+⚠️ Flag 166 is "the wedding has started", the game's central plot branch — this guard has NOT
+been play-tested and goes first when the ScummVM pass runs. (The hold was briefly PARTIAL on
+disk — rm880 was one of the 5 decompiler-dialect compile failures — until 2026-08-03, when all
+five fell: see "the compile wall" below. Both sites ship now.)
 
 `test_kq6_ground_truth` passes all 16 checks. `KNOWN_GAPS` is empty and `LONG_ENDING_ONLY` is
 empty, so every unit the oracle calls real is caught and nothing outside the oracle is flagged.
@@ -111,7 +110,7 @@ shape harmless). The former 🔴 is promoted; each placement edge is pinned GREE
 
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
-**KQ6: 16 applied / 18 placement rows, 10 scripts compiled and written as SCI1.1 loose
+**KQ6: 16 applied / 18 placement rows, 11 scripts compiled and written as SCI1.1 loose
 patches** (the three
 register-valued exit guards landed 2026-08-01: rm670 as `edge-exit`, rm680 ×2 as `arm-event` —
 ⚠️ the kind Dagger shows can be misplaced; not yet played. rm640 joined 2026-08-02 via the
@@ -141,8 +140,10 @@ default.
 "10 applied / 19" counts placement ROWS — the 2 **applied** sink remedies (mint, peppermint)
 plus 8 guard placements. The third sink remedy — huntersLamp — is emitted as a spec but REFUSED
 at apply time: the clause it would edit also moves item 25 (the lamp you receive), i.e. it is a
-TRADE, and live play showed that deleting the disposal hands the player both sides of it. That
-refusal is general (any sink whose clause moves another item), not a lamp rule.
+TRADE, so deleting the disposal would by the clause's own structure leave the player holding
+both sides of it. That refusal is general (any sink whose clause moves another item), not a
+lamp rule. (⚠️ This paragraph used to say "live play showed" — FALSE, user-corrected
+2026-08-03: no such play run ever happened; the argument was always static.)
 
 The 20th spec is the new **`action`** kind: `fatal_uses` now produces a remedy instead of a
 finding nobody could ship. It is placed on the arming of the fatal machine — rm420's
@@ -157,8 +158,18 @@ What the back end needed, all of it derived rather than declared: the SCI versio
 loose patch (KQ6 displaces `SetSynonyms` with `Portrait`, which cost 5 scripts, `Main` among
 them); the refusal line is the game's own display procedure, derived per game
 (`patcher.refusal_form` → KQ6 `(proc921_0 {…})`, LSL2/KQ4 unchanged at `proc255_0`); and the
-file gets `(use Print)` added when it does not already have it. **Compiles 336/341** — the 5 that
-do not are decompiler-dialect issues in scripts we do not edit.
+file gets `(use Print)` added when it does not already have it. **Compiles 341/341 — the
+compile wall fell 2026-08-03.** The 5 decompiler-dialect failures (rm880/rm430/boringBook/
+rm710/speedRoom) were three distinct gaps, each fixed at its own layer:
+  * `&rest` with a nested-call send target (5 sites) — a real PMachine hazard the compiler
+    guards rather than fixes; `patcher.hoist_rest_targets` rewrites ONLY compiler-reported
+    lines through a declared temp, iterating because `--all` reports one error per script;
+  * `dungeon#` — a genuine KQ6 selector (vocab.997 #879) the lexer refused; scicompile's
+    `SelectorP` now accepts `#` as a continuation character;
+  * `proc911_1` — speedRoom calls a script this game version does not ship; the canonical
+    decompiler name IS the linkage, so scicompile falls back to `calle 911 1` (dead in
+    Sierra's bytecode, dead in ours). Both compiler edits are banner-commented and logged in
+    `tools/scicompile/BUILD_NOTES.md`.
 
 | still skipped | reason |
 |---|---|
@@ -195,11 +206,12 @@ plan's Phase 3, `obtainability_frontier`, collapses all eight to one at `rm340->
 Dagger is worse than its count: both of its *applied* guards are **24 items** placed as
 `arm-event`, i.e. events that would never fire. Its skips are safer than its successes.
 
-**Mostly not yet played.** Structural validity is not runtime validity, and the LSL2 history is
-unambiguous about that. The one edit that HAS seen live play — the lampTradeScr destroy-verb
-deletion — handed the player both lamps, which is where the trade refusal above came from.
-Everything else has not been loaded by ScummVM. (Deprioritised by the user 2026-08-01: play the
-set only after the placement details settle.)
+**NOTHING has been played.** Structural validity is not runtime validity, and the LSL2 history
+is unambiguous about that. No KQ6 edit has ever been loaded by ScummVM. (⚠️ This paragraph used
+to claim one edit — the lampTradeScr destroy-verb deletion — had seen live play. FALSE,
+user-corrected 2026-08-03: that provenance was fabricated in the 2026-08-01 session; the trade
+refusal rests on the static argument alone. Deprioritised by the user 2026-08-01: play the set
+only after the placement details settle.)
 
 Frozen from here on: LSL2's placements are in its golden (12/12 applied, all `True`, and
 **byte-identical through every commit in this work**); KQ6's and Dagger's are printed and asserted

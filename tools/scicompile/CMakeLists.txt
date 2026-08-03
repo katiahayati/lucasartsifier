@@ -69,7 +69,7 @@ set(COMPILE_SRC
     ${PATCHED}/ScriptOM.cpp           # was Src/Compile/ScriptOM.cpp
     ${V}/Src/Compile/ScriptOMTraverse.cpp
     ${PATCHED}/SyntaxParser.cpp       # was Src/Compile/SyntaxParser.cpp
-    ${V}/Src/Compile/SCISyntaxParser.cpp
+    ${PATCHED}/SCISyntaxParser.cpp    # was Src/Compile/SCISyntaxParser.cpp ('#' in selectors)
     ${V}/Src/Compile/StudioSyntaxParser.cpp
     ${V}/Src/Compile/ParserCommon.cpp
     ${V}/Src/Compile/ParseAutoCompleteContext.cpp

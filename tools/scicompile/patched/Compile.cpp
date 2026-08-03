@@ -1749,6 +1749,23 @@ CodeResult ProcedureCall::OutputByteCode(CompileContext &context) const
 
     case ProcedureUnknown:
         {
+            // SIERRA_SOFTLOCK PATCH: a decompiler-named external proc encodes its own linkage.
+            // sci-tools names a cross-script call `proc<script>_<index>` -- read straight off
+            // the original `calle <script> <index>` -- so when NO interface resolves the name
+            // (the script is absent from this game version: KQ6 ships speedRoom's call into a
+            // stripped script 911), the faithful recompile is exactly that calle. The branch is
+            // as dead in our output as it was in Sierra's shipped bytecode; failing the whole
+            // script over it was the only alternative, and it blocked recompiling a room we
+            // never even edit.
+            {
+                unsigned int wS = 0, wI = 0;
+                if (sscanf(_innerName.c_str(), "proc%u_%u", &wS, &wI) == 2 &&
+                    _innerName == "proc" + std::to_string(wS) + "_" + std::to_string(wI))
+                {
+                    context.code().inst(GetLineNumber(), Opcode::CALLE, (WORD)wS, (WORD)wI, wCallBytes);
+                    break;
+                }
+            }
             std::string message = "Unknown procedure";
             bool checkUse = true;
             if (context.GetLanguage() == LangSyntaxSCI)

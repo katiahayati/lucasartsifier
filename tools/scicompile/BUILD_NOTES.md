@@ -99,6 +99,14 @@ Compiled *instead of* the originals; each has a banner + a minimal, mechanical f
 | `util.cpp` | `ScriptId::GetFullPath` uses `/`; `ScopedFile` no longer throws on a missing file (degrades) |
 | `Stream.cpp` | `streamOwner(HANDLE)` degrades to empty on an INVALID handle instead of throwing |
 
+Two DELIBERATE dialect extensions (2026-08-03, not mechanical; each restores compilability of
+Sierra's own shipped source that the stock compiler rejects — banner-commented in place):
+
+| file | behavior change |
+|---|---|
+| `SCISyntaxParser.cpp` | `SelectorP` accepts `#` as a CONTINUATION character: KQ6's vocab.997 names selector 879 `dungeon#`, declared and read by rm710.sc. Prefix `#` (selector literal) is untouched. |
+| `Compile.cpp` | `ProcedureUnknown` falls back to `calle <script> <index>` when the name is canonical `proc<script>_<index>` and nothing resolves it — the decompiler's name IS the original linkage; KQ6's speedRoom calls into stripped script 911 (dead in the shipped bytecode, dead in ours). Tradeoff: a typo'd canonical name now compiles into a call to a missing script instead of erroring. |
+
 `main.cpp` adds: `InitializeSyntaxParsers()` (grammar setup — else null match-fn pointers),
 explicit per-script language detection, and a top-level `try/catch` so vendor I/O
 exceptions report cleanly instead of aborting.

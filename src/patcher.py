@@ -28,6 +28,7 @@ import shutil
 import struct
 import subprocess
 import sys
+from collections import defaultdict
 
 import config
 import guards as G
@@ -1255,14 +1256,96 @@ def run(args, cwd):
     return p.returncode, p.stdout + p.stderr
 
 
+def hoist_rest_targets(text, lines):
+    """Rewrite `((<call-or-send>) sel: ... &rest)` at the reported `lines` into
+    `(= restTgt (<call-or-send>)) (restTgt sel: ... &rest)`, declaring the temp.
+
+    The compiler refuses `&rest` when the send TARGET itself performs a call or send: params are
+    emitted before the target's code, so the target's own call would consume the `rest` count at
+    runtime -- a real PMachine hazard, guarded upstream rather than fixed. The decompiler emits
+    the pattern freely (KQ6: rm880/rm430/boringBook, five statement-level sites), which is what
+    kept those scripts in the 336/341. Hoisting the target into a temp is the transform the
+    compiler's own error message asks for, applied ONLY at lines it reported -- benign `&rest`
+    sends keep their evaluation order untouched."""
+    out = text
+    for line_no in sorted(set(lines), reverse=True):
+        # the site: on this line, a form whose head is itself a parenthesized form and whose
+        # params include &rest
+        starts = [i for i, c in enumerate(out) if c == "\n"]
+        ls = starts[line_no - 2] + 1 if line_no >= 2 else 0
+        le = starts[line_no - 1] if line_no - 1 < len(starts) else len(out)
+        seg = out[ls:le]
+        om = re.search(r"\(\s*\(", seg)
+        if not om:
+            continue
+        bs, be = _block_span(out, ls + om.start())
+        body = out[bs:be]
+        if "&rest" not in body:
+            continue
+        tm = re.match(r"\(\s*", body)
+        tgs, tge = _block_span(body, tm.end())
+        target = body[tgs:tge]
+        # the enclosing method/procedure header, for the &tmp declaration
+        hm = None
+        for cand in re.finditer(r"\((?:method|procedure)\s*\(", out[:bs]):
+            hs, he = _block_span(out, cand.start())
+            if hs <= bs < he:
+                hm = cand
+        if hm is None:
+            continue
+        hs2, he2 = _block_span(out, hm.end() - 1)      # the (name params...) list
+        header = out[hs2:he2]
+        if "restTgt" not in header:
+            new_header = (header[:-1] + " restTgt)") if "&tmp" in header \
+                else (header[:-1] + " &tmp restTgt)")
+            out = out[:hs2] + new_header + out[he2:]
+            delta = len(new_header) - len(header)
+            bs, be = bs + delta, be + delta
+            body = out[bs:be]
+            tgs, tge = _block_span(body, re.match(r"\(\s*", body).end())
+        indent = re.search(r"[ \t]*$", out[:bs]).group(0)
+        rewritten = ("(= restTgt %s)\n%s(restTgt%s"
+                     % (target, indent, body[tge:-1] + ")"))
+        out = out[:bs] + rewritten + out[be:]
+    return out, (out != text)
+
+
 def compile_project(dest):
-    """--sco (interfaces from source + game) then --all (compile everything)."""
+    """--sco (interfaces from source + game) then --all (compile everything).
+
+    A script the compiler rejects ONLY for the `&rest`-with-nested-target dialect gets the
+    hoist rewrite at the reported lines and one retry -- see hoist_rest_targets. Anything else
+    still fails as itself."""
     parent, name = os.path.dirname(dest) or ".", os.path.basename(dest)
     rc, out = run(_version_args() + ["--sco", name], parent)
     sco = re.search(r"Generate SCO: (\d+) written", out)
     rc2, out2 = run(_version_args() + ["--all", name], parent)
     allr = re.search(r"result: (\d+)/(\d+) scripts compiled", out2)
     failed = re.findall(r"^  (\S+)\s+line \d+: Error: (.*)$", out2, re.M)
+    # `--all` reports only the FIRST error per script, so a script with several &rest sites
+    # needs one round per site: fix what was reported, recompile, repeat until the report is
+    # clean of the pattern (bounded -- each round must fix something or it stops).
+    for _round in range(6):
+        rest_lines = defaultdict(set)
+        for m in re.finditer(r"^\s*(\S+)\s+line (\d+): Error: \(\S+\.sc\) &rest cannot be used",
+                             out2, re.M):
+            rest_lines[m.group(1)].add(int(m.group(2)))
+        fixed_any = False
+        for title, lines in sorted(rest_lines.items()):
+            path = os.path.join(dest, "src", title + ".sc")
+            try:
+                text = open(path, errors="replace").read()
+            except OSError:
+                continue
+            new_text, changed = hoist_rest_targets(text, lines)
+            if changed:
+                open(path, "w").write(new_text)
+                fixed_any = True
+        if not fixed_any:
+            break
+        rc2, out2 = run(_version_args() + ["--all", name], parent)
+        allr = re.search(r"result: (\d+)/(\d+) scripts compiled", out2)
+        failed = re.findall(r"^  (\S+)\s+line \d+: Error: (.*)$", out2, re.M)
     return {"sco_written": int(sco.group(1)) if sco else 0,
             "compiled": int(allr.group(1)) if allr else 0,
             "total": int(allr.group(2)) if allr else 0,

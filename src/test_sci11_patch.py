@@ -183,10 +183,43 @@ def test_verify_closes_every_kq6_finding():
           f"{[(sp.get('from_room'), sp.get('to_room'), sp.get('req')) for sp in refused]}")
 
 
+def test_hoist_rest_targets():
+    """The `&rest`-with-nested-target hoist: the compiler's own error drives a source rewrite.
+
+    scicompile emits params before the send target's code, so a target that itself calls or
+    sends would consume the `rest` count at runtime -- a real PMachine hazard it guards with an
+    error rather than fixing. The decompiler emits the pattern freely (KQ6: five statement-level
+    sites across rm880/rm430/boringBook, which is what kept them in the 336/341). The hoist is
+    applied ONLY at compiler-reported lines, so benign `&rest` sends keep their evaluation
+    order; with it and the two dialect extensions in tools/scicompile (the `dungeon#` selector
+    lexing, the canonical-name `calle` fallback), the KQ6 project compiles 341/341."""
+    print("\nPhase 4b -- the &rest hoist (compiler-error-driven source normalization)")
+    import patcher as P
+    src = ("(method (doVerb param1)\n"
+           "\t(switch param1\n"
+           "\t\t(else\n"
+           "\t\t\t((ScriptID 30 4) doVerb: param1 &rest)\n"
+           "\t\t)\n"
+           "\t)\n"
+           ")\n")
+    out, changed = P.hoist_rest_targets(src, {4})
+    check("a nested-target &rest send is hoisted through a declared temp",
+          changed and "(= restTgt (ScriptID 30 4))" in out
+          and "(restTgt doVerb: param1 &rest)" in out
+          and "(method (doVerb param1 &tmp restTgt)" in out, out)
+    out2, changed2 = P.hoist_rest_targets(src, {2})
+    check("a line without the pattern is left alone", not changed2 and out2 == src)
+    tmp = src.replace("(method (doVerb param1)", "(method (doVerb param1 &tmp temp0)")
+    out3, _ = P.hoist_rest_targets(tmp, {4})
+    check("an existing &tmp list is extended, not duplicated",
+          "(method (doVerb param1 &tmp temp0 restTgt)" in out3 and out3.count("&tmp") == 1)
+
+
 def run():
     print("=== test_sci11_patch: the road from a correct finding to a playable patch ===")
     test_refusal_primitive_is_derived()
     test_fatal_uses_produces_a_remedy()
+    test_hoist_rest_targets()
     test_placement()
     test_verify_closes_every_kq6_finding()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
