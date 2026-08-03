@@ -33,7 +33,17 @@ so for a long time the goal was satisfied by *losing*. See `KQ6-GOAL.md`.
 **The 19th (2026-08-02): the `letter`**, user-confirmed the day `register_strandings` turned
 causal — flag 166's flip is a point of no return past which the vizier's letter's source is
 unreachable, while rm730/rm870 still demand showing it. The flip detector joined the oracle's
-caught set and the snapshot surface with it. No guard spec exists for the letter yet.
+caught set and the snapshot surface with it. Its guard spec landed the same day: `guard_specs`
+now consumes the causal flips into the same `register-write` remedy as KQ4's nightfall — hold
+the flip until the letter is in hand — and the patcher places it on both `(ScriptID 80 0)
+setFlag: 709 2` sites (rm740, rm880), split out of their chained sends so the scenes still play,
+matching the exact receiver (rm710/720's `(ScriptID 81 0)` writes the same word/mask for a
+different region and must not be touched).
+⚠️ Two caveats: flag 166 is "the wedding has started", the game's central plot branch — this
+guard has NOT been play-tested and goes first when the ScummVM pass runs. And **on disk the hold
+is PARTIAL**: rm880 is one of the 5 pre-existing decompiler-dialect compile failures, so its
+edit is reverted at emission (pristine-check, stated on the run) and only rm740's site ships
+until the decompiler gap closes.
 
 `test_kq6_ground_truth` passes all 16 checks. `KNOWN_GAPS` is empty and `LONG_ENDING_ONLY` is
 empty, so every unit the oracle calls real is caught and nothing outside the oracle is flagged.
@@ -63,8 +73,8 @@ same fact.
 
 | | |
 |---|---|
-| guard specs | 15 total — **13 emitted, 2 refused** (14 edge + 1 `action`) |
-| the 2 refusals | the `flag == 0` half-questions (demand the mirror flag CLEAR) — they pair with no entrance guard and would close no softlock; refused with the reason stated |
+| guard specs | 17 total — **14 emitted, 3 refused** (15 edge + 1 `action` + 1 `register-write`) |
+| the 3 refusals | the `reg == 0` half-questions (demand the mirror flag CLEAR ×2; demand rm690's gauntlet latch CLEAR — the reg536 row is NEW with the fifth store, 2026-08-02) — they pair with no entrance guard and would close no softlock; refused with the reason stated |
 | the catacombs | **collapsed 2026-08-01**: the brick joined the capture guards (rm340→370/405/440 demand all FOUR carry-ins), and the 8 `rm*→rm420` wall-guards are GONE — see below |
 | sink remedies | 3 emitted — mint + peppermint applied; huntersLamp refused at apply (a TRADE) |
 | fatal uses | 1 emitted — refuse `throwSkull` at rm420 |
@@ -101,9 +111,11 @@ shape harmless). The former 🔴 is promoted; each placement edge is pinned GREE
 
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
-**KQ6: 13 applied / 16, 8 scripts compiled and written as SCI1.1 loose patches** (the three
+**KQ6: 16 applied / 18 placement rows, 10 scripts compiled and written as SCI1.1 loose
+patches** (the three
 register-valued exit guards landed 2026-08-01: rm670 as `edge-exit`, rm680 ×2 as `arm-event` —
-⚠️ the kind Dagger shows can be misplaced; not yet played). The first patch
+⚠️ the kind Dagger shows can be misplaced; not yet played. rm640 joined 2026-08-02 via the
+nav-property `newRoom:` spelling). The first patch
 set this project has produced for anything but LSL2:
 
 ```
@@ -113,9 +125,13 @@ set this project has produced for anything but LSL2:
 340.SCR + 340.HEP  rm340         Realm entry (155), sacred-water flyer (370),
                                  catacombs entrance (405), lair (440)
 420.SCR + 420.HEP  rm420         the skull into the gears -- refused
+640.SCR + 640.HEP  rm640         Realm carry-out (handkerchief + skeletonKey) on the
+                                 ticket surrender -- the commit point
 660.SCR + 660.HEP  rm660         Charon's crossing
 670.SCR + 670.HEP  rm670         exit guard: the mirror must have been shown
 680.SCR + 680.HEP  rm680         exit guards: cup filled + mirror shown (Realm boundary)
+740.SCR + 740.HEP  rm740         the letter: hold the wedding flag until it is in hand
+                                 (rm880's twin site reverts -- decompiler gap, see above)
 ```
 
 With `--emit-unclosed`, `pipeline` on KQ6 now **exits 0** and emits the set above while listing
@@ -146,8 +162,14 @@ do not are decompiler-dialect issues in scripts we do not edit.
 
 | still skipped | reason |
 |---|---|
-| `rm420->rm435` | holeInTheWall's tighter nested demand at the last crossing before the one-way drop — a maze edge with no call site; its demand is already covered by the capture guard (the oracle's redundancy doctrine, minus the redundant copy) |
-| `rm640->rm650` | the Realm carry-out guard (handkerchief + skeletonKey) — same no-trigger seam; the finding it closes is real and `verify` counts it closed in the model |
+| `rm420->rm435` | holeInTheWall's tighter nested demand at the last crossing before the one-way drop — the crossing lives in the shared `rLab` maze dispatcher (`newRoom: (gCurRoom north:)` resolved per cell from `LBRoom`'s door tables), not in rm420's own file; its demand is already covered by the capture guard (the oracle's redundancy doctrine, minus the redundant copy) |
+
+(`rm640->rm650` — the Realm carry-out guard, handkerchief + skeletonKey — left this table
+2026-08-02: `trigger.py` learned the `newRoom: (gCurRoom north:)` spelling, resolving the
+destination from the room's own declared `north 650`, and the guard now wraps the ticket
+surrender — `doorMaster::doVerb`'s `setScript: egoGiveTicketScr` — which is the commit point.
+KQ6 places **14 of 16**; the two remaining rows above are a covered redundancy and a correct
+refusal.)
 
 (`rm340->rm370` — the sacred-water pocket — used to sit in this table with "no armer we can
 locate". It now places as a `proc-call` edit: `trigger.find_proc_calls`/`reaching_procs` follow
@@ -185,19 +207,22 @@ by `test_sci11_patch.py`.
 
 ---
 
-## Three caveats on "18/18"
+## Two caveats on "19/19"
 
 A perfect score against our own oracle is the shape a fitted result takes, so state the limits:
 
 1. **`ALLOWED == EXPECTED_CAUGHT` exactly.** Both other columns are empty, so "no unexpected
    unit" and "no dropped unit" are the same assertion seen twice. The score means the tool and
    the oracle agree — not that KQ6 is covered.
-2. **Mixed provenance.** The catacombs four, the mirror, the shield ruling, the gauntlet and the
-   teacup boundary are user-tested in-game. The rest are walkthrough- or script-derived by us.
-3. **The gauntlet is caught for a reason the game does not have.** We keep it because
-   `issueChallenge` writes an incidental register (which death message you get). The real link
-   runs through a room LOCAL gating `lord::doVerb 13`, which we do not model at all. Right
-   verdict, wrong reason, and pinned RED so it cannot look better founded than it is.
+2. **Mixed provenance.** The catacombs four, the mirror, the shield ruling, the gauntlet, the
+   letter and the teacup boundary are user-tested in-game. The rest are walkthrough- or
+   script-derived by us.
+
+(The old caveat 3 — "the gauntlet is caught for a reason the game does not have" — is RETIRED
+2026-08-02. The fifth store is wired: rm690's `local0` lowers to reg536, `issueChallenge`'s
+clearing write is a modelled register write, and `lord::doVerb 13`'s latch test is a register
+test. `test_local_latch_is_modelled` pins that chain on the game itself; the latch even surfaces
+its own (refused) spec row at rm670→rm660.)
 
 ---
 
@@ -233,18 +258,20 @@ cleanup pass that recorded them was scoped to close no gaps.
 
 ## Open work, in rough order of value
 
-(1 and 2 of the old list LANDED — commitment 2026-08-01, the last three guards 2026-08-02. The
-"per-route notion of need" turned out unnecessary: carry-out placement + two stranding-row rules
-closed all three without expressing routes at all.)
+(Of the old list: 1 — the fifth store — LANDED 2026-08-02 in wiring round 4: lowered own-script
+registers thread through the machine walks as counters (`Machine.local_regs`,
+`compile._lreg_test`), the latch-continuation strengthening reads the lowered spelling, and
+`destroyed_is_permanent(huntersLamp)` stays True. LSL2/KQ4/Dagger byte-identical; KQ6's only
+surface change is the new refused reg536 row above. 3 was settled in-game 2026-08-02 (the
+engine's rm640→rm650 site is right; oracle corrected) and 4 landed the same day — the causal
+flip detector's one surviving row is the user-confirmed `letter`.)
 
-1. **Room locals: wire the fifth store.** The representation exists
-   (`vocab.derive_room_locals` / `lower_room_locals`) and is deliberately unwired; three
-   consumers need reset-aware semantics first — `_reg_cost` (0 is start-of-VISIT, not free, for
-   a reset register), `render_register` (bound the flag block), `death_traps` (re-entry is not
-   an escape). Measured wired-in it loses KQ4's whale items and KQ6's huntersLamp.
-2. **The two no-trigger placement skips** (`rm420->rm435`, `rm640->rm650`) — the trigger seam
-   for maze/realm edges with no `newRoom` call site.
-3. **Settle the rm640→rm650 vs rm680→rm155 divergence** with the guard oracle (is the Realm
-   interior really one-way past rm650?) — an in-game question.
-4. **register_strandings' prevRoom degeneracy** — derive PLOT-state registers; pinned RED.
-5. **Play the patch set in ScummVM** — deliberately last (user, 2026-08-01).
+1. **Play the patch set in ScummVM** — deliberately last (user, 2026-08-01). Play the letter's
+   wedding-flag hold (rm740/rm880) and the rm640 ticket-surrender guard first — both are new
+   and neither has ever run.
+
+(The letter's guard spec closed 2026-08-02 — `guard_specs` consumes the causal flips into
+`register-write` specs, placed by `guard_prop_flag_write` on the exact receiver. The
+rm640→rm650 no-trigger skip closed the same day — see the placement section. The one still
+skipped, rm420→rm435, is a deliberate redundancy: the shared-dispatcher seam would buy a guard
+the capture guards already carry.)

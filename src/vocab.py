@@ -1084,6 +1084,15 @@ def lower_prop_flags(ir, accessors):
                 for k in p[2]:
                     index.setdefault(k, synth_base + len(index))
     BOOL_GLOBALS.update(index.values())
+    try:
+        # The map back, for the same reason every other store records one: the ANALYSIS never
+        # needs to know these registers were property-word bits, but a PATCH has to find and
+        # spell the game's own `tstFlag:/setFlag: <word> <mask>` site -- and the flag-block
+        # renderer needs to know these are NOT proc-flag numbers (the phantom-spelling class).
+        ir._prop_flag_index = {gi: k for k, gi in index.items()}
+        ir._prop_flag_sels = {op: sel for sel, op in accessors.items()}
+    except Exception:                                      # noqa: BLE001
+        pass
 
     def _lower_one(op, keys):
         gis = [index[k] for k in keys]

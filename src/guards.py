@@ -472,6 +472,17 @@ def render_register(s, R, value):
         return test if value == 1 else f"(== {test} {value})"
     if R in (getattr(ir, "_room_local_index", {}) if ir is not None else {}):
         return None
+    # PROPERTY-WORD bit flags render in their own spelling -- and the check must come before the
+    # proc-flag block below for the same reason the object-property check does: that block has no
+    # upper bound, so a prop-flag register would render as a phantom proc-flag number otherwise.
+    pf = getattr(ir, "_prop_flag_index", {}) if ir is not None else {}
+    if R in pf:
+        tsel = (getattr(ir, "_prop_flag_sels", None) or {}).get("test")
+        (sn, ex), word, bit = pf[R]
+        if tsel is None:
+            return None
+        test = f"((ScriptID {sn} {ex}) {tsel}: {word} {1 << bit})"
+        return test if value else f"(not {test})"
     base = getattr(ir, "flag_synth_base", None)
     proc = getattr(ir, "flag_test_proc", None)
     if base is None or proc is None or R < base:
@@ -888,6 +899,15 @@ def guard_specs(s):
     for r in s.register_flip_strandings():
         byreg[r["register"]].add(r["item"])
         trap_of[r["register"]] = r["trap"]
+    # ...and the CAUSAL flips (`register_strandings`): a plot register whose one-way flip cuts
+    # off an item's source while a later room still demands it. Same remedy, same spec: hold the
+    # flip until the item is in hand. KQ6's letter is the case -- flag 166 ("the wedding has
+    # started", rm880's guards returning) seals rm781 while rm730/rm870 still ask for the
+    # vizier's letter -- and KQ4's nightfall is the shape's play-validated precedent. LSL2/KQ4
+    # report zero causal rows, so this is KQ6-only today.
+    for r in s.register_strandings():
+        byreg[r["register"]].add(r["item"])
+        trap_of.setdefault(r["register"], r["value"])
     for R in sorted(byreg):
         items = sorted(byreg[R])
         cond = ("(and %s)" % " ".join(f"(gEgo has: {i})" for i in items)

@@ -182,8 +182,31 @@ def main(argv=None):
     print(f"    compiled {r['compiled']}/{r['total']} scripts")
     broken = [t for t, _ in r["failures"] if t in touched]
     if broken:
-        print(f"    \033[31mREFUSING to emit: edited script failed to compile: {broken}\033[0m")
-        return 1
+        # An edit is only guilty if the PRISTINE script compiles. KQ6's rm880 is one of the 5
+        # decompiler-dialect failures (336/341) -- it fails to recompile edited or not -- so
+        # blaming the edit would block the whole emission on an upstream gap. Such an edit is
+        # REVERTED (pristine text restored), its rows downgraded to SKIP with the reason
+        # stated, and the rest of the set still ships. An edit that broke a COMPILING script
+        # still refuses the whole emission: that one is ours.
+        import shutil
+        ours = []
+        for t in broken:
+            shutil.copy(os.path.join(cfg.src_dir, t + ".sc"),
+                        os.path.join(dest, "src", t + ".sc"))
+            ok, _o = P.compile_one(dest, t, os.path.join(dest, t + ".chk"))
+            if ok:
+                ours.append(t)
+            else:
+                print(f"    [SKIP] {t}  (host script does not recompile even unedited -- "
+                      f"pre-existing decompiler gap; edit reverted)")
+                for e in edits + gedits:
+                    if e.get("title") == t and e["applied"]:
+                        e["applied"] = False
+                        e["why"] = "host script does not recompile (pre-existing decompiler gap)"
+                touched.remove(t)
+        if ours:
+            print(f"    \033[31mREFUSING to emit: edited script failed to compile: {ours}\033[0m")
+            return 1
     written = P.emit_patches(dest, touched, nums, out_dir)
     for w in written:
         name = (" + ".join(os.path.basename(p) for p in w["paths"]) if w["ok"]

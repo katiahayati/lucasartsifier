@@ -904,6 +904,53 @@ def guard_register_write(text, register, trap, cond):
     return text, 0
 
 
+def guard_prop_flag_write(text, sel, word, bit, recv_src, cond):
+    """Hold a property-word flag SET (`(<recv> setFlag: <word> <mask>)`) until `cond` holds.
+
+    The write commonly rides a CHAINED send -- KQ6's rm880 guards-return cutscene writes the
+    "wedding has started" flag as `((ScriptID 80 0) clrFlag: 710 1 setFlag: 709 2)` -- so the
+    flag message is SPLIT out of its chain and re-issued alone under the guard, in original
+    order, and the siblings still run: the scene plays, the seal waits. The same "hold the flip"
+    semantics as `guard_register_write` (KQ4's nightfall), in the second flag store's spelling.
+
+    Only an exact single-bit mask on the RIGHT RECEIVER is edited: the flag's identity is
+    (receiver, word, bit), and KQ6 has `(ScriptID 81 0)` writing the same `709 2` word/mask for a
+    different region's flags two rooms over -- matching the numbers alone would both guard a
+    stranger's flag and re-spell its receiver. A multi-bit mask carrying other flags too is left
+    alone (guarding it would hold state this spec knows nothing about). All matching sites in
+    `text` are edited -- every writer waits."""
+    mask = 1 << bit
+    want_recv = re.sub(r"\s+", " ", recv_src.strip("() ")).strip()
+    guarded = "(if %s (%s %s: %d %d))  ; softlock-guard: hold the flip until obtainable" % (
+        cond, recv_src, sel, word, mask)
+    edits = []                      # (send_start, send_end, replacement)
+    for m in re.finditer(r"%s:\s+%d\s+%d\b" % (re.escape(sel), word, mask), text):
+        # the innermost balanced form containing the message IS the send (its args are literals)
+        send = None
+        for om in re.finditer(r"\(", text[:m.start()]):
+            bs, be = _block_span(text, om.start())
+            if bs <= m.start() < be and (send is None or bs > send[0]):
+                send = (bs, be)
+        if send is None:
+            continue
+        bs, be = send
+        body = text[bs:be]
+        rm_ = re.match(r"\(\s*(\([^()]*\)|\S+)", body)
+        recv_here = re.sub(r"\s+", " ", (rm_.group(1) if rm_ else "").strip("() ")).strip()
+        if recv_here != want_recv:
+            continue
+        frag = re.search(r"\s*%s:\s+%d\s+%d\b" % (re.escape(sel), word, mask), body)
+        remainder = body[:frag.start()] + body[frag.end():]
+        indent = re.search(r"[ \t]*$", text[:bs]).group(0)
+        # a send whose ONLY message was the flag write leaves no selector behind -- drop the husk
+        keep = remainder if re.search(r"\w+:", remainder) else ""
+        sepa = ("\n" + indent) if keep else ""
+        edits.append((bs, be, keep + sepa + guarded))
+    for bs, be, rep in sorted(edits, reverse=True):
+        text = text[:bs] + rep + text[be:]
+    return text, len(edits)
+
+
 _SOURCE_CACHE = {}
 
 
@@ -1035,7 +1082,32 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             open(path, "w").write(new_text)
             out.append({**sp, "applied": True, "title": title, "sites": n,
                         "placement": {"kind": "register-write", "instance": title}})
-        else:
+            continue
+        # ...or the flip is a PROPERTY-WORD flag set in a room's cutscene, the second flag
+        # store's spelling (KQ6's letter: flag 166 -- "the wedding has started" -- is
+        # `((ScriptID 80 0) ... setFlag: 709 2)` in rm880's guards-return scene). Every SET
+        # site is held: each writer waits for the condition, the scene around it still runs.
+        pf = (getattr(_IR, "_prop_flag_index", None) or {}).get(sp["register"]) \
+            if _IR is not None else None
+        ssel = (getattr(_IR, "_prop_flag_sels", None) or {}).get("set") \
+            if _IR is not None else None
+        placed = 0
+        if pf and ssel and sp["trap"] == 1:
+            (sfn, ex), word, bit = pf
+            recv_src = "(ScriptID %d %d)" % (sfn, ex)
+            for t2 in sorted(set(titles_by_num.values())):
+                p2 = os.path.join(dest, "src", t2 + ".sc")
+                if not os.path.exists(p2):
+                    continue
+                tx = open(p2, errors="replace").read()
+                nt, n2 = guard_prop_flag_write(tx, ssel, word, bit, recv_src,
+                                               to_source_syntax(sp["condition"]))
+                if n2:
+                    open(p2, "w").write(nt)
+                    out.append({**sp, "applied": True, "title": t2, "sites": n2,
+                                "placement": {"kind": "flag-write", "instance": t2}})
+                    placed += n2
+        if not placed:
             out.append({**sp, "applied": False, "why": "no free-running trap write found",
                         "from_room": None, "to_room": None})
     for title, group in sorted((k, v) for k, v in by_title.items() if k):
