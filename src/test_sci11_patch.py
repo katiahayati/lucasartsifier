@@ -164,6 +164,14 @@ def test_verify_closes_every_kq6_finding():
     check("the Realm carry-outs are demanded at the pocket's exit frontier (rm640->rm650)",
           len(co) == 1 and set(co[0]["items"]) == {17, 44} and not co[0]["refused"],
           f"{[(sp['condition'], sp['refused']) for sp in co]}")
+    # THE MISTS DOCTRINE (user, 2026-08-03): the lamp trade must stay -- item 25 is the genie's
+    # price -- so the trip is what gets refused. `sink_survival_carryins` demands the lamp at
+    # every crossing into rm580, grounded in the game's own death sorter (cageInset::init arms
+    # makeRain on own(19) and inTheCage on its absence). Pinned by edge, exactly.
+    mists = {(sp["from_room"], sp["to_room"]) for sp in specs
+             if sp["site"] == "edge" and sp.get("items") == [19] and not sp["refused"]}
+    check("the hunter's lamp is demanded at every crossing into the Druids' grounds",
+          mists == {(550, 580), (560, 580)}, repr(mists))
     refused = [sp for sp in specs if sp["refused"]]
     v = G.verify(s, specs)          # NOTE: mutates `s`; nothing may read it after this
     print(f"  fixed {len(v['fixed'])} + {len(v['groups_fixed'])} group(s); "

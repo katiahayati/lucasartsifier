@@ -194,6 +194,80 @@ def render(common_pos, common_neg, rest, name=None):
     return terms[0] if len(terms) == 1 else "(and " + " ".join(terms) + ")"
 
 
+def _own_polarity(g, it, neg=False):
+    """(appears-positively, appears-negatively) for own(`it`) in a guard TREE.
+
+    Polarity, not requirement: an own() under a GNot (or with want=False) counts as negative.
+    Used to recognise the game SORTING the player on an item -- one arming demands it, a
+    sibling arming demands its absence -- which is a stronger fact than either mention alone."""
+    if g is None:
+        return False, False
+    if isinstance(g, M.Pred):
+        if g.kind == "OWN" and g.var == it:
+            truthy = bool(g.want) != bool(neg)
+            return truthy, not truthy
+        return False, False
+    if isinstance(g, M.GNot):
+        return _own_polarity(g.kid, it, not neg)
+    kids = getattr(g, "kids", None) or (g if isinstance(g, list) else [])
+    pos = negv = False
+    for k in kids:
+        p, n = _own_polarity(k, it, neg)
+        pos, negv = pos or p, negv or n
+    return pos, negv
+
+
+def sink_survival_carryins(s):
+    """A sink-lost item that is later the PRICE OF SURVIVING a room: demand it at the crossings
+    into that room.
+
+    The sink itself can be unguardable and even mandatory. KQ6's lamp trade is both: deleting
+    the disposal hands the player both sides (a TRADE), and the new lamp is the genie's price,
+    so refusing the trade would wall the game. The loss is also perfectly legal on the route
+    that never needs the item -- the short ending never sails to the Isle of the Mists. What is
+    never legal is walking into the death without it: rm580's `cageInset::init` sorts the
+    captured player into `makeRain` (survive) on `own(huntersLamp) & waters-poured` and
+    `inTheCage` (death) otherwise, and from inside the cage nothing can be done. That is the
+    unfair-death class, prevented at the last screen where prevention is possible: the
+    crossings into the room. [User doctrine 2026-08-03: the trade must stay; the trip is what
+    gets refused -- the same ruling as the catacombs entrance.]
+
+    Fires only where the GAME ITSELF holds a death sorted on the item -- some machine at the
+    need room mentions own(item) positively in one arming and negatively in a sibling. A mere
+    action-need (mint at the genie's palace) has no such sorter, so this cannot over-demand an
+    item whose loss the disjunctive-group machinery already covers. The demand is the ITEM
+    half only: the sorter's other conjuncts (the poured waters) are established INSIDE, and
+    demanding them at the door would wall the player who comes to establish them."""
+    out, seen = [], set()
+    for r in s.dangerous_sinks():
+        it = r["item"]
+        for N in r.get("still_needed_at", ()):
+            pos = neg = False
+            for info in s.em.machines:
+                if info["room"] != N:
+                    continue
+                for _k, g in (info.get("entries") or ()):
+                    p, n = _own_polarity(g, it)
+                    pos, neg = pos or p, neg or n
+            if not (pos and neg):
+                continue
+            for a, bs in s.edges.items():
+                if N in bs and (a, N, it) not in seen:
+                    seen.add((a, N, it))
+                    rec = {"items": {it}, "groups": []}
+                    out.append({"site": "edge", "from_room": a, "to_room": N,
+                                "condition": f"(gEgo has: {it})",
+                                "items": [it], "groups": [],
+                                "refused": unsatisfiable(s, a, N, rec),
+                                "note": f"{s.g.item_name(it)} is the price of surviving "
+                                        f"rm{N} (the game's own death sorter), and the sink "
+                                        f"at rm{r['at_room']} that loses it cannot itself be "
+                                        f"guarded -- refuse the trip instead. NOT play-tested; "
+                                        f"a legitimate item-less revisit of rm{N} would be "
+                                        f"walled, which only play can rule out."})
+    return out
+
+
 def frontier_guards(s):
     """Guards derived from STRANDINGS -- the other half of the synthesis.
 
@@ -853,6 +927,9 @@ def guard_specs(s):
     # READS them -- an exit guard may only ship alongside the entrance guard that makes it
     # satisfiable, which `pocket_exit_guards` checks against `pocket_frontier`.
     specs.extend(pocket_exit_guards(s))
+    # An unguardable sink whose item later decides a death: demand the item at the crossings
+    # into the death's room instead (the mists doctrine -- refuse the trip, keep the trade).
+    specs.extend(sink_survival_carryins(s))
     for gt in survival_gates(s):
         cp, cn, rest = factor(gt["alts"])
         pos_spec = render(cp, set(), rest)

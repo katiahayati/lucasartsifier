@@ -70,12 +70,13 @@ KNOWN_RED = {
         # it on the arming of the fatal machine (KQ6: rm420's `setScript: throwSkull`). Inert on
         # LSL2, KQ4 and the Dagger, which have no fatal uses.
         "🔴 KNOWN GAP (KQ6): every non-refused spec places":
-            "PHASE 4. **16 of 18** placement rows apply since 2026-08-02 (rm640->rm650 joined "
-            "when trigger.py learned the `newRoom: (gCurRoom north:)` spelling; the letter's "
-            "register-write hold joined at rm740+rm880 via guard_prop_flag_write). Two skips: "
-            "rm420->rm435 (the maze edge lives in the shared rLab dispatcher, and its demand is "
-            "already covered by the capture guard) and the huntersLamp sink (a TRADE, correctly "
-            "refused at apply).",
+            "PHASE 4. **18 of 20** placement rows apply since 2026-08-03 (rm640->rm650 via the "
+            "nav-property spelling; the letter's register-write hold at rm740+rm880; the mists "
+            "lamp carry-in at rm550/rm560 via sink_survival_carryins + the SCI1.1 "
+            "`super init: &rest` edge-exit anchor). Two skips: rm420->rm435 (the maze edge "
+            "lives in the shared rLab dispatcher, and its demand is already covered by the "
+            "capture guard) and the huntersLamp sink (a TRADE, correctly refused at apply -- "
+            "its remedy is the mists carry-in instead).",
         "🔴 KNOWN GAP (dagger): every non-refused spec places":
             "PHASE 4. 2 of 4 place, and the two that DO are 24-item guards placed as arm-event, "
             "i.e. events that would never fire -- so Dagger is worse off than the count "

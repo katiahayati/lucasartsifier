@@ -850,7 +850,8 @@ def guard_edge_exit(text, inst_name, to_room, cond):
     init = re.search(r"\(method\s+\(init\)", text[m.start():])
     if not init:
         return text, 0, None
-    sup = re.search(r"\n(\s*)\(super init:\)", text[m.start() + init.start():])
+    # `(super init:)` in SCI0; SCI1.1 rooms write `(super init: &rest)` -- same anchor.
+    sup = re.search(r"\n(\s*)\(super init:[^()]*\)", text[m.start() + init.start():])
     if not sup:
         return text, 0, None
     at = m.start() + init.start() + sup.end()

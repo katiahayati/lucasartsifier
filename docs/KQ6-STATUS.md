@@ -72,7 +72,7 @@ same fact.
 
 | | |
 |---|---|
-| guard specs | 17 total — **14 emitted, 3 refused** (15 edge + 1 `action` + 1 `register-write`) |
+| guard specs | 19 total — **16 emitted, 3 refused** (17 edge + 1 `action` + 1 `register-write`) |
 | the 3 refusals | the `reg == 0` half-questions (demand the mirror flag CLEAR ×2; demand rm690's gauntlet latch CLEAR — the reg536 row is NEW with the fifth store, 2026-08-02) — they pair with no entrance guard and would close no softlock; refused with the reason stated |
 | the catacombs | **collapsed 2026-08-01**: the brick joined the capture guards (rm340→370/405/440 demand all FOUR carry-ins), and the 8 `rm*→rm420` wall-guards are GONE — see below |
 | sink remedies | 3 emitted — mint + peppermint applied; huntersLamp refused at apply (a TRADE) |
@@ -110,7 +110,7 @@ shape harmless). The former 🔴 is promoted; each placement edge is pinned GREE
 
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
-**KQ6: 16 applied / 18 placement rows, 11 scripts compiled and written as SCI1.1 loose
+**KQ6: 18 applied / 20 placement rows, 13 scripts compiled and written as SCI1.1 loose
 patches** (the three
 register-valued exit guards landed 2026-08-01: rm670 as `edge-exit`, rm680 ×2 as `arm-event` —
 ⚠️ the kind Dagger shows can be misplaced; not yet played. rm640 joined 2026-08-02 via the
@@ -124,6 +124,9 @@ set this project has produced for anything but LSL2:
 340.SCR + 340.HEP  rm340         Realm entry (155), sacred-water flyer (370),
                                  catacombs entrance (405), lair (440)
 420.SCR + 420.HEP  rm420         the skull into the gears -- refused
+550.SCR + 550.HEP  rm550         mists carry-in: the hunter's lamp to approach the Druids
+560.SCR + 560.HEP  rm560         mists carry-in: east exit closes while lampless
+                                 (the game's own `<dir>: 0` idiom)
 640.SCR + 640.HEP  rm640         Realm carry-out (handkerchief + skeletonKey) on the
                                  ticket surrender -- the commit point
 660.SCR + 660.HEP  rm660         Charon's crossing
@@ -287,3 +290,15 @@ flip detector's one surviving row is the user-confirmed `letter`.)
 rm640→rm650 no-trigger skip closed the same day — see the placement section. The one still
 skipped, rm420→rm435, is a deliberate redundancy: the shared-dispatcher seam would buy a guard
 the capture guards already carry.)
+
+**The huntersLamp remedy landed 2026-08-03 — as a carry-in, not a sink edit.** USER DOCTRINE:
+the trade must stay (item 25 is the genie's price, and at the docks the route is not yet
+chosen); the TRIP is what gets refused. `guards.sink_survival_carryins`: a sink-lost item that
+is later the price of SURVIVING a room — the game's own death sorter, `cageInset::init` arming
+`makeRain` on `own(19)` and `inTheCage` on its absence — gets demanded at every crossing into
+that room. Places at rm550→rm580 (arm-event) and rm560→rm580 (edge-exit; the `east 580`
+property closes while lampless, which needed the SCI1.1 `super init: &rest` anchor). Fires
+nowhere on LSL2/KQ4/Dagger (byte-identical); demands only the ITEM half — the poured-waters
+conjunct is established inside and demanding it at the door would wall the player who comes to
+establish it. NOT play-tested; a legitimate lampless revisit of rm580 would be walled, which
+only play can rule out — the spec's own note says so.)
