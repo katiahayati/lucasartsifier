@@ -53,6 +53,42 @@ def _message_send(form):
     return recv, groups
 
 
+NAV_SELECTORS = ("north", "south", "east", "west")
+
+
+def _nav_read(a0):
+    """`'north'` when a0 is `(<recv> north:)` -- a nav-property read used as the destination.
+
+    SCI1.1 spells a static exit as `(gCurRoom newRoom: (gCurRoom north:))` with `north 650`
+    declared on the room -- the destination is a literal, one indirection away. Without this the
+    site is invisible and the edge reports no-trigger (KQ6's rm640->rm650 Realm carry-out)."""
+    ms = _message_send(a0) if isinstance(a0, list) else None
+    if ms:
+        _recv, groups = ms
+        if len(groups) == 1 and groups[0][0] in NAV_SELECTORS and not groups[0][1]:
+            return groups[0][0]
+    return None
+
+
+def nav_props(forms):
+    """{direction: room} declared in this file's instance property lists (`north 650`).
+
+    A direction declared twice with DIFFERENT values resolves to nothing -- the read is dynamic
+    then, and guessing would place a guard on the wrong edge. Zero is "no exit", not a room."""
+    seen = defaultdict(set)
+    for f in forms:
+        if not (isinstance(f, list) and len(f) >= 3 and is_sym(f[0], "instance")):
+            continue
+        for part in f:
+            if isinstance(part, list) and part and is_sym(part[0], "properties"):
+                toks = part[1:]
+                for k, v in zip(toks, toks[1:]):
+                    if isinstance(k, Sym) and k.name in NAV_SELECTORS \
+                            and isinstance(v, int) and v:
+                        seen[k.name].add(v)
+    return {d: next(iter(vs)) for d, vs in seen.items() if len(vs) == 1}
+
+
 def _script_id(form):
     """`("ScriptID", script, export)` if this form is a `(ScriptID S N)` call, else None."""
     if (isinstance(form, list) and len(form) >= 3 and is_sym(form[0], "ScriptID")
@@ -263,6 +299,10 @@ def analyze_room(forms):
                 a0 = args[0] if args else None
                 if sel == "newRoom" and isinstance(a0, int):
                     newroom_sites.append((inst, meth, state, a0, pos))
+                elif sel == "newRoom" and _nav_read(a0):
+                    # destination = the room's own declared nav property, resolved by the
+                    # caller against nav_props(forms) -- see find_trigger.
+                    newroom_sites.append((inst, meth, state, ("nav", _nav_read(a0)), pos))
                 elif sel == "changeState" and isinstance(a0, int):
                     cs_calls.append((inst, meth, a0, recv))
                 elif sel == "setScript" and isinstance(a0, Sym):
@@ -288,7 +328,10 @@ def analyze_room(forms):
 def find_trigger(forms, target_room):
     """Return the guard placement for a frontier newRoom into `target_room`."""
     nr, cs, ss, _pc = analyze_room(forms)
-    sites = [s for s in nr if s[3] == target_room]
+    nav = nav_props(forms)
+    sites = [s for s in nr if s[3] == target_room
+             or (isinstance(s[3], tuple) and s[3][0] == "nav"
+                 and nav.get(s[3][1]) == target_room)]
     if not sites:
         return {"kind": "not-found", "target_room": target_room}
     inst, meth, state, _, positional = sites[0]
