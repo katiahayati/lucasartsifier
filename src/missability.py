@@ -3509,19 +3509,27 @@ def load(cfg=None, ir_path=None):
     # (`vocab.derive_room_locals` / `lower_room_locals`, entry-reset via ir._room_local_resets ->
     # init_writes; rm690 derives exactly).
     #
-    # ROUND 1 (2026-08-01): wired, KQ4 lost its whale items and KQ6 lost huntersLamp; blamed on
-    # death_traps' complement rows priced free and on phantom-flag rendering.
-    # ROUND 2 (2026-08-02): both named blockers landed on their own measurements (the trap-clock
-    # rule; store-aware render_register) -- and the whale items are STILL lost, for a deeper
-    # reason the first diagnosis missed: with locals lowered, KQ4's whale TRAPS VANISH ENTIRELY
-    # (`_joints == []`, no death_traps rows at rm43/rm44 at all), so every joint stranding dies
-    # at the source. The lowering changes the SHAPE of entry guards (opaque local reads become
-    # readable register atoms), and something in `_trap_rooms`/`_trap_graph`/`death_traps`' case
-    # split classifies the whale machinery differently. KQ6's huntersLamp loss is likely the
-    # same shape (its rm520 `doit` local is one of the three recorded instances).
-    #
-    # NEXT PROBE TARGET: `_trap_rooms(em)` on KQ4 rm43/rm44, wired vs not -- find which
-    # classification flips. Until that lands, wiring stays out; the gap stays RED in test_toll.
+    # THREE measured rounds, ONE blocker left:
+    # ROUND 1 (2026-08-01): KQ4 whale items + KQ6 huntersLamp lost -> trap-clock rule and
+    #   store-aware render_register landed on their own merits.
+    # ROUND 2 (2026-08-02): still lost. Round 2's `_joints == []` lead was a red herring
+    #   (`_joints` is [] on KQ4 stock too); the whale rows come from `joint_strandings` = the
+    #   OCEAN GRID x monotone flags, and the grid died because the derivation lowered its data:
+    #   `++`/`--` are Increment/Decrement nodes the taint missed (rm31's stepped cells), and
+    #   rm31's local12 is `grid._counter_bound`'s CONST-LOCAL drown threshold (init-only writes).
+    #   Both derivation fixes are IN (`derive_room_locals`), and with them KQ4 wired is
+    #   byte-identical to stock -- whale, bridle, all five joint rows back.
+    # ROUND 3 (2026-08-02): the LAST blocker, measured to a single boolean: KQ6's huntersLamp
+    #   dies because `destroyed_is_permanent(19)` flips True->False. The lamp's acquisition
+    #   entries come from `_entry_reach_walk_of(getLamp)`, and the walk threads machine-internal
+    #   sequencing as CARRIED-LOCAL counters (`entry_locals`, CTR atoms in path guards, `c`
+    #   writes). Lowering rm520's cross-object latches (locals 0-2 -- genuinely this gap's 2nd
+    #   recorded instance) moves all three into register-land (Pred CMP atoms, `w` writes, no
+    #   entry annotation), so the walk loses its internal resolution and the entry set weakens.
+    #   THE REMAINING WORK: thread lowered own-script registers through the machine walks as
+    #   counters (map back via ir._room_local_index; seed from ir._room_local_resets), with
+    #   `destroyed_is_permanent(huntersLamp)` staying True as the pinned test case. That walk is
+    #   the most baseline-pinned machinery in the codebase -- it gets its own session.
     #   V.lower_room_locals(ir, V.derive_room_locals(ir, _X._room_numbers(ir)))
     _X.install_vocabulary(ir)
     V.lower_item_bit_flags(ir, V.derive_item_bit_flags(ir, _X._at_item), _X._at_item)

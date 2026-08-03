@@ -1445,6 +1445,16 @@ def derive_room_locals(ir, rooms):
                 if not isinstance(n, dict):
                     return
                 kids = n.get("kids") or []
+                # `(++ local1)` / `(-- local2)` are Increment/Decrement nodes, NOT Assignment* --
+                # missing them is how KQ4's stepped ocean-grid locals (rm31's cell coordinates)
+                # once derived as lowerable, which rewrote them out of `handler_locals` and killed
+                # `grid.analyze` (gates {}), and with it every whale joint stranding. A stepped
+                # local is a counter; counters are the machine compiler's, not this store's.
+                if n.get("t") in ("Increment", "Decrement"):
+                    for k in kids:
+                        if (isinstance(k, dict) and k.get("t") == "Variable"
+                                and k.get("vtype") == "Local"):
+                            tainted.add(k["index"])
                 if n.get("t", "").startswith("Assignment") and kids:
                     lhs = kids[0]
                     if (isinstance(lhs, dict) and lhs.get("t") == "Variable"
@@ -1467,8 +1477,20 @@ def derive_room_locals(ir, rooms):
                     visit(k)
             visit(body)
         for idx in sorted((set(writes) & set(reads)) - tainted):
-            if len(writes[idx] | reads[idx]) > 1:
-                out.add((sn, idx))
+            if len(writes[idx] | reads[idx]) <= 1:
+                continue
+            # A local whose EVERY write sits in an `init` scope is a per-visit CONSTANT, not
+            # state: it is assigned on arrival and never changes mid-visit, so the entry reset IS
+            # its entire semantics and lowering it models nothing new -- while destroying the
+            # const-local SHAPE downstream readers depend on. KQ4's rm31 `local12` is the case
+            # that forced this: it is the drown-counter's death threshold, and `grid._counter_bound`
+            # derives the walk budget as "the room's largest const-local" (the compare itself is
+            # local==local, deliberately opaque). Lowering it cost the grid its budget, the ocean
+            # its gates, and the whale its every joint stranding. A LATCH is written from an
+            # event -- a machine state, a handler -- and those still lower (rm690's local0).
+            if all(mn == "init" for (_obj, mn) in writes[idx]):
+                continue
+            out.add((sn, idx))
     return out
 
 
