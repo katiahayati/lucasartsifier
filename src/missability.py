@@ -834,7 +834,7 @@ def entry_alts(info):
     # advances): a machine that merely branches on a carried local still advances via its other
     # path. A machine with NO carried locals (the common case, ~all of LSL2/KQ4) threads {} and takes
     # every advance exactly as the old guard-ignoring graph did -- byte-for-byte identical.
-    from compile import _ctr_holds
+    from compile import _ctr_holds, _lreg_test
     def _paired(es_key, loc_key):
         # Pad locals to the entry count with {} rather than zip-truncating: a machine whose entries
         # carry no recorded locals (every synthetic test, and any entry opmodel didn't annotate)
@@ -845,11 +845,21 @@ def entry_alts(info):
         locs += [{}] * (len(es) - len(locs))
         return list(zip(es, locs))
     ents = _paired("entries", "entry_locals") + _paired("init_entries", "init_entry_locals")
+    # The machine's OWN lowered room locals (vocab.lower_room_locals) thread through this walk as
+    # counters keyed by their synthetic-global index: the script reloads on room entry, so every
+    # arming starts from the declared reset unless the arming context itself wrote the latch --
+    # the same "unset reads as 0" the raw-local counters have always had, with the declared value
+    # in place of the guess. The atoms and writes STAY registers for every other consumer.
+    lregs = info.get("local_regs") or {}
+    if lregs:
+        ents = [((K, eg), {**lregs, **loc}) for (K, eg), loc in ents]
     carried = set().union(*[set(loc) for _ke, loc in ents]) if ents else set()
 
     def _ctr_ok(g, counters):
         for a in g:                                # g is a path's atom list (a conjunction)
             if isinstance(a, tuple) and a and a[0] == "CTR" and a[1] in carried and not _ctr_holds(a, counters):
+                return False
+            if _lreg_test(a, lregs, counters) is False:
                 return False
         return True
 
@@ -862,7 +872,7 @@ def entry_alts(info):
                 c.get(name, 0) + (1 if kind == "inc" else -1 if kind == "dec" else 0)
         return c
 
-    per_entry = _entry_reach_walk(info, ents, carried, _ctr_ok, _apply)
+    per_entry = _entry_reach_walk(info, ents, carried, _ctr_ok, _apply, lregs)
     # THE ARMING FLOOR. You cannot be executing ANY state of this machine without having armed it,
     # so the machine's full arming disjunction bounds every state -- including one the walk above
     # never reached. Falling off the end of the walk is IGNORANCE about the internal path, not
@@ -888,7 +898,7 @@ def entry_alts(info):
     return out
 
 
-def _entry_reach_walk(info, ents, carried, _ctr_ok, _apply):
+def _entry_reach_walk(info, ents, carried, _ctr_ok, _apply, lregs=None):
     """[(states this entry can reach, its guard)] -- the ONE entry-reachability walk.
 
     Factored out because two views need it: `entry_alts` (which items arm a state) and
@@ -897,6 +907,7 @@ def _entry_reach_walk(info, ents, carried, _ctr_ok, _apply):
     cached = info.get("_entry_reach")
     if cached is not None:
         return cached
+    lregs = lregs or {}
     per_entry = []
     for (K, eg), loc in ents:
         seen, visited = set(), set()
@@ -906,7 +917,7 @@ def _entry_reach_walk(info, ents, carried, _ctr_ok, _apply):
                 seen |= set(info["states"])         # (state, counters) space; fall back to permissive
                 break                               # (all states reachable) rather than under-report
             u, counters = stack.pop()
-            key = (u, tuple(sorted(counters.items())))
+            key = (u, tuple(sorted(counters.items(), key=repr)))
             if key in visited:
                 continue
             visited.add(key)
@@ -915,6 +926,9 @@ def _entry_reach_walk(info, ents, carried, _ctr_ok, _apply):
                 if not _ctr_ok(g, counters):
                     continue
                 nc = _apply(counters, c)
+                for (gi, v) in (w or ()):
+                    if gi in lregs:                # the machine's own lowered-local write: the
+                        nc[gi] = v                 # walk tracks it, the register model keeps it
                 if tr[0] == "ADVANCE":
                     stack.append((u + 1, nc))
                 elif tr[0] == "JUMP":
@@ -967,7 +981,7 @@ def state_musts(info, regs):
     work = []
 
     def key(loc):
-        return tuple(sorted(loc.items()))
+        return tuple(sorted(loc.items(), key=repr))
 
     def seed(K, loc):
         k = (K, key(loc))
@@ -1396,8 +1410,9 @@ def entry_reqs(info, regs, dom=None):
     object's cast condition became a real disjunction, KQ6's `gates` was `arrived from rm490 OR
     NOT arrived from rm490` -- a tautology -- and the flat read turned it into a requirement to
     have already been in rm490 to reach rm490, which strands the red scarf behind its own door."""
-    from compile import _ctr_holds
+    from compile import _ctr_holds, _lreg_test
     reach = _entry_reach_walk_of(info)
+    lregs = info.get("local_regs") or {}
     per = []
     for (seen, eg, loc) in reach:
         per.append((seen, loc, {R: v for R, v in structural_reqs(eg, regs, dom).items() if v}))
@@ -1409,10 +1424,13 @@ def entry_reqs(info, regs, dom=None):
         KQ6's `walkOut` leaves to the surface when armed with 1 (behind the minotaur flag) and
         back into the maze when armed with 0. Both armings reach the same STATE, so a per-state
         answer intersects them to nothing and the gated escape reads as free. The exit's own
-        guard says which arming it belongs to, so honour it."""
+        guard says which arming it belongs to, so honour it. A lowered own-script room local
+        (`local_regs`) is the same question in register spelling."""
         for a in (guard or ()):
             if isinstance(a, tuple) and a and a[0] == "CTR" and a[1] in loc \
                     and not _ctr_holds(a, loc):
+                return False
+            if _lreg_test(a, lregs, loc) is False:
                 return False
         return True
 
@@ -3526,11 +3544,14 @@ def load(cfg=None, ir_path=None):
     #   writes). Lowering rm520's cross-object latches (locals 0-2 -- genuinely this gap's 2nd
     #   recorded instance) moves all three into register-land (Pred CMP atoms, `w` writes, no
     #   entry annotation), so the walk loses its internal resolution and the entry set weakens.
-    #   THE REMAINING WORK: thread lowered own-script registers through the machine walks as
-    #   counters (map back via ir._room_local_index; seed from ir._room_local_resets), with
-    #   `destroyed_is_permanent(huntersLamp)` staying True as the pinned test case. That walk is
-    #   the most baseline-pinned machinery in the codebase -- it gets its own session.
-    #   V.lower_room_locals(ir, V.derive_room_locals(ir, _X._room_numbers(ir)))
+    # ROUND 4 (2026-08-02), WIRED: lowered OWN-SCRIPT registers now thread through the machine
+    #   walks as counters keyed by the synthetic index (`Machine.local_regs`, `compile._lreg_test`,
+    #   `_entry_reach_walk`), seeded from the declared reset (`ir._room_local_resets`) and
+    #   overridden by the arming context's writes -- while the atoms and writes stay registers
+    #   for every cross-scope consumer, which is the store's whole point. Pinned:
+    #   `destroyed_is_permanent(huntersLamp)` True (test_kq6_ground_truth), the rm690 latch
+    #   fixture in test_toll, and byte-identical LSL2/KQ4/Dagger surfaces.
+    V.lower_room_locals(ir, V.derive_room_locals(ir, _X._room_numbers(ir)))
     _X.install_vocabulary(ir)
     V.lower_item_bit_flags(ir, V.derive_item_bit_flags(ir, _X._at_item), _X._at_item)
     d_gi, d_val = sig[0], (sig[1] if len(sig) > 1 else None)

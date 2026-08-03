@@ -288,6 +288,33 @@ def _ctr_holds(cond, counters):
             "<": cur < val, "<=": cur <= val}[op]
 
 
+def _lreg_test(a, lregs, vals):
+    """Resolve a guard atom testing an OWN-SCRIPT lowered room local against its tracked value.
+
+    Lowering (vocab.lower_room_locals) turned the script's latch locals into synthetic globals,
+    so inside a machine body the old `('CTR', ('L', i), op, v)` atom now arrives as
+    `Pred('CMP', var=gi, ...)` -- register-land, where the walk cannot resolve it. This is the
+    map back: when `gi` is one of the machine's own script's lowered locals (`lregs`) AND the
+    walk is tracking a concrete value for it (`vals`), answer the test concretely; anything else
+    returns None and the atom stays an ordinary external register demand. Only ever prunes a
+    path whose test is decidably false against a value this walk itself established -- the same
+    contract `_ctr_holds` has always had for raw counters."""
+    neg = False
+    while isinstance(a, GNot):
+        neg, a = (not neg), a.kid
+    if not (isinstance(a, Pred) and a.kind == "CMP"
+            and a.var in lregs and a.var in vals):
+        return None
+    try:
+        val = int(a.value)
+    except (TypeError, ValueError):
+        return None
+    if a.op not in ("==", "!=", ">", ">=", "<", "<="):
+        return None
+    ok = _ctr_holds(("CTR", a.var, a.op, val), vals)
+    return (not ok) if neg else ok
+
+
 def _fan_globals(guard, writes, gincs, gdom):
     """Expand `(++ G)` / `(-- G)` into concrete (guard, writes) branches.
 
@@ -335,6 +362,7 @@ def compile_machine(machine, is_death):
     """-> (exits, deaths). exits = [(exit_room, guard_tree, {glob: val})], deaths =
     [guard_tree]. Guards are over EXTERNAL atoms only (counters resolved concretely)."""
     gdom = getattr(machine, "glob_dom", {}) or {}
+    lregs = getattr(machine, "local_regs", None) or {}
     steps = {k: [_interp(p, is_death) for p in _paths_of(body)]
              for k, body in machine.bodies.items()}
     carry_cues(steps, machine.start)      # SCI cross-state cue carry: PARK -> ADVANCE where covered
@@ -361,12 +389,22 @@ def compile_machine(machine, is_death):
                         ok = False
                         break
                 elif a is not None:
+                    # An own-script lowered room local resolves concretely like a counter; it
+                    # STAYS in `ext` when satisfiable so every register consumer still sees it.
+                    if _lreg_test(a, lregs, counters) is False:
+                        ok = False
+                        break
                     ext.append(a)
             if not ok:
                 continue
             nc = _apply_counters(counters, st.counters)
+            for (gi, v) in st.writes:
+                if gi in lregs:               # the machine's own write to its lowered local:
+                    nc[gi] = v                # tracked here AND delivered as a register write
             tr = st.trans
-            key = (state, tuple(sorted(nc.items())))
+            # key=repr: counter names mix (vt,idx) tuples, REG_KEY and lowered-local ints,
+            # which Python cannot order together.
+            key = (state, tuple(sorted(nc.items(), key=repr)))
             # `(++ G)` is not a write -- the new value depends on the old one -- so the path
             # FANS OUT over the values G is known to take: one branch per value, each learning
             # `G == v` and delivering `G := v+delta`. A global with no known domain is dropped
@@ -387,13 +425,16 @@ def compile_machine(machine, is_death):
                     walk(tr[1] + 1, nc, ng, nw, depth + 1, seen | {key})
                 # PARK: dead end (no exit from this path)
 
-    walk(machine.start, {}, [], [], 0, frozenset())
+    # Lowered own-script locals seed at their declared reset value -- the script reloads on room
+    # entry, so the reset is the value a walk starts from, exactly as an untracked raw local has
+    # always read as 0 here. The arming context's writes (entry_locals) override per entry.
+    walk(machine.start, dict(lregs), [], [], 0, frozenset())
     for i, (k, eg) in enumerate(machine.entries):
         # Seed the counters with the locals the arming context wrote (machine.entry_locals, parallel
         # to entries) -- knockDoor entered via the staff-use starts with local1==1 and can reach
         # newRoom:18; entered via "open the door" it starts with local1==0 and parks. See machine.py.
         loc = machine.entry_locals[i] if i < len(machine.entry_locals) else {}
-        walk(k, dict(loc), [eg] if eg is not None else [], [], 0, frozenset())
+        walk(k, {**lregs, **loc}, [eg] if eg is not None else [], [], 0, frozenset())
     return exits, deaths
 
 

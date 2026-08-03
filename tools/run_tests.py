@@ -39,10 +39,12 @@ SRC = os.path.join(_ROOT, "src")
 # the next reader can tell a known limitation from a broken test without opening the file.
 KNOWN_RED = {
     "test_toll.py": {
-        "🔴 KNOWN GAP: a use that only sets a room local is not seen as a requirement":
-            "room LOCALs are not in the machine model at all (3rd recorded instance: "
-            "liftTapestry's L1, huntersLamp's rm520 doit, rm690's lord::doVerb). KQ6's gauntlet "
-            "is currently kept by an INCIDENTAL register write -- right verdict, wrong reason.",
+        # ✅ PROMOTED 2026-08-02 -- "a use that only sets a room local is not seen as a
+        # requirement" is retired: the FIFTH store is WIRED (round 4). Room-script latch locals
+        # lower to synthetic registers (vocab.lower_room_locals) and the machine walks thread the
+        # own-script ones as counters (Machine.local_regs, compile._lreg_test), so the latch write
+        # is an ordinary register write every consumer sees. The marker was rebuilt as
+        # test_local_latch_is_modelled, which pins rm690's local0 chain on KQ6 itself.
         # ✅ PROMOTED 2026-08-01 -- "no exit guard is placed, so the water is demanded nowhere" is
         # GREEN and no longer listed. The placement walk now COMMITS what is genuinely committed:
         # unconditional entry writes (`_psucc(commit=...)` from `em.init_writes`) and consumed item
@@ -68,11 +70,12 @@ KNOWN_RED = {
         # it on the arming of the fatal machine (KQ6: rm420's `setScript: throwSkull`). Inert on
         # LSL2, KQ4 and the Dagger, which have no fatal uses.
         "🔴 KNOWN GAP (KQ6): every non-refused spec places":
-            "PHASE 4. **13 of 16** place since 2026-08-02 and eight scripts emit as "
-            "NNN.SCR+NNN.HEP. Three skips: rm420->rm435 (a maze edge with no call site; its "
-            "demand is already covered by the capture guard), rm640->rm650 (the new Realm "
-            "carry-out guard -- same no-trigger seam), and the huntersLamp sink (a TRADE, "
-            "correctly refused at apply).",
+            "PHASE 4. **16 of 18** placement rows apply since 2026-08-02 (rm640->rm650 joined "
+            "when trigger.py learned the `newRoom: (gCurRoom north:)` spelling; the letter's "
+            "register-write hold joined at rm740+rm880 via guard_prop_flag_write). Two skips: "
+            "rm420->rm435 (the maze edge lives in the shared rLab dispatcher, and its demand is "
+            "already covered by the capture guard) and the huntersLamp sink (a TRADE, correctly "
+            "refused at apply).",
         "🔴 KNOWN GAP (dagger): every non-refused spec places":
             "PHASE 4. 2 of 4 place, and the two that DO are 24-item guards placed as arm-event, "
             "i.e. events that would never fire -- so Dagger is worse off than the count "

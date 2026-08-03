@@ -559,7 +559,7 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None)
     return out
 
 
-def local_write_conditions(script, cast=None, proc_guard=None, machine_guard=None):
+def local_write_conditions(script, cast=None, proc_guard=None, machine_guard=None, lregs=None):
     """`(vtype, index) -> [(value, guard|None)]`: the conditions under which this script sets a LOCAL.
 
     The same question `cast_conditions` asks about `init:`, asked about a local assignment, and it
@@ -592,8 +592,14 @@ def local_write_conditions(script, cast=None, proc_guard=None, machine_guard=Non
     complete answer and a partial one, and a consumer that strengthens a guard from this needs to
     know which it has: locals start at 0 in SCI, so "the local is non-zero" is exactly the union of
     the writes that made it so, and that identity holds only if every write is accounted for. Drop
-    the ones we cannot read and the caller silently over-restricts."""
+    the ones we cannot read and the caller silently over-restricts.
+
+    `lregs`: this script's own LOWERED room locals (synthetic-global index set,
+    vocab.lower_room_locals). Lowering rewrote the local's every site into a Global node, so the
+    scan below would no longer see the lamp's latch at all; a write to one of these globals is
+    the same local write in its new spelling, recorded under the synthetic index."""
     out = {}
+    lregs = lregs or ()
 
     def leaf_for(seed_owner):
         def leaf(n, pc):
@@ -602,13 +608,16 @@ def local_write_conditions(script, cast=None, proc_guard=None, machine_guard=Non
                 d = (n.get("kids") or [None])[0]
                 if isinstance(d, dict) and I.is_local_or_temp(d):
                     out.setdefault((d["vtype"][0], d["index"]), []).append((None, _conj(pc)))
+                elif isinstance(d, dict) and I.is_global(d) and d["index"] in lregs:
+                    out.setdefault(d["index"], []).append((None, _conj(pc)))
                 return
             if t != "Assignment":
                 return
             dst, src = (n.get("kids") or [None, None])[:2]
-            if not (isinstance(dst, dict) and I.is_local_or_temp(dst)):
-                return
-            out.setdefault((dst["vtype"][0], dst["index"]), []).append((I.as_int(src), _conj(pc)))
+            if isinstance(dst, dict) and I.is_local_or_temp(dst):
+                out.setdefault((dst["vtype"][0], dst["index"]), []).append((I.as_int(src), _conj(pc)))
+            elif isinstance(dst, dict) and I.is_global(dst) and dst["index"] in lregs:
+                out.setdefault(dst["index"], []).append((I.as_int(src), _conj(pc)))
         return leaf
 
     for o in script.objects:

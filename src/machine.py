@@ -26,7 +26,7 @@ import config
 from dataclasses import dataclass, field
 
 import ir as I
-from guard_ast import GAnd, GOr
+from guard_ast import GAnd, GOr, Pred
 from extract import atom, _conj, item_transfer, EGO
 import extract as X
 
@@ -72,6 +72,12 @@ class Machine:
     glob_dom: dict = field(default_factory=dict)   # glob -> sorted values, for globals this
     #   script uses as a COUNTER (`++`/`--`). compile fans an increment out over these: the new
     #   value depends on the old one, so it is only resolvable against values we know it takes.
+    local_regs: dict = field(default_factory=dict)  # synthetic-global index -> declared reset
+    #   value, for the lowered ROOM LOCALS of this machine's OWN script (vocab.lower_room_locals).
+    #   Lowering moved the latch into register-land, but inside this script it is still the
+    #   machine-internal state the walks must resolve concretely -- so the walks thread these
+    #   registers as counters (keyed by the synthetic index), seeded from the reset, while the
+    #   atoms and writes stay registers for every cross-scope consumer. See compile._lreg_test.
     start: int = 0
 
     def __repr__(self):
@@ -157,13 +163,18 @@ def _setscript_target(param, ir=None):
     return None
 
 
-def _local_conjuncts(guard):
+def _local_conjuncts(guard, zero_lregs=()):
     """Room-LOCAL keys this guard requires to be non-zero, along its top-level AND spine.
 
     `atom()` renders a bare `(if local1 ...)` as the tuple `('CTR', ('L', 1), '!=', 0)`, which is
     the SCI spelling of "the player set this latch". Only the AND spine, and only locals: a test
     under a negation or inside an OR is not required, and a TEMP is scratch within a single call so
-    it can never carry a latch from one handler to a later arming."""
+    it can never carry a latch from one handler to a later arming.
+
+    `zero_lregs`: the script's own LOWERED room locals whose declared reset is 0 -- the same test
+    in its post-lowering spelling, `Pred CMP gi != 0`. Restricted to reset-0 registers because the
+    strengthening rests on "non-zero means some non-zero write ran", and a local that RESETS to a
+    non-zero value is non-zero by default."""
     out = set()
 
     def walk(g):
@@ -176,6 +187,9 @@ def _local_conjuncts(guard):
         elif (isinstance(g, tuple) and len(g) == 4 and g[0] == "CTR"
               and isinstance(g[1], tuple) and g[1][0] == "L" and g[2] == "!=" and g[3] == 0):
             out.add(g[1])
+        elif (isinstance(g, Pred) and g.kind == "CMP" and g.var in zero_lregs
+              and g.op == "!=" and str(g.value) == "0"):
+            out.add(g.var)
     walk(guard)
     return out
 
@@ -195,6 +209,7 @@ class MachineBuilder:
         self.procs_by = {}                # (script, proc-name) -> body, for call-following
         self._cast_cache = {}             # script number -> extract.cast_conditions(script)
         self._local_cache = {}            # script number -> extract.local_write_conditions(script)
+        self._lreg_cache = {}             # script number -> {lowered-local gi: reset value}
         self._entry_guard = {}            # (script, inst) -> the machine's entry disjunction, from
         #   the PREVIOUS pass. Empty until `prime` runs, which is the permissive answer. See prime.
         for rn, s in ir.scripts.items():
@@ -285,9 +300,20 @@ class MachineBuilder:
                 K, g = m.entries[i]
                 m.entries[i] = (K, GAnd([pre, g]) if g is not None else pre)
 
+    def _local_regs(self, script_number):
+        """{synthetic gi: reset value} for `script_number`'s own lowered room locals."""
+        got = self._lreg_cache.get(script_number)
+        if got is None:
+            idx = getattr(self.ir, "_room_local_index", None) or {}
+            resets = (getattr(self.ir, "_room_local_resets", None) or {}).get(script_number, {})
+            got = self._lreg_cache[script_number] = \
+                {gi: resets.get(gi, 0) for gi, (sn, _i) in idx.items() if sn == script_number}
+        return got
+
     def _build(self, script, obj):
         m = Machine(script.number, obj.name, start=obj.props.get("start", 0))
         m.glob_dom = _glob_domains(script)
+        m.local_regs = self._local_regs(script.number)
         cs = obj.methods["changeState"]
         sw = self._top_switch(cs)
         if sw:
@@ -396,11 +422,12 @@ class MachineBuilder:
         Temps are excluded: a temp is scratch within one call and cannot carry a latch between the
         handler that sets it and the arming that reads it."""
         loc = self._locals(script)
+        zero_lregs = frozenset(gi for gi, v in m.local_regs.items() if v == 0)
         for i, (K, g) in enumerate(m.entries):
             if g is None:
                 continue
             extra = []
-            for key in _local_conjuncts(g):
+            for key in _local_conjuncts(g, zero_lregs):
                 writes = loc.get(key)
                 if not writes or any(v is None for v, _pc in writes):
                     continue
@@ -417,7 +444,8 @@ class MachineBuilder:
             c = self._local_cache[script.number] = X.local_write_conditions(
                 script, cast=self._cast(script),
                 proc_guard=lambda pn: X.any_guard(self.proc_calls.get(pn)),
-                machine_guard=lambda on: self._entry_guard.get((script.number, on)))
+                machine_guard=lambda on: self._entry_guard.get((script.number, on)),
+                lregs=frozenset(self._local_regs(script.number)))
         return c
 
     @staticmethod
@@ -530,6 +558,14 @@ class MachineBuilder:
                 if (d and d.get("t") == "Variable" and d.get("vtype") in ("Local", "Temp")
                         and len(ks) > 1 and I.as_int(ks[1]) is not None):
                     events.append(("w", (d["vtype"][0], d["index"]), I.as_int(ks[1]), list(p)))
+                elif (d and d.get("t") == "Variable" and d.get("vtype") == "Global"
+                        and d.get("index") in m.local_regs
+                        and len(ks) > 1 and I.as_int(ks[1]) is not None):
+                    # A lowered room local IS a local of this script: the arming context's write
+                    # to it gates the machine's internal flow exactly as a raw local write did
+                    # before lowering. Carried under the synthetic-global index (an int key, so
+                    # it can never collide with the (vt,idx) tuples or REG_KEY).
+                    events.append(("w", d["index"], I.as_int(ks[1]), list(p)))
             elif t == "Send":
                 _r, msgs = I.send_pairs(n)
                 slot = None

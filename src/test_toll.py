@@ -169,8 +169,15 @@ def test_carry_in_logic():
            if r["pattern"] == "one-visit-pocket-carry-in"] == [8])
 
 
-def test_local_latch_is_not_modelled():
-    """🔴 DELIBERATELY RED -- a use whose only effect is a room LOCAL that gates the pocket's exit.
+def test_local_latch_is_modelled():
+    """✅ PROMOTED 2026-08-02 -- was the 🔴 marker "a use that only sets a room local is not seen
+    as a requirement". The FIFTH store is WIRED (round 4; history at the call site in
+    `missability.load`): `vocab.lower_room_locals` rewrites a room script's latch locals into
+    synthetic registers, and the machine walks thread the OWN-SCRIPT ones as counters
+    (`Machine.local_regs`, `compile._lreg_test`) while every cross-scope consumer keeps the
+    register spelling. A use whose only effect is a room local is therefore a REGISTER WRITE now
+    -- visible to `_uses_in` like any other -- which is exactly what the marker said had to exist
+    before it could become a test.
 
     USER GROUND TRUTH (2026-07-31, tested in-game): *"you need the gauntlet. without it the game
     refuses to show Death the mirror."* KQ6 rm690:
@@ -181,44 +188,41 @@ def test_local_latch_is_not_modelled():
         introScript  state 2:  (= local0 1)  handsOn:  (= seconds 15)
         issueChallenge state 0: (= local0 0)
 
-    so `local0` is raised before the player's ONLY arrival window and the challenge is the one
-    thing that clears it with hands on. The gauntlet is therefore the precondition of
-    `holdUpMirror`, which is the pocket's only non-death exit.
-
-    WE DO NOT MODEL ROOM LOCALS, so that link is invisible: the model reads `holdUpMirror`'s entry
-    as `own(mirror)` alone. KQ6's gauntlet is currently kept by an INCIDENTAL register write (it
-    sets which death message you get), i.e. the right verdict for the wrong reason -- and an item
-    whose use touched a local and nothing else would be dropped outright. This is the third
-    recorded instance of the same gap (`liftTapestry`'s L1, `huntersLamp`'s rm520 `doit`).
-
-    ⚠️ THIS IS A MARKER, NOT A TEST OF THE THING IT NAMES, and saying so is the point. Its
-    fixture is IDENTICAL to the passing `a use that does nothing the pocket keeps is not a
-    requirement` above -- a machine that writes no register, moves nothing and goes nowhere --
-    because our machine model has no way to express "writes a room local" at all. So the two
-    assert opposite verdicts on the same input, and this one is the half that must fail.
-
-    That also means it CANNOT flip when the gap closes: there is nothing here to start passing.
-    Closing the gap means giving the machine model a room-local representation FIRST; at that
-    point this fixture gets rebuilt around a real local and the marker becomes a test. Until
-    then it exists so the gap is impossible to forget, and so no passing test claims we handle
-    it. Do not delete it, and do not make it green by weakening the assertion.
-
-    STATUS 2026-08-02, after TWO measured wiring rounds: the REPRESENTATION exists
-    (`vocab.derive_room_locals` + `lower_room_locals`, entry-reset via init_writes; rm690's
-    local0 derives exactly) and round 1's two named blockers are FIXED AND LANDED on their own
-    merits (death_traps' trap-clock rule; store-aware render_register, which also caught the
-    shipped phantom-flag mirror guards). Wiring STILL regresses KQ4, for a deeper reason: the
-    whale TRAPS VANISH ENTIRELY when locals lower (`_joints == []`) -- the lowering changes
-    entry-guard shapes and the trap classification flips somewhere in
-    `_trap_rooms`/`_trap_graph`/`death_traps`' case split. Next probe target and full history at
-    the call site in `missability.load`."""
-    print("\n-- 🔴 RED: a room-local latch gating the pocket's exit --")
-    b = _carry_in(machines=[_machine(2, _own(8))])       # writes no REGISTER, only (notionally) a
-    #   local; our machine model has no way to say that, so this stands in for it: the effect the
-    #   game cares about is invisible, and the item is dropped.
+    The real-game half below pins that mechanism ON KQ6 ITSELF: rm690's local0 lowers, the
+    challenge's machine delivers the clearing write in register spelling, and the mirror arming
+    tests the same register. The verdict (gauntlet caught) is the oracle's to enforce;
+    this test pins the LINK the game actually has, so the old "right verdict, wrong reason"
+    caveat is retired by evidence rather than assertion."""
+    print("\n-- ✅ a room-local latch is a register the pocket can keep --")
+    # The synthetic half: a use whose only effect is a (lowered) room-local write is a
+    # register write, and a write the pocket reads makes the item a carry-in requirement.
+    b = _carry_in(machines=[_machine(2, _own(8), writes=[(901, 1)]), _machine(2, _cmp(901))])
     got = [r["item"] for r in _run(_fake(**b)) if r["pattern"] == "one-visit-pocket-carry-in"]
-    check("🔴 KNOWN GAP: a use that only sets a room local is not seen as a requirement",
-          got == [8])
+    check("a use that only sets a room local IS seen as a requirement", got == [8])
+
+    import config
+    if not os.path.exists(config.KQ6.ir_path):
+        print("  (skip: no KQ6 IR)")
+        return
+    s = M.load(cfg=config.KQ6)
+    idx = getattr(s.em.ir, "_room_local_index", None) or {}
+    gi = next((g for g, k in idx.items() if k == (690, 0)), None)
+    check("rm690's local0 derives and lowers", gi is not None)
+    mach = {i["inst"]: i for i in s.em.machines if i["room"] == 690}
+    ic, hm = mach.get("issueChallenge"), mach.get("holdUpMirror")
+    clears = ic is not None and any((gi, 0) in (w or ())
+                                    for paths in ic["states"].values()
+                                    for (_g, w, _gg, _c, _tr) in paths)
+    check("the challenge's clearing write is delivered in register spelling", clears)
+
+    def _mentions(g, want):
+        if isinstance(g, Pred):
+            return g.kind == "CMP" and g.var == want
+        kids = getattr(g, "kids", None) or ([g.kid] if hasattr(g, "kid") else [])
+        return any(_mentions(k, want) for k in kids if k is not None)
+    gated = hm is not None and any(g is not None and _mentions(g, gi)
+                                   for _k, g in hm["entries"])
+    check("the mirror arming tests the same register", gated)
 
 
 def _kq5_cfg():
@@ -288,13 +292,16 @@ def test_exit_guard_placement():
     shown = {(a, b) for (a, b, R, vs) in exits if (R, vs) != (water, (1,))}
     check("the mirror-shown flag is demanded at rm670->rm660 and rm680->rm155",
           shown == {(670, 660), (680, 155)})
-    # ...and what stays refused, stays refused for a stated reason at a real edge: the two
-    # `flag == 0` half-questions pair with no entrance guard (demanding a flag CLEAR on the way
+    # ...and what stays refused, stays refused for a stated reason at a real edge: the
+    # `reg == 0` half-questions pair with no entrance guard (demanding a state CLEAR on the way
     # out closes no softlock), and a refusal must be LOUD -- a guard that vanishes silently is
-    # how a half-closed softlock ships.
+    # how a half-closed softlock ships. A refusal may lack a rendered CONDITION only when its
+    # stated reasons include exactly that: reg536 is rm690's lowered gauntlet latch (the fifth
+    # store), and a room local has no spelling another script can read, which the row says.
     refused = [sp for sp in specs if sp.get("req") and sp["refused"]]
     check("every refusal says why, at a real edge",
-          bool(refused) and all(sp["condition"] and sp["refused"] for sp in refused))
+          bool(refused) and all(sp["refused"] and (sp["condition"]
+               or any("no spelling" in w for w in sp["refused"])) for sp in refused))
     check("no refusal claims permissive modelling any more",
           all("PERMISSIVELY" not in w for sp in refused for w in sp["refused"]))
 
@@ -378,7 +385,7 @@ def test_register_strandings_is_degenerate_on_sci11():
 if __name__ == "__main__":
     test_toll_logic()
     test_carry_in_logic()
-    test_local_latch_is_not_modelled()
+    test_local_latch_is_modelled()
     test_exit_guard_placement()
     test_register_strandings_is_degenerate_on_sci11()
     test_ground_truth()
