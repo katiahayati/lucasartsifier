@@ -35,7 +35,8 @@ import guards as G
 import ir as I
 import missability as M
 from sexpr import read_file
-from trigger import (find_trigger, find_arming, find_all_armings, find_proc_calls, exports_of,
+from trigger import (find_trigger, find_arming, find_all_armings, find_nav_assign,
+                     find_proc_calls, exports_of,
                      reaching_procs, wrap_trigger_in_source, _block_span,
                      _enclosing_clause_body, enclosing_clause_head, _find_region)
 
@@ -1203,15 +1204,23 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                 # interior return can never be wrapped. Without model knowledge the row stays
                 # honestly unplaced, exactly as v11 shipped it.
                 frontier = sorted(entry_frontier(sp["from_room"])) if entry_frontier else []
-                placed, stage = (_guard_arrival_entries(dest, sp, titles_by_num, rooms, path,
-                                                        placement, seen_entry, frontier)
-                                 if frontier else ([], None))
+                placed, stage, unwrapped = (
+                    _guard_arrival_entries(dest, sp, titles_by_num, rooms, path,
+                                           placement, seen_entry, frontier)
+                    if frontier else ([], None, []))
                 if placed:
-                    out.append({**sp, "applied": True, "title": placed[0]["title"],
-                                "sites": sum(p["sites"] for p in placed),
-                                "placement": {"kind": "entry-frontier",
-                                              "commit": placement, "stage": stage},
-                                "entry_sites": placed})
+                    # A frontier crossing without a wrap is a BYPASS, not a detail: v12 shipped
+                    # with rm320 gated and rm300's solved-puzzles shortcut open, and the play
+                    # pass walked straight through it. Coverage is part of the placement KIND,
+                    # so the golden surface goes loud when it slips.
+                    kind = "entry-frontier" if not unwrapped else "entry-frontier-PARTIAL"
+                    row = {**sp, "applied": True, "title": placed[0]["title"],
+                           "sites": sum(p["sites"] for p in placed),
+                           "placement": {"kind": kind, "commit": placement, "stage": stage},
+                           "entry_sites": placed}
+                    if unwrapped:
+                        row["frontier_unwrapped"] = unwrapped
+                    out.append(row)
                 elif frontier and any((titles_by_num.get(r), sp["from_room"], sp["condition"])
                                       in seen_entry for r in frontier):
                     # the sibling row that shares this commit already wrapped the frontier; this
@@ -1333,7 +1342,7 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
     stage = heads[0] if len(heads) == 1 else ("(or %s)" % " ".join(heads) if heads else None)
     cond = to_source_syntax(sp["condition"])
     guard = "(or (not %s) %s)" % (stage, cond) if stage else cond
-    placed = []
+    placed, unwrapped = [], []
     for num in entry_rooms:
         ttl = titles_by_num.get(num)
         if ttl is None or (rooms and num not in rooms) or num == sp["from_room"]:
@@ -1343,25 +1352,41 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
             continue
         p2 = os.path.join(dest, "src", ttl + ".sc")
         if not os.path.exists(p2):
+            unwrapped.append({"room": num, "why": "no source"})
             continue
         try:
             forms2 = read_file(p2)
         except Exception:                              # noqa: BLE001
+            unwrapped.append({"room": num, "why": "unparseable"})
             continue
         trig = find_trigger(forms2, sp["from_room"])
         if trig["kind"] not in ("direct", "trigger", "setscript", "arm-event"):
+            # The room's own file shows no trigger for this crossing -- the SHORTCUT spelling:
+            # a nav-property ASSIGNMENT (`(self north: 340)`) consumed by shared region code
+            # (`newRoom: (global2 north:)`). Play-found 2026-08-04 (v12): rm300 points its
+            # north straight at the summit once the puzzles are solved, so every repeat climb
+            # -- which the capture stage REQUIRES, the oracle trip comes first -- bypassed the
+            # rm320 gate. Gate the assignment instead: refused, the player takes the game's
+            # own long route, where the real gate sits.
+            trig = find_nav_assign(forms2, sp["from_room"])
+        if trig is None:
+            unwrapped.append({"room": num, "why": "no wrappable site"})
             continue
-        if trig["kind"] != "arm-event" and REFUSE is None:
+        if trig["kind"] not in ("arm-event", "nav-assign") and REFUSE is None:
+            unwrapped.append({"room": num, "why": "no refusal form"})
             continue                       # a wordless refusal is the "game lied" class
         t2 = open(p2, errors="replace").read()
         nt, n = wrap_trigger_in_source(t2, trig, guard, REFUSE)
         if n:
-            if trig["kind"] != "arm-event":        # an arm-gate prints nothing: no (use Print)
+            if trig["kind"] not in ("arm-event", "nav-assign"):    # those print nothing
                 nt = _ensure_refusal_use(nt, titles_by_num)
             open(p2, "w").write(nt)
             seen.add(key)
             placed.append({"title": ttl, "kind": trig["kind"], "sites": n})
-    return placed, stage
+        else:
+            unwrapped.append({"room": num, "why": "site found but not rewritten (%s)"
+                              % trig["kind"]})
+    return placed, stage, unwrapped
 
 
 def _also_place_capture(dest, sp, titles_by_num, rooms, primary):

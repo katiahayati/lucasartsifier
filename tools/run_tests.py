@@ -84,9 +84,10 @@ KNOWN_RED = {
         # LSL2, KQ4 and the Dagger, which have no fatal uses.
         "🔴 KNOWN GAP (KQ6): every non-refused spec places":
             "PHASE 4. The arrival-commit re-site LANDED 2026-08-04: the capture demand sits on "
-            "the isle's entry frontier (rm320's cue arm-gate, stage-conditioned with the "
-            "game's own capture-arm test, sites from guards.commit_entry_frontier -- model "
-            "knowledge, not text search), so the rm340 rows all place. Remaining skips, both "
+            "the isle's entry frontier (rm320's cue arm-gate + rm300's shortcut nav-assign "
+            "re-route -- finding #8's bypass -- stage-conditioned with the game's own "
+            "capture-arm test, sites from guards.commit_entry_frontier -- model knowledge, "
+            "not text search), so the rm340 rows all place. Remaining skips, both "
             "deliberate: rm420->rm435 (the shared-dispatcher seam; its demand is covered by "
             "the capture guards) and the huntersLamp sink (a TRADE; its remedy is the mists "
             "carry-in). Goes green only when those two either place or become refusals.",

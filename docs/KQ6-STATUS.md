@@ -128,10 +128,10 @@ shape harmless). The former 🔴 is promoted; each placement edge is pinned GREE
 
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
-**KQ6: 18 applied / 20 placement rows, 14 scripts compiled and written as SCI1.1 loose
-patches** (recounted from the 2026-08-04 v12 run: the two remaining skips are rm420→rm435 —
+**KQ6: 18 applied / 20 placement rows, 15 scripts compiled and written as SCI1.1 loose
+patches** (recounted from the 2026-08-04 v13 run: the two remaining skips are rm420→rm435 —
 the covered redundancy — and the huntersLamp TRADE refusal; the rm340→rm370 arrival commit
-now places, see the entry-frontier note below) (the three
+now places on BOTH frontier crossings, see the entry-frontier note below) (the three
 register-valued exit guards landed 2026-08-01: rm670 as `edge-exit`, rm680 ×2 as `arm-event` —
 ⚠️ the kind Dagger shows can be misplaced; not yet played. rm640 joined 2026-08-02 via the
 nav-property `newRoom:` spelling). The first patch
@@ -141,6 +141,9 @@ set this project has produced for anything but LSL2:
 0.SCR   + 0.HEP    Main          mint + peppermint destroy-verbs deleted
 220.SCR + 220.HEP  rm220         castle short door
 230.SCR + 230.HEP  rm230         castle long door
+300.SCR + 300.HEP  rm300         entry frontier, finding #8: the solved-puzzles shortcut
+                                 (`north: 340`) is re-decided under the same guard -- refused,
+                                 the climb takes the long way into rm320's gate
 320.SCR + 320.HEP  rm320         the isle's ENTRY FRONTIER (2026-08-04): the catacombs four
                                  arm-gate the cliff ascent, stage-conditioned on the game's
                                  own capture-arm test -- the arrival-commit re-site
@@ -219,8 +222,15 @@ of `nextCliffUp`, stage-conditioned so only the committed visit is gated:
 `(or (not (and (not (proc913_0 1)) (proc913_0 2))) <the four>)`. The stage is DERIVED from the
 pristine init: every same-script proc-call clause head, minus heads that test the prev-room
 register (those name in-pocket arrivals and are vacuous at the frontier) — what survives is
-exactly the game's own capture-arm test. rm300 offered no wrappable site; rm320 took one wrap.
-⚠️ Not play-tested; the silent-wall case is a new B row in the play plan.)
+exactly the game's own capture-arm test.
+**Play-found the same day (finding #8): v12's rm320-only coverage had a BYPASS.** Flag 157
+makes `rm300::init` point its `north` straight at 340 once the puzzles are solved, and the
+region's step-completion exits via `newRoom: (global2 north:)` — and the capture stage
+requires a repeat climb, so the shortcut was the only route the stage ever took. v13 gates the
+shortcut ASSIGNMENT (`trigger.find_nav_assign`): refused, the climb routes through rm320 where
+the cue-gate refuses; an assignment has no scene, so no hang class. A frontier room with no
+wrap now marks the row `entry-frontier-PARTIAL` so a bypass cannot ship silently again.
+⚠️ Neither wrap is play-verified yet; the B rows cover both.)
 
 **The catacombs collapse (2026-08-01).** The 8 `rm*->rm420` brick wall-guards were an extraction
 artifact: `_maze_reach` flooded THROUGH other rooms' cells as if they were corridors, inventing a

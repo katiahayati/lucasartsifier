@@ -238,6 +238,57 @@ def reaching_procs(forms, to_room):
     return out
 
 
+def find_nav_assign(forms, target_room):
+    """A NAV-PROPERTY ASSIGNMENT that routes this room INTO `target_room` -- the shortcut
+    spelling the cliff bypass hid behind (play-found 2026-08-04, the v12 catacombs guard):
+    `rm300::init` does `(self north: 340)` once the puzzles are solved, and the shared region
+    code exits with `newRoom: (global2 north:)` -- so the crossing exists in the model (the
+    edge was derived) while the room's own file contains no `newRoom:` for find_trigger to see.
+
+    Returns a placement for the ASSIGNMENT, with the `fallback` value the game's own
+    other-route assignment to the same property in the same file (`(self north: 320)`), or
+    None when there is no unique fallback -- re-deciding a route is only safe when the game
+    itself names the other route."""
+    hits, values = [], {}
+
+    def walk(form, inst, meth):
+        if not isinstance(form, list) or not form:
+            return
+        h = form[0]
+        if is_sym(h, "instance") or is_sym(h, "class"):
+            name = form[1].name if len(form) > 1 and isinstance(form[1], Sym) else inst
+            for s in form[2:]:
+                walk(s, name, meth)
+            return
+        if is_sym(h, "method"):
+            sig = form[1]
+            mname = sig[0].name if isinstance(sig, list) and sig and isinstance(sig[0], Sym) \
+                else "?"
+            for s in form[2:]:
+                walk(s, inst, mname)
+            return
+        ms = _message_send(form)
+        if ms:
+            recv, groups = ms
+            for sel, args in groups:
+                if sel in ("north", "south", "east", "west") and args \
+                        and isinstance(args[0], int) and recv in ("self",):
+                    values.setdefault(sel, set()).add(args[0])
+                    if args[0] == target_room and inst is not None:
+                        hits.append((inst, meth, sel, args[0]))
+        for s in form:
+            walk(s, inst, meth)
+
+    for f in forms:
+        walk(f, None, None)
+    for (inst, meth, prop, val) in hits:
+        others = values.get(prop, set()) - {val}
+        if len(others) == 1:
+            return {"kind": "nav-assign", "trigger_instance": inst, "trigger_method": meth,
+                    "prop": prop, "target_room": val, "fallback": next(iter(others))}
+    return None
+
+
 def _mentions_oncontrol(form):
     """Does this subtree test where the ego is STANDING? `(gEgo onControl: 1)`.
 
@@ -538,6 +589,33 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
             n[0] += 1
             return (f"(if {guard_sexpr}\n\t\t\t\t{m.group(0)}\n\t\t\t)"
                     f"  ; softlock-guard: arm only when survivable")
+        new_meth = pat.sub(repl, region)
+        return text[:m0] + new_meth + text[m1:], n[0]
+    if placement["kind"] == "nav-assign":
+        # Re-decide a ROUTE, do not refuse an action: `(self north: 340)` becomes
+        #   (if <guard> (self north: 340) else (self north: <fallback>))
+        # so a non-compliant player simply takes the game's own long way (where the real gate
+        # sits), and nothing is half-run -- an assignment has no scene to hang. No refusal
+        # line: the player is not being told no, they are being routed.
+        inst, meth = placement["trigger_instance"], placement["trigger_method"]
+        inst_span = _find_region(text, r"\(instance\s+%s\b" % re.escape(inst))
+        if not inst_span:
+            return text, 0
+        i0, i1 = inst_span
+        meth_rel = _find_region(text[i0:i1], r"\(method\s+\(%s\b" % re.escape(meth))
+        if not meth_rel:
+            return text, 0
+        m0, m1 = i0 + meth_rel[0], i0 + meth_rel[1]
+        region = text[m0:m1]
+        pat = re.compile(r"\(self\s+%s:\s*%d\s*\)"
+                         % (re.escape(placement["prop"]), placement["target_room"]))
+        n = [0]
+
+        def repl(m):
+            n[0] += 1
+            return (f"(if {guard_sexpr}\n\t\t\t\t{m.group(0)}\n\t\t\telse\n"
+                    f"\t\t\t\t(self {placement['prop']}: {placement['fallback']})"
+                    f"  ; softlock-guard: the long way keeps its gate\n\t\t\t)")
         new_meth = pat.sub(repl, region)
         return text[:m0] + new_meth + text[m1:], n[0]
     if placement["kind"] != "trigger":

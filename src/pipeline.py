@@ -182,7 +182,13 @@ def main(argv=None):
                                    else f"script{e.get('script', '?')}")
         why = "" if e["applied"] else f"  ({e.get('why', 'not placed')})"
         print(f"    [{'ok ' if e['applied'] else 'SKIP'}] {where}{why}")
-    touched = sorted({e["title"] for e in edits + gedits if e["applied"]})
+    # A row edits ONE file -- except an entry-frontier row, which wraps every crossing into the
+    # commit room. Collecting only `title` dropped rm320 from the v13 emission the moment rm300's
+    # nav-assign joined the same row: the wrap compiled into the project and silently never
+    # shipped. Every edited file must reach the patch set.
+    touched = sorted({e["title"] for e in edits + gedits if e["applied"] and e.get("title")}
+                     | {p["title"] for e in gedits if e["applied"]
+                        for p in e.get("entry_sites", ())})
     r = P.compile_project(dest)
     print(f"    compiled {r['compiled']}/{r['total']} scripts")
     broken = [t for t, _ in r["failures"] if t in touched]
