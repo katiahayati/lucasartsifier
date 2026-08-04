@@ -59,8 +59,9 @@ SURVIVING scene: when warned, **hide** (the `hideEgo` flow) and let
   ⚠️ 2026-08-04: the forced-escort derivation designed for it was MEASURED AND REFUTED
   before implementation (reg378's only reader is the corral's own one-shot latch; the
   containment is guard-actor patrol + region-object properties, stores the model does
-  not carry). The gap is pinned RED in `test_toll` and stays open until one of those
-  stores is modeled. Player workaround unchanged: letter before treasure door.
+  not carry). The gap is pinned RED in `test_toll`. USER RULING 2026-08-04: ACCEPTED as a
+  shipped limitation, deprioritized — castle-scope reload, and Saladin's proof demand tells
+  the player what is missing. Player workaround unchanged: letter before treasure door.
 - rm740's wedding scene is the twin writer — repeat both cases there.
 - ⚠️ This is the game's central plot branch. Verify BOTH endings still trigger their
   correct wedding (alexWedding vs vizierWedding at rm740) after the hold has fired.

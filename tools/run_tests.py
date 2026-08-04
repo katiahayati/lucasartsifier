@@ -47,7 +47,11 @@ KNOWN_RED = {
             "and the rule's criteria select 20/19/10/16 candidates across the four games (the "
             "byte-identity gate is unmeetable without per-game fitted clauses). The real seal "
             "is guard-actor patrol armed through region-object properties -- the census's "
-            "gaps #1/#3. Goes green only with a mechanism that models one of those stores.",
+            "gaps #1/#3. Goes green only with a mechanism that models one of those stores. "
+            "USER RULING 2026-08-04: ACCEPTED as a shipped limitation, deprioritized -- the "
+            "blast radius is castle-scope (no long reload) and Saladin's proof demand tells "
+            "the player what is missing. Still a true softlock (a post-corral-only save is "
+            "cooked), so the red marker stays; it is just not a mandate.",
         # ✅ PROMOTED 2026-08-02 -- "a use that only sets a room local is not seen as a
         # requirement" is retired: the FIFTH store is WIRED (round 4). Room-script latch locals
         # lower to synthetic registers (vocab.lower_room_locals) and the machine walks thread the

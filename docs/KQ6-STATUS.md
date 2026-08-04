@@ -55,6 +55,12 @@ without per-game fitted clauses. The seal's real carriers are guard-ACTOR patrol
 region-object properties (`rFlag1`/`loiterTimer` on (ScriptID 81 0)) — the census's gaps #1/#3.
 The gap is now pinned RED: `test_toll` "the long route's treasure-corral letter seal is
 detected", registered in `tools/run_tests.py` KNOWN_RED with the full evidence.
+**USER RULING 2026-08-04: ACCEPTED as a shipped limitation, deprioritized.** The blast radius
+is castle-scope (no reload farther than the castle) and Captain Saladin's proof demand tells
+the player what is missing at the moment it matters — the failure communicates itself. It
+remains a true softlock (a player whose only save is post-corral is cooked), so the
+classification and the red marker stay; modeling the missing store is no longer a mandate,
+just the price of ever closing it.
 
 `test_kq6_ground_truth` passes all 16 checks. `KNOWN_GAPS` is empty and `LONG_ENDING_ONLY` is
 empty, so every unit the oracle calls real is caught and nothing outside the oracle is flagged.
@@ -325,10 +331,12 @@ flip detector's one surviving row is the user-confirmed `letter`.)
 1. ~~THE FORCED-ESCORT CORRAL RULE~~ — **REFUTED BY MEASUREMENT 2026-08-04** before any engine
    code changed (see the letter paragraph above and the rewritten memory
    `next-session-forced-escort-corral` for the three probes). What the long route's letter seal
-   now needs is one of the two missing stores — the control map (actors) or region-object
+   would need is one of the two missing stores — the control map (actors) or region-object
    property state — modeled; the red test in `test_toll` is the marker. Its remedy half (refuse
    `doTreasureDoor`'s arming) died with it: emitting a spec no detector derives would be a
-   declared spec, which the user's ruling bans.
+   declared spec, which the user's ruling bans. **USER 2026-08-04: the gap is ACCEPTED and
+   deprioritized** (castle-scope reload + Saladin's proof line = the failure communicates
+   itself); the store work is not a mandate.
 2. **THE CAPTURE RE-SITE LANDED 2026-08-04** (findings #5/#6's fix, the addendum's other half):
    arrival commits re-site their demand to the model's pocket frontier
    (`guards.commit_entry_frontier`, interior returns excluded by `reach_avoiding`), stage from
