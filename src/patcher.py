@@ -35,7 +35,7 @@ import guards as G
 import ir as I
 import missability as M
 from sexpr import read_file
-from trigger import (find_trigger, find_arming, find_proc_calls, exports_of,
+from trigger import (find_trigger, find_arming, find_all_armings, find_proc_calls, exports_of,
                      reaching_procs, wrap_trigger_in_source, _block_span,
                      _enclosing_clause_body)
 
@@ -1202,6 +1202,24 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                 continue
             open(path, "w").write(_ensure_refusal_use(new_text, titles_by_num))
             row = {**sp, "applied": True, "title": title, "sites": n, "placement": placement}
+            # A machine with N controllable armings needs N wraps -- play-found on KQ6's short
+            # door: `wearClothingScr` arms from egoDoVerbCode::doVerb AND guardHut::doVerb, and
+            # wrapping the first alone left the hut a bypass. Each extra site gets the same
+            # guard, reported on the row so no second edit happens silently.
+            if placement["kind"] == "setscript":
+                for extra in find_all_armings(forms, placement["target_script"]):
+                    if (extra["trigger_instance"], extra["trigger_method"]) == \
+                            (placement["trigger_instance"], placement["trigger_method"]):
+                        continue
+                    t2 = open(path, errors="replace").read()
+                    nt2, n2 = wrap_trigger_in_source(
+                        t2, extra, to_source_syntax(sp["condition"]), REFUSE)
+                    if n2:
+                        open(path, "w").write(_ensure_refusal_use(nt2, titles_by_num))
+                        row["sites"] = row.get("sites", 1) + n2
+                        row.setdefault("also_wrapped", []).append(
+                            {"instance": extra["trigger_instance"],
+                             "method": extra["trigger_method"]})
             also = _also_place_capture(dest, sp, titles_by_num, rooms, placement)
             if also:
                 row["also_placed"] = also

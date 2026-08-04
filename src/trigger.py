@@ -152,6 +152,24 @@ def find_arming(forms, targets):
             "target_pattern": pattern}
 
 
+def find_all_armings(forms, target):
+    """EVERY controllable arming of `target` -- a machine with N ways in needs N wraps.
+
+    Play-found (KQ6 rm220, 2026-08-03): `wearClothingScr` is armed from egoDoVerbCode::doVerb
+    AND from guardHut::doVerb -- using the clothes on the HUT walked straight through the short
+    door's guard, because find_trigger returns the first controllable arming and the placement
+    wrapped only that one. Wrapping one door of an N-door commitment is a bypass, not a guard."""
+    _nr, _cs, ss, _pc = analyze_room(forms)
+    def norm(t):
+        return t if isinstance(t, str) else "ScriptID %d %d" % t[1:]
+    return [{"kind": "setscript", "trigger_instance": i, "trigger_method": m,
+             "target_script": norm(t),
+             "target_pattern": (re.escape(t) if isinstance(t, str)
+                                else r"\(ScriptID\s+%d\s+%d\s*\)" % (t[1], t[2]))}
+            for (i, m, t, _r) in ss
+            if norm(t) == norm(target) and i is not None and m in CONTROLLABLE_METHODS]
+
+
 def find_proc_calls(forms, names, methods=("init",)):
     """Calls to any of `names` inside one of `methods` -- one placement per call site.
 
