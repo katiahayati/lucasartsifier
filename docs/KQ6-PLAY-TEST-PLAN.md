@@ -117,3 +117,10 @@ Per defect: room, what you did, expected vs got, and a save right before. The th
 findings that most change the code: a guard that HANGS (controllability bug), a guard
 that fires on a legitimate path (over-block — B/C twins), and a PREVENT that walks
 through (misplacement). "Findings identical to stock" is also a result — say it.
+
+## Findings log (live)
+
+| date | room | finding | verdict |
+|---|---|---|---|
+| 2026-08-03 | rm880 | caught→jail→wedding→death when entering with no plot state | stock death, out of scope; plan A1 amended to the hide path |
+| 2026-08-03 | rm230 | hand-click on the painted door BEFORE the spell shows our refusal instead of the stock "won't open" line | cosmetic over-wrap: the guard wraps the whole verb-5 cond clause (deliberate — siblings must not fire ahead of a refusal), which also captures the pre-spell else-arm. Fix direction if ever wanted: wrap only the arming branch when sibling arms are UNPRODUCTIVE (message-only) — the `_clause_productive` question again. Not fixed mid-play-pass; the wrapper is play-validated on LSL2 and re-cutting it re-cuts every guard. |
