@@ -1,10 +1,11 @@
 # KQ6 patched-build play-test plan
 
-Written 2026-08-03 from the shipped spec set (`build/kq6_patch_v6/patch`, 13 scripts,
-341/341 compiled). Every row below is generated from the live specs, not from memory:
+Written 2026-08-03 from the shipped spec set; current build **v12** (2026-08-04,
+`build/kq6_patch_v12/patch`, 14 scripts, 341/341 compiled — rm320's entry-frontier arm-gate
+joined). Every row below is generated from the live specs, not from memory:
 reproduce the table with `python3 src/snapshot.py KQ6 --placements`.
 
-**Install**: copy `build/kq6_patch_v6/patch/*` into a COPY of the game folder.
+**Install**: copy `build/kq6_patch_v12/patch/*` into a COPY of the game folder.
 **Revert**: delete those files — the game's own resources are never touched.
 **Method**: save (F5) immediately before each test point; every PREVENT test needs its
 ALLOW twin — a guard that blocks the softlock but also blocks the legitimate path is a
@@ -54,8 +55,12 @@ SURVIVING scene: when warned, **hide** (the `hideEgo` flow) and let
   route plays identically to stock through the wedding.
 - **PREVENT**: unreachable by real play on the SHORT route — stock design forces
   letter-before-wedding (see the flow above). The letterless-wedding case exists only
-  on the LONG route via the treasure corral, which is the PARKED gap (finding #3): its
-  guard and its PREVENT test land together with the forced-escort rule next session.
+  on the LONG route via the treasure corral, which remains the PARKED gap (finding #3).
+  ⚠️ 2026-08-04: the forced-escort derivation designed for it was MEASURED AND REFUTED
+  before implementation (reg378's only reader is the corral's own one-shot latch; the
+  containment is guard-actor patrol + region-object properties, stores the model does
+  not carry). The gap is pinned RED in `test_toll` and stays open until one of those
+  stores is modeled. Player workaround unchanged: letter before treasure door.
 - rm740's wedding scene is the twin writer — repeat both cases there.
 - ⚠️ This is the game's central plot branch. Verify BOTH endings still trigger their
   correct wedding (alexWedding vs vizierWedding at rm740) after the hold has fired.
@@ -86,6 +91,7 @@ the lamp; the trade itself is untouched.
 | rm230→rm710 (castle long door) | dagger 8 + handkerchief 17 + mirror 24 + skeletonKey 44 + (mint 23 \| peppermint 31) | as above; ALSO: after the Druids burn Beauty's clothes, the SHORT door items must NOT be demanded here | full set crosses |
 | rm340→rm155 (Realm flight) | deadMansCoin 7 + skull 11 + mirror 24 + teaCup 46 | board the nightMare without each | full set flies |
 | rm340→rm370 (Lady Celeste's flyer) | brick 2 + holeInTheWall 18 + scarf 41 + tinderBox 48 | the catacombs four, demanded before the one-visit spring | full set proceeds |
+| rm320→rm340 (cliff ascent, v12 arm-gate) | same four, ONLY in capture stage (tribute paid, not yet seized) | solve the ascent puzzle in capture stage without the four → the climb does NOT arm (⚠️ silent — confirm no hang, controls stay live, and down-climb still works) | pre-tribute climbs are untouched at any inventory; in capture stage with the four, the ascent runs as stock and the in-room capture then proceeds with all items |
 | rm340→rm405 (catacombs capture) | same four | climb/be seized without them — the CAPTURE arming is gated, so the guards must not throw you in | capture proceeds |
 | rm340→rm440 (lair) | same four | as above | as above |
 | rm640→rm650 (knight's room, ticket surrender) | handkerchief 17 + skeletonKey 44 | give the ticket without them → refusal, ticket KEPT | with both, surrender + crossing normal; confirm 650→640 return really is impossible (one-way, user-confirmed) |
@@ -138,7 +144,7 @@ through (misplacement). "Findings identical to stock" is also a result — say i
 |---|---|---|---|
 | 2026-08-04 | rm640 | **FINDING #7 (real, FIXED): the ticket refusal hangs — dead controls.** The clause-wrapper recognised only `cond` clauses; SCI1.1 verb dispatch is a SWITCH, so the wrap fell back to the bare `setScript` and let `(global1 handsOff:)` fire before the refusal. Fix: `_enclosing_clause_body` now recognises switch cases and wraps the whole case, so control-stealing siblings sit inside the guard. Re-test the ticket refusal in v11. | fixed, re-test |
 | 2026-08-04 | rm340 | **FINDING #6 (same root as #5): the Celeste walk-out hangs.** Leaving the catacombs with Lady Celeste (a cutscene arrival into rm340) hit the same init refusal — "Not yet!", exit anyway, hang. No item demand belongs on that path at all (the shield is deliberately unflagged: re-obtainable, the standing shield ruling). Fixed by removing the init refusals. Re-test the Celeste exit in v11. | fixed, re-test |
-| 2026-08-04 | rm340 | **FINDING #5 (real, FIXED): refusing an arrival commit hangs.** Without the catacombs four, the capture wraps fired "Not yet!" inside rm340::init — but the seizure was already half-armed, the walk to the guards' room happened anyway, and leaving it hung the game. With items the capture was fine. Fix (user-prescribed): re-site the refusal to the controllable crossings INTO rm340 — the cliff climb — stage-conditioned with the game's own arming test (`(or (not (and (not (proc913_0 1)) (proc913_0 2))) <the four>)`), the in-room capture is restored to stock and `_also_place_capture` is retired (all its sites were this hazard class). ⚠️ The entry re-site itself broke twice in one night (garbage stage text from an edited file; interior returns wrapped against the compliance doctrine) and is DORMANT: v11 ships with the three capture rows honestly UNPLACED — the stock capture (and its softlock) is temporarily unguarded, pending the forced-escort session where the re-site gets the model's pocket knowledge. The three controllable rm340 exits (cave mouth, lair, nightMare) remain guarded. | partial: hangs fixed, guard open |
+| 2026-08-04 | rm340 | **FINDING #5 (real, FIXED): refusing an arrival commit hangs.** Without the catacombs four, the capture wraps fired "Not yet!" inside rm340::init — but the seizure was already half-armed, the walk to the guards' room happened anyway, and leaving it hung the game. With items the capture was fine. Fix (user-prescribed): re-site the refusal to the controllable crossings INTO rm340 — the cliff climb — stage-conditioned with the game's own arming test (`(or (not (and (not (proc913_0 1)) (proc913_0 2))) <the four>)`), the in-room capture is restored to stock and `_also_place_capture` is retired (all its sites were this hazard class). ⚠️ The entry re-site itself broke twice in one night (garbage stage text from an edited file; interior returns wrapped against the compliance doctrine) and was DORMANT in v11 — the three capture rows shipped UNPLACED. **RE-SITE LANDED 2026-08-04 (v12)**: the site list is the MODEL's pocket frontier (`guards.commit_entry_frontier` — `reach_avoiding` keeps interior returns out by construction), the stage comes from the PRISTINE init's same-script proc-call clause heads with prev-room heads dropped (what survives is exactly the capture-arm test), and the wrap is a no-else arm-gate on rm320's cue arming of `nextCliffUp`: `(if (or (not (and (not (proc913_0 1)) (proc913_0 2))) <the four>) (setScript: nextCliffUp))`. ⚠️ SILENT-WALL RISK flagged for play: in capture stage without the four, the ascent simply does not arm — see the new B row. The three controllable rm340 exits (cave mouth, lair, nightMare) remain guarded. | fixed in v12, re-test |
 | 2026-08-03 | rm220 | **FINDING #4 (real, FIXED): the short door's guard had a bypass** — `wearClothingScr` arms from egoDoVerbCode::doVerb AND guardHut::doVerb (clothes used on the HUT), and placement wrapped only the first controllable arming. Fix: `trigger.find_all_armings` + apply-time sweep — a machine with N controllable armings gets N wraps, extras reported on the row (`also_wrapped`). Corpus-wide effect: exactly rm220 (1→2 guards). **Play-verified fixed 2026-08-03: both armings gate properly (v7).** | fixed+verified |
 | 2026-08-03 | rm880 | caught→jail→wedding→death when entering with no plot state | stock death, out of scope; plan A1 amended to the hide path |
 | 2026-08-03 | rm710/840 | **FINDING #3 (real, PARKED by user ruling): the LONG route's letter seal is the TREASURE DISCOVERY, and it is unguarded.** Playing treasures-before-letter posts guards at the secret entrance — actor-blocking, permanent even after the dungeon reset clears reg337 — and the wedding then demands the letter you can no longer fetch. The rm880 hold covers the SHORT route only; rm740's held write fires after the funnel has sealed. The engine cannot derive this (the control-map gap: the seal is actors, not registers; and the tempting causality fix — "a capture clear is not a reversal" — would be overfit, since reg337 genuinely clears). USER RULING 2026-08-03: no declared/oracle-sourced specs — everything stays derived, this stays a KNOWN GAP until the control map is modeled. Workaround for players: get the letter before opening the treasure door. | parked |

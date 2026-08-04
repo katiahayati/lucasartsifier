@@ -81,6 +81,10 @@ def main(argv=None):
                          "A guard that INTRODUCES a softlock still stops the run.")
     ap.add_argument("--skip-decompile", action="store_true", help="reuse <out>/ir")
     a = ap.parse_args(argv)
+    # scicompile runs with the project dir as its cwd, so a RELATIVE --out makes every output
+    # path resolve twice -- the whole emission fails with "Failed to open output file" while
+    # placement and compilation report success. Absolutize once, here.
+    a.out = os.path.abspath(a.out)
 
     if not os.path.isdir(a.game_dir):
         raise SystemExit(f"no such game directory: {a.game_dir}")
@@ -171,7 +175,8 @@ def main(argv=None):
     titles = {n: t for t, n in nums.items()}
     edits = P.apply_sink_remedies(dest, sinks, titles)
     gedits = P.apply_guards(dest, specs, titles, nums, s_drops=lambda it: s.drops.get(it, set()),
-                            rooms=set(s.rooms))
+                            rooms=set(s.rooms),
+                            entry_frontier=lambda r: G.commit_entry_frontier(s, r))
     for e in edits + gedits:
         where = e.get("title") or (f"rm{e['from_room']}->rm{e['to_room']}" if "from_room" in e
                                    else f"script{e.get('script', '?')}")

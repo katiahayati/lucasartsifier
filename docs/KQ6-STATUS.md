@@ -46,6 +46,15 @@ control-map gap). That half is a KNOWN GAP, parked by user ruling: no declared/o
 specs — everything stays derived. Player workaround: letter before treasure door. (The hold was briefly PARTIAL on
 disk — rm880 was one of the 5 decompiler-dialect compile failures — until 2026-08-03, when all
 five fell: see "the compile wall" below. Both sites ship now.)
+⚠️ 2026-08-04: the derived fix designed for the long half — the forced-escort edge-suppression
+rule keyed on reg378 (memory `next-session-forced-escort-corral`) — was MEASURED AND REFUTED
+before implementation: reg378's only reader in the whole game is the corral crunch's own
+one-shot latch; the crunch delivers no exit and hands control back; and the rule's own criteria
+select 20/19/10/16 candidates on LSL2/KQ4/KQ6/Dagger, so its byte-identity gate is unmeetable
+without per-game fitted clauses. The seal's real carriers are guard-ACTOR patrol and
+region-object properties (`rFlag1`/`loiterTimer` on (ScriptID 81 0)) — the census's gaps #1/#3.
+The gap is now pinned RED: `test_toll` "the long route's treasure-corral letter seal is
+detected", registered in `tools/run_tests.py` KNOWN_RED with the full evidence.
 
 `test_kq6_ground_truth` passes all 16 checks. `KNOWN_GAPS` is empty and `LONG_ENDING_ONLY` is
 empty, so every unit the oracle calls real is caught and nothing outside the oracle is flagged.
@@ -113,8 +122,10 @@ shape harmless). The former 🔴 is promoted; each placement edge is pinned GREE
 
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
-**KQ6: 18 applied / 20 placement rows, 13 scripts compiled and written as SCI1.1 loose
-patches** (the three
+**KQ6: 18 applied / 20 placement rows, 14 scripts compiled and written as SCI1.1 loose
+patches** (recounted from the 2026-08-04 v12 run: the two remaining skips are rm420→rm435 —
+the covered redundancy — and the huntersLamp TRADE refusal; the rm340→rm370 arrival commit
+now places, see the entry-frontier note below) (the three
 register-valued exit guards landed 2026-08-01: rm670 as `edge-exit`, rm680 ×2 as `arm-event` —
 ⚠️ the kind Dagger shows can be misplaced; not yet played. rm640 joined 2026-08-02 via the
 nav-property `newRoom:` spelling). The first patch
@@ -124,7 +135,10 @@ set this project has produced for anything but LSL2:
 0.SCR   + 0.HEP    Main          mint + peppermint destroy-verbs deleted
 220.SCR + 220.HEP  rm220         castle short door
 230.SCR + 230.HEP  rm230         castle long door
-340.SCR + 340.HEP  rm340         Realm entry (155), sacred-water flyer (370),
+320.SCR + 320.HEP  rm320         the isle's ENTRY FRONTIER (2026-08-04): the catacombs four
+                                 arm-gate the cliff ascent, stage-conditioned on the game's
+                                 own capture-arm test -- the arrival-commit re-site
+340.SCR + 340.HEP  rm340         Realm entry (155),
                                  catacombs entrance (405), lair (440)
 420.SCR + 420.HEP  rm420         the skull into the gears -- refused
 550.SCR + 550.HEP  rm550         mists carry-in: the hunter's lamp to approach the Druids
@@ -188,9 +202,19 @@ surrender — `doorMaster::doVerb`'s `setScript: egoGiveTicketScr` — which is 
 KQ6 places **14 of 16**; the two remaining rows above are a covered redundancy and a correct
 refusal.)
 
-(`rm340->rm370` — the sacred-water pocket — used to sit in this table with "no armer we can
-locate". It now places as a `proc-call` edit: `trigger.find_proc_calls`/`reaching_procs` follow
-the room into `n342.sc`'s procedure and guard the call site.)
+(`rm340->rm370` — the sacred-water pocket — has moved twice. It first placed as a `proc-call`
+edit inside `rm340::init`; the play pass proved that class of wrap HANGS (finding #5 — an
+arrival commit cannot be refused in place), so v11 shipped it honestly unplaced. **2026-08-04,
+the ENTRY-FRONTIER RE-SITE**: the demand now sits on the crossings INTO rm340 from outside its
+pocket — `guards.commit_entry_frontier` derives the site list from `reach_avoiding` (measured:
+{rm300, rm320}; the interior returns 350/370/405/440 are excluded by construction, which is
+what the failed text-level attempt got wrong) — as a no-else arm-gate on `rm320::cue`'s arming
+of `nextCliffUp`, stage-conditioned so only the committed visit is gated:
+`(or (not (and (not (proc913_0 1)) (proc913_0 2))) <the four>)`. The stage is DERIVED from the
+pristine init: every same-script proc-call clause head, minus heads that test the prev-room
+register (those name in-pocket arrivals and are vacuous at the frontier) — what survives is
+exactly the game's own capture-arm test. rm300 offered no wrappable site; rm320 took one wrap.
+⚠️ Not play-tested; the silent-wall case is a new B row in the play plan.)
 
 **The catacombs collapse (2026-08-01).** The 8 `rm*->rm420` brick wall-guards were an extraction
 artifact: `_maze_reach` flooded THROUGH other rooms' cells as if they were corridors, inventing a
@@ -298,14 +322,20 @@ surface change is the new refused reg536 row above. 3 was settled in-game 2026-0
 engine's rm640→rm650 site is right; oracle corrected) and 4 landed the same day — the causal
 flip detector's one surviving row is the user-confirmed `letter`.)
 
-1. **THE FORCED-ESCORT CORRAL RULE** (headline, designed 2026-08-03, memory
-   `next-session-forced-escort-corral`): the derived fix for the long route's letter seal.
-   reg378 (`weddingCorralCrunch`, one-way, one writer) seals the letter via forced escort,
-   invisible to the permissive walk. Build: edge-suppression under init-armed no-input
-   forced-exit machines (4th capture-family member) + the one-shot-writer remedy branch
-   (refuse `doTreasureDoor`'s arming, demanding the letter). All derived — the user's
-   no-declared-specs ruling stands and is what forced this design.
-2. **Continue the play pass** — findings log lives in `docs/KQ6-PLAY-TEST-PLAN.md`.
+1. ~~THE FORCED-ESCORT CORRAL RULE~~ — **REFUTED BY MEASUREMENT 2026-08-04** before any engine
+   code changed (see the letter paragraph above and the rewritten memory
+   `next-session-forced-escort-corral` for the three probes). What the long route's letter seal
+   now needs is one of the two missing stores — the control map (actors) or region-object
+   property state — modeled; the red test in `test_toll` is the marker. Its remedy half (refuse
+   `doTreasureDoor`'s arming) died with it: emitting a spec no detector derives would be a
+   declared spec, which the user's ruling bans.
+2. **THE CAPTURE RE-SITE LANDED 2026-08-04** (findings #5/#6's fix, the addendum's other half):
+   arrival commits re-site their demand to the model's pocket frontier
+   (`guards.commit_entry_frontier`, interior returns excluded by `reach_avoiding`), stage from
+   the pristine init's clause heads (prev-room heads dropped → exactly the capture-arm test),
+   wrapped as a no-else arm-gate on rm320::cue. NOT play-tested; the silent-wall case is a new
+   B row in the play plan.
+3. **Continue the play pass** — findings log lives in `docs/KQ6-PLAY-TEST-PLAN.md` (v12).
 
 (The letter's guard spec closed 2026-08-02 — `guard_specs` consumes the causal flips into
 `register-write` specs, placed by `guard_prop_flag_write` on the exact receiver. The

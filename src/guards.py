@@ -288,6 +288,26 @@ def frontier_guards(s):
     return out
 
 
+def commit_entry_frontier(s, room):
+    """Rooms with a crossing INTO `room` from OUTSIDE its pocket -- where an ARRIVAL COMMIT's
+    demand can sit without wrapping an interior return.
+
+    An arrival commit (KQ6's catacombs seizure: `rm340::init` calls the guards' proc the moment
+    you walk in) cannot be refused in place -- play finding #5, the refusal left a half-armed
+    scene and hung the game -- so its demand belongs on the last CONTROLLABLE crossing into the
+    room. But "every file with a `newRoom:` into it" is the wrong site list: the pocket behind
+    the room (350/370/405/440 behind rm340) re-enters it on every internal return, and wrapping
+    those walls a player who is already inside -- the compliance doctrine, violated. Play pass
+    2026-08-04 measured exactly that failure when the site list came from text search.
+
+    The model already knows the difference: `reach_avoiding({room})` is the gate-aware set of
+    rooms reachable WITHOUT ever entering `room`, so a predecessor inside it crosses the
+    frontier from outside, and one absent from it can only be making an interior return."""
+    outside = s.reach_avoiding(frozenset({room}))
+    return sorted(a for a, bs in s.edges.items()
+                  if room in bs and a != room and a in outside)
+
+
 def unholdable_at(s, a, b, items):
     """Of `items`, those you CANNOT be holding when you cross a->b -> `{item: why}`.
 

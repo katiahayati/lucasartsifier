@@ -49,7 +49,8 @@ def _placements(cfg):
         rows = (P.apply_sink_remedies(dest, sinks, titles)
                 + P.apply_guards(dest, specs, titles, nums,
                                  s_drops=lambda it: s.drops.get(it, set()),
-                                 rooms=set(s.rooms)))
+                                 rooms=set(s.rooms),
+                                 entry_frontier=lambda r: G.commit_entry_frontier(s, r)))
     finally:
         shutil.rmtree(dest, ignore_errors=True)
     def where(e):

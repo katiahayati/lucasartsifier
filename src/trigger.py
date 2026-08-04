@@ -573,16 +573,11 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
     return text[:m0] + new_meth + text[m1:], 1
 
 
-def _enclosing_clause_body(region, pos):
-    """Innermost cond-clause OR switch-case containing `pos`: return (body_start, body_end) =
-    the span after the clause's condition/case head, so a guard wraps the whole committed
-    action. None if `pos` is inside neither.
-
-    Switch cases joined 2026-08-04 (finding #7, play-found): SCI1.1 verb dispatch is
-    `(switch param1 (49 (global1 handsOff:) (setScript ...)))`, and with only cond recognised
-    the wrap fell back to the bare setScript -- letting the handsOff sibling fire before the
-    refusal, which leaves the player with dead controls: "Not yet!", then a hang. The whole
-    reason this function exists is that siblings must not run ahead of a refusal."""
+def _enclosing_clause_span(region, pos):
+    """Innermost cond-clause OR switch-case containing `pos`: return the clause's own
+    (start, end) span, or None. The shared scan behind `_enclosing_clause_body` and
+    `enclosing_clause_head` -- the same clause found two ways is how a wrap and its stage
+    condition drift apart."""
     best = None
     for kw in ("cond", "switch"):
         for m in re.finditer(r"\(%s\b" % kw, region):
@@ -615,11 +610,46 @@ def _enclosing_clause_body(region, pos):
         elif c == "(":
             clause_s, clause_e = _block_span(region, k)
             if clause_s <= pos < clause_e:
-                return _clause_body(region, clause_s, clause_e)
+                return clause_s, clause_e
             k = clause_e
         else:
             k += 1
     return None
+
+
+def _enclosing_clause_body(region, pos):
+    """Innermost cond-clause OR switch-case containing `pos`: return (body_start, body_end) =
+    the span after the clause's condition/case head, so a guard wraps the whole committed
+    action. None if `pos` is inside neither.
+
+    Switch cases joined 2026-08-04 (finding #7, play-found): SCI1.1 verb dispatch is
+    `(switch param1 (49 (global1 handsOff:) (setScript ...)))`, and with only cond recognised
+    the wrap fell back to the bare setScript -- letting the handsOff sibling fire before the
+    refusal, which leaves the player with dead controls: "Not yet!", then a hang. The whole
+    reason this function exists is that siblings must not run ahead of a refusal."""
+    span = _enclosing_clause_span(region, pos)
+    return _clause_body(region, *span) if span else None
+
+
+def enclosing_clause_head(region, pos):
+    """The HEAD (test expression) of the innermost cond-clause containing `pos`, as source
+    text, or None. What an arrival commit's stage condition is: the game's own test of whether
+    this clause -- the one that commits the player -- runs at all."""
+    span = _enclosing_clause_span(region, pos)
+    if not span:
+        return None
+    cs, ce = span
+    k = cs + 1
+    while k < ce and region[k] in " \t\r\n":
+        k += 1
+    if k < ce and region[k] == "(":
+        hs, he = _block_span(region, k)
+    else:
+        m = re.match(r"[^\s()]+", region[k:])
+        if not m:
+            return None
+        hs, he = k, k + m.end()
+    return re.sub(r"\s+", " ", region[hs:he]).strip()
 
 
 def _clause_body(region, cs, ce):

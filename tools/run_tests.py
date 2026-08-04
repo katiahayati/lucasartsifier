@@ -39,6 +39,15 @@ SRC = os.path.join(_ROOT, "src")
 # the next reader can tell a known limitation from a broken test without opening the file.
 KNOWN_RED = {
     "test_toll.py": {
+        "🔴 KNOWN GAP: the long route's treasure-corral letter seal is detected":
+            "Play-tested ground truth (finding #3, 2026-08-03) with no honest derivation yet. "
+            "The forced-escort/edge-suppression design was MEASURED AND REFUTED 2026-08-04 "
+            "before implementation: reg378's only reader in the whole game is the corral "
+            "crunch's own one-shot latch, the crunch delivers no exit and hands control back, "
+            "and the rule's criteria select 20/19/10/16 candidates across the four games (the "
+            "byte-identity gate is unmeetable without per-game fitted clauses). The real seal "
+            "is guard-actor patrol armed through region-object properties -- the census's "
+            "gaps #1/#3. Goes green only with a mechanism that models one of those stores.",
         # ✅ PROMOTED 2026-08-02 -- "a use that only sets a room local is not seen as a
         # requirement" is retired: the FIFTH store is WIRED (round 4). Room-script latch locals
         # lower to synthetic registers (vocab.lower_room_locals) and the machine walks thread the
@@ -70,14 +79,13 @@ KNOWN_RED = {
         # it on the arming of the fatal machine (KQ6: rm420's `setScript: throwSkull`). Inert on
         # LSL2, KQ4 and the Dagger, which have no fatal uses.
         "🔴 KNOWN GAP (KQ6): every non-refused spec places":
-            "PHASE 4 + the play pass's findings #5-#7 (2026-08-04). Refusals must never sit in an "
-            "arrival commit (init proc-call) or before a control-stealing sibling: the capture "
-            "extras are GONE (_also_place_capture retired), the clause wrapper knows switch "
-            "cases, and the three catacombs-capture rows are honestly UNPLACED until the "
-            "forced-escort session re-sites their demand at the isle's controllable entries "
-            "(two text-level attempts failed and are recorded in the play-test plan). Other "
-            "skips: rm420->rm435 (covered by the capture guards -- which are currently open "
-            "too) and the huntersLamp sink (a TRADE; its remedy is the mists carry-in).",
+            "PHASE 4. The arrival-commit re-site LANDED 2026-08-04: the capture demand sits on "
+            "the isle's entry frontier (rm320's cue arm-gate, stage-conditioned with the "
+            "game's own capture-arm test, sites from guards.commit_entry_frontier -- model "
+            "knowledge, not text search), so the rm340 rows all place. Remaining skips, both "
+            "deliberate: rm420->rm435 (the shared-dispatcher seam; its demand is covered by "
+            "the capture guards) and the huntersLamp sink (a TRADE; its remedy is the mists "
+            "carry-in). Goes green only when those two either place or become refusals.",
         "🔴 KNOWN GAP (dagger): every non-refused spec places":
             "PHASE 4. 2 of 4 place, and the two that DO are 24-item guards placed as arm-event, "
             "i.e. events that would never fire -- so Dagger is worse off than the count "

@@ -380,6 +380,30 @@ def test_register_strandings_is_degenerate_on_sci11():
     check("the only KQ6 row is the flag-166 letter lead",
           len(rows) == 1 and rows[0]["item_name"] == "letter" and rows[0]["register"] == 338,
           repr([(r["register"], r["value"], r["item_name"]) for r in rows]))
+    # 🔴 THE LONG ROUTE'S LETTER SEAL (play-tested ground truth, finding #3, 2026-08-03):
+    # treasures-before-letter posts guards that make rm781's letter unfetchable while the wedding
+    # still demands it. The flag-166 row above covers the SHORT route only. This check asserts
+    # the long-route seal is ALSO detected -- red until someone closes the gap honestly.
+    #
+    # The 2026-08-03 design (memory `next-session-forced-escort-corral`: edge suppression under
+    # init-armed no-input forced-exit machines, keyed on reg378) was MEASURED AND REFUTED
+    # 2026-08-04 before implementation:
+    #   * reg378 (prop-flag (81,0)/709/8) has exactly ONE reader in the whole game -- the
+    #     corral crunch's own re-arm test. No machine entry, edge or handler is conditioned on
+    #     it, so no projection can lose rm781 under 378==1 whatever suppression does.
+    #   * the crunch itself delivers no EXIT and hands control back (`handsOn`), so even the
+    #     rule's widest honest reading removes no movement;
+    #   * the actual containment is guard-ACTOR patrol armed through region-object properties
+    #     (`rFlag1`/`rFlag2`/`loiterTimer`, `startGuard:`) -- the modeling-gap census's #1/#3;
+    #   * the rule's three criteria select 20/19/10/16 candidates on LSL2/KQ4/KQ6/Dagger (e.g.
+    #     KQ4's whale RESUME entry is register-pure -- only its first arming has the Random
+    #     conjunct), so "fires nowhere else" is unmeetable without clauses fitted per game.
+    # The gap therefore still needs a mechanism that models one of the two missing stores.
+    check("🔴 KNOWN GAP: the long route's treasure-corral letter seal is detected",
+          any(r["item"] == 20 and r["register"] != 338 for r in rows),
+          "only the short-route flag-166 row exists; the treasures-first seal (guards posted, "
+          "letter unreachable, wedding demands it) is carried by actor patrol + region-object "
+          "properties, which no current store models")
 
 
 if __name__ == "__main__":
