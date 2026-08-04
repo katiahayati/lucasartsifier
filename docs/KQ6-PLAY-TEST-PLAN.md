@@ -30,10 +30,19 @@ refusal: the LSL2 history says refusal-time hangs are the #1 runtime defect clas
 ### A1. The wedding hold (register-write, flag 166) — rm740 + rm880
 Holds the "wedding has started" flip until the **letter (20)** is in hand. The flip's
 two writers are wrapped: rm880's guards-return cutscene and rm740's twin site.
-- **PREVENT**: dawdle until the guards return (rm880 warns you / re-enter while they're
-  due) WITHOUT the letter. Expected: the scene plays normally but the world does not
-  seal — the letter's source (rm781 chain) must still be reachable afterwards.
-- **ALLOW**: same, WITH the letter. Expected: wedding state advances exactly as stock.
+
+⚠️ **Use the HIDE path, not the caught path.** rm880 has two outcomes: get caught →
+jail → wedding cartoon → DEATH (stock behavior, out of the hold's scope — a death is
+a reload, and it is preventable in-room, so the guard deliberately does not touch it;
+field-confirmed 2026-08-03, one run burned on it). The wrapped write lives in the
+SURVIVING scene: when warned, **hide** (the `hideEgo` flow) and let
+`watchGuardsComeBack` play to completion — its state 8 is the world-seal.
+- **PREVENT**: hide-and-watch WITHOUT the letter, survive the scene. Expected: the
+  scene plays normally but the world does not seal — the letter must still be
+  obtainable afterwards, and rm730/rm870 must still accept showing it.
+- **ALLOW**: hide-and-watch WITH the letter. Expected: wedding state advances exactly
+  as stock.
+- rm740's wedding scene is the twin writer — repeat both cases there.
 - ⚠️ This is the game's central plot branch. Verify BOTH endings still trigger their
   correct wedding (alexWedding vs vizierWedding at rm740) after the hold has fired.
 - Defect watch: guards visibly "returned" but castle behaves as if they hadn't.
