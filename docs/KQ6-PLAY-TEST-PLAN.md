@@ -47,11 +47,15 @@ a reload, and it is preventable in-room, so the guard deliberately does not touc
 field-confirmed 2026-08-03, one run burned on it). The wrapped write lives in the
 SURVIVING scene: when warned, **hide** (the `hideEgo` flow) and let
 `watchGuardsComeBack` play to completion — its state 8 is the world-seal.
-- **PREVENT**: hide-and-watch WITHOUT the letter, survive the scene. Expected: the
-  scene plays normally but the world does not seal — the letter must still be
-  obtainable afterwards, and rm730/rm870 must still accept showing it.
-- **ALLOW**: hide-and-watch WITH the letter. Expected: wedding state advances exactly
-  as stock.
+- **NO MANUAL FLAG-SETTING** (user ruling 2026-08-04): a state the game's own sequence
+  never produces is not evidence — do not console-set 710/711 to reach a case. Flag
+  READS as assertions are fine; writes are not.
+- **ALLOW**: hide-and-watch WITH the letter — ✅ VERIFIED 2026-08-04: the patched short
+  route plays identically to stock through the wedding.
+- **PREVENT**: unreachable by real play on the SHORT route — stock design forces
+  letter-before-wedding (see the flow above). The letterless-wedding case exists only
+  on the LONG route via the treasure corral, which is the PARKED gap (finding #3): its
+  guard and its PREVENT test land together with the forced-escort rule next session.
 - rm740's wedding scene is the twin writer — repeat both cases there.
 - ⚠️ This is the game's central plot branch. Verify BOTH endings still trigger their
   correct wedding (alexWedding vs vizierWedding at rm740) after the hold has fired.
