@@ -31,6 +31,14 @@ refusal: the LSL2 history says refusal-time hangs are the #1 runtime defect clas
 Holds the "wedding has started" flip until the **letter (20)** is in hand. The flip's
 two writers are wrapped: rm880's guards-return cutscene and rm740's twin site.
 
+**STOCK short-route flow (user-documented from play, 2026-08-04):** enter the vizier's room
+(rm880); leaving WITHOUT the letter before giving Cassima the dagger = DEATH (a guard spots you
+on the way to her room — the stock game itself forces letter-first on this route). With the
+letter: give Cassima (rm870) the dagger → guards-away state arms → hide from the guard dogs
+again → leaving the hiding place starts the wedding. So on the SHORT route the letter is
+design-mandatory pre-wedding; our hold's PREVENT case is reachable only by breaking that
+sequence (or on the long route, where the seal is the parked treasure-corral gap).
+
 ⚠️ **Use the HIDE path, not the caught path.** rm880 has two outcomes: get caught →
 jail → wedding cartoon → DEATH (stock behavior, out of the hold's scope — a death is
 a reload, and it is preventable in-room, so the guard deliberately does not touch it;
