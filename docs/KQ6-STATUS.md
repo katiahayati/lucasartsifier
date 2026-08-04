@@ -269,6 +269,20 @@ cleanup pass that recorded them was scoped to close no gaps.
    reading (you must hold the demanded item AT the crossing, which precedes being in `b`), and
    dropping it could only ever prune more and guard less. Now documented in place.
 
+**The Jollo / newLamp / genie chain is ENDING FLAVOR, not winnability (user walkthrough,
+2026-08-03).** Befriending Jollo (flags 10/52), giving him the replica lamp (newLamp 25, one-way
+trade at rm240), and saving vs killing the genie decide who attends which wedding — both
+variants WIN. So newLamp is NOT a requirement unit and the castle doors are right not to demand
+it. Recorded with it, a PAIRED soundness gap that currently cancels to the correct answer:
+`required[25]` carries optional-branch noise (the A0r class) that would fabricate a stranding —
+suppressed only because rm750's `jolloGivesLamp` (entry `LOC(25 ownedBy room)`, a player-seeded
+HAND-BACK) wrongly counts as a source ("a take-back is not a source", in the location-store
+spelling the filter does not cover). Fixing either half alone flips the verdict WRONG; fix both
+or neither, and only with a case that needs it. Related open class, also recorded: a
+register-valued ENTRANCE carry-in (a flag needed inside a pocket, settable only outside — the
+teacup pattern's missing entrance half; Jollo's flag 52 would be the instance if the handoff
+were ever required).
+
 ---
 
 ## Open work, in rough order of value
