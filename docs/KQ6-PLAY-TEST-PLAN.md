@@ -32,8 +32,10 @@ Holds the "wedding has started" flip until the **letter (20)** is in hand. The f
 two writers are wrapped: rm880's guards-return cutscene and rm740's twin site.
 
 **STOCK short-route flow (user-documented from play, 2026-08-04):** enter the vizier's room
-(rm880); leaving WITHOUT the letter before giving Cassima the dagger = DEATH (a guard spots you
-on the way to her room — the stock game itself forces letter-first on this route). With the
+(rm880); the vizier's room is freely re-enterable (the nail fetch is fine) — the one death is
+CROSSING THE GUARD POST letterless, and it is a FAIR death (the letter is still obtainable from
+that screen: walk back in and take it — the LSL2 rm47 disguise class, correctly unguarded;
+user-corrected 2026-08-04). With the
 letter: give Cassima (rm870) the dagger → guards-away state arms → hide from the guard dogs
 again → leaving the hiding place starts the wedding. So on the SHORT route the letter is
 design-mandatory pre-wedding; our hold's PREVENT case is reachable only by breaking that
