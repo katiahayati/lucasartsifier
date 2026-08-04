@@ -37,7 +37,7 @@ import missability as M
 from sexpr import read_file
 from trigger import (find_trigger, find_arming, find_all_armings, find_proc_calls, exports_of,
                      reaching_procs, wrap_trigger_in_source, _block_span,
-                     _enclosing_clause_body)
+                     _enclosing_clause_body, _find_region)
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
@@ -136,6 +136,9 @@ def assemble(dest, cfg=None):
         if _is_loose_patch(fn):
             shutil.copy(os.path.join(cfg.resource_dir, fn), os.path.join(dest, fn))
     _SCHEME = _patch_scheme(cfg)
+    globals()["_PRISTINE_DIR"] = src      # stage extraction must read UNEDITED source: an
+    #   earlier wrap in the same file shifts the clause and the extracted "test" can be our
+    #   own guard text (the rm390 compile break, 2026-08-04)
     _write_kernel_vocab(dest, cfg)
 
     nums = _script_numbers(os.path.join(dest, "src"))
@@ -1034,6 +1037,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
         host.setdefault("merged", []).append(sp["condition"])
 
     out = out_unplaced
+    seen_entry = set()             # (title, from_room, guard) -- entry-commit dedup across rows
     # FATAL USES -- refuse the ACTION. The site is the arming of the machine that kills you, in the
     # room that offers the move: KQ6's rm420 `(gCurRoom setScript: throwSkull)`. `find_arming`
     # already locates an arming by name, so this reuses the Realm-entry path rather than adding a
@@ -1185,6 +1189,19 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                                    % placement["kind"],
                             "placement": placement})
                 continue
+            if placement["kind"] == "proc-call" and placement.get("trigger_method") == "init":
+                # An arrival commit: refusing inside `init` HANGS (finding #5, play-found) and
+                # the naive re-site broke twice in one night (garbage stage text from an edited
+                # file; the arm-event widening wrapped interior returns the compliance doctrine
+                # forbids). The honest state until the forced-escort session: NO wrap here --
+                # the capture runs stock, the row reports itself open, and the redesign
+                # (`_guard_arrival_entries`, kept dormant below) lands with the model's own
+                # pocket/compliance knowledge instead of text-level guesses.
+                out.append({**sp, "applied": False, "placement": placement,
+                            "why": "arrival commit (init proc-call): refusing in place hangs "
+                                   "(finding #5); entry re-siting lands with the forced-escort "
+                                   "work"})
+                continue
             if REFUSE is None and placement["kind"] != "arm-event":
                 # An `arm-event` gate has no `else` branch and so says nothing either way; every
                 # other placement REFUSES the player's command, and refusing without a word is the
@@ -1227,6 +1244,75 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
     return out
 
 
+def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, seen):
+    """An ARRIVAL COMMIT cannot be refused in place. Play-found (finding #5, the winged-guards
+    capture): the proc-call wrap put a refusal inside `rm340::init`, and by then the seizure
+    has begun -- the refusal left a half-armed scene and the game hung two rooms later. The
+    refusal belongs at the last CONTROLLABLE crossing INTO the room (the cliff climb), with the
+    commit's own arming stage keeping every other visit free:
+
+        (or (not <stage>) <items>)
+
+    <stage> is the TEST of the game's own arming clause, taken verbatim from the source -- for
+    the capture, `(and (not (proc913_0 1)) (proc913_0 2))` -- so pre-tribute visits to the isle
+    cross unchallenged. Only controllable trigger kinds qualify as sites: a pred whose own way
+    in is a cutscene return (the oracle sending you back) is exactly the pocket where a player
+    can no longer comply, and wrapping it would wall them -- the same compliance doctrine every
+    frontier placement already follows. `seen` dedups across the sibling rows that share one
+    commit (the three capture guards would otherwise stack three wraps on one crossing)."""
+    pris = globals().get("_PRISTINE_DIR")
+    ppath = os.path.join(pris, os.path.basename(own_path)) if pris else own_path
+    text = open(ppath if os.path.exists(ppath) else own_path, errors="replace").read()
+    stage = None
+    inst_span = _find_region(text, r"\(instance\s+%s\b" % re.escape(placement["trigger_instance"]))
+    if inst_span:
+        i0, i1 = inst_span
+        meth_rel = _find_region(text[i0:i1],
+                                r"\(method\s+\(%s\b" % re.escape(placement["trigger_method"]))
+        if meth_rel:
+            region = text[i0 + meth_rel[0]:i0 + meth_rel[1]]
+            pm = re.search(r"\(%s\s*\)" % placement["target_pattern"], region)
+            if pm:
+                clause = _enclosing_clause_body(region, pm.start())
+                if clause:
+                    body = region[clause[0]:clause[1]]
+                    tidx = body.find("(", 1)
+                    if tidx > 0:
+                        ts, te = _block_span(body, tidx)
+                        stage = re.sub(r"\s+", " ", body[ts:te]).strip()
+    cond = to_source_syntax(sp["condition"])
+    guard = "(or (not %s) %s)" % (stage, cond) if stage else cond
+    placed = []
+    for num, ttl in sorted(titles_by_num.items()):
+        if (rooms and num not in rooms) or num == sp["from_room"]:
+            continue
+        key = (ttl, sp["from_room"])       # first row wins per crossing: the sibling capture
+        if key in seen:                     # rows share items, and stacking three nested wraps
+            continue                        # on one doVerb is noise, not protection
+        p2 = os.path.join(dest, "src", ttl + ".sc")
+        if not os.path.exists(p2):
+            continue
+        try:
+            forms2 = read_file(p2)
+        except Exception:                              # noqa: BLE001
+            continue
+        trig = find_trigger(forms2, sp["from_room"])
+        if trig["kind"] not in ("direct", "trigger", "setscript"):
+            continue
+        # An arm-event site (KQ6's cliff ascent: `nextCliffUp` armed from rm320::cue) cannot
+        # carry a refusal -- that is the mid-cutscene hazard again -- so it gets the no-else
+        # arm-gate: at commit stage without the items, the ascent simply does not arm.
+        # ⚠️ SILENT-WALL RISK, flagged for play: better than a hang or the restored softlock,
+        # and the stage condition keeps every non-commit visit untouched.
+        t2 = open(p2, errors="replace").read()
+        nt, n = wrap_trigger_in_source(t2, trig, guard, REFUSE)
+        if n:
+            open(p2, "w").write(_ensure_refusal_use(nt, titles_by_num))
+            seen.add(key)
+            placed.append({"title": ttl, "kind": trig["kind"], "sites": n})
+    return placed, stage
+
+
 def _also_place_capture(dest, sp, titles_by_num, rooms, primary):
     """Guard the OTHER way through the same edge: the one the game takes FOR you.
 
@@ -1239,7 +1325,15 @@ def _also_place_capture(dest, sp, titles_by_num, rooms, primary):
     Derived: for each helper script that performs this edge's `newRoom`, look in the FROM room's
     own file for a call to one of that script's procedures and guard the clause around it. Returns
     the extra placements, which are reported on the row -- a second edit made silently is how a
-    patch stops being reviewable."""
+    patch stops being reviewable.
+
+    RETIRED 2026-08-04 (finding #5): every site this found is an init proc-call -- an ARRIVAL
+    COMMIT -- and wrapping one with a refusal is precisely the mid-commit refusal that hung the
+    game in play (the winged-guards capture: "Not yet!", a half-armed seizure, a hang two rooms
+    later). The capture class is now covered by `_guard_arrival_entries`, which puts the
+    stage-conditioned refusal on the controllable crossings INTO the room instead. Kept as a
+    no-op for the history; the hazard class must not come back through it."""
+    return []
     if REFUSE is None:
         return []
     own = titles_by_num.get(sp["from_room"])

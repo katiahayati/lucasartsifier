@@ -574,21 +574,37 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
 
 
 def _enclosing_clause_body(region, pos):
-    """Innermost cond-clause containing `pos`: return (body_start, body_end) = the
-    span after the clause's condition/`else` head, so a guard wraps the whole
-    committed action. None if `pos` is not inside a cond-clause."""
-    cond_span = None
-    for m in re.finditer(r"\(cond\b", region):
-        s, e = _block_span(region, m.start())
-        if s <= pos < e and (cond_span is None or s > cond_span[0]):
-            cond_span = (s, e)
-    if cond_span is None:
+    """Innermost cond-clause OR switch-case containing `pos`: return (body_start, body_end) =
+    the span after the clause's condition/case head, so a guard wraps the whole committed
+    action. None if `pos` is inside neither.
+
+    Switch cases joined 2026-08-04 (finding #7, play-found): SCI1.1 verb dispatch is
+    `(switch param1 (49 (global1 handsOff:) (setScript ...)))`, and with only cond recognised
+    the wrap fell back to the bare setScript -- letting the handsOff sibling fire before the
+    refusal, which leaves the player with dead controls: "Not yet!", then a hang. The whole
+    reason this function exists is that siblings must not run ahead of a refusal."""
+    best = None
+    for kw in ("cond", "switch"):
+        for m in re.finditer(r"\(%s\b" % kw, region):
+            s, e = _block_span(region, m.start())
+            if s <= pos < e and (best is None or s > best[0]):
+                best = (s, e, kw)
+    if best is None:
         return None
-    cs, ce = cond_span
+    cs, ce, kw = best
     k = cs + 1
-    mk = re.match(r"\s*cond\b", region[k:])
+    mk = re.match(r"\s*%s\b" % kw, region[k:])
     if mk:
         k += mk.end()
+    if kw == "switch":
+        # skip the dispatch HEAD expression -- clauses start after it
+        while k < ce and region[k] in " \t\r\n":
+            k += 1
+        if k < ce and region[k] == "(":
+            _, k = _block_span(region, k)
+        else:
+            m2 = re.match(r"[^\s()]+", region[k:])
+            k += (m2.end() if m2 else 1)
     while k < ce - 1:
         c = region[k]
         if c in " \t\r\n":

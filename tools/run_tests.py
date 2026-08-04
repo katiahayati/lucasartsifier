@@ -70,13 +70,14 @@ KNOWN_RED = {
         # it on the arming of the fatal machine (KQ6: rm420's `setScript: throwSkull`). Inert on
         # LSL2, KQ4 and the Dagger, which have no fatal uses.
         "🔴 KNOWN GAP (KQ6): every non-refused spec places":
-            "PHASE 4. **18 of 20** placement rows apply since 2026-08-03 (rm640->rm650 via the "
-            "nav-property spelling; the letter's register-write hold at rm740+rm880; the mists "
-            "lamp carry-in at rm550/rm560 via sink_survival_carryins + the SCI1.1 "
-            "`super init: &rest` edge-exit anchor). Two skips: rm420->rm435 (the maze edge "
-            "lives in the shared rLab dispatcher, and its demand is already covered by the "
-            "capture guard) and the huntersLamp sink (a TRADE, correctly refused at apply -- "
-            "its remedy is the mists carry-in instead).",
+            "PHASE 4 + the play pass's findings #5-#7 (2026-08-04). Refusals must never sit in an "
+            "arrival commit (init proc-call) or before a control-stealing sibling: the capture "
+            "extras are GONE (_also_place_capture retired), the clause wrapper knows switch "
+            "cases, and the three catacombs-capture rows are honestly UNPLACED until the "
+            "forced-escort session re-sites their demand at the isle's controllable entries "
+            "(two text-level attempts failed and are recorded in the play-test plan). Other "
+            "skips: rm420->rm435 (covered by the capture guards -- which are currently open "
+            "too) and the huntersLamp sink (a TRADE; its remedy is the mists carry-in).",
         "🔴 KNOWN GAP (dagger): every non-refused spec places":
             "PHASE 4. 2 of 4 place, and the two that DO are 24-item guards placed as arm-event, "
             "i.e. events that would never fire -- so Dagger is worse off than the count "
