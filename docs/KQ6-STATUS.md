@@ -298,9 +298,14 @@ surface change is the new refused reg536 row above. 3 was settled in-game 2026-0
 engine's rm640→rm650 site is right; oracle corrected) and 4 landed the same day — the causal
 flip detector's one surviving row is the user-confirmed `letter`.)
 
-1. **Play the patch set in ScummVM** — deliberately last (user, 2026-08-01). Play the letter's
-   wedding-flag hold (rm740/rm880) and the rm640 ticket-surrender guard first — both are new
-   and neither has ever run.
+1. **THE FORCED-ESCORT CORRAL RULE** (headline, designed 2026-08-03, memory
+   `next-session-forced-escort-corral`): the derived fix for the long route's letter seal.
+   reg378 (`weddingCorralCrunch`, one-way, one writer) seals the letter via forced escort,
+   invisible to the permissive walk. Build: edge-suppression under init-armed no-input
+   forced-exit machines (4th capture-family member) + the one-shot-writer remedy branch
+   (refuse `doTreasureDoor`'s arming, demanding the letter). All derived — the user's
+   no-declared-specs ruling stands and is what forced this design.
+2. **Continue the play pass** — findings log lives in `docs/KQ6-PLAY-TEST-PLAN.md`.
 
 (The letter's guard spec closed 2026-08-02 — `guard_specs` consumes the causal flips into
 `register-write` specs, placed by `guard_prop_flag_write` on the exact receiver. The
