@@ -39,8 +39,11 @@ the flip until the letter is in hand — and the patcher places it on both `(Scr
 setFlag: 709 2` sites (rm740, rm880), split out of their chained sends so the scenes still play,
 matching the exact receiver (rm710/720's `(ScriptID 81 0)` writes the same word/mask for a
 different region and must not be touched).
-⚠️ Flag 166 is "the wedding has started", the game's central plot branch — this guard has NOT
-been play-tested and goes first when the ScummVM pass runs. (The hold was briefly PARTIAL on
+⚠️ PLAY-TESTED 2026-08-03, partially: the hold covers the SHORT route's seal (rm880's watch
+scene). The LONG route seals the letter through the TREASURE DISCOVERY instead (reg337 + sibling
+flags post guards at the secret entrance — actor-blocking, which no register walk models: the
+control-map gap). That half is a KNOWN GAP, parked by user ruling: no declared/oracle-sourced
+specs — everything stays derived. Player workaround: letter before treasure door. (The hold was briefly PARTIAL on
 disk — rm880 was one of the 5 decompiler-dialect compile failures — until 2026-08-03, when all
 five fell: see "the compile wall" below. Both sites ship now.)
 
