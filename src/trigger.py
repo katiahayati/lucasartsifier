@@ -131,10 +131,17 @@ def find_arming(forms, targets):
         # `rm340::init` runs `(proc342_2)`, which does `setScript: toGehenna`, which ends in
         # `newRoom: 405`. The guards grab you on ARRIVAL, so there is no exit to guard; the call
         # is the commit point.
-        want = {t[1] for t in targets
-                if isinstance(t, tuple) and len(t) == 2 and t[0] == "proc"}
+        want_nums = {t[1] for t in targets if isinstance(t, tuple) and len(t) == 2
+                     and t[0] == "proc" and isinstance(t[1], int)}
+        # ...exact names when the caller has RESOLVED which procedures arm the crossing
+        # (`reaching_procs`); the script-number form remains for callers who have not, but it
+        # takes the first call found and n342's proc342_0 is an ordinary arrival -- resolution
+        # is what keeps a normal arrival from being refused as if it were the seizure.
+        want_names = {t[1] for t in targets if isinstance(t, tuple) and len(t) == 2
+                      and t[0] == "proc" and isinstance(t[1], str)}
         phits = [(i, m, nm) for (i, m, nm) in pc
-                 if i is not None and any(nm.startswith("proc%d_" % s) for s in want)]
+                 if i is not None and (nm in want_names
+                                       or any(nm.startswith("proc%d_" % s) for s in want_nums))]
         if not phits:
             return None
         inst, meth, nm = phits[0]
@@ -176,23 +183,19 @@ def find_proc_calls(forms, names, methods=("init",)):
     Restricted to `init` by default because this exists for ARRIVAL captures, where the game
     commits for you the moment you walk in. A call from `notify`/`cue` is mid-cutscene: refusing
     there leaves the scene half-run, which is the hang this module's whole controllable/
-    uncontrollable split is about."""
+    uncontrollable split is about. `methods=None` lifts the restriction for callers who are
+    CLASSIFYING the call sites (is any of them an init arrival-commit?) rather than placing
+    a refusal on them."""
     _nr, _cs, _ss, pc = analyze_room(forms)
     return [{"kind": "proc-call", "trigger_instance": i, "trigger_method": m,
              "target_script": nm, "target_pattern": re.escape(nm)}
-            for (i, m, nm) in pc if i is not None and nm in names and m in methods]
+            for (i, m, nm) in pc
+            if i is not None and nm in names and (methods is None or m in methods)]
 
 
-def reaching_procs(forms, to_room):
-    """Exported procedures of THIS file whose cutscene chain ends in `newRoom: to_room`.
-
-    A helper script exports several procedures and only one of them leads where we care: n342 has
-    `proc342_0` (an ordinary arrival), `proc342_1` and `proc342_2` (the guards seizing you), and
-    only the last reaches `newRoom: 405`. Guarding the wrong one would refuse a normal arrival --
-    a wall, not a gate -- which is why this is derived instead of taking the first call found.
-
-    Walks BACKWARD over `setScript:` armings: who performs the newRoom, who arms them, and so on
-    until an exported `procN_M` is reached. Owner scope is the enclosing instance or procedure."""
+def _arming_graph(forms, to_room):
+    """(producers, owner_of_arming) for this file's `newRoom: to_room`: the owners that perform
+    it, and for every `setScript:` target, the owners (instances or procedures) that arm it."""
     owner_of_arming, producers = defaultdict(set), set()
 
     def scan(form, owner):
@@ -225,6 +228,20 @@ def reaching_procs(forms, to_room):
 
     for f in forms:
         scan(f, None)
+    return producers, owner_of_arming
+
+
+def reaching_procs(forms, to_room):
+    """Exported procedures of THIS file whose cutscene chain ends in `newRoom: to_room`.
+
+    A helper script exports several procedures and only one of them leads where we care: n342 has
+    `proc342_0` (an ordinary arrival), `proc342_1` and `proc342_2` (the guards seizing you), and
+    only the last reaches `newRoom: 405`. Guarding the wrong one would refuse a normal arrival --
+    a wall, not a gate -- which is why this is derived instead of taking the first call found.
+
+    Walks BACKWARD over `setScript:` armings: who performs the newRoom, who arms them, and so on
+    until an exported `procN_M` is reached. Owner scope is the enclosing instance or procedure."""
+    producers, owner_of_arming = _arming_graph(forms, to_room)
     seen, frontier, out = set(producers), list(producers), set()
     while frontier:
         cur = frontier.pop()
@@ -236,6 +253,25 @@ def reaching_procs(forms, to_room):
                 seen.add(up)
                 frontier.append(up)
     return out
+
+
+def reaching_owners(forms, to_room):
+    """Every owner -- instance OR procedure -- from which `newRoom: to_room` is reachable along
+    this file's own arming graph: the set whose armings are ways IN to the crossing.
+
+    The complement is the point (play-found 2026-08-05): nightMare.sc exports `blowinIt`, rm340
+    arms it by export number, and it hands off to `playTheFlute` (script 85) -- never to
+    `catchNiteMare`, the instance that owns `newRoom: 155`. An export outside this set is
+    flavor: wrapping its arming taxes the player while the crossing rides free."""
+    producers, owner_of_arming = _arming_graph(forms, to_room)
+    seen, frontier = set(producers), list(producers)
+    while frontier:
+        cur = frontier.pop()
+        for up in owner_of_arming.get(cur, ()):
+            if up not in seen:
+                seen.add(up)
+                frontier.append(up)
+    return seen
 
 
 def find_nav_assign(forms, target_room):
@@ -719,6 +755,29 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
                 region, None, re.compile(r"\(%ssetScript:\s*%s%s\)" % (_ANY, tpat, _ANY)),
                 guard_sexpr, refuse)
         return text[:m0] + new_meth + text[m1:], 1
+    if placement["kind"] == "proc-arm":
+        # The helper file's OWN arming of the crossing -- a bare procedure the room calls at a
+        # refusal-safe moment. KQ6's Realm entry: `(nightMare setScript: catchNiteMare)` inside
+        # `proc344_1`, reached from `rm340::notify` AFTER the cast scene has done `handsOn:`
+        # (openBook.sc restores the UI before `(global2 notify:)`) and BEFORE the ride consumes
+        # the skull (`catchNiteMare` state 0 is the `put: 11`) -- refused, the mare just stands
+        # there and the cast repeats once the missing items are in hand. Wrap ONLY the arming
+        # form, never its enclosing clause: the `else` sibling is the game's own other outcome
+        # (`coldEmbers`) and must stay free.
+        _ANY = r"(?:[^()]|\([^()]*\))*"
+        alts = "|".join(re.escape(t) for t in
+                        placement.get("arm_targets") or [placement["target_script"]])
+        n_total = 0
+        for proc in placement["target_procs"]:
+            span = _find_region(text, r"\(procedure\s+\(%s\b" % re.escape(proc))
+            if not span:
+                continue
+            p0, p1 = span
+            pat = re.compile(r"\(%ssetScript:\s*(?:%s)\b%s\)" % (_ANY, alts, _ANY))
+            new_region, n = _wrap_matches_in(text[p0:p1], None, pat, guard_sexpr, refuse)
+            text = text[:p0] + new_region + text[p1:]
+            n_total += n
+        return text, n_total
     if placement["kind"] == "arm-event":
         # Gate the ARMING of an adversarial event: wrap `(<recv> setScript: <target>)` so it fires
         # only when the guard holds. NO `else` -- if the item is missing the event just does not arm

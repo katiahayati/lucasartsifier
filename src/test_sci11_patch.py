@@ -137,6 +137,55 @@ def test_fatal_uses_produces_a_remedy():
           f"would stop the player throwing it.")
 
 
+def test_realm_entry_guard_sits_on_the_spell_delivery():
+    """Play-found 2026-08-05, closed same day: the night-mare spell cast crossed rm340->155
+    unguarded.
+
+    The Realm entry has exactly one arming that reaches its `newRoom: 155`: `proc344_1`'s
+    `(nightMare setScript: catchNiteMare)` in nightMare.sc, fired by `rm340::notify` when the
+    openBook cast scene ends. The scene does `handsOn:` BEFORE `(global2 notify:)`, so a refusal
+    at that arming leaves a live, retryable game -- and the skull is not yet consumed
+    (`catchNiteMare` state 0 is what does `put: 11`). The shipped guard instead wraps
+    `egoDoVerb`'s verb-31 arming of `(ScriptID 344 3)` -- `blowinIt`, which hands off to
+    `playTheFlute` (script 85) and never crosses; in play "she comes over and takes you as soon
+    as you cast the spell" (user, 2026-08-05). Two defects, one root: the cross-file placement
+    assumes ANY export of the helper script is the way in ("the arming a room can be guarded at
+    is the one that starts the SCRIPT"), instead of resolving which sites arm the instance that
+    OWNS the crossing. The demand -- anchored here by its mirror term, item 24, which no other
+    rm340 row demands -- must sit on the catchNiteMare arm site and come off the flavor arming
+    it currently taxes."""
+    print("\nPhase 4b -- the Realm entry guards the spell's delivery, not the flute")
+    cfg = config.KQ6
+    if not (cfg.ir_path and os.path.exists(cfg.ir_path) and os.path.isdir(cfg.resource_dir)):
+        print("  (skip: no KQ6 IR/resources)")
+        return
+    import shutil
+    import tempfile
+    import patcher as P
+    s = M.load(cfg=cfg)
+    specs = G.guard_specs(s)
+    dest = tempfile.mkdtemp(prefix="sci11test_")
+    try:
+        P.configure(s.em.ir)
+        nums = P.assemble(dest, cfg)
+        titles = {n: t for t, n in nums.items()}
+        P.apply_guards(dest, specs, titles, nums,
+                       s_drops=lambda it: s.drops.get(it, set()),
+                       rooms=set(s.rooms),
+                       entry_frontier=lambda r: G.commit_entry_frontier(s, r))
+        mare = open(os.path.join(dest, "src", "nightMare.sc"), errors="replace").read()
+        rm340 = open(os.path.join(dest, "src", "rm340.sc"), errors="replace").read()
+    finally:
+        shutil.rmtree(dest, ignore_errors=True)
+    on_spell = "has: 24" in mare
+    off_flute = "has: 24" not in rm340
+    check("the Realm-entry demand wraps catchNiteMare's arming, not blowinIt's",
+          on_spell and off_flute,
+          f"demand-on-catchNiteMare={on_spell}, demand-off-rm340={off_flute}. The cast (skull "
+          f"verb 28 -> openBook 190 -> notify -> proc344_1) rides to rm155 with no guard, while "
+          f"verb-31's flute flavor -- which never crosses -- is the site being refused.")
+
+
 def test_verify_closes_every_kq6_finding():
     """`guards.verify` reports nothing remaining and nothing new -- GREEN since 2026-08-02.
 
@@ -230,6 +279,7 @@ def run():
     test_fatal_uses_produces_a_remedy()
     test_hoist_rest_targets()
     test_placement()
+    test_realm_entry_guard_sits_on_the_spell_delivery()
     test_verify_closes_every_kq6_finding()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL

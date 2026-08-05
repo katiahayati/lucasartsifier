@@ -91,6 +91,13 @@ KNOWN_RED = {
             "deliberate: rm420->rm435 (the shared-dispatcher seam; its demand is covered by "
             "the capture guards) and the huntersLamp sink (a TRADE; its remedy is the mists "
             "carry-in). Goes green only when those two either place or become refusals.",
+        # ✅ PROMOTED 2026-08-05 (same day as the play find) -- "the Realm-entry demand wraps
+        # catchNiteMare's arming, not blowinIt's" is GREEN. The cross-file block now READS the
+        # helper's arming graph (trigger.reaching_owners/reaching_procs) instead of assuming any
+        # export is the way in; a helper-internal arming whose call sites all sit outside `init`
+        # is wrapped in place (kind `proc-arm`: nightMare.sc's `(nightMare setScript:
+        # catchNiteMare)` inside proc344_1), and init call sites still route to the
+        # entry-frontier re-site. test_realm_entry_guard_sits_on_the_spell_delivery pins it.
         "🔴 KNOWN GAP (dagger): every non-refused spec places":
             "PHASE 4. 2 of 4 place, and the two that DO are 24-item guards placed as arm-event, "
             "i.e. events that would never fire -- so Dagger is worse off than the count "

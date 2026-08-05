@@ -37,7 +37,8 @@ import missability as M
 from sexpr import read_file
 from trigger import (find_trigger, find_arming, find_all_armings, find_cue_chain_armings,
                      find_nav_assign, find_proc_calls, exports_of,
-                     reaching_procs, wrap_trigger_in_source, wrap_all_armings_in_source,
+                     reaching_procs, reaching_owners, wrap_trigger_in_source,
+                     wrap_all_armings_in_source,
                      _block_span,
                      _enclosing_clause_body, enclosing_clause_head, _find_region)
 
@@ -571,7 +572,7 @@ EDGEHIT = {"north": 1, "east": 2, "south": 3, "west": 4}   # Game.sc Rm.doit swi
 # Placements find_trigger can actually wrap in a controllable handler: a direct newRoom, a
 # changeState cutscene, or a setScript-started Script. Anything else falls back to the exit idiom.
 _PLACED_KINDS = ("trigger", "direct", "setscript", "arm-event", "arm-clause",
-                 "proc-call")
+                 "proc-call", "proc-arm")
 
 
 def guard_edgehit_clause(text, direction, cond):
@@ -1166,33 +1167,72 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             title = title_used
             if placement["kind"] not in _PLACED_KINDS and placement.get("instance"):
                 # The cutscene that performs the `newRoom` is in one file and the ARMING that
-                # starts it is in another: KQ6's rm340 does `(setScript: (ScriptID 344 3))` and
-                # script 344's `catchNiteMare` does the `newRoom: 155`. Look for that arming in the
-                # other candidate files -- under either spelling, the instance's name or its
-                # export number -- and guard it there.
-                # Targets: the instance itself, and EVERY export of the script it lives in. The
-                # second is needed because a cutscene script hands off internally -- KQ6's rm340
-                # arms `(ScriptID 344 3)` (`blowinIt`), which several states later becomes
-                # `catchNiteMare`, and only that last one performs the `newRoom`. The arming a
-                # room can be guarded at is the one that starts the SCRIPT, so any export of it
-                # is the right commit point; staying inside one script keeps that tight.
+                # starts it is in another: KQ6's rm340 arms script 344's cutscenes, and script
+                # 344's `catchNiteMare` does the `newRoom: 155`. WHO arms the crossing is READ
+                # off the helper's own arming graph (`reaching_owners`/`reaching_procs`: who
+                # performs the newRoom, who arms them, and so on), never assumed from the export
+                # table. The old form of this block took ANY export of the helper as the way in,
+                # and wrapped rm340's arming of `(ScriptID 344 3)` -- `blowinIt`, flute flavor
+                # that hands off to script 85 and never crosses -- while the cast's chain (skull
+                # verb 28 -> openBook 190 -> `handsOn:` -> `(global2 notify:)` -> `proc344_1` ->
+                # `catchNiteMare`) rode to the Realm unguarded. Play-found 2026-08-05: "she
+                # comes over and takes you as soon as you cast the spell."
                 snum, exps = exports_of(forms)
-                targets = {placement["instance"]}
-                if snum is not None:
-                    targets |= {("ScriptID", snum, idx) for idx in exps}
-                    targets.add(("proc", snum))    # ...or the room just CALLS one of its procedures
-                for cand in _edit_candidates(dest, titles_by_num, sp, rooms):
-                    if cand == title:
-                        continue
-                    cpath = os.path.join(dest, "src", cand + ".sc")
-                    try:
-                        arm = find_arming(read_file(cpath), targets)
-                    except Exception:               # noqa: BLE001 -- unparseable candidate
-                        continue
-                    if arm:
-                        arm["target_room"] = sp["to_room"]
-                        title, path, placement = cand, cpath, arm
-                        break
+                owners = reaching_owners(forms, sp["to_room"])
+                armers = sorted(reaching_procs(forms, sp["to_room"]))
+                insts = {o for o in owners if not re.fullmatch(r"proc\d+_\d+", o)}
+                # A helper-internal arming whose call sites all sit OUTSIDE `init` is
+                # refusal-safe in place, and in place is tightest: every caller funnels through
+                # the one arming form, and its else-sibling stays the game's own. An `init`
+                # call site is an ARRIVAL COMMIT -- refusing there is finding #5's hang -- so
+                # those keep routing through the proc-call path into the entry-frontier
+                # re-site. Call sites are collected from EVERY source file, not just the edit
+                # candidates: a helper proc called from one room's init and another's doVerb
+                # must still count as an arrival commit.
+                call_methods = set()
+                if armers:
+                    mention = re.compile(r"\((?:%s)\b" % "|".join(map(re.escape, armers)))
+                    for fn in sorted(os.listdir(os.path.join(dest, "src"))):
+                        if not fn.endswith(".sc") or fn == os.path.basename(path):
+                            continue
+                        p3 = os.path.join(dest, "src", fn)
+                        if p3 not in _SOURCE_CACHE:
+                            try:
+                                _SOURCE_CACHE[p3] = open(p3, errors="replace").read()
+                            except Exception:      # noqa: BLE001 -- missing source
+                                _SOURCE_CACHE[p3] = ""
+                        if not mention.search(_SOURCE_CACHE[p3]):
+                            continue
+                        try:
+                            cforms2 = read_file(p3)
+                        except Exception:          # noqa: BLE001 -- unparseable candidate
+                            continue
+                        call_methods |= {c["trigger_method"]
+                                         for c in find_proc_calls(cforms2, set(armers),
+                                                                  methods=None)}
+                if call_methods and "init" not in call_methods:
+                    placement = {"kind": "proc-arm", "target_procs": armers,
+                                 "target_script": placement["instance"],
+                                 "arm_targets": sorted(insts),
+                                 "target_room": sp["to_room"]}
+                else:
+                    targets = set(insts)
+                    if snum is not None:
+                        targets |= {("ScriptID", snum, idx)
+                                    for idx, nm in exps.items() if nm in insts}
+                        targets |= {("proc", nm) for nm in armers}
+                    for cand in _edit_candidates(dest, titles_by_num, sp, rooms):
+                        if cand == title:
+                            continue
+                        cpath = os.path.join(dest, "src", cand + ".sc")
+                        try:
+                            arm = find_arming(read_file(cpath), targets)
+                        except Exception:           # noqa: BLE001 -- unparseable candidate
+                            continue
+                        if arm:
+                            arm["target_room"] = sp["to_room"]
+                            title, path, placement = cand, cpath, arm
+                            break
             if placement["kind"] not in _PLACED_KINDS:
                 # fall back to the room-property exit idiom before giving up
                 text = open(path, errors="replace").read()

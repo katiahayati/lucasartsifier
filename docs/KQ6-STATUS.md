@@ -147,10 +147,11 @@ shape harmless). The former 🔴 is promoted; each placement edge is pinned GREE
 
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
-**KQ6: 18 applied / 20 placement rows, 15 scripts compiled and written as SCI1.1 loose
-patches** (recounted from the 2026-08-04 v18 run: the two remaining skips are rm420→rm435 —
+**KQ6: 18 applied / 20 placement rows, 16 scripts compiled and written as SCI1.1 loose
+patches** (recounted from the 2026-08-05 v19 run: the two remaining skips are rm420→rm435 —
 the covered redundancy — and the huntersLamp TRADE refusal; the rm340→rm370 arrival commit
-now places on BOTH frontier crossings, see the entry-frontier note below) (the three
+now places on BOTH frontier crossings, see the entry-frontier note below; the Realm entry
+moved into nightMare.sc 2026-08-05 — finding #14 below) (the three
 register-valued exit guards landed 2026-08-01: rm670 as `edge-exit`, rm680 ×2 as `arm-event` —
 ⚠️ the kind Dagger shows can be misplaced; not yet played. rm640 joined 2026-08-02 via the
 nav-property `newRoom:` spelling). The first patch
@@ -160,14 +161,16 @@ set this project has produced for anything but LSL2:
 0.SCR   + 0.HEP    Main          mint + peppermint destroy-verbs deleted
 220.SCR + 220.HEP  rm220         castle short door
 230.SCR + 230.HEP  rm230         castle long door
-300.SCR + 300.HEP  rm300         entry frontier, finding #8: the solved-puzzles shortcut
-                                 (`north: 340`) is re-decided under the same guard -- refused,
-                                 the climb takes the long way into rm320's gate
 320.SCR + 320.HEP  rm320         the isle's ENTRY FRONTIER (2026-08-04): the catacombs four
                                  arm-gate the cliff ascent, stage-conditioned on the game's
                                  own capture-arm test -- the arrival-commit re-site
-340.SCR + 340.HEP  rm340         Realm entry (155),
-                                 catacombs entrance (405), lair (440)
+                                 (rm300 reverted to stock in v15, finding #10: nav re-route
+                                 is a last resort; its row left this table with it)
+340.SCR + 340.HEP  rm340         catacombs entrance (405), lair (440)
+344.SCR + 344.HEP  nightMare     Realm entry (155) -- the demand on `proc344_1`'s arming of
+                                 `catchNiteMare`, the ONLY chain that reaches `newRoom: 155`
+                                 (finding #14, 2026-08-05; v18's wrap on rm340's blowinIt
+                                 arming was flute flavor and is gone)
 420.SCR + 420.HEP  rm420         the skull into the gears -- refused
 550.SCR + 550.HEP  rm550         mists carry-in: the hunter's lamp to approach the Druids
 560.SCR + 560.HEP  rm560         mists carry-in: east exit closes while lampless
@@ -266,6 +269,25 @@ refusal landed — and rm300 reverts to stock (300.SCR leaves the set; 15 script
 ✅ Play-verified 2026-08-04: the step refusal fires on the second rock in capture stage
 (user: "it guards the second step"). Still to verify: ALLOW with the four, down-climb,
 and the restored shortcut.)
+
+**Play feedback (finding #14, 2026-08-05, fixed in v19): the night-mare spell bypassed the
+Realm-entry guard** — user: "she comes over and takes you as soon as you cast the spell."
+The cast chain (skull verb 28 → openBook 190 → `handsOn:` → `(global2 notify:)` →
+`proc344_1` → `(nightMare setScript: catchNiteMare)` → `newRoom: 155`) is the ONLY arming
+that reaches the crossing, and it was open; the v18 guard wrapped `egoDoVerb`'s verb-31
+arming of `(ScriptID 344 3)` — `blowinIt`, which hands off to `playTheFlute` (script 85)
+and never crosses, so the wrap taxed flavor and protected nothing. Root cause: the
+cross-file placement block ASSUMED any export of the helper script is the way in. It now
+READS the helper's own arming graph (`trigger.reaching_owners`/`reaching_procs` — who
+performs the newRoom, who arms them, and so on) and, when the arming procs' call sites all
+sit outside `init` (rm340 calls `proc344_1` from `notify`, after the cast scene's
+`handsOn:`), wraps the arming form IN the helper (new kind `proc-arm`) — the else-sibling
+(`coldEmbers`) stays the game's own, the refusal is live and retryable, and the skull is
+not yet consumed (`catchNiteMare` state 0 is the `put: 11`). An `init` call site is still
+an arrival commit and keeps routing to the entry-frontier re-site (finding #5's hang
+class); the catacombs rows are unmoved. Pinned GREEN by
+`test_realm_entry_guard_sits_on_the_spell_delivery`; v19 = v18 with 344.SCR/HEP joining
+and 340.SCR losing the flavor wrap, byte-identical elsewhere. ⚠️ Not yet played.
 
 **The catacombs collapse (2026-08-01).** The 8 `rm*->rm420` brick wall-guards were an extraction
 artifact: `_maze_reach` flooded THROUGH other rooms' cells as if they were corridors, inventing a
