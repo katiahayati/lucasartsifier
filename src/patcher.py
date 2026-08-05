@@ -35,9 +35,10 @@ import guards as G
 import ir as I
 import missability as M
 from sexpr import read_file
-from trigger import (find_trigger, find_arming, find_all_armings, find_nav_assign,
-                     find_proc_calls, exports_of,
-                     reaching_procs, wrap_trigger_in_source, _block_span,
+from trigger import (find_trigger, find_arming, find_all_armings, find_cue_chain_armings,
+                     find_nav_assign, find_proc_calls, exports_of,
+                     reaching_procs, wrap_trigger_in_source, wrap_all_armings_in_source,
+                     _block_span,
                      _enclosing_clause_body, enclosing_clause_head, _find_region)
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1342,7 +1343,7 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
     stage = heads[0] if len(heads) == 1 else ("(or %s)" % " ".join(heads) if heads else None)
     cond = to_source_syntax(sp["condition"])
     guard = "(or (not %s) %s)" % (stage, cond) if stage else cond
-    placed, unwrapped = [], []
+    placed, unwrapped, siteless = [], [], []
     for num in entry_rooms:
         ttl = titles_by_num.get(num)
         if ttl is None or (rooms and num not in rooms) or num == sp["from_room"]:
@@ -1360,25 +1361,44 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
             unwrapped.append({"room": num, "why": "unparseable"})
             continue
         trig = find_trigger(forms2, sp["from_room"])
+        if trig["kind"] == "arm-event" and REFUSE is not None:
+            # A silent arm-gate prevents the softlock and wastes the player's climb (play
+            # feedback 2026-08-04: solve the face, step every rock, and the ascent just...
+            # does not arm). The controllable, refusal-capable moment is where the CHAIN that
+            # cues the room is armed -- often in shared code the room merely `(use)`s -- so
+            # search the entry room's own file and its use-targets for those armings and
+            # refuse THERE, before any climbing. The arm-gate is still placed below as the
+            # backstop for paths that reach the cue without the chain (the cheat path).
+            room_text = open(p2, errors="replace").read()
+            for used in re.findall(r"^\(use\s+(\w+)\s*\)", room_text, re.M):
+                p3 = os.path.join(dest, "src", used + ".sc")
+                if not os.path.exists(p3):
+                    continue
+                ckey = (used, sp["from_room"], sp["condition"], "chain")
+                if ckey in seen:
+                    continue
+                t3 = open(p3, errors="replace").read()
+                chain = find_cue_chain_armings(room_text, t3, _ROOM, trig["target_script"])
+                total = 0
+                for arm in chain:
+                    t3, n3 = wrap_all_armings_in_source(t3, arm, guard, REFUSE)
+                    total += n3
+                if total:
+                    open(p3, "w").write(_ensure_refusal_use(t3, titles_by_num))
+                    seen.add(ckey)
+                    placed.append({"title": used, "kind": "cue-chain", "sites": total})
         if trig["kind"] not in ("direct", "trigger", "setscript", "arm-event"):
-            # The room's own file shows no trigger for this crossing -- the SHORTCUT spelling:
-            # a nav-property ASSIGNMENT (`(self north: 340)`) consumed by shared region code
-            # (`newRoom: (global2 north:)`). Play-found 2026-08-04 (v12): rm300 points its
-            # north straight at the summit once the puzzles are solved, so every repeat climb
-            # -- which the capture stage REQUIRES, the oracle trip comes first -- bypassed the
-            # rm320 gate. Gate the assignment instead: refused, the player takes the game's
-            # own long route, where the real gate sits.
-            trig = find_nav_assign(forms2, sp["from_room"])
-        if trig is None:
-            unwrapped.append({"room": num, "why": "no wrappable site"})
+            # No trigger in the room's own file -- defer to the second pass: a nav-property
+            # shortcut re-route is a LAST resort, judged after every chain wrap has landed.
+            siteless.append((num, ttl, key, p2, forms2))
             continue
-        if trig["kind"] not in ("arm-event", "nav-assign") and REFUSE is None:
+        if trig["kind"] != "arm-event" and REFUSE is None:
             unwrapped.append({"room": num, "why": "no refusal form"})
             continue                       # a wordless refusal is the "game lied" class
         t2 = open(p2, errors="replace").read()
         nt, n = wrap_trigger_in_source(t2, trig, guard, REFUSE)
         if n:
-            if trig["kind"] not in ("arm-event", "nav-assign"):    # those print nothing
+            if trig["kind"] != "arm-event":            # an arm-gate prints nothing
                 nt = _ensure_refusal_use(nt, titles_by_num)
             open(p2, "w").write(nt)
             seen.add(key)
@@ -1386,6 +1406,29 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
         else:
             unwrapped.append({"room": num, "why": "site found but not rewritten (%s)"
                               % trig["kind"]})
+    # SECOND PASS -- the nav-assign re-route, only where the refusals left a real hole. The
+    # shortcut spelling (`(self north: 340)` consumed by shared region code) was finding #8's
+    # bypass, but re-routing it costs the player the game's own convenience: after the play
+    # pass landed the CHAIN refusals, the shortcut's route crosses the same guarded steps, so
+    # re-deciding it would only re-impose the long climb on players the guard already vetted
+    # (play feedback 2026-08-04: "you have to climb the whole thing the second time too").
+    # A chain wrap anywhere on this row therefore supersedes the re-route; the assignment is
+    # gated only when no chain refusal landed and the shortcut would otherwise be unguarded.
+    chain_landed = any(p["kind"] == "cue-chain" for p in placed)
+    for (num, ttl, key, p2, forms2) in siteless:
+        trig = None if chain_landed else find_nav_assign(forms2, sp["from_room"])
+        if trig is None:
+            if not chain_landed:
+                unwrapped.append({"room": num, "why": "no wrappable site"})
+            continue
+        t2 = open(p2, errors="replace").read()
+        nt, n = wrap_trigger_in_source(t2, trig, guard, REFUSE)
+        if n:
+            open(p2, "w").write(nt)                    # a route re-decision prints nothing
+            seen.add(key)
+            placed.append({"title": ttl, "kind": trig["kind"], "sites": n})
+        else:
+            unwrapped.append({"room": num, "why": "site found but not rewritten (nav-assign)"})
     return placed, stage, unwrapped
 
 

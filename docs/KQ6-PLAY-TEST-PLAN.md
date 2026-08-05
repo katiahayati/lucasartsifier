@@ -1,13 +1,14 @@
 # KQ6 patched-build play-test plan
 
-Written 2026-08-03 from the shipped spec set; current build **v13** (2026-08-04,
-`build/kq6_patch_v13/patch`, 15 scripts, 341/341 compiled — the cliff entry-frontier pair
-joined: rm320's arm-gate + rm300's shortcut re-route, finding #8). Every row below is
+Written 2026-08-03 from the shipped spec set; current build **v15** (2026-08-04,
+`build/kq6_patch_v15/patch`, 15 scripts, 341/341 compiled — the cliff guard is the up-step
+"Not yet!" refusal in rCliffs (finding #9), with rm320's cue arm-gate as backstop; the v13
+rm300 re-route is retired (finding #10) and the stock shortcut is back). Every row below is
 generated from the live specs, not from memory:
 reproduce the table with `python3 src/snapshot.py KQ6 --placements`.
 
 **Install**: DELETE any previous patch files from the game copy first (a stale set was found
-live on 2026-08-04: 11/425/460/470.* from Aug 1), then copy `build/kq6_patch_v13/patch/*` in.
+live on 2026-08-04: 11/425/460/470.* from Aug 1), then copy `build/kq6_patch_v15/patch/*` in.
 **Revert**: delete those files — the game's own resources are never touched.
 **Method**: save (F5) immediately before each test point; every PREVENT test needs its
 ALLOW twin — a guard that blocks the softlock but also blocks the legitimate path is a
@@ -94,10 +95,16 @@ the lamp; the trade itself is untouched.
 | rm230→rm710 (castle long door) | dagger 8 + handkerchief 17 + mirror 24 + skeletonKey 44 + (mint 23 \| peppermint 31) | as above; ALSO: after the Druids burn Beauty's clothes, the SHORT door items must NOT be demanded here | full set crosses |
 | rm340→rm155 (Realm flight) | deadMansCoin 7 + skull 11 + mirror 24 + teaCup 46 | board the nightMare without each | full set flies |
 | rm340→rm370 (Lady Celeste's flyer) | brick 2 + holeInTheWall 18 + scarf 41 + tinderBox 48 | the catacombs four, demanded before the one-visit spring | full set proceeds |
-| rm320→rm340 (cliff ascent, v12 arm-gate) | same four, ONLY in capture stage (tribute paid, not yet seized) | solve the ascent puzzle in capture stage without the four → the climb does NOT arm (⚠️ silent — confirm no hang, controls stay live, and down-climb still works) | pre-tribute climbs are untouched at any inventory; in capture stage with the four, the ascent runs as stock and the in-room capture then proceeds with all items |
-| rm300→rm340 (solved-puzzles shortcut, v13 nav re-route — finding #8) | same four, same stage | in capture stage without the four, completing rm300's face must land you in rm320 (the long way), NOT the summit; then rm320's gate refuses as above | with the four (or stage clear), the shortcut jumps 300→340 exactly as stock |
+| cliff rock-stepping (v14 refusal — the primary gate now) | same four, ONLY in capture stage (tribute paid, not yet seized) | step onto the first rock (free), try to step UP again → "Not yet!" refusal, ego keeps controls, step back down works. All four up-step clauses are wrapped (`RockStep::handleEvent` → `takeStep`); `stepDown` and `takeFirstStep` untouched. Applies on both rm300 and rm320 faces (shared code) | pre-tribute climbs untouched; in stage with the four, stepping is stock |
+| rm320→rm340 (cue arm-gate, v12 — now the BACKSTOP) | same | if anything reaches the ascent cue without stepping (the cheat path), the ascent silently does not arm | with the four, ascent arms as stock |
+| rm300→rm340 (solved-puzzles shortcut) | — | **v15: the shortcut is STOCK again** (the v13 nav re-route retired by play feedback: whoever passes the step guard has already been vetted, and re-imposing the full climb on them was pure cost). Coverage: the shortcut route's own base wall is RockStep-stepped, so the step refusal fires there | after any allowed climb of rm300's face, stepping off the top jumps straight to the summit, exactly as stock |
 | rm340→rm405 (catacombs capture) | same four | climb/be seized without them — the CAPTURE arming is gated, so the guards must not throw you in | capture proceeds |
 | rm340→rm440 (lair) | same four | as above | as above |
+
+✅ **THE WHOLE CATACOMBS FLOW PLAY-VERIFIED 2026-08-04 (user, v15)**: refusal on the climb
+without the four; with them the capture, the traversal, and the EXIT all run stock; and the
+post-catacombs re-climb and re-entry work — no over-block, and the finding #5/#6 hang sites
+(the arrival commit, the Celeste walk-out) are clean in live play.
 | rm640→rm650 (knight's room, ticket surrender) | handkerchief 17 + skeletonKey 44 | give the ticket without them → refusal, ticket KEPT | with both, surrender + crossing normal; confirm 650→640 return really is impossible (one-way, user-confirmed) |
 | rm660→rm670 (Charon's crossing) | gauntlet 15 + mirror 24 | attempt the crossing without each | normal |
 | rm550→rm580 / rm560→rm580 | huntersLamp 19 | see A2 | see A2 |
@@ -146,6 +153,8 @@ through (misplacement). "Findings identical to stock" is also a result — say i
 
 | date | room | finding | verdict |
 |---|---|---|---|
+| 2026-08-04 | rm300 | **FINDING #10 (UX, FIXED in v15): the v13 nav re-route taxed vetted players.** Stock gives repeat climbers a shortcut (climb screen 1, jump to the summit); the re-route made everyone climb the whole cliff again. With the v14 step refusal in place the re-route protects nobody — an itemless capture-stage player is refused on the base wall's own rocks — so `_guard_arrival_entries` now treats nav-assign as a LAST resort, applied only when no chain refusal landed. rm300 reverts to stock (300.SCR leaves the patch set). | ✅ PLAY-VERIFIED 2026-08-04 (user: "it woooooorks") — shortcut back to stock |
+| 2026-08-04 | rm320 | **FINDING #9 (UX, FIXED in v14): the arm-gate is a silent dead-end.** Play: the re-routed climb goes up two screens of faces and then "it just... stops" — the flagged silent-wall risk, confirmed as bad as feared. Fix (user-designed): refuse at the STEPPING, the true controllable moment. `trigger.find_cue_chain_armings` reads the delivering cue case off the room's cue method (case 1 → `nextCliffUp`), finds the chain that cues it in the room's `(use ...)` files (`nextScreenUp` ← `takeStep`), and walks the armings back to the controllable handler — `RockStep::handleEvent`, where `wrap_all_armings_in_source` wraps ALL FOUR up-step clauses with a "Not yet!" refusal (one wrap is a bypass — finding #4's lesson, third appearance). Down-chains cue 0/-1 and never enter the walk, so descent cannot be caught. `takeFirstStep` (ground → rock 1) is outside the chain and stays free: the refusal comes at the first continuation step, one rock up. The v12/v13 gates remain as backstops. New emitted file: 21.SCR/HEP (rCliffs). | ✅ PLAY-VERIFIED 2026-08-04: PREVENT ("it guards the second step", user-accepted) and ALLOW (with the four, the climb and capture proceed) |
 | 2026-08-04 | rm300 | **FINDING #8 (real, FIXED): the v12 cliff gate had a bypass — the solved-puzzles shortcut.** With nothing in hand and the capture stage armed (g137=$2E00: flag 1 clear, flag 2 set), the climb went straight to the summit and the winged ones threw the player in. Root cause: flag 157 (set on every rm340 arrival) makes `rm300::init` point its `north` at 340, and the region's step-completion exits via `newRoom: (global2 north:)` — a crossing with no `newRoom:` in rm300's own file, so the frontier room silently got no wrap (the model's frontier {300, 320} was right; the placement covered only rm320 — and the capture stage REQUIRES a repeat climb, so the guarded route was exactly the one the stage never uses). Fix: `trigger.find_nav_assign` — the shortcut ASSIGNMENT is gated, `(if <or not-stage items> (self north: 340) else (self north: 320))`, so a non-compliant climb takes the game's own long way into rm320, where the cue-gate refuses; an assignment has no scene, so no hang class. Plus: a frontier room with no wrap now marks the row `entry-frontier-PARTIAL` — a bypass can never again ship silently. Re-test with v13: same save, climb → expect routing through the upper faces and the ascent refusing to arm. Also found in the same session: the install had stale Aug-1 patches (11/425/460/470.*) alongside v12 — delete old files when installing. | fixed in v13, re-test |
 | 2026-08-04 | rm640 | **FINDING #7 (real, FIXED): the ticket refusal hangs — dead controls.** The clause-wrapper recognised only `cond` clauses; SCI1.1 verb dispatch is a SWITCH, so the wrap fell back to the bare `setScript` and let `(global1 handsOff:)` fire before the refusal. Fix: `_enclosing_clause_body` now recognises switch cases and wraps the whole case, so control-stealing siblings sit inside the guard. Re-test the ticket refusal in v11. | fixed, re-test |
 | 2026-08-04 | rm340 | **FINDING #6 (same root as #5): the Celeste walk-out hangs.** Leaving the catacombs with Lady Celeste (a cutscene arrival into rm340) hit the same init refusal — "Not yet!", exit anyway, hang. No item demand belongs on that path at all (the shield is deliberately unflagged: re-obtainable, the standing shield ruling). Fixed by removing the init refusals. Re-test the Celeste exit in v11. | fixed, re-test |

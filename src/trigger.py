@@ -289,6 +289,133 @@ def find_nav_assign(forms, target_room):
     return None
 
 
+def _named_regions(text):
+    """[(name, start, end)] for every `(instance NAME ...)` / `(class NAME ...)` block. Shared
+    code often lives on a CLASS (KQ6's CliffRoom), so both spellings are one enumeration."""
+    out = []
+    for m in re.finditer(r"\((?:instance|class)\s+(\w+)\b", text):
+        try:
+            s, e = _block_span(text, m.start())
+        except Exception:                          # noqa: BLE001 -- unbalanced tail
+            continue
+        out.append((m.group(1), s, e))
+    return out
+
+
+def find_cue_chain_armings(room_text, cand_text, room_global, target_script):
+    """Controllable armings of the script CHAIN that delivers a room-cue exit -- the refusal
+    site an arm-event placement cannot be (play feedback 2026-08-04: the silent arm-gate let
+    the player climb a whole cliff face and then just... stopped).
+
+    The shape: the room's `cue` method arms the exit machine under a switch case
+    (`(1 (setScript: nextCliffUp))`), and what CUES the room is a script chain in shared code
+    (KQ6's rCliffs: the top rock's `takeStep` state arms `nextScreenUp`, which does
+    `(global2 cue: 1)`). The player's controllable moment is where that chain is ARMED from a
+    handler. So: read the delivering case value(s) off the room's cue method, find the scripts
+    in `cand_text` that cue the room with one of them, walk the arming chain backward
+    (`reaching_procs`' idea, over setScript instead of procs), and return every CONTROLLABLE
+    arming -- ALL of them, a machine with N armings needs N wraps (finding #4, and again #8).
+    Chains that cue a different case (the DOWN-climb cues 0/-1) never enter the walk, which is
+    what makes refusing here unable to strand a descending player."""
+    cases = set()
+    for m in re.finditer(r"\(method\s+\(cue\b", room_text):
+        s, e = _block_span(room_text, m.start())
+        region = room_text[s:e]
+        for am in re.finditer(r"setScript:\s*%s\b" % re.escape(target_script), region):
+            head = enclosing_clause_head(region, am.start())
+            try:
+                cases.add(int(head))
+            except (TypeError, ValueError):
+                pass
+    if not cases:
+        return []
+    regions = _named_regions(cand_text)
+
+    def owner_at(pos):
+        for (name, s, e) in regions:
+            if s <= pos < e:
+                return name, s, e
+        return None, None, None
+
+    def method_at(pos, s, e):
+        best = None
+        for mm in re.finditer(r"\(method\s+\((\w+)", cand_text[s:e]):
+            try:
+                ms, me = _block_span(cand_text, s + mm.start())
+            except Exception:                      # noqa: BLE001
+                continue
+            if ms <= pos < me:
+                best = mm.group(1)
+        return best
+
+    cuers = set()
+    for m in re.finditer(r"\(global%d\s+cue:\s*(-?\d+)\s*\)" % room_global, cand_text):
+        if int(m.group(1)) in cases:
+            name, _s, _e = owner_at(m.start())
+            if name:
+                cuers.add(name)
+    _ANY = r"(?:[^()]|\([^()]*\))*"
+    out, keys = [], set()
+    targets, seen = sorted(cuers), set(cuers)
+    for _depth in range(6):
+        nxt = []
+        for tgt in targets:
+            for am in re.finditer(r"\(%ssetScript:\s*%s\b%s\)" % (_ANY, re.escape(tgt), _ANY),
+                                  cand_text):
+                name, s, e = owner_at(am.start())
+                if not name:
+                    continue
+                meth = method_at(am.start(), s, e)
+                if meth in CONTROLLABLE_METHODS:
+                    k = (name, meth, tgt)
+                    if k not in keys:
+                        keys.add(k)
+                        out.append({"kind": "setscript", "trigger_instance": name,
+                                    "trigger_method": meth, "target_script": tgt,
+                                    "target_pattern": re.escape(tgt)})
+                elif name not in seen:
+                    seen.add(name)
+                    nxt.append(name)
+        if not nxt:
+            break
+        targets = nxt
+    return out
+
+
+def wrap_all_armings_in_source(text, placement, guard_sexpr, refuse):
+    """Wrap EVERY `setScript: <target>` clause in the placement's method -- the multi-site twin
+    of `wrap_trigger_in_source`'s setscript branch, which wraps only the first match. KQ6's
+    rock-stepping arms `takeStep` from FOUR geometric clauses of one handler; wrapping one is a
+    bypass wearing a guard's face. Clause spans are collected up front and wrapped back-to-front
+    so earlier offsets stay valid, and two armings inside one clause wrap once."""
+    inst, meth = placement["trigger_instance"], placement["trigger_method"]
+    inst_span = _find_region(text, r"\((?:instance|class)\s+%s\b" % re.escape(inst))
+    if not inst_span:
+        return text, 0
+    i0, i1 = inst_span
+    meth_rel = _find_region(text[i0:i1], r"\(method\s+\(%s\b" % re.escape(meth))
+    if not meth_rel:
+        return text, 0
+    m0, m1 = i0 + meth_rel[0], i0 + meth_rel[1]
+    region = text[m0:m1]
+    _ANY = r"(?:[^()]|\([^()]*\))*"
+    tpat = placement.get("target_pattern") or re.escape(placement["target_script"])
+    spans = []
+    for ssm in re.finditer(r"\(%ssetScript:\s*%s\b%s\)" % (_ANY, tpat, _ANY), region):
+        clause = _enclosing_clause_body(region, ssm.start())
+        span = clause if clause else (ssm.start(), ssm.end())
+        # overlap = the same or a nested clause; wrapping both would corrupt the outer one
+        if not any(bs < span[1] and span[0] < be for (bs, be) in spans):
+            spans.append(span)
+    n = 0
+    for (bs, be) in sorted(spans, reverse=True):
+        wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
+                   f"\t\t\t\t{refuse}  ; softlock-guard\n\t\t\t)")
+        region = region[:bs] + wrapped + region[be:]
+        n += 1
+    return text[:m0] + region + text[m1:], n
+
+
 def _mentions_oncontrol(form):
     """Does this subtree test where the ego is STANDING? `(gEgo onControl: 1)`.
 

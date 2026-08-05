@@ -129,7 +129,7 @@ shape harmless). The former 🔴 is promoted; each placement edge is pinned GREE
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
 **KQ6: 18 applied / 20 placement rows, 15 scripts compiled and written as SCI1.1 loose
-patches** (recounted from the 2026-08-04 v13 run: the two remaining skips are rm420→rm435 —
+patches** (recounted from the 2026-08-04 v15 run: the two remaining skips are rm420→rm435 —
 the covered redundancy — and the huntersLamp TRADE refusal; the rm340→rm370 arrival commit
 now places on BOTH frontier crossings, see the entry-frontier note below) (the three
 register-valued exit guards landed 2026-08-01: rm670 as `edge-exit`, rm680 ×2 as `arm-event` —
@@ -230,7 +230,23 @@ requires a repeat climb, so the shortcut was the only route the stage ever took.
 shortcut ASSIGNMENT (`trigger.find_nav_assign`): refused, the climb routes through rm320 where
 the cue-gate refuses; an assignment has no scene, so no hang class. A frontier room with no
 wrap now marks the row `entry-frontier-PARTIAL` so a bypass cannot ship silently again.
-⚠️ Neither wrap is play-verified yet; the B rows cover both.)
+**Play feedback on v13 (finding #9): the silent arm-gate wastes the player's climb** — two
+screens of faces and the ascent just never arms. v14 adds the refusal at the true controllable
+moment: `trigger.find_cue_chain_armings` reads the delivering cue case off the room's cue
+method, finds the chain that cues it in the room's `(use ...)` files (`nextScreenUp` ←
+`takeStep`), and walks the armings back to `RockStep::handleEvent`, where
+`wrap_all_armings_in_source` wraps ALL FOUR up-step clauses with "Not yet!" (one wrap is a
+bypass — finding #4's lesson). Down-chains cue 0/-1 and never enter the walk; `takeFirstStep`
+(ground → first rock) is outside the chain, so the refusal comes one rock up. The v12/v13
+gates stay as backstops; rCliffs (21.SCR) joins the emission.
+**Play feedback again (finding #10, fixed in v15): the v13 re-route taxed vetted players** —
+stock lets a repeat climber jump from screen 1 to the summit, and the re-route re-imposed the
+whole cliff. With the step refusal in place it protected nobody (the shortcut route's own base
+wall is RockStep-stepped), so nav-assign is now a LAST resort — applied only when no chain
+refusal landed — and rm300 reverts to stock (300.SCR leaves the set; 15 scripts).
+✅ Play-verified 2026-08-04: the step refusal fires on the second rock in capture stage
+(user: "it guards the second step"). Still to verify: ALLOW with the four, down-climb,
+and the restored shortcut.)
 
 **The catacombs collapse (2026-08-01).** The 8 `rm*->rm420` brick wall-guards were an extraction
 artifact: `_maze_reach` flooded THROUGH other rooms' cells as if they were corridors, inventing a
