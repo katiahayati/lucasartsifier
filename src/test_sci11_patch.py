@@ -175,6 +175,7 @@ def test_realm_entry_guard_sits_on_the_spell_delivery():
                        entry_frontier=lambda r: G.commit_entry_frontier(s, r))
         mare = open(os.path.join(dest, "src", "nightMare.sc"), errors="replace").read()
         rm340 = open(os.path.join(dest, "src", "rm340.sc"), errors="replace").read()
+        book = open(os.path.join(dest, "src", "openBook.sc"), errors="replace").read()
     finally:
         shutil.rmtree(dest, ignore_errors=True)
     on_spell = "has: 24" in mare
@@ -184,6 +185,15 @@ def test_realm_entry_guard_sits_on_the_spell_delivery():
           f"demand-on-catchNiteMare={on_spell}, demand-off-rm340={off_flute}. The cast (skull "
           f"verb 28 -> openBook 190 -> notify -> proc344_1) rides to rm155 with no guard, while "
           f"verb-31's flute flavor -- which never crosses -- is the site being refused.")
+    # Play-found on v19 (2026-08-05): the cast scene awards `(global1 givePoints: 3)` BEFORE
+    # `(global2 notify:)`, and the proc-arm refusal downstream splits what stock wrote as one
+    # atom (a hot cast always rides) -- every refused cast farmed +3. The award that a
+    # notify-delivered commit pays out must carry the commit's own demand: gated, no else --
+    # a suppressed award is not a player action owed a refusal line.
+    check("the cast scene's points award carries the commit's demand (no farming)",
+          "has: 24" in book and "givePoints" in book,
+          f"demand-in-openBook={'has: 24' in book}: a refused cast still pockets the +3 the "
+          f"scene pays before its notify reaches the guarded arming.")
 
 
 def test_verify_closes_every_kq6_finding():

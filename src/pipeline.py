@@ -188,7 +188,9 @@ def main(argv=None):
     # shipped. Every edited file must reach the patch set.
     touched = sorted({e["title"] for e in edits + gedits if e["applied"] and e.get("title")}
                      | {p["title"] for e in gedits if e["applied"]
-                        for p in e.get("entry_sites", ())})
+                        for p in e.get("entry_sites", ())}
+                     | {p["title"] for e in gedits if e["applied"]
+                        for p in e.get("award_gated", ())})
     r = P.compile_project(dest)
     print(f"    compiled {r['compiled']}/{r['total']} scripts")
     broken = [t for t, _ in r["failures"] if t in touched]

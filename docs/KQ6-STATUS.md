@@ -147,7 +147,7 @@ shape harmless). The former 🔴 is promoted; each placement edge is pinned GREE
 
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
-**KQ6: 14 scripts compiled and written as SCI1.1 loose patches (v20)** (recounted
+**KQ6: 15 scripts compiled and written as SCI1.1 loose patches (v21)** (recounted
 2026-08-05: the two remaining skips are rm420→rm435 — the covered redundancy — and the
 huntersLamp TRADE refusal; the rm340→rm370 arrival commit places on BOTH frontier
 crossings, see the entry-frontier note below; the Realm entry moved into nightMare.sc —
@@ -159,6 +159,9 @@ set this project has produced for anything but LSL2:
 
 ```
 0.SCR   + 0.HEP    Main          mint + peppermint destroy-verbs deleted
+190.SCR + 190.HEP  openBook      the cast scene's points award carries the Realm-entry
+                                 demand (v21, the finding-#14 residue: no farming through
+                                 a refused cast)
 220.SCR + 220.HEP  rm220         castle short door
 230.SCR + 230.HEP  rm230         castle long door
 320.SCR + 320.HEP  rm320         the isle's ENTRY FRONTIER (2026-08-04): the catacombs four
@@ -290,11 +293,16 @@ an arrival commit and keeps routing to the entry-frontier re-site (finding #5's 
 class); the catacombs rows are unmoved. Pinned GREEN by
 `test_realm_entry_guard_sits_on_the_spell_delivery`; v19 = v18 with 344.SCR/HEP joining
 and 340.SCR losing the flavor wrap, byte-identical elsewhere. ✅ PLAY-VERIFIED 2026-08-05
-(user: "the guard works properly now") — with one residue, queued for fix (user-confirmed):
-`spellBookScr` awards `(global1 givePoints: 3)` BEFORE `(global2 notify:)`, so every
-refused hot cast farms +3 (stock is atomic: a hot cast always rides). Fix = gate the award
-with the same four-item demand; 190.SCR would join the set. Cosmetic — no KQ6 content
-gates on score.
+(user: "the guard works properly now") — with one residue, FIXED in v21 (user-confirmed
+fix): `spellBookScr` awards `(global1 givePoints: 3)` BEFORE `(global2 notify:)`, so every
+refused hot cast farmed +3 (stock is atomic: a hot cast always rides). The general rule
+(`patcher._gate_notify_awards`): an award a scene pays before the `notify:` that reaches a
+`proc-arm`-guarded commit gets the commit's own demand — no else, the award is simply not
+yet earned; the successful cast still pays it. Landed inside the case's own cold-embers
+condition; the make-rain case is untouched; edits are reported on the placement row
+(`award_gated`), and `pipeline`'s `touched` collection learned the row key (the v13
+"edited but never shipped" shape, caught by the v20→v21 byte-diff coming up empty).
+190.SCR + 190.HEP join the set (15 scripts). Cosmetic — no KQ6 content gates on score.
 
 **Play feedback (findings #15/#16, 2026-08-05, fixed in v20): the Realm interior guards
 were wrong twice over, and the USER RULING rewrote guard-oracle rows 3/4** — "you can't

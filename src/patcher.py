@@ -1335,10 +1335,61 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                         row.setdefault("also_wrapped", []).append(
                             {"instance": extra["trigger_instance"],
                              "method": extra["trigger_method"]})
+            if placement["kind"] == "proc-arm":
+                gated = _gate_notify_awards(dest, to_source_syntax(sp["condition"]))
+                if gated:
+                    row["award_gated"] = gated
             also = _also_place_capture(dest, sp, titles_by_num, rooms, placement)
             if also:
                 row["also_placed"] = also
             out.append(row)
+    return out
+
+
+def _gate_notify_awards(dest, cond):
+    """A notify-delivered commit's scene may pay its award BEFORE the notify; a `proc-arm`
+    refusal downstream then splits what stock wrote as one atom. KQ6's spell cast
+    (openBook.sc, script 190): `(global1 givePoints: 3)` and then `(global2 notify:)`, and a
+    hot cast in stock ALWAYS rides to rm155 -- points and ride are atomic, the award can fire
+    once. With the arming refused, every rejected cast farmed +3 (play-found 2026-08-05).
+
+    So: in any clause that reaches the current-room `notify:`, an award paid before it gets
+    the commit's own demand. NO else -- a suppressed award is not a player action owed a
+    refusal line, it is simply not yet earned; the successful cast still pays it. Every edit
+    is reported on the placement row -- a second edit made silently is how a patch stops
+    being reviewable."""
+    if _ROOM is None:
+        return []
+    notify_pat = re.compile(r"\(global%d\s+notify:\s*\)" % _ROOM)
+    award_pat = re.compile(r"\([^()]*givePoints:[^()]*\)")
+    out = []
+    for fn in sorted(os.listdir(os.path.join(dest, "src"))):
+        if not fn.endswith(".sc"):
+            continue
+        path = os.path.join(dest, "src", fn)
+        try:
+            text = open(path, errors="replace").read()
+        except Exception:                          # noqa: BLE001 -- unreadable candidate
+            continue
+        if "givePoints" not in text or not notify_pat.search(text):
+            continue
+        n = 0
+        for nm in list(notify_pat.finditer(text))[::-1]:    # back-to-front: offsets stay valid
+            clause = _enclosing_clause_body(text, nm.start())
+            if not clause:
+                continue
+            bs = clause[0]
+            region = text[bs:nm.start()]
+            for am in list(award_pat.finditer(region))[::-1]:
+                a0, a1 = bs + am.start(), bs + am.end()
+                wrapped = ("(if %s\n\t\t\t\t\t%s\n\t\t\t\t)"
+                           "  ; softlock-guard: the award belongs to the ride"
+                           % (cond, text[a0:a1]))
+                text = text[:a0] + wrapped + text[a1:]
+                n += 1
+        if n:
+            open(path, "w").write(text)
+            out.append({"title": fn[:-3], "sites": n})
     return out
 
 
