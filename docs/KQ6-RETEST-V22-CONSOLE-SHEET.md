@@ -50,10 +50,29 @@ Saladin play out completely stock.
 ```
 room 710            (Esc, wait, reopen)
 <wedding setup block>
+send ?rgCastle weddingRemind 300    (override the block's 10 -- see note)
 send ?ego get 20
 ```
-Open the wall panel in 710, spell **ALIZEBU**, browse the treasure room, walk out.
+⚠️ With the letter in hand the hold no longer freezes the fuse — at 10s the music fires
+before you reach the panel, the dogs post, and the treasure door's one scripted refusal
+(guards posted) blocks you. 300s gives you time; the treasure room pauses the fuse anyway.
+Open the wall panel in 710 (see THE PANEL below), browse the treasure room, walk out.
 Expect: music near-instantly, escalation jumps, corral within seconds — the stock ride.
+
+### THE PANEL (rm710 wall closeup) — how it actually works
+
+No flag gates it: "seeing Ali and Zebu" (the keyhole scene in the walls) is player
+knowledge only — the panel accepts the right presses cold. It scores by GRID POSITION:
+five letters per row, A–E / F–J / K–O / P–T / U–Y, and Z alone CENTERED on the bottom
+row. Click, in order:
+
+    A (row 1, col 1) · L (row 3, col 2) · I (row 2, col 4) · Z (row 6, center)
+    · E (row 1, col 5) · B (row 1, col 2) · U (row 5, col 1)
+
+A wrong click fails SILENTLY (all 7 presses complete, then "nothing happens"); a repeat
+click on the same button is ignored (doesn't advance, doesn't fail). The honest unlock,
+for E-row runs: watch the guard dogs through the first keyhole in the walls (rm800) —
+that scene is where the word is given.
 
 ## R3 — wedding: treasures FIRST, letterless (finding #3's own trace)
 
