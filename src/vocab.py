@@ -1050,7 +1050,42 @@ def lower_prop_flags(ir, accessors):
         bits = [(args[0], b) for m in args[1:] for b in range(16) if (m & 0xFFFF) >> b & 1]
         return (accessors[sel], bits) if bits else None
 
+    # THE SAME STORE HAS A SECOND SPELLING (play-derived 2026-08-04, the corral chase). The
+    # accessor methods are selector-indirection -- `(setFlag: 709 m)` ORs m into the property
+    # whose SELECTOR NUMBER is 709 (`rFlag1`; proof: rgCastle.sc:569 `rFlag1: (& rFlag1 $fffd)`
+    # is bit-for-bit `clrFlag: 709 2`) -- so the game also reads and writes these words
+    # DIRECTLY: `(|= rFlag1 $0004)` in the owning class, `(rgCastle rFlag1: (| ... $2000))` by
+    # class name from a sibling script, `(RgBasement setFlag: 709 8)` by name instead of
+    # ScriptID. Keying only on the accessor calls missed all of it -- measured: reg340, the
+    # castle corral's own arming condition, had NO writer, and reg378 was missing one. The
+    # name->export map below resolves name receivers to the SAME (script, export) identity the
+    # ScriptID spelling lowers to (verified: rgCastle IS export 0 of script 80, RgBasement of
+    # 81), and a second collection pass picks up the direct property arithmetic.
+    obj_export = {}
+    for s in ir.scripts.values():
+        for xi, nm in enumerate(getattr(s, "exports", None) or []):
+            if nm:
+                obj_export.setdefault(nm, (s.number, xi))
+    sel_value = {}
+    for s in ir.scripts.values():
+        bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for n in I.walk(body):
+                if n.get("t") == "Selector" and isinstance(n.get("value"), int) \
+                        and n.get("name"):
+                    sel_value.setdefault(n["name"], n["value"])
+
+    def _rid_of(recv):
+        rid = _flag_receiver_id(recv)
+        if rid is not None:
+            return rid
+        if isinstance(recv, dict) and recv.get("t") in ("Class", "Object") \
+                and recv.get("name") in obj_export:
+            return obj_export[recv["name"]]
+        return None
+
     max_gi, sites = 0, []
+    flag_words = set()
     for s in ir.scripts.values():
         bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
         for body in bodies:
@@ -1061,7 +1096,8 @@ def lower_prop_flags(ir, accessors):
                 if node.get("t") != "Send":
                     continue
                 recv, msgs = I.send_pairs(node)
-                rid = _flag_receiver_id(recv)
+                legacy_rid = _flag_receiver_id(recv)
+                rid = legacy_rid if legacy_rid is not None else _rid_of(recv)
                 if rid is None or not any(sel in accessors for sel, _p in msgs):
                     continue
                 plan, usable = [], True
@@ -1074,15 +1110,184 @@ def lower_prop_flags(ir, accessors):
                     if hit is None or (len(msgs) > 1 and hit[0] == "test"):
                         usable = False       # unpinnable, or a test whose value the chain needs
                         break
+                    flag_words.update(w for (w, _b) in hit[1])
                     plan.append(("flag", hit[0], [(rid, w, b) for (w, b) in hit[1]]))
                 if usable and any(p[0] == "flag" for p in plan):
-                    sites.append((node, recv, plan))
+                    sites.append((node, recv, plan, legacy_rid is not None))
+
+    # SECOND PASS: the direct spellings, now that the flag WORDS are known. A site is one of:
+    #   test   `(& <word-read> m)`            -- BinAnd over a read, either operand order
+    #   set    `(|= prop m)` / `(<recv> w: (| <read> m))`
+    #   clear  `(&= prop (~ m))` / `(<recv> w: (& <read> lit))` -- a literal AND clears ~lit
+    # An unresolvable MASK stays sound by fanning to every known bit of the word in the op's
+    # own direction only (an AND can only clear, an OR can only set) -- the permissive reading.
+    # `bits=None` marks that case; it expands against the final index at rewrite time.
+    def _mask_bits(v):
+        return [b for b in range(16) if (v & 0xFFFF) >> b & 1]
+
+    def _word_read(n, rid, word):
+        """n is a read of (rid, word): a no-arg property send, or the bare property."""
+        if not isinstance(n, dict):
+            return False
+        if n.get("t") == "Send":
+            r2, m2 = I.send_pairs(n)
+            if _rid_of(r2) == rid and len(m2) == 1 and not m2[0][1]:
+                ks = [k for k in n["kids"] if k.get("t") == "SendMessage"]
+                sel = (ks[0].get("kids") or [{}])[0] if ks else {}
+                return sel.get("value") == word
+        if n.get("t") == "Property":
+            return sel_value.get(n.get("name")) == word
+        return False
+
+    def _write_expr_op(expr, rid, word):
+        """('set'|'clear', bits|None) for a property-write RHS, or None if not flag-shaped."""
+        t = expr.get("t") if isinstance(expr, dict) else None
+        ks = (expr.get("kids") or []) if isinstance(expr, dict) else []
+        if t == "BinOr" and any(_word_read(k, rid, word) for k in ks):
+            lits = [I.as_int(k) for k in ks if I.as_int(k) is not None]
+            return ("set", _mask_bits(lits[0]) if lits else None)
+        if t == "BinAnd" and any(_word_read(k, rid, word) for k in ks):
+            neg = [k for k in ks if isinstance(k, dict) and k.get("t") == "BinNot"]
+            if neg:
+                m = I.as_int((neg[0].get("kids") or [None])[0])
+                return ("clear", _mask_bits(m) if m is not None else None)
+            lits = [I.as_int(k) for k in ks if I.as_int(k) is not None]
+            return ("clear", _mask_bits(~lits[0]) if lits else None)
+        if t == "Number" and expr.get("value") == 0:
+            return ("clear", None)                     # absolute zero: every known bit clears
+        return None
+
+    direct = []                                        # (node, [('flagop', op, rid, word, bits)
+    param_clears = []                                  #         | ('keep', msgnode, recv)
+    for s in ir.scripts.values():                      #         | ('keepwhole', snapshot)])
+        owners = [(o, mn, body) for o in s.objects for mn, body in o.methods.items()]
+        owners += [(None, None, body) for body in s.procs.values()]
+        for owner, mname, body in owners:
+            own_rid = obj_export.get(owner.name) if owner is not None else None
+            for node in I.walk(body):
+                t = node.get("t")
+                ks = node.get("kids") or []
+                if t in ("AssignmentBinOr", "AssignmentBinAnd") and ks \
+                        and isinstance(ks[0], dict) and ks[0].get("t") == "Property" \
+                        and own_rid is not None:
+                    word = sel_value.get(ks[0].get("name"))
+                    if word not in flag_words:
+                        continue
+                    val = ks[1] if len(ks) > 1 else None
+                    if t == "AssignmentBinOr":
+                        m = I.as_int(val)
+                        direct.append((node, [("flagop", "set", own_rid, word,
+                                               _mask_bits(m) if m is not None else None)]))
+                    else:
+                        if isinstance(val, dict) and val.get("t") == "BinNot":
+                            inner = (val.get("kids") or [None])[0]
+                            m = I.as_int(inner)
+                            if m is None and isinstance(inner, dict) \
+                                    and inner.get("t") == "Variable" \
+                                    and inner.get("vtype") == "Parameter" and mname:
+                                # `(&= rFlag1 (~ paramK))` -- the mask is the CALLER's literal.
+                                # Fanning to every bit here invents clears that break real
+                                # one-way flags (measured: RgBasement::resetGuard's callers all
+                                # pass masks 1/2, and the fan made the corral flags 340/378
+                                # reversible). Defer: the clears land at literal-arg call
+                                # sites; only a caller-less method falls back to the fan.
+                                param_clears.append((node, own_rid, word, mname,
+                                                     inner.get("index")))
+                                continue
+                            bits = _mask_bits(m) if m is not None else None
+                        else:
+                            m = I.as_int(val)
+                            bits = _mask_bits(~m) if m is not None else None
+                        direct.append((node, [("flagop", "clear", own_rid, word, bits)]))
+                elif t == "BinAnd" and len(ks) >= 2:
+                    lits = [I.as_int(k) for k in ks if I.as_int(k) is not None]
+                    if not lits:
+                        continue
+                    read = None
+                    for k in ks:
+                        if isinstance(k, dict) and k.get("t") == "Property" \
+                                and own_rid is not None \
+                                and sel_value.get(k.get("name")) in flag_words:
+                            read = (own_rid, sel_value[k["name"]])
+                        elif isinstance(k, dict) and k.get("t") == "Send":
+                            r2, m2 = I.send_pairs(k)
+                            rid2 = _rid_of(r2)
+                            if rid2 is not None and len(m2) == 1 and not m2[0][1]:
+                                sn = [x for x in k["kids"] if x.get("t") == "SendMessage"]
+                                sv = (sn[0].get("kids") or [{}])[0].get("value") if sn else None
+                                if sv in flag_words:
+                                    read = (rid2, sv)
+                    if read:
+                        direct.append((node, [("flagop", "test", read[0], read[1],
+                                               _mask_bits(lits[0]))]))
+                elif t == "Send":
+                    recv, msgs = I.send_pairs(node)
+                    rid = _rid_of(recv)
+                    if rid is None:
+                        continue
+                    mnodes = [m for m in ks[1:] if m.get("t") == "SendMessage"]
+                    plan, hit = [], False
+                    for mnode, (sel, params) in zip(mnodes, msgs):
+                        sv = (mnode.get("kids") or [{}])[0].get("value")
+                        if sv in flag_words and len(params) == 1:
+                            op = _write_expr_op(params[0], rid, sv)
+                            if op:
+                                plan.append(("flagop", op[0], rid, sv, op[1]))
+                                hit = True
+                                continue
+                        plan.append(("keep", mnode))
+                    if hit:
+                        direct.append((node, plan))
+    # resolve deferred param-clears at their literal-arg call sites
+    for (bnode, rid, word, mname, pidx) in param_clears:
+        found = False
+        for s in ir.scripts.values():
+            bodies = [m for o in s.objects for m in o.methods.values()] \
+                + list(s.procs.values())
+            for body in bodies:
+                for node in I.walk(body):
+                    if node.get("t") != "Send":
+                        continue
+                    recv, msgs = I.send_pairs(node)
+                    if _rid_of(recv) != rid:
+                        continue
+                    clears = []
+                    for sel, params in msgs:
+                        if sel != mname or pidx is None or len(params) < pidx:
+                            continue
+                        m = I.as_int(params[pidx - 1])
+                        if m is not None:
+                            clears.append(("flagop", "clear", rid, word, _mask_bits(m)))
+                    if clears:
+                        direct.append((node, [("keepwhole", copy.deepcopy(node))] + clears))
+                        found = True
+        if not found:
+            direct.append((bnode, [("flagop", "clear", rid, word, None)]))
+
+    # a node caught by both passes would be rewritten twice; phase 1 wins
+    phase1 = {id(n) for n, _r, _p, _l in sites}
+    direct = [(n, p) for (n, p) in direct if id(n) not in phase1]
+
+    # ALLOCATION ORDER IS REGISTER IDENTITY. The keys the accessor spelling has always found,
+    # in the order it has always found them, allocate FIRST -- the numbers the tests and docs
+    # pin (338, 340, 378...) must not shift. Name-receiver accessor sites come next, then the
+    # direct-spelling keys; only genuinely new bits get new numbers. (Measured the hard way:
+    # letting the new sites interleave renumbered the whole store and the user-confirmed
+    # letter row dissolved into noise.)
     synth_base, index = max_gi + 1, {}
-    for _n, _r, plan in sites:
+    for want_legacy in (True, False):
+        for _n, _r, plan, legacy in sites:
+            if legacy != want_legacy:
+                continue
+            for p in plan:
+                if p[0] == "flag":
+                    for k in p[2]:
+                        index.setdefault(k, synth_base + len(index))
+    for _n, plan in direct:
         for p in plan:
-            if p[0] == "flag":
-                for k in p[2]:
-                    index.setdefault(k, synth_base + len(index))
+            if p[0] == "flagop" and p[4]:
+                for b in p[4]:
+                    index.setdefault((p[2], p[3], b), synth_base + len(index))
     BOOL_GLOBALS.update(index.values())
     try:
         # The map back, for the same reason every other store records one: the ANALYSIS never
@@ -1105,7 +1310,7 @@ def lower_prop_flags(ir, accessors):
                           {"t": "Number", "value": val}]} for g in gis]
 
     lowered = 0
-    for node, recv, plan in sites:
+    for node, recv, plan, _legacy in sites:
         parts = []
         for p in plan:
             if p[0] == "flag":
@@ -1118,6 +1323,31 @@ def lower_prop_flags(ir, accessors):
         node.clear()
         node.update(new)
         lowered += sum(1 for p in plan if p[0] == "flag")
+
+    def _keys_for(rid, word, bits):
+        """Concrete index keys for a flag op; a None mask fans over every known bit."""
+        if bits is not None:
+            return [(rid, word, b) for b in bits if (rid, word, b) in index]
+        return sorted(k for k in index if k[0] == rid and k[1] == word)
+
+    for node, plan in direct:
+        parts = []
+        for p in plan:
+            if p[0] == "flagop":
+                keys = _keys_for(p[2], p[3], p[4])
+                if keys:
+                    parts += _lower_one(p[1], keys)
+                    lowered += 1
+            elif p[0] == "keepwhole":
+                parts.append(p[1])                     # the pre-rewrite snapshot of the call
+            else:
+                recv = node["kids"][0] if node.get("kids") else None
+                parts.append({"t": "Send", "kids": [copy.deepcopy(recv), p[1]]})
+        if not parts:
+            continue
+        new = parts[0] if len(parts) == 1 else {"t": "List", "kids": parts}
+        node.clear()
+        node.update(new)
     return synth_base, lowered, len(index)
 
 

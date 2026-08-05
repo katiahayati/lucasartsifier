@@ -61,6 +61,25 @@ the player what is missing at the moment it matters — the failure communicates
 remains a true softlock (a player whose only save is post-corral is cooked), so the
 classification and the red marker stay; modeling the missing store is no longer a mandate,
 just the price of ever closing it.
+**LATE 2026-08-04, the store cracked open — detection sharpened, corral-proper still open.**
+Three landings in one build (see the commit): (1) the rFlag DIRECT-SPELLING gap closed —
+`setFlag:` is selector-indirection into properties (`rFlag1` ≡ selector 709, proven by
+rgCastle.sc:569), so `|= rFlag1 $0004` arithmetic and name-receiver sends now lower to the
+same registers; reg340 finally has its writers and reg378 its second one, and the corral
+flags are honest ONE-WAYS (param-valued clears resolve at their literal-arg call sites —
+`resetGuard`'s callers all pass masks 1/2). (2) DISCOVERY: flag 166 has a THIRD writer —
+`rgCastle::scriptCheck`'s reminder escalation, region-homed — plausibly THE long-route
+wedding trigger ("matches my memory of the game" — user). The shipped hold deliberately does
+NOT wrap it (holding would stall the letterless long-route endgame instead of allowing the
+defeat). (3) `register_strandings`' quantifier fixed union→EXISTS-a-seed (the region-homed
+writer exposed it: a flip-at-the-source seed dissolved the row). MEASURED: LSL2/KQ4/Dagger
+zero rows; KQ6 exactly the (338, letter) row with `flip_rooms` = all castle rooms EXCEPT the
+basement chain — the long route now covered by derivation. What remains for the corral
+PROPER (the user's actual question — "the dogs corral you"): the CAPTURE-ACTOR rule — a room
+that initializes a capture-actor under flag F is sealed-for-walking while F holds; the dogs'
+placement is now register-visible (`setupGuards` under rFlag bits 336/337), so the rule is
+well-founded where the refuted escort rule was not. Also pending a user ruling: dropping the
+wedding hold entirely (no-op on the short route by design, defeat-denial on the long).
 
 `test_kq6_ground_truth` passes all 16 checks. `KNOWN_GAPS` is empty and `LONG_ENDING_ONLY` is
 empty, so every unit the oracle calls real is caught and nothing outside the oracle is flagged.

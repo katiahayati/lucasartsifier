@@ -87,6 +87,11 @@ ACCEPTED = {
                    "object's property register a send touches (see _prop_receiver_script -- KQ6 "
                    "addresses the same singleton as both `(ScriptID 30 0)` and `rLab`). The "
                    "control-flow walkers only need to know a Send happened.",
+    "Number":      "vocab reads Number literals as BIT MASKS when lowering the property-word "
+                   "flag stores (both the accessor spelling's arguments and, since the rFlag "
+                   "direct-spelling pass, the masks in `|= rFlag1 $0004` arithmetic and "
+                   "literal-AND clears). The control-flow walkers treat numbers as opaque "
+                   "leaves; there is no shared rule to drift.",
     "Property":    "extract reads a Property node to recognise `register` -- the setScript "
                    "argument that tells one Script which of its exits it is taking -- and vocab "
                    "reads properties to derive the item-location store. The machine walkers see "

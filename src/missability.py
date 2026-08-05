@@ -2676,25 +2676,50 @@ class IrSccReach(SccReach):
                 # register, owned by edge_strandings. Derived from the projection alone; no
                 # register is named.
                 seed_rooms = {r for (r, _v) in seeds}
-                before = {(r, v) for (r, v) in states if r in seed_rooms and v != w}
-                if not before:
-                    continue                        # no pre-flip player exists -> an arrival
-                rooms_before = {r for (r, _v) in self._walk(R, frozenset(), starts=before)}
                 rooms_after = {r for (r, _v) in after}
+                # ...and THE QUANTIFIER over WHERE the flip happens must be EXISTENTIAL. The
+                # union walk asks "does every flip strand?", invisible while registers had one
+                # or two write sites -- the moment the rFlag lowering gave the wedding flag its
+                # region-homed writer (every castle room, rm781 itself included), the union
+                # reached the letter through the flip-at-the-source seed and the confirmed row
+                # dissolved. A softlock needs only SOME reachable flip whose player can no
+                # longer reach a source their pre-flip self could: the wedding starting while
+                # you stand in the throne room strands the letter regardless of the flip that
+                # could have happened in the letter's own room. Per-seed-room walks; the
+                # arrival exclusion and the causality conjunct apply per room, same as before.
+                per_room = {}
+                def _flip_at(r):
+                    if r not in per_room:
+                        a = {q for (q, _v) in self._walk(R, frozenset(), starts={(r, w)})}
+                        b0 = {(r2, v) for (r2, v) in states if r2 == r and v != w}
+                        b = ({q for (q, _v) in self._walk(R, frozenset(), starts=b0)}
+                             if b0 else None)       # None: no pre-flip player -> an arrival
+                        per_room[r] = (a, b)
+                    return per_room[r]
                 if goal and not (goal & rooms_after):
                     continue                        # already unwinnable: a dead end, not a softlock
                 for it in sorted(self.required):
                     srcs = self.sources.get(it, set())
-                    if not srcs or (srcs & rooms_after):
-                        continue                    # obtainable after the flip, or never obtainable
-                    if not (srcs & rooms_before):
-                        continue                    # the pre-flip player could not reach one either
-                                                    # -- the flip is not what stranded it
-                    ahead = self.required[it] & rooms_after
-                    if ahead:
+                    if not srcs:
+                        continue                    # never obtainable: not this detector's story
+                    strand_at = []
+                    for r in sorted(seed_rooms):
+                        a, b = _flip_at(r)
+                        if b is None:
+                            continue                # an arrival, owned by edge_strandings
+                        if (srcs & a) or not (srcs & b):
+                            continue                # still obtainable, or never was from here
+                        if goal and not (goal & a):
+                            continue                # that flip is a dead end, not a softlock
+                        if self.required[it] & a:
+                            strand_at.append(r)
+                    if strand_at:
+                        ahead = self.required[it] & set().union(
+                            *(_flip_at(r)[0] for r in strand_at))
                         out.append({"pattern": "register-flip-point-of-no-return",
                                     "register": R, "value": w, "item": it,
                                     "item_name": self.g.item_name(it),
+                                    "flip_rooms": strand_at,
                                     "source_rooms": sorted(srcs),
                                     "still_needed_at": sorted(ahead)})
         return out
