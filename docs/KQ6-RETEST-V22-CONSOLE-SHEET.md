@@ -1,6 +1,13 @@
 # KQ6 v22 retest sheet — exact ScummVM console commands
 
-Install: `build/kq6_patch_v22/patch/*` (+ `patch_project/999.VOC` on a fresh copy).
+Install: **delete ALL loose patches first, then copy** — `rm -f *.SCR *.HEP *.VOC` in the
+game copy, then `build/kq6_patch_v22/patch/*` + `patch_project/999.VOC`. Copy-over
+upgrades leave RETIRED scripts behind, and retired-by-removal is how v20 fixed the
+finding-#15 hang: a stale v19 `680.SCR` hangs the game right after the Lord of the Dead
+challenge completes (bitten 2026-08-04 with the Aug-1 leftovers, again 2026-08-05).
+The complete v22 set is exactly: 0 21 80 190 220 230 320 340 344 420 550 560 640 660
+740 880 (.SCR+.HEP each) + 999.VOC — anything else (670, 680, 300, 11, 425, 460, 470)
+is a leftover; delete it.
 Console = Ctrl-Alt-D. Three rules, then no more theory:
 
 1. **`room <N>` doesn't act until you close the console.** Type it, press Esc, let the
