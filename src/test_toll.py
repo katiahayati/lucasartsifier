@@ -284,14 +284,23 @@ def test_exit_guard_placement():
     exits = {(sp["from_room"], sp["to_room"], R, tuple(vs))
              for sp in specs if sp.get("req") and not sp["refused"]
              for R, vs in sp["req"].items()}
-    check("the water is demanded at the Realm exit -- the oracle's own site (rm680->rm155)",
-          water is not None and (680, 155, water, (1,)) in exits)
-    # The mirror-shown flag places TWICE, at nested boundaries, and the guard oracle blesses
-    # exactly that shape ("the later one is the tighter and the redundancy is harmless"): once at
-    # the Charon pocket's own boundary, once at the Realm's.
-    shown = {(a, b) for (a, b, R, vs) in exits if (R, vs) != (water, (1,))}
-    check("the mirror-shown flag is demanded at rm670->rm660 and rm680->rm155",
-          shown == {(670, 660), (680, 155)})
+    # USER RULING 2026-08-05 (guard oracle rows 3/4, findings #15/#16): the Styx fill is only
+    # possible BEFORE Charon, and the pocket beyond him is sealed by the game itself -- rm670's
+    # and rm680's `newRoom:` overrides intercept the backward destination and arm `dontGoAlex`
+    # instead of calling super, so the interior's only exits are the win ride or death. The
+    # demand therefore belongs at the boarding, and NOTHING may place past it: v19's rm680
+    # arm-events suppressed `wonDeadScript` and HUNG the game (the misplaced-arm-event class
+    # the Dagger rows warned about). This supersedes the 2026-08-01/02 pins that blessed
+    # rm680->rm155 and the "mirror places twice, harmless redundancy" shape.
+    check("the water is demanded at Charon's crossing (rm660->rm670) -- the fill is "
+          "impossible beyond it",
+          water is not None and (660, 670, water, (1,)) in exits)
+    check("the interior seals are modelled: 670-/->660 and 680-/->670",
+          660 not in s.edges.get(670, set()) and 670 not in s.edges.get(680, set()))
+    pocket_sites = {(sp["from_room"], sp["to_room"]) for sp in specs
+                    if not sp["refused"] and sp.get("from_room") in (670, 680, 690)}
+    check("no guard places past Charon (the pocket has no controllable site)",
+          not pocket_sites, f"pocket sites: {sorted(pocket_sites)}")
     # ...and what stays refused, stays refused for a stated reason at a real edge: the
     # `reg == 0` half-questions pair with no entrance guard (demanding a state CLEAR on the way
     # out closes no softlock), and a refusal must be LOUD -- a guard that vanishes silently is

@@ -890,6 +890,78 @@ def pending_room_global(ir):
     return None
 
 
+def sealed_exits(ir):
+    """{(room, dest)}: exits the room's OWN `newRoom:` override refuses.
+
+    The spelling (KQ6 rm670/rm680, play-found 2026-08-05, findings #15/#16): a room overrides
+    `newRoom:`, one arm tests the parameter against a literal destination and arms a turn-back
+    script (`dontGoAlex`) INSTEAD of calling `(super newRoom:)`; the other arm reaches super.
+    The intercept is total -- every exit spelling funnels through `newRoom:` -- so the tested
+    destination is not an edge at all: the game itself refuses the crossing. Without the seal
+    the toll walk believes the pocket can be re-left, defers its demands INTO it, and places
+    them where no controllable site exists (v19's rm680 arm-events -- the finding-#15 hang).
+
+    Conservative on purpose, and the condition is about the whole METHOD, not the arm: KQ4
+    writes the same `(if (== param K) <housekeeping>)` shape six times and then calls
+    `(super newRoom: param)` at method level -- the transition always proceeds, the if is
+    bookkeeping (`keep: 0`). A destination seals only when every `(super newRoom:)` in the
+    method lies in the ELSE of the tested if, i.e. the transition provably cannot proceed
+    while the test holds. A flag-conditioned refusal is a GUARD, not a seal, and stays an
+    open edge; an inverted `(!= param K)` spelling is not claimed until a game shows it."""
+    out = set()
+    for rn, s in ir.scripts.items():
+        room = _room_object(s, ir)
+        if room is None:
+            continue
+        body = room.methods.get("newRoom")
+        if body is None:
+            continue
+        supers_all = {id(m) for m in I.walk(body) if _is_super_newroom(m)}
+        for n in I.walk(body):
+            if not isinstance(n, dict) or n.get("t") != "If":
+                continue
+            ks = n.get("kids") or []
+            if len(ks) < 2:
+                continue
+            dest = _param_eq_literal(ks[0])
+            if dest is None:
+                continue
+            if any(_is_super_newroom(m) for m in I.walk(ks[1])):
+                continue                       # the arm itself still crosses
+            else_ids = ({id(m) for m in I.walk(ks[2])} if len(ks) > 2 and ks[2] is not None
+                        else set())
+            if supers_all - else_ids:
+                continue                       # a super outside the else runs anyway (KQ4)
+            out.add((rn, dest))
+    return out
+
+
+def _param_eq_literal(test):
+    """K when `test` is `(== <parameter> K)` (either operand order), else None."""
+    if not isinstance(test, dict) or test.get("t") != "Eq":
+        return None
+    tk = test.get("kids") or []
+    if len(tk) != 2:
+        return None
+
+    def is_param(x):
+        return (isinstance(x, dict) and x.get("t") == "Variable"
+                and x.get("vtype") == "Parameter")
+    if is_param(tk[0]):
+        return I.as_int(tk[1])
+    if is_param(tk[1]):
+        return I.as_int(tk[0])
+    return None
+
+
+def _is_super_newroom(m):
+    if not isinstance(m, dict) or m.get("t") != "Send":
+        return False
+    recv, msgs = I.send_pairs(m)
+    return (isinstance(recv, dict) and recv.get("t") == "Super"
+            and any(sel == "newRoom" for sel, _p in msgs))
+
+
 def current_room_global(ir):
     """The global that holds the CURRENT room number, or None.
 

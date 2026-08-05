@@ -233,11 +233,18 @@ def test_verify_closes_every_kq6_finding():
     check("every KQ6 finding is closed by a guard (remaining is empty)",
           not v["remaining"],
           f"remaining={[s.g.item_name(i) for i in v['remaining']]}")
-    # ...and what stays refused is exactly the two `flag == 0` half-questions -- deliberate
-    # negatives that close nothing, not unshipped findings. A third refusal appearing here is a
-    # regression wearing a polite face.
-    check("the only refusals are the flag==0 half-questions",
-          all(sp.get("req") and all(vs == [0] for vs in sp["req"].values()) for sp in refused),
+    # ...and what stays refused is exactly the `flag == 0` half-questions -- deliberate
+    # negatives that close nothing -- plus, since findings #15/#16 (2026-08-05), the audience
+    # latch `stateOf690 == 2` at the Realm pocket's boundary: the winning `holdUpMirror`
+    # resets it to 0 in the very state that returns you to rm680, so NO live player can
+    # present the value (v19's placed arm-event refused winners and HUNG -- play-found), and
+    # the user ruling is that nothing may guard past Charon at all. Any OTHER refusal
+    # appearing here is a regression wearing a polite face.
+    check("refusals: the flag==0 half-questions + the unpresentable audience latch",
+          all(sp.get("req") and (all(vs == [0] for vs in sp["req"].values())
+              or ((sp.get("from_room"), sp.get("to_room")) == (680, 155)
+                  and all(vs == [2] for vs in sp["req"].values())))
+              for sp in refused),
           f"{[(sp.get('from_room'), sp.get('to_room'), sp.get('req')) for sp in refused]}")
 
 

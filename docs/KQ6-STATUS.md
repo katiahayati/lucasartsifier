@@ -147,11 +147,11 @@ shape harmless). The former 🔴 is promoted; each placement edge is pinned GREE
 
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
-**KQ6: 18 applied / 20 placement rows, 16 scripts compiled and written as SCI1.1 loose
-patches** (recounted from the 2026-08-05 v19 run: the two remaining skips are rm420→rm435 —
-the covered redundancy — and the huntersLamp TRADE refusal; the rm340→rm370 arrival commit
-now places on BOTH frontier crossings, see the entry-frontier note below; the Realm entry
-moved into nightMare.sc 2026-08-05 — finding #14 below) (the three
+**KQ6: 14 scripts compiled and written as SCI1.1 loose patches (v20)** (recounted
+2026-08-05: the two remaining skips are rm420→rm435 — the covered redundancy — and the
+huntersLamp TRADE refusal; the rm340→rm370 arrival commit places on BOTH frontier
+crossings, see the entry-frontier note below; the Realm entry moved into nightMare.sc —
+finding #14; the Realm interior emptied of guards entirely — findings #15/#16, all below) (the three
 register-valued exit guards landed 2026-08-01: rm670 as `edge-exit`, rm680 ×2 as `arm-event` —
 ⚠️ the kind Dagger shows can be misplaced; not yet played. rm640 joined 2026-08-02 via the
 nav-property `newRoom:` spelling). The first patch
@@ -177,9 +177,11 @@ set this project has produced for anything but LSL2:
                                  (the game's own `<dir>: 0` idiom)
 640.SCR + 640.HEP  rm640         Realm carry-out (handkerchief + skeletonKey) on the
                                  ticket surrender -- the commit point
-660.SCR + 660.HEP  rm660         Charon's crossing
-670.SCR + 670.HEP  rm670         exit guard: the mirror must have been shown
-680.SCR + 680.HEP  rm680         exit guards: cup filled + mirror shown (Realm boundary)
+                                 (PLAY-VERIFIED 2026-08-05, user: "ticket guard works")
+660.SCR + 660.HEP  rm660         Charon's crossing: gauntlet + mirror (PLAY-VERIFIED
+                                 2026-08-05) + cup-filled (flag 58) since v20 -- findings
+                                 #15/#16: NO guard sits past Charon; 670.SCR and 680.SCR
+                                 left the set (stock), see below
 740.SCR + 740.HEP  rm740         the letter: hold the wedding flag until it is in hand
                                  (rm880's twin site reverts -- decompiler gap, see above)
 ```
@@ -287,7 +289,39 @@ not yet consumed (`catchNiteMare` state 0 is the `put: 11`). An `init` call site
 an arrival commit and keeps routing to the entry-frontier re-site (finding #5's hang
 class); the catacombs rows are unmoved. Pinned GREEN by
 `test_realm_entry_guard_sits_on_the_spell_delivery`; v19 = v18 with 344.SCR/HEP joining
-and 340.SCR losing the flavor wrap, byte-identical elsewhere. ⚠️ Not yet played.
+and 340.SCR losing the flavor wrap, byte-identical elsewhere. ✅ PLAY-VERIFIED 2026-08-05
+(user: "the guard works properly now") — with one residue, queued for fix (user-confirmed):
+`spellBookScr` awards `(global1 givePoints: 3)` BEFORE `(global2 notify:)`, so every
+refused hot cast farms +3 (stock is atomic: a hot cast always rides). Fix = gate the award
+with the same four-item demand; 190.SCR would join the set. Cosmetic — no KQ6 content
+gates on score.
+
+**Play feedback (findings #15/#16, 2026-08-05, fixed in v20): the Realm interior guards
+were wrong twice over, and the USER RULING rewrote guard-oracle rows 3/4** — "you can't
+get styx water into the teacup after you cross charon… there should not be [any] realm
+guard after charon." #15: the v19 rm680→155 arm-events suppressed `wonDeadScript` (armed
+in `rm680::init`'s not-from-670 branch), `doit` re-fired the approach, and the game HUNG —
+worse than misplacement, the demanded condition was FALSIFIED BY THE GAME: the winning
+`holdUpMirror` consumes the mirror (`put: 24 690`) and RESETS `stateOf690` to 0 in the
+same state that returns you to 680, so `== 2` refused winners too. #16: past the
+rm670→rm680 door (and past Charon entirely) nothing missing can be recovered. THREE
+derived mechanisms landed, none naming a room: (1) **sealed exits**
+(`extract.sealed_exits` → subtracted at `build_maps`): a room's own `newRoom:` override
+that intercepts a literal destination and arms a turn-back (`dontGoAlex`) with every
+`(super newRoom:)` confined to the else-arm is a refused crossing — the edge does not
+exist. Measured across all four games: exactly {670↛660, 680↛670}; KQ4's six
+same-looking ifs fall through to a method-level super (housekeeping, not seals) and are
+correctly not claimed. (2) **presentability** (`_settable_frontier`): a register demand
+may only place where some reachable committed state CARRIES the demanded value — being
+able to walk to the writer is not compliance when the writer room's only exit rewrites
+the value on the way out. (3) With the seals modeled, the toll walk re-derives the
+cup-filled site ITSELF: flag 58 joins gauntlet+mirror on Charon's boarding (rm660
+`doVerb 7`, nested refusals, beside the game's own `getWaterScr` fill verb) — the
+mirror-shown rows refuse loudly at the pocket boundary. v20 = v19 with 660.SCR changed
+and 670.\*/680.\* LEAVING the set (stock); byte-identical elsewhere; LSL2/KQ4/Dagger
+surfaces byte-identical; pinned by test_toll's "water at Charon" / "interior seals
+modelled" / "no guard past Charon" checks. ⚠️ Charon's crossing needs RE-play-verifying
+(the verified v19 wrap gained the cup conjunct).
 
 **The catacombs collapse (2026-08-01).** The 8 `rm*->rm420` brick wall-guards were an extraction
 artifact: `_maze_reach` flooded THROUGH other rooms' cells as if they were corridors, inventing a

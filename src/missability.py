@@ -237,6 +237,21 @@ def build_maps(em):
                     else:
                         add(info["room"], tr[1])
 
+    # SEALED EXITS: a room's own `newRoom:` override that intercepts a destination and arms a
+    # turn-back instead of calling super refuses that crossing at the engine funnel itself, so
+    # the edge does not exist -- whatever spelling produced it above (nav property, walk-off,
+    # machine EXIT). KQ6's Realm interior is the instance (rm670-/->660, rm680-/->670,
+    # `dontGoAlex`; findings #15/#16): unsealed, the toll walk deferred the Styx-cup demand
+    # past Charon into a pocket with no controllable site, and the placed arm-events hung the
+    # game in play. Subtracted HERE, at the one assembly point, so every consumer -- reach,
+    # frontiers, the placement walk's last-satisfiable-crossing -- sees the same world.
+    ir = getattr(em, "ir", None)
+    if ir is not None:
+        import extract as X
+        for (a, b) in X.sealed_exits(ir):
+            edges.get(a, set()).discard(b)
+            edge_kind.pop((a, b), None)
+
     # sources: skip DEAD debug-gated acquires (rm82's `(if gDebugging (get 19 21 27))` bomb
     # hand-out). The JSON-IR TRACKS gDebugging rather than const-pinning it, so gexpr won't
     # fold `gDebugging != 0` to FALSE -- and the IR json carries no global names, so we can't

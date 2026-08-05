@@ -751,6 +751,15 @@ def _settable_frontier(s, R, v, sites, pocket, toll_reg=None, toll_edge=None):
         lacking = [u for u in states if u[0] == a and val(u) != v]
         if not lacking or not all(u in safe for u in lacking):
             continue                                      # nobody to guard, or somebody here could
+        if not any(u[0] == a and val(u) == v for u in states):
+            # The demanded value is UNPRESENTABLE here: no reachable committed state at `a`
+            # carries it, so the guard would refuse every player -- winners included. Play-found
+            # (KQ6 finding #15, 2026-08-05): rm690's only live exit rewrites stateOf690 to 0 on
+            # the way out, so the "shown" value the rm680->rm155 guard demanded existed at the
+            # site for NOBODY, and the placed arm-event suppressed the win ride and hung the
+            # game. Being able to reach the writer is not compliance; HOLDING its value at the
+            # crossing is, and nobody can.
+            continue
                                                           # not comply -- guarding traps them
         for b in sorted(s.edges.get(a, ())):
             after = [w for u in lacking for w in succ[u] if w[0] == b and val(w) != v]
