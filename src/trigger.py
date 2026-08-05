@@ -579,18 +579,20 @@ def find_trigger(forms, target_room):
         return {"kind": "setscript", "trigger_instance": i2, "trigger_method": m2,
                 "target_script": inst, "target_room": target_room}
     # ...or the arming is POSITIONAL: a `doit` clause that tests where the ego is STANDING and
-    # arms the crossing's cutscene. The player walked there, so the move is theirs to refuse --
-    # the same doctrine the direct-positional `newRoom` case has always had, extended to
-    # ARMINGS. Play-found (finding #11, 2026-08-04): rm550's mists crossing is
-    # `(cond (... (global1 handsOff:) (setScript: walkNorthScript)))` in doit, the arm-event
-    # wrap gated only the setScript, and the un-gated handsOff sibling hung the game for a
-    # lampless player. As a refusal-bearing `setscript` placement the whole clause is wrapped,
-    # handsOff included, and the player is told no while their controls still exist.
+    # arms the crossing's cutscene. Play-found twice on rm550's mists crossing (2026-08-04):
+    # `(cond (... (global1 handsOff:) (setScript: walkNorthScript)))` in doit. The bare
+    # arm-event wrap left the handsOff sibling un-gated and HUNG the game (finding #11); the
+    # refusal-bearing clause wrap then MACHINE-GUNNED -- doit re-evaluates every cycle while
+    # the ego stands on the control, so "Not yet!" fired forever and never stopped the walk
+    # (finding #12). A doit clause is not a click: it has no once-per-action shape to hang a
+    # refusal on. So the positional arming gets the whole-clause NO-ELSE gate: lampless, the
+    # crossing simply never starts, and the trail reads as a wall -- the game's own idiom for
+    # the same pocket (rm560's east edge closes silently).
     pos_cands = [(i2, m2) for (i2, m2, target, recv, p) in ss
                  if target == inst and p and i2 is not None]
     if pos_cands:
         i2, m2 = pos_cands[0]
-        return {"kind": "setscript", "trigger_instance": i2, "trigger_method": m2,
+        return {"kind": "arm-clause", "trigger_instance": i2, "trigger_method": m2,
                 "target_script": inst, "target_room": target_room}
     # ...or the Script is armed by a setScript in an UNCONTROLLABLE method -- an ADVERSARIAL event
     # the player cannot refuse (KQ4's whale swallow: `Room31::init` does `(global0 setScript:
@@ -745,6 +747,70 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
                     f"  ; softlock-guard: arm only when survivable")
         new_meth = pat.sub(repl, region)
         return text[:m0] + new_meth + text[m1:], n[0]
+    if placement["kind"] == "arm-clause":
+        # A POSITIONAL arming's gate. One guard, three play findings (2026-08-04, all rm550):
+        # the bare arm-event wrap left a handsOff sibling un-gated and HUNG (#11); a refusal
+        # in the clause MACHINE-GUNNED, because doit re-fires every cycle (#12); the silent
+        # no-else gate let the ego walk off the screen, because the zone WAS the wall (#13).
+        # The game's own idiom for a declined positional crossing is the castle guard post's:
+        # a tiny TURN-BACK script -- say the line once, walk the ego a few steps back, hand
+        # the controls over. Once-per-approach falls out structurally: the arming is guarded
+        # on `(not (<room> script:))` and the turn-back ends with the ego off the zone.
+        # The back-off direction is DERIVED from the crossing script's own first motion
+        # target (away from it, along its dominant axis). With no refusal line or no motion
+        # target to derive from, fall back to the silent whole-clause gate.
+        inst, meth = placement["trigger_instance"], placement["trigger_method"]
+        target = placement["target_script"]
+        inst_span = _find_region(text, r"\((?:instance|class)\s+%s\b" % re.escape(inst))
+        if not inst_span:
+            return text, 0
+        i0, i1 = inst_span
+        meth_rel = _find_region(text[i0:i1], r"\(method\s+\(%s\b" % re.escape(meth))
+        if not meth_rel:
+            return text, 0
+        m0, m1 = i0 + meth_rel[0], i0 + meth_rel[1]
+        region = text[m0:m1]
+        tpat = placement.get("target_pattern") or (re.escape(target) + r"\b")
+        _ANY = r"(?:[^()]|\([^()]*\))*"
+        ssm = re.search(r"\(%ssetScript:\s*%s%s\)" % (_ANY, tpat, _ANY), region)
+        if not ssm:
+            return text, 0
+        clause = _enclosing_clause_body(region, ssm.start())
+        bs, be = clause if clause else (ssm.start(), ssm.end())
+        og = placement.get("obj_globals") or {}
+        ego = og.get("ego", "global0")
+        room = og.get("room", "global2")
+        game = og.get("game", "global1")
+        tspan = _find_region(text, r"\(instance\s+%s\b" % re.escape(target))
+        tm = re.search(r"(?:setMotion:\s+)?(?:MoveTo|PolyPath)\s+(-?\d+)\s+(-?\d+)",
+                       text[tspan[0]:tspan[1]]) if tspan else None
+        tb = "sgTurnBack"
+        if refuse and tm and tb not in text:
+            tx, ty = int(tm.group(1)), int(tm.group(2))
+            if abs(ty - 95) >= abs(tx - 160):      # dominant axis of the crossing, sign away
+                xe = f"({ego} x:)"
+                ye = f"({'+' if ty < 95 else '-'} ({ego} y:) 35)"
+            else:
+                xe = f"({'+' if tx < 160 else '-'} ({ego} x:) 35)"
+                ye = f"({ego} y:)"
+            wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
+                       f"\t\t\t\t(if (not ({room} script:))\n"
+                       f"\t\t\t\t\t({room} setScript: {tb})\n"
+                       f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
+            instance_txt = (
+                "\n(instance %s of Script\n\t(properties)\n\n"
+                "\t(method (changeState param1)\n"
+                "\t\t(switch (= state param1)\n"
+                "\t\t\t(0\n\t\t\t\t(%s handsOff:)\n\t\t\t\t%s  ; softlock-guard line\n"
+                "\t\t\t\t(= cycles 1)\n\t\t\t)\n"
+                "\t\t\t(1\n\t\t\t\t(%s setMotion: MoveTo %s %s self)\n\t\t\t)\n"
+                "\t\t\t(2\n\t\t\t\t(%s handsOn:)\n\t\t\t\t(self dispose:)\n\t\t\t)\n"
+                "\t\t)\n\t)\n)\n" % (tb, game, refuse, ego, xe, ye, game))
+            new_text = text[:m0] + region[:bs] + wrapped + region[be:] + text[m1:]
+            return new_text + instance_txt, 1
+        wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\t)"
+                   f"  ; softlock-guard: positional gate, silent by design")
+        return text[:m0] + region[:bs] + wrapped + region[be:] + text[m1:], 1
     if placement["kind"] == "nav-assign":
         # Re-decide a ROUTE, do not refuse an action: `(self north: 340)` becomes
         #   (if <guard> (self north: 340) else (self north: <fallback>))

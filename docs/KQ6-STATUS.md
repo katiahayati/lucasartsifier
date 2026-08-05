@@ -129,7 +129,7 @@ shape harmless). The former 🔴 is promoted; each placement edge is pinned GREE
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
 **KQ6: 18 applied / 20 placement rows, 15 scripts compiled and written as SCI1.1 loose
-patches** (recounted from the 2026-08-04 v15 run: the two remaining skips are rm420→rm435 —
+patches** (recounted from the 2026-08-04 v18 run: the two remaining skips are rm420→rm435 —
 the covered redundancy — and the huntersLamp TRADE refusal; the rm340→rm370 arrival commit
 now places on BOTH frontier crossings, see the entry-frontier note below) (the three
 register-valued exit guards landed 2026-08-01: rm670 as `edge-exit`, rm680 ×2 as `arm-event` —

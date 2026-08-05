@@ -1,14 +1,14 @@
 # KQ6 patched-build play-test plan
 
-Written 2026-08-03 from the shipped spec set; current build **v16** (2026-08-04,
-`build/kq6_patch_v16/patch`, 15 scripts, 341/341 compiled — the cliff guard is the up-step
+Written 2026-08-03 from the shipped spec set; current build **v18** (2026-08-04,
+`build/kq6_patch_v18/patch`, 15 scripts, 341/341 compiled — the cliff guard is the up-step
 "Not yet!" refusal in rCliffs (finding #9), with rm320's cue arm-gate as backstop; the v13
 rm300 re-route is retired (finding #10) and the stock shortcut is back). Every row below is
 generated from the live specs, not from memory:
 reproduce the table with `python3 src/snapshot.py KQ6 --placements`.
 
 **Install**: DELETE any previous patch files from the game copy first (a stale set was found
-live on 2026-08-04: 11/425/460/470.* from Aug 1), then copy `build/kq6_patch_v16/patch/*` in.
+live on 2026-08-04: 11/425/460/470.* from Aug 1), then copy `build/kq6_patch_v18/patch/*` in.
 **Revert**: delete those files — the game's own resources are never touched.
 **Method**: save (F5) immediately before each test point; every PREVENT test needs its
 ALLOW twin — a guard that blocks the softlock but also blocks the legitimate path is a
@@ -74,9 +74,16 @@ SURVIVING scene: when warned, **hide** (the `hideEgo` flow) and let
 Sailing to the Isle of the Mists and approaching the Druids' bonfire (rm580) demands
 the lamp; the trade itself is untouched.
 - **PREVENT (550→580)**: trade the lamp at the docks (rm240), sail to the mists,
-  walk toward rm580 from rm550. Expected (v16, finding #11): a "Not yet!" REFUSAL at the
-  trail — controls stay live, walk away freely. (The v15 arm-gate HUNG here: the crossing
-  is armed from a positional doit clause whose `handsOff` sibling ran un-gated.)
+  walk toward rm580 from rm550. Expected (v18, finding #13): walking onto the trail says
+  "Not yet!" ONCE and a small turn-back script walks Alexander a few steps south, then
+  returns control. Approach again → same again. Down/side movement unaffected.
+  (History, one guard, three findings: v15's arm-gate HUNG — un-gated handsOff sibling,
+  #11; v16's in-clause refusal MACHINE-GUNNED — a doit clause re-fires every cycle, #12;
+  v17's silent gate let Alex WALK OFF THE SCREEN — the zone was the wall, #13. The fix is
+  the game's own guard-post idiom: decline = turn back, injected as `sgTurnBack`, armed
+  under `(not (gCurRoom script:))` so it fires once per approach.)
+  ✅ PLAY-VERIFIED 2026-08-04 (user, v18): "it wooooooorked" — message once, turn-back,
+  control returned.
 - **PREVENT (560→580)**: same but via rm560's east edge. Expected: the east exit is
   closed (a wall, silent — the game's own idiom); rm560's other exits still work.
 - **ALLOW**: carry the lamp in. Expected: capture happens, cage inset opens, and with
@@ -154,6 +161,8 @@ through (misplacement). "Findings identical to stock" is also a result — say i
 
 | date | room | finding | verdict |
 |---|---|---|---|
+| 2026-08-04 | rm550 | **FINDING #13 (real, FIXED in v18): the v17 silent gate let Alex walk off the screen.** The control zone was the only thing that ever stopped the northward walk — with the crossing un-armed and no message, nothing bounded the motion. Fix: the declined positional crossing now behaves like the game's own guard-post: an injected `sgTurnBack` script (message once → walk the ego ~35px back along the crossing's own dominant axis, derived from the crossing script's first motion target → hands on), armed in the clause's else under `(not (gCurRoom script:))` — once per approach structurally, no loop, no walk-off, no hang. Falls back to the v17 silent gate when no refusal line or motion target derives. | fixed in v18, re-test A2 |
+| 2026-08-04 | rm550 | **FINDING #12 (real, FIXED in v17): the v16 positional refusal MACHINE-GUNS.** Play: "Not yet!" keeps firing without ever clearing, and it doesn't interrupt Alex's walk. A doit clause re-evaluates every game cycle while the ego stands on the control zone — there is no once-per-action moment to hang a refusal on, and nothing in the wrap stops the ego's motion. Fix: positional armings get a new placement kind, `arm-clause` — the WHOLE clause gated with NO else (`handsOff` inside, so no finding-#11 hang; no message, so no loop). Lampless, the trail is a silent wall, exactly rm560's east-edge idiom one screen over. Refusal-with-message on a doit crossing needs turn-back motion machinery (stop + walk the ego off the zone) — deferred; candidates recorded with the lite-mode musing. ⚠️ Same latent hazard noted for the `direct` positional refusals (rm340's cave mouth): its PREVENT case has not been exercised in play — if an item can be absent post-catacombs, it would loop the same way. | fixed in v17, re-test A2 |
 | 2026-08-04 | rm550 | **FINDING #11 (real, FIXED in v16): the mists carry-in guard HANGS.** Lampless approach to rm580: the crossing is armed from rm550's doit — `(cond (… (global1 handsOff:) (setScript: walkNorthScript)))` — and the arm-event wrap gated only the bare `setScript`, so the un-gated `handsOff` sibling fired and controls never returned. Root cause one level down: the clause is POSITIONAL (the player walked onto the trail), but rm550 HOISTS the `onControl` read into a temp, and the positional classifier only read the inline spelling — so a player move was classified as an adversarial event. Fix: `analyze_room` tracks onControl-derived variables per method (`octx`), positional armings are now refusal-bearing `setscript` placements (the whole clause wraps, `handsOff` inside the guard, "Not yet!" in the else — the same doctrine the direct-positional `newRoom` case always had). | fixed in v16, re-test A2 |
 | 2026-08-04 | rm300 | **FINDING #10 (UX, FIXED in v15): the v13 nav re-route taxed vetted players.** Stock gives repeat climbers a shortcut (climb screen 1, jump to the summit); the re-route made everyone climb the whole cliff again. With the v14 step refusal in place the re-route protects nobody — an itemless capture-stage player is refused on the base wall's own rocks — so `_guard_arrival_entries` now treats nav-assign as a LAST resort, applied only when no chain refusal landed. rm300 reverts to stock (300.SCR leaves the patch set). | ✅ PLAY-VERIFIED 2026-08-04 (user: "it woooooorks") — shortcut back to stock |
 | 2026-08-04 | rm320 | **FINDING #9 (UX, FIXED in v14): the arm-gate is a silent dead-end.** Play: the re-routed climb goes up two screens of faces and then "it just... stops" — the flagged silent-wall risk, confirmed as bad as feared. Fix (user-designed): refuse at the STEPPING, the true controllable moment. `trigger.find_cue_chain_armings` reads the delivering cue case off the room's cue method (case 1 → `nextCliffUp`), finds the chain that cues it in the room's `(use ...)` files (`nextScreenUp` ← `takeStep`), and walks the armings back to the controllable handler — `RockStep::handleEvent`, where `wrap_all_armings_in_source` wraps ALL FOUR up-step clauses with a "Not yet!" refusal (one wrap is a bypass — finding #4's lesson, third appearance). Down-chains cue 0/-1 and never enter the walk, so descent cannot be caught. `takeFirstStep` (ground → rock 1) is outside the chain and stays free: the refusal comes at the first continuation step, one rock up. The v12/v13 gates remain as backstops. New emitted file: 21.SCR/HEP (rCliffs). | ✅ PLAY-VERIFIED 2026-08-04: PREVENT ("it guards the second step", user-accepted) and ALLOW (with the four, the climb and capture proceed) |

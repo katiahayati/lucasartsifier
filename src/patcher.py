@@ -259,6 +259,18 @@ def _ensure_refusal_use(text, titles_by_num):
     return text[:at] + "\n(use %s)" % owner + text[at:]
 
 
+def _ensure_use(text, name):
+    """Add `(use <name>)` when the file lacks it -- the class-script twin of
+    `_ensure_refusal_use`, for wraps that introduce a class reference (MoveTo needs Motion)."""
+    if re.search(r"\(use\s+%s\s*\)" % re.escape(name), text):
+        return text
+    uses = list(re.finditer(r"^\(use\s+\w+\s*\)\s*$", text, re.M))
+    if not uses:
+        return text
+    at = uses[-1].end()
+    return text[:at] + "\n(use %s)" % name + text[at:]
+
+
 def _version_args():
     """`--version` for scicompile, from the same derivation. SCI1.1 must be pinned or the map
     never parses and every selector comes out unknown (793 bogus errors on KQ6)."""
@@ -558,7 +570,8 @@ EDGEHIT = {"north": 1, "east": 2, "south": 3, "west": 4}   # Game.sc Rm.doit swi
 
 # Placements find_trigger can actually wrap in a controllable handler: a direct newRoom, a
 # changeState cutscene, or a setScript-started Script. Anything else falls back to the exit idiom.
-_PLACED_KINDS = ("trigger", "direct", "setscript", "arm-event", "proc-call")
+_PLACED_KINDS = ("trigger", "direct", "setscript", "arm-event", "arm-clause",
+                 "proc-call")
 
 
 def guard_edgehit_clause(text, direction, cond):
@@ -1235,7 +1248,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                                        "(finding #5) and no controllable entry-frontier site "
                                        "took the re-sited demand"})
                 continue
-            if REFUSE is None and placement["kind"] != "arm-event":
+            if REFUSE is None and placement["kind"] not in ("arm-event", "arm-clause"):
                 # An `arm-event` gate has no `else` branch and so says nothing either way; every
                 # other placement REFUSES the player's command, and refusing without a word is the
                 # "the game lied to the player" failure only play-testing catches.
@@ -1244,13 +1257,25 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                                    "would be silent"})
                 continue
             text = open(path, errors="replace").read()
+            if placement["kind"] == "arm-clause":
+                # the turn-back variant speaks and moves the ego; give the wrapper the game's
+                # own object-global spellings, and the file the class scripts it will need
+                placement = {**placement,
+                             "obj_globals": {"ego": "global%d" % _EGO,
+                                             "room": "global%d" % _ROOM,
+                                             "game": "global%d" % _GAME}}
             new_text, n = wrap_trigger_in_source(
                 text, placement, to_source_syntax(sp["condition"]), REFUSE)
             if n == 0:
                 out.append({**sp, "applied": False, "why": "trigger found but no site rewritten",
                             "placement": placement})
                 continue
-            open(path, "w").write(_ensure_refusal_use(new_text, titles_by_num))
+            if placement["kind"] == "arm-clause" and "sgTurnBack" in new_text:
+                new_text = _ensure_refusal_use(new_text, titles_by_num)
+                new_text = _ensure_use(new_text, "Motion")
+            elif placement["kind"] not in ("arm-event", "arm-clause"):
+                new_text = _ensure_refusal_use(new_text, titles_by_num)
+            open(path, "w").write(new_text)
             row = {**sp, "applied": True, "title": title, "sites": n, "placement": placement}
             # A machine with N controllable armings needs N wraps -- play-found on KQ6's short
             # door: `wearClothingScr` arms from egoDoVerbCode::doVerb AND guardHut::doVerb, and
