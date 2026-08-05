@@ -150,6 +150,41 @@ report which edge, don't improvise.
 4. **The vizier's wedding (losing end)** must still be reachable — we guard
    softlocks, not defeats.
 
+## RETEST QUEUE — 2026-08-05, v22 (the wedding-fuse hold; 80.SCR/80.HEP new)
+
+**The console-ready version of this queue — exact commands, no flag arithmetic (ScummVM's
+`sf`/`cf`/`tf` know KQ6's flag base) — is `docs/KQ6-RETEST-V22-CONSOLE-SHEET.md`. Play from
+that sheet; this table is the log-side record.**
+
+Everything below is OPEN; ✅ rows from the findings log are not repeated. Console state is
+for exercising a guard — E-row verdicts stay honest (no writes). Shared recipes:
+**items** `send ?ego get <N>` / `put <N> 0` (numbers in "The items" above; letter = 20);
+**global flags** flag N → word `g(137+N/16)`, mask `$8000 >> (N mod 16)` — read `vv g <w>`,
+write the OR'd value back (worked: flag 58 → g140 mask 32; flag 25 → g138 mask 64;
+flags 1/2 → g137 masks 16384/8192); **region flags** are object properties — sends resolve
+only in loaded segments, so run `send ?rgCastle …` while standing in a castle room, and
+after `room <N>` close the console and let the room draw first (`room` only writes the
+pending-room global). Wedding setup block (letterless, fuse lit):
+`send ?rgCastle setFlag 709 32768` (ghost boy) · `setFlag 710 256` (Cassima) ·
+`setFlag 711 512` (armed) · `weddingRemind 10`. Reads:
+`send ?rgCastle weddingRemind` / `weddingMusicCount` / `tstFlag 709 2`.
+
+| # | test | why open | state | do → expect |
+|---|---|---|---|---|
+| R1 | wedding: resume on pickup | hold ✅ 2026-08-05; "not stuck forever" unproven | rm710 + wedding block, letterless | wait 30s (held) → `send ?ego get 20` → music ≤10s by itself; escalation/corral/Saladin stock |
+| R2 | wedding: with-letter stock path | intended route must equal stock | wedding block + `get 20` first | 710 panel (ALIZEBU) → browse 770 → exit → music ~instant, count jumps 2, fast corral |
+| R3 | wedding: treasures-FIRST trace (finding #3's own) | #3 observed permanent guard-posting — that was the (now-frozen) escalation | wedding block, letterless | browse 770 FIRST, exit (still no music) → 720 lever still opens (dodge roving dogs — they must stay transient, no permanent post) → fetch letter at 781 → music on pickup |
+| R4 | Charon v20 (cup conjunct joined the verified wrap) | v19 wrap verified, then changed | walk 650→660; `get 7 15 24 46`; cup empty | board → refusal names the cup, no hang; fill at Styx (game's verb) → board crosses; also `put 15 0` → refusal; restore, `put 24 0` → refusal |
+| R5 | Realm interior stock (v20 removed 670/680 guards) | v19 arm-events HUNG the win ride | continue R4 complete | 670→680→690 mirror win → wonDeadScript plays, ride back, zero refusals/hangs past Charon |
+| R6 | mists lampless approach (v18 turn-back) | #11→#12→#13, final form never played | `room 550`; `put 19 0` | north trail → ONE message + ~35px walk-back, controls live; repeat → same; rm560 east edge silently shut; `get 19` → both normal |
+| R7 | mists lampless REVISIT (recorded over-block risk) | flag-14 chain may REQUIRE a lampless 580 return | rain done (flag 25: g138 \|64) + lamp traded at 240 | 550→580 → our refusal; then confirm the mare still shows at rm340 when due. If a required revisit is walled → OVER-BLOCK finding |
+| R8 | cliff ALLOW + down-climb | refusal ✅; pass-through never played | `vv g 144 30`; g137 := (v\|8192)&~16384; `get 2 18 41 48` | rocks climb stock (no refusal), down-steps always free, summit shortcut stock |
+| R9 | catacombs captures 340→405/440 | gated capture arming unplayed both ways | same flags/items as R8; WALK into rm340 (arming reads the approach — don't teleport in) | without the four → guards must NOT seize; with all four → capture proceeds |
+| R10 | castle doors 220→730 / 230→710 | `[W]` guards, never played | short: `get 8 24 27 23`; long: `get 8 17 24 44 23` | each item `put` in turn → refusal, no move; full set crosses; long door must NOT demand the nightingale |
+| R11 | rm420 throwSkull + room regression | unplayed; we overwrite Sierra's own patch | `room 420`; `get 11` | throw at gears → refusal, skull kept, alive; ceiling/brick business fully stock |
+| R12 | mint/peppermint deletions | unplayed | `get 23`, `get 31` | wrong-object use no longer consumes; rm750 genie feed still works (fold into R13) |
+| R13 | E-rows: both wins + THE DEFEAT | final bar; and E.4 is the doctrine the old fuse-skip protected — v22 changed that behavior, so prove the loss survives | none — honest runs | short win; long win; and with letter fetched, let the wedding complete → the losing end (rm94 credits) must still be reachable |
+
 ## Reporting
 
 Per defect: room, what you did, expected vs got, and a save right before. The three

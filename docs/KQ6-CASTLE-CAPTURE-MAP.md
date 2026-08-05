@@ -80,6 +80,59 @@ else. `dungeonEntered` is an enum 1/2/3 (`rm710.sc:42-78,166-214`; forced 3 by c
 rm820:93/177(1) 97/181(2); direct clears rm770:105, rm820:100/184, rm710:296/300/337,
 rm720:200, rgCastle:532,568-571.
 
+## 2b. The wedding fuse (long-route arming, measured 2026-08-05)
+Distinct from the guardTimer chain above. State = `rFlag3 $0200` (spelled `711 512`,
+"wedding armed") + the `weddingRemind` countdown (seconds) + `weddingMusicCount`
+(starts −1, `rgCastle.sc:247`).
+
+**Arming sites of `711 512` (exhaustive):**
+1. `rm720.sc:119-122` — enter 720 from 800 with `rFlag2 $0100` (Cassima talked through
+   the wall, set ONLY at `cassimaScript.sc:169`) → `setFlag: 711 512`,
+   `weddingRemind: 121`. **No letter demand — this is the sealing path.**
+2. `rm850.sc:174-182` — `has: 20` ∧ dagger (item 8) at 870 ∧ `711 512` clear ∧
+   `guardTimer > 30` → `setFlag: 711 512 guardTimer: 30`. Letter already in hand — safe.
+
+**The fuse** (`rgCastle.sc:270-290`, per-second): expiry → fade music to 701,
+**`|= rFlag1 $0002`** (THE SEAL), `++weddingMusicCount`, `warnUser: 1`. The or-condition
+guarding the fire contains a literal `1` — always fires; the `(= weddingRemind 5)` defer
+branch is dead code (native re-arm idiom available for a patch).
+
+**Pause/re-arm sites:** rm770 pauses inside (`weddingRemind: 0`, `rm770.sc:176-178`) and
+sets it to **1 on dispose** (`rm770.sc:198-200`) — "fires the moment you exit the
+treasure room". rm780 same trick via `local3` (`rm780.sc:123-139`). Escalation re-arms:
+`RgBasement.sc:148-155` (15s cadence, count≥3 → post guards + `$0004` permanent = corral
+crunch); `rm720.sc:178-196` (count≥4 → handsOff + capture; count 3 → 15s);
+`rm720.sc:211-222` (+9s grace entering 840). **rm710 fast-forward** (`rm710.sc:307-320`):
+first fire with `global12 == 770` → `weddingMusicCount: 2 weddingRemind: 2` — corral
+lands seconds after leaving the treasure room. `rm720.sc:82-83` pauses once `$0004`.
+
+**The seal:** `rFlag1 $0002` refuses the hidden-passage arm (`rm720.sc:426-434`, say 7) —
+kills route (b) to 781. Route (a) (850 control `$2000`) is guard-covered on the long
+route (`rm850.sc:230-256` gate includes `(not rFlag1 $0200)` = nightingale not given).
+So: **fire while letter (20) untaken = letter unobtainable = the accepted test_toll
+KNOWN_RED.** Letter lifecycle is closed: `get: 20` only at `rm781.sc:1104` (trunk),
+`put: 20` only at `rm730.sc:776` (showLetter to Saladin). On the long route the ONLY
+gameplay write of `$0002` is the fuse fire (`rgCastle.sc:284`); `rm740.sc:194` is a
+debug-menu Print, `rm880.sc:1505` is short-route (`711 512` stays clear there).
+
+**Treasure room access:** `treasureDoor.doVerb` (`rm710.sc:688-705`) refuses only while
+basement guards posted (`81: 709 2/4`); the alpha panel word is `[1 12 9 28 5 2 21]`
+(`rm710.sc:23`). No plot gate — 770 is legitimately enterable before Cassima/letter, and
+harmlessly so (`rm770` dispose is gated on `711 512`).
+
+**✅ RESOLUTION (2026-08-05, v22):** the model already carried all of this — the rFlag
+lowering region-homes the fire into every castle room, `register_strandings`' one KQ6 row
+(reg338 = flag 166, value 1, letter) IS this seal on BOTH routes, and the old
+"short-route-only" reading (and the `register != 338` KNOWN_RED it produced) was the
+misdiagnosis. The remedy now covers the store's third spelling:
+`patcher.guard_prop_flag_owner_write` freezes the fuse's enclosing countdown clause in
+`rgCastle::doit` until `(global0 has: 20)` — the fuse stays armed, the clock resumes on
+pickup; safe because an armed fuse implies the ghost-boy bit, so the hallway to the trunk
+stays open while the hold refuses. 80.SCR/80.HEP join the emission. Same class as KQ4's
+day/night (adversarial-clock phase change), same cure ("hold the sunset"). Play-tested
+2026-08-05: the hold fires (user: "the wedding got held"); resume-on-pickup and the
+with-letter stock path still open.
+
 ## 3. The catch
 `GuardDog.doit` (`rgCastle.sc:204-221`): `okToCheck` ∧ `checkCode` → `handsOff` +
 `(global2 spotEgo: self)`. `checkCode` installed per room by `rgCastle.setupGuards`

@@ -107,6 +107,13 @@ ACCEPTED = {
                    "switch that IS the machine. Neither is control flow -- that now lives only in "
                    "ir.control_shape, which is why If/Cond/Loop no longer appear in this matrix "
                    "at all.",
+    "Selector":    "name<->number resolution is a vocabulary/spelling concern, not control flow: "
+                   "vocab builds sel_value from Selector nodes (name+number in one node) when "
+                   "lowering the prop-flag store, and patcher._selector_name's FALLBACK rebuilds "
+                   "the same map for an IR that predates the ir._sel_names stash (the lowering "
+                   "consumes those nodes, so the stash is the primary path -- see "
+                   "guard_prop_flag_owner_write, the wedding-fuse hold). The control-flow walkers "
+                   "dispatch on selectors via ir.send_pairs and never touch Selector nodes.",
     "Decrement":   "KNOWN GAP, tracked as TODO A0g(1): Increment/Decrement are handled for LOCALS "
                    "in the machine walkers and not at all in extract, and never for GLOBALS "
                    "anywhere -- which is why KQ4's dig counter and its clock are invisible.",

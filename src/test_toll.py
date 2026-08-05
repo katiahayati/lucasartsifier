@@ -364,8 +364,9 @@ def test_register_strandings_is_degenerate_on_sci11():
     register. No register is named anywhere.
 
     MEASURED: KQ6 323 rows -> 1 (zero on prevRoom), and the survivor is a real lead -- flag 166
-    strands the `letter` (what the skeleton key unlocks), needed at rm730/rm870. NOT promoted to
-    the oracle: an addition is a suspicion until the user rules (see the KQ6 oracle's contract).
+    strands the `letter` (what the skeleton key unlocks), needed at rm730/rm870. User-confirmed
+    and in the oracle's caught set since 2026-08-02; remeasured 2026-08-05 as BOTH routes' seal
+    (the long-route pin below).
     LSL2 and KQ4 drop to ZERO rows -- diagnosed row by row, every LSL2 row was the same junk
     shape (prevRoom values and timer registers condemning items analyze() already carries, all
     failing the causality test), so the old non-empty output was duplication, not detection.
@@ -384,35 +385,33 @@ def test_register_strandings_is_degenerate_on_sci11():
           prev not in regs and len(rows) <= 5,
           f"{len(rows)} rows over {len(regs)} registers; prevRoom is reg{prev} and it is "
           f"{'IN' if prev in regs else 'not in'} the reported set. See the detector's docstring.")
-    # ...and the survivor is pinned by SHAPE: the letter row is a lead under user review, and a
-    # different row appearing here is a new claim about KQ6 that needs the same review.
+    # ...and the survivor is pinned by SHAPE: a different row appearing here is a new claim
+    # about KQ6 that needs review.
     check("the only KQ6 row is the flag-166 letter lead",
           len(rows) == 1 and rows[0]["item_name"] == "letter" and rows[0]["register"] == 338,
           repr([(r["register"], r["value"], r["item_name"]) for r in rows]))
-    # 🔴 THE LONG ROUTE'S LETTER SEAL (play-tested ground truth, finding #3, 2026-08-03):
-    # treasures-before-letter posts guards that make rm781's letter unfetchable while the wedding
-    # still demands it. The flag-166 row above covers the SHORT route only. This check asserts
-    # the long-route seal is ALSO detected -- red until someone closes the gap honestly.
-    #
-    # The 2026-08-03 design (memory `next-session-forced-escort-corral`: edge suppression under
-    # init-armed no-input forced-exit machines, keyed on reg378) was MEASURED AND REFUTED
-    # 2026-08-04 before implementation:
-    #   * reg378 (prop-flag (81,0)/709/8) has exactly ONE reader in the whole game -- the
-    #     corral crunch's own re-arm test. No machine entry, edge or handler is conditioned on
-    #     it, so no projection can lose rm781 under 378==1 whatever suppression does.
-    #   * the crunch itself delivers no EXIT and hands control back (`handsOn`), so even the
-    #     rule's widest honest reading removes no movement;
-    #   * the actual containment is guard-ACTOR patrol armed through region-object properties
-    #     (`rFlag1`/`rFlag2`/`loiterTimer`, `startGuard:`) -- the modeling-gap census's #1/#3;
-    #   * the rule's three criteria select 20/19/10/16 candidates on LSL2/KQ4/KQ6/Dagger (e.g.
-    #     KQ4's whale RESUME entry is register-pure -- only its first arming has the Random
-    #     conjunct), so "fires nowhere else" is unmeetable without clauses fitted per game.
-    # The gap therefore still needs a mechanism that models one of the two missing stores.
-    check("🔴 KNOWN GAP: the long route's treasure-corral letter seal is detected",
-          any(r["item"] == 20 and r["register"] != 338 for r in rows),
-          "only the short-route flag-166 row exists; the treasures-first seal (guards posted, "
-          "letter unreachable, wedding demands it) is carried by actor patrol + region-object "
-          "properties, which no current store models")
+    # THE LONG ROUTE'S LETTER SEAL IS THIS SAME ROW (remeasured 2026-08-05; was a 🔴 KNOWN GAP
+    # demanding a row with `register != 338` -- a row that should never exist). Source truth,
+    # docs/KQ6-CASTLE-CAPTURE-MAP.md §2b: flag 166 = rFlag1 $0002, written by the wedding
+    # fuse's expiry in rgCastle::doit (`weddingRemind`, armed 121s by the 800->720 return
+    # after the Cassima talk, re-armed to 1s by leaving the treasure room) -- the rFlag
+    # lowering region-homes that write into every castle room, which is what `flip_rooms`
+    # shows. The seal is the flag, not the dogs: the hidden-passage arm refuses under it
+    # (rm720.sc:429-431, the only route to the letter's trunk), and 850->781 closes by cond
+    # order. The old reading ("the flag-166 row covers the SHORT route only; the long seal is
+    # guard-actor patrol") was the misdiagnosis that also produced the refuted forced-escort
+    # design -- the patrol is post-flip drama. Same class as KQ4's day/night: an
+    # adversarial-clock phase change, held the same way ("hold the sunset until the day list
+    # is done"). Pinned by the rooms that carry the long route: the flip must strand the
+    # letter FROM the treasure room itself (770), the panel room (710) and the basement entry
+    # (840), while Saladin's proof demand (rm730) sits beyond it.
+    letter_row = next((r for r in rows if r["item"] == 20 and r["register"] == 338), None)
+    check("the flag-166 letter row carries the LONG route (treasure corral), not just 880's",
+          letter_row is not None
+          and {710, 770, 840} <= set(letter_row["flip_rooms"])
+          and 730 in letter_row["still_needed_at"]
+          and letter_row["source_rooms"] == [781],
+          repr(letter_row))
 
 
 if __name__ == "__main__":

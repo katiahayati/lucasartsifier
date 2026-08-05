@@ -26,6 +26,12 @@ what the engine currently emits. When the engine and this file disagree, this fi
 | 9 | **rm240 `lampTradeScr`** (lamp peddler) | trading the old lamp before its three waters are poured | `[U]` "you cannot trade it again because the peddler leaves" — this is not the pawn shop. rm580's `makeRain` can then never fire |
 | 10 | **Main, mint / peppermint destroy-verb** | eating them | `[W]` one of the two is needed at rm750, and past the castle door the pawn shop is unreachable |
 
+## Write holds — a flip waits instead of a door refusing
+
+| # | site | demand | why |
+|---|---|---|---|
+| 11 | **the wedding flip (flag 166, `rFlag1 $0002`) — every writer**: rm880's watch scene, rm740's debug menu, and **`rgCastle::doit`'s fuse** (the countdown clause freezes; the long route's only writer) | letter 20 in hand | `[U]` the softlock: the flip refuses the hidden-passage arm (rm720), the only route to the letter's trunk (rm781), while Saladin (rm730) still demands showing it (finding #3, play-tested 2026-08-03). `[W]` the fuse freeze is safe: an armed fuse implies the ghost-boy bit ($8000), so the hallway stays open while the hold refuses — nobody is stalled, the wedding starts the moment the letter is pocketed. Mechanism: `KQ6-CASTLE-CAPTURE-MAP.md` §2b (v22, 2026-08-05; NOT play-tested) |
+
 ## Explicit negatives — no guard belongs here
 
 * **shield 43, clothes 5, coal 6** — `[U]` both catacomb levels re-enter from the surface (rm340

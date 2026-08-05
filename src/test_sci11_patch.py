@@ -82,6 +82,19 @@ def test_placement():
               f"docs/SCI11-PATCHING-PLAN.md §4/§5: an edit re-found by regex instead of by the "
               f"IR node we analysed; `trigger.py` searching only the FROM room's own file; "
               f"controllability spelled for SCI0; and `guard_edge_exit` hardcoding `of Rm`.")
+        if name == "KQ6":
+            # THE WEDDING HOLD REACHES THE REGION-HOMED WRITER (2026-08-05). The flag-166
+            # register-write remedy must land on all THREE spellings of the same store: the two
+            # literal send sites (rm740's debug menu, rm880's watch scene) AND the owner's own
+            # arithmetic write -- rgCastle::doit's wedding fuse, the only writer the long route
+            # ever fires. v21 skipped the third deliberately ("allowing the defeat"); measured
+            # wrong: an armed fuse implies the ghost-boy bit, which keeps the hallway to the
+            # letter open while the hold refuses, so nobody is stalled and the win (rm180)
+            # stays obtainable. `guard_prop_flag_owner_write` freezes the enclosing countdown
+            # clause -- the fuse stays armed and resumes when the letter is picked up.
+            check("KQ6: the wedding hold wraps rgCastle's own fuse write (all three spellings)",
+                  {"rm740", "rm880", "rgCastle"} <= set(applied),
+                  f"applied={sorted(set(applied))}")
 
 
 def test_refusal_primitive_is_derived():

@@ -2625,12 +2625,14 @@ class IrSccReach(SccReach):
     def register_strandings(self):
         """Softlocks caused by a REGISTER flipping, not by walking through a one-way door.
 
-        ⚠️ NO PRODUCTION PATH READS IT. Not `snapshot.py`, not `pipeline.py`, not the KQ4 oracle,
-        not the KQ6 oracle. Its consumers are `test_scopes` Part 7 (LSL2) and
-        `test_toll.test_register_strandings_is_degenerate_on_sci11` (KQ6), which pin its output
-        exactly. Promotion to the snapshot surface is deliberate future work: its one surviving
-        KQ6 row (the flag-166 `letter` lead) is under user review, and freezing a verdict nobody
-        has ruled on would promote a suspicion.
+        PRODUCTION SINCE 2026-08-02: `guards.guard_specs` consumes these rows into
+        `register-write` remedies (hold the flip until the sealed items are in hand), so the
+        snapshot's spec/placement surface carries them; `test_scopes` Part 7 (LSL2) and
+        `test_toll.test_register_strandings_is_degenerate_on_sci11` (KQ6) pin the rows
+        themselves. The one KQ6 row -- flag 166, the `letter` -- is user-confirmed (oracle unit
+        #19) and remeasured 2026-08-05 as BOTH castle routes' seal: the flip is the wedding
+        fuse's expiry in rgCastle::doit, region-homed into every castle room by the rFlag
+        lowering (same class as KQ4's day/night -- an adversarial-clock phase change).
 
         CAUSAL SINCE 2026-08-02 (was: degenerate on SCI1.1, 323 junk rows on KQ6 -- above all
         reg12, `prevRoom`, whose every crossing-write was read as an irreversible plot advance).

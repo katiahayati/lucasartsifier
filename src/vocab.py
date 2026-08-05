@@ -1296,6 +1296,11 @@ def lower_prop_flags(ir, accessors):
         # renderer needs to know these are NOT proc-flag numbers (the phantom-spelling class).
         ir._prop_flag_index = {gi: k for k, gi in index.items()}
         ir._prop_flag_sels = {op: sel for sel, op in accessors.items()}
+        # ...and the selector number->NAME map as THIS pass saw it (pre-rewrite: the Selector
+        # nodes carrying both die with the lowering, so a later walk cannot rebuild it). The
+        # patcher needs it to spell the owner's DIRECT property write -- `(|= rFlag1 $0002)`
+        # is matched by name in source while the store's identity is the number.
+        ir._sel_names = {v: k for k, v in sel_value.items()}
     except Exception:                                      # noqa: BLE001
         pass
 

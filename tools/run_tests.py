@@ -39,19 +39,21 @@ SRC = os.path.join(_ROOT, "src")
 # the next reader can tell a known limitation from a broken test without opening the file.
 KNOWN_RED = {
     "test_toll.py": {
-        "🔴 KNOWN GAP: the long route's treasure-corral letter seal is detected":
-            "Play-tested ground truth (finding #3, 2026-08-03) with no honest derivation yet. "
-            "The forced-escort/edge-suppression design was MEASURED AND REFUTED 2026-08-04 "
-            "before implementation: reg378's only reader in the whole game is the corral "
-            "crunch's own one-shot latch, the crunch delivers no exit and hands control back, "
-            "and the rule's criteria select 20/19/10/16 candidates across the four games (the "
-            "byte-identity gate is unmeetable without per-game fitted clauses). The real seal "
-            "is guard-actor patrol armed through region-object properties -- the census's "
-            "gaps #1/#3. Goes green only with a mechanism that models one of those stores. "
-            "USER RULING 2026-08-04: ACCEPTED as a shipped limitation, deprioritized -- the "
-            "blast radius is castle-scope (no long reload) and Saladin's proof demand tells "
-            "the player what is missing. Still a true softlock (a post-corral-only save is "
-            "cooked), so the red marker stays; it is just not a mandate.",
+        # ✅ CORRECTED, NOT PROMOTED, 2026-08-05 -- "the long route's treasure-corral letter
+        # seal is detected" demanded a row with `register != 338`, and that row should never
+        # exist: remeasured against the source, flag 166 (reg338, rFlag1 $0002) IS the long
+        # route's seal. The wedding fuse (`weddingRemind`, rgCastle::doit, per-real-second)
+        # writes it region-homed in every castle room; the hidden-passage arm refuses under it
+        # (rm720.sc:429); 850->781 closes by cond order. `register_strandings`' one row
+        # (338, 1, letter, flip_rooms = the 15 rooms outside the walls, 770 and 710 included)
+        # carries BOTH routes -- the "covers the SHORT route only" reading was the
+        # misdiagnosis that also drove the refuted forced-escort design (guard-actor patrol
+        # was the drama, not the seal; KQ4's day/night is the same class -- adversarial-clock
+        # phase change). The check is rebuilt GREEN as "the letter row covers the long route"
+        # (flip_rooms/still_needed_at pinned), and the remedy now reaches the region-homed
+        # writer: `guard_prop_flag_owner_write` freezes the fuse's countdown clause until the
+        # letter is in hand (v22, 80.SCR joins the set). See test_toll's docstring and
+        # docs/KQ6-CASTLE-CAPTURE-MAP.md §2b for the measurement.
         # ✅ PROMOTED 2026-08-02 -- "a use that only sets a room local is not seen as a
         # requirement" is retired: the FIFTH store is WIRED (round 4). Room-script latch locals
         # lower to synthetic registers (vocab.lower_room_locals) and the machine walks thread the

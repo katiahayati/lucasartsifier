@@ -66,8 +66,9 @@ _IR = None                     # the analysed IR, stashed by configure() for ass
 def configure(ir):
     """Derive this game's object-global layout so the patcher emits its real indices, not the
     template's 0/1/2. Call once before apply_*()."""
-    global _EGO, _GAME, _ROOM, _IR, REFUSE, _JUST_KIDDING
+    global _EGO, _GAME, _ROOM, _IR, REFUSE, _JUST_KIDDING, _SEL_NAMES
     _IR = ir
+    _SEL_NAMES = None              # per-game: the selector table is the game's own
     form = refusal_form(ir)
     # No derivable way to show a line -> emit NO refusal text at all. A guard that refuses
     # silently is the "the game lied to the player" class that only play-testing caught last time,
@@ -972,6 +973,80 @@ def guard_prop_flag_write(text, sel, word, bit, recv_src, cond):
     return text, len(edits)
 
 
+_SEL_NAMES = None
+
+
+def _selector_name(value):
+    """The source NAME of a selector number, from the analysed IR's own Selector nodes.
+
+    The prop-flag store's identity is numeric -- ((script, export), selector, bit) -- but the
+    owner class's DIRECT writes are spelled with the property's name (`(|= rFlag1 $0002)`), so a
+    text-level edit needs the number resolved back. The lowering stashes the map it built
+    (`ir._sel_names`) because the Selector nodes carrying name+number together are consumed by
+    the rewrite -- a walk of the analysed IR comes back empty. The walk stays as the fallback
+    for an IR that predates the stash."""
+    global _SEL_NAMES
+    if _SEL_NAMES is None:
+        _SEL_NAMES = dict(getattr(_IR, "_sel_names", None) or {})
+        if not _SEL_NAMES:
+            for s in (_IR.scripts.values() if _IR is not None else ()):
+                bodies = [m for o in s.objects for m in o.methods.values()] \
+                    + list(s.procs.values())
+                for body in bodies:
+                    for n in I.walk(body):
+                        if n.get("t") == "Selector" and isinstance(n.get("value"), int) \
+                                and n.get("name"):
+                            _SEL_NAMES.setdefault(n["value"], n["name"])
+    return _SEL_NAMES.get(value)
+
+
+def guard_prop_flag_owner_write(text, prop_name, mask, cond):
+    """Hold a property-word flag's ARITHMETIC set -- `(|= rFlag1 $0002)` in the OWNER's own
+    always-live method -- until `cond` holds.
+
+    The third spelling of the same store (`vocab.lower_prop_flags`' second pass): the owning
+    region class writes its own word directly, and because the region's `doit` runs in every
+    room it attaches, the write is region-homed -- the adversary can fire anywhere in its scope,
+    driven by a countdown the same method decrements (KQ6's wedding fuse, `weddingRemind`).
+
+    Same doctrine as `guard_register_write` (KQ4's nightfall, the play-validated precedent):
+    wrap the ENCLOSING `(if ...)` clause ATOMICALLY -- preferring one whose condition names the
+    property, else the outermost -- rather than the bare write. Here that clause is the
+    countdown-expiry test itself, so the hold FREEZES the decrement while the demand is unmet:
+    nothing is consumed, the fuse stays armed, and the game's own clock resumes the moment the
+    demand is satisfied. (Wrapping the write alone would let the expiry spend the countdown with
+    the flag unwritten -- a one-shot fire that never retries -- and would leak the write's
+    siblings, finding B#2's lesson.)"""
+    pat = re.compile(r"\(\|=\s+%s\s+(?:\$0*%x|%d)\s*\)" % (re.escape(prop_name), mask, mask))
+    for meth in ("newRoom", "doit"):
+        for mm in re.finditer(r"\(method\s+\(%s\b" % meth, text):
+            bs, be = _block_span(text, mm.start())
+            region = text[bs:be]
+            wm = pat.search(region)
+            if not wm:
+                continue
+            encls = []
+            for im in re.finditer(r"\(if\b", region):
+                es, ee = _block_span(region, im.start())
+                if es <= wm.start() < ee:
+                    encls.append((es, ee))
+            if not encls:
+                continue
+
+            def _cond_names_prop(es):
+                cs = es + re.match(r"\(if\s+", region[es:]).end()
+                cnd = (region[cs:_block_span(region, cs)[1]] if region[cs] == "("
+                       else re.match(r"\S+", region[cs:]).group(0))
+                return bool(re.search(r"\b%s\b" % re.escape(prop_name), cnd))
+
+            named = [e for e in encls if _cond_names_prop(e[0])]
+            es, ee = named[0] if named else min(encls, key=lambda e: e[0])
+            wrapped = ("(if %s\n\t\t\t%s\n\t\t)  ; softlock-guard: hold the flip until obtainable"
+                       % (cond, region[es:ee]))
+            return text[:bs] + region[:es] + wrapped + region[ee:] + text[be:], 1
+    return text, 0
+
+
 _SOURCE_CACHE = {}
 
 
@@ -1134,6 +1209,30 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                     out.append({**sp, "applied": True, "title": t2, "sites": n2,
                                 "placement": {"kind": "flag-write", "instance": t2}})
                     placed += n2
+        # ...and the THIRD spelling: the OWNER writes its own word arithmetically inside an
+        # always-live method -- KQ6's `(|= rFlag1 $0002)` in rgCastle::doit, the region-homed
+        # writer every attached room inherits (it is where `register_strandings`' flip_rooms
+        # come from). Until 2026-08-05 this site was deliberately skipped as "allowing the
+        # defeat"; MEASURED WRONG: on the long route the fuse is only ever armed by the
+        # 800->720 return, which requires the ghost-boy bit, which keeps the hallway to the
+        # letter open while the hold refuses -- the letterless player is never stalled, and
+        # the win (rm180) stays obtainable, which is the thing guards exist to protect.
+        if pf and ssel and sp["trap"] == 1:
+            (sfn, _ex), word, bit = pf
+            owner = titles_by_num.get(sfn)
+            pname = _selector_name(word)
+            if owner and pname:
+                p2 = os.path.join(dest, "src", owner + ".sc")
+                if os.path.exists(p2):
+                    tx = open(p2, errors="replace").read()
+                    nt, n2 = guard_prop_flag_owner_write(tx, pname, 1 << bit,
+                                                         to_source_syntax(sp["condition"]))
+                    if n2:
+                        open(p2, "w").write(nt)
+                        out.append({**sp, "applied": True, "title": owner, "sites": n2,
+                                    "placement": {"kind": "flag-write-owner",
+                                                  "instance": owner}})
+                        placed += n2
         if not placed:
             out.append({**sp, "applied": False, "why": "no free-running trap write found",
                         "from_room": None, "to_room": None})

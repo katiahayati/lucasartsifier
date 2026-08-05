@@ -80,6 +80,34 @@ that initializes a capture-actor under flag F is sealed-for-walking while F hold
 placement is now register-visible (`setupGuards` under rFlag bits 336/337), so the rule is
 well-founded where the refuted escort rule was not. Also pending a user ruling: dropping the
 wedding hold entirely (no-op on the short route by design, defeat-denial on the long).
+**✅ 2026-08-05, THE GAP IS CLOSED — the KNOWN_RED was a misdiagnosis, corrected, and the
+hold now reaches the fuse (v22).** Remeasured from the source at the user's request (fresh
+look at the treasure room): the long route's seal IS the flag-166 row the detector has
+carried since 2026-08-02. Mechanism (full map: `docs/KQ6-CASTLE-CAPTURE-MAP.md` §2b): the
+wedding fuse — `weddingRemind`, a per-real-second countdown in `rgCastle::doit`, armed 121s
+by the 800→720 return after the Cassima talk (`rFlag2 $0100`), paused inside rm770 and
+re-armed to 1s by leaving it, fast-forwarded to the corral by rm710's from-770 warnUser —
+expires into `(|= rFlag1 $0002)`, and THAT flag (166/reg338) is what refuses the
+hidden-passage arm (rm720.sc:429-431), the only route to the letter's trunk; 850→781 closes
+by cond order; the dogs are post-flip drama, not the seal (same class as KQ4's day/night:
+an adversarial-clock phase change). The RED check demanded a `register != 338` row that
+should never exist — rebuilt GREEN as a long-route coverage pin on the 338 row
+(`flip_rooms ⊇ {710, 770, 840}`, Saladin's rm730 beyond). The remedy half: v21's hold
+covered only the two literal `setFlag: 709 2` sites (rm740 — actually the debug menu — and
+rm880's watch scene) and deliberately skipped the region-homed writer as "allowing the
+defeat"; measured wrong — an armed fuse implies the ghost-boy bit ($8000), which keeps the
+hallway open while the hold refuses, so the letterless player is never stalled and rm180
+stays obtainable. `patcher.guard_prop_flag_owner_write` (the store's THIRD spelling: the
+owner's own property arithmetic) now freezes the enclosing countdown clause —
+`(if (global0 has: 20) (if (and (> weddingRemind 0) ...) ...))` — so the fuse stays armed
+and the game's own clock resumes on pickup; `vocab.lower_prop_flags` stashes
+`ir._sel_names` so the patcher can spell `rFlag1` from the store's numeric identity.
+80.SCR + 80.HEP join the emission (v22 = v21 + rgCastle, byte-identical elsewhere).
+✅ PLAY-TESTED 2026-08-05, the HOLD half (user, in-game, via the console recipe — armed
+fuse + letterless): "the wedding got held". Still open: resume-on-pickup (music starts
+after taking the letter), stock preservation with letter in hand (treasure-room exit still
+fires fast), and the full honest route. The capture-actor rule is no longer needed for the
+letter; it would only add earlier refusals for the corral hazard itself.
 
 `test_kq6_ground_truth` passes all 16 checks. `KNOWN_GAPS` is empty and `LONG_ENDING_ONLY` is
 empty, so every unit the oracle calls real is caught and nothing outside the oracle is flagged.
@@ -147,7 +175,9 @@ shape harmless). The former 🔴 is promoted; each placement edge is pinned GREE
 
 ### Placement and emission — MEASURED 2026-08-01, and KQ6 now EMITS
 
-**KQ6: 15 scripts compiled and written as SCI1.1 loose patches (v21)** (recounted
+**KQ6: 16 scripts compiled and written as SCI1.1 loose patches (v22)** (v22 2026-08-05 =
+v21 + `80.SCR/80.HEP` — rgCastle, the wedding fuse hold, see the letter block above;
+byte-identical elsewhere) (recounted
 2026-08-05: the two remaining skips are rm420→rm435 — the covered redundancy — and the
 huntersLamp TRADE refusal; the rm340→rm370 arrival commit places on BOTH frontier
 crossings, see the entry-frontier note below; the Realm entry moved into nightMare.sc —
@@ -187,6 +217,9 @@ set this project has produced for anything but LSL2:
                                  left the set (stock), see below
 740.SCR + 740.HEP  rm740         the letter: hold the wedding flag until it is in hand
                                  (rm880's twin site reverts -- decompiler gap, see above)
+80.SCR  + 80.HEP   rgCastle      the letter, third spelling (v22): the wedding fuse's own
+                                 countdown clause in rgCastle::doit freezes until the
+                                 letter is in hand -- the long route's only writer
 ```
 
 With `--emit-unclosed`, `pipeline` on KQ6 now **exits 0** and emits the set above while listing
@@ -393,11 +426,11 @@ cleanup pass that recorded them was scoped to close no gaps.
    **inert**, because `global_homed` drops its scope's item transfers entirely, so no icon-bar
    sink ever reaches `_sink_rooms` to be widened. Unifying them would make an icon-bar sink
    visible for the first time — a real verdict change.
-2. **`register_strandings` is degenerate on SCI1.1 and read by nothing.** 323 rows on KQ6 across
-   21 registers, including reg12 — `prevRoom` — reporting "prevRoom flips to 180, point of no
-   return" once per room value over the same 7 items. No production path reads it (not
-   `snapshot.py`, not `pipeline.py`, not either oracle); its LSL2 behaviour is still tested.
-   Pinned RED so the breakage cannot be forgotten.
+2. ✅ **`register_strandings` — CLOSED in two steps.** The degeneracy (323 KQ6 rows, prevRoom
+   flips) fell 2026-08-02 to the causality conjunct, and `guard_specs` consumes the causal rows
+   into `register-write` remedies since the same day — it is production, not orphaned. The
+   remaining misreading ("its one row covers the short route only") fell 2026-08-05: the row IS
+   the long route's seal too (see the letter block).
 3. ✅ **`analyze()` vs `edge_strandings()` need-rooms — CLOSED 2026-07-31.** `edge_strandings` had
    moved to `_unit_need_rooms` (a single item does not count a room its disjunctive group already
    covers) while `analyze` still read raw `_need_rooms`, so the report view could name a
@@ -445,7 +478,9 @@ flip detector's one surviving row is the user-confirmed `letter`.)
    `doTreasureDoor`'s arming) died with it: emitting a spec no detector derives would be a
    declared spec, which the user's ruling bans. **USER 2026-08-04: the gap is ACCEPTED and
    deprioritized** (castle-scope reload + Saladin's proof line = the failure communicates
-   itself); the store work is not a mandate.
+   itself); the store work is not a mandate. **✅ CLOSED 2026-08-05 without any store work:
+   the "gap" was a misdiagnosis — the flag-166 row already carried the long route; see the
+   letter block above.**
 2. **THE CAPTURE RE-SITE LANDED 2026-08-04** (findings #5/#6's fix, the addendum's other half):
    arrival commits re-site their demand to the model's pocket frontier
    (`guards.commit_entry_frontier`, interior returns excluded by `reach_avoiding`), stage from
