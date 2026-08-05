@@ -124,7 +124,7 @@ def find_arming(forms, targets):
     often not the same file. Returns the same shape `find_trigger` does, plus the source PATTERN
     to rewrite, since a ScriptID arming is not spelled with the instance's name."""
     _nr, _cs, ss, pc = analyze_room(forms)
-    hits = [(i, m, t) for (i, m, t, _recv) in ss if t in targets and i is not None]
+    hits = [(i, m, t) for (i, m, t, _recv, _pos) in ss if t in targets and i is not None]
     if not hits:
         # ...or the room does not `setScript:` anything: it CALLS one of the helper script's
         # exported procedures and the cutscene starts itself. KQ6's capture is this shape --
@@ -166,7 +166,7 @@ def find_all_armings(forms, target):
              "target_script": norm(t),
              "target_pattern": (re.escape(t) if isinstance(t, str)
                                 else r"\(ScriptID\s+%d\s+%d\s*\)" % (t[1], t[2]))}
-            for (i, m, t, _r) in ss
+            for (i, m, t, _r, _pos) in ss
             if norm(t) == norm(target) and i is not None and m in CONTROLLABLE_METHODS]
 
 
@@ -416,16 +416,23 @@ def wrap_all_armings_in_source(text, placement, guard_sexpr, refuse):
     return text[:m0] + region + text[m1:], n
 
 
-def _mentions_oncontrol(form):
+def _mentions_oncontrol(form, octx=None):
     """Does this subtree test where the ego is STANDING? `(gEgo onControl: 1)`.
 
     SCI1.1's positional movement: the room's `doit` compares `onControl` against a control-colour
     mask and calls `newRoom:` when the player walks onto it. That is a player-initiated crossing --
-    they walked there -- even though `doit` is not one of the handler methods."""
+    they walked there -- even though `doit` is not one of the handler methods.
+
+    `octx` is the method's set of variables ASSIGNED from an onControl read -- rm550 hoists
+    the read (`(= temp0 (global0 onControl: 1))`) and dispatches its cond on `temp0`, so a
+    test mentioning such a variable is the same standing-position question one indirection
+    away (play finding #11: the inline-only reading left the hoisted spelling classified as
+    an adversarial arm-event, and its un-gated handsOff sibling hung the game)."""
     if isinstance(form, Sym):
-        return form.name == "onControl" or (form.is_selector() and form.sel == "onControl")
+        return (form.name == "onControl" or (form.is_selector() and form.sel == "onControl")
+                or (octx is not None and not form.is_selector() and form.name in octx))
     if isinstance(form, list):
-        return any(_mentions_oncontrol(x) for x in form)
+        return any(_mentions_oncontrol(x, octx) for x in form)
     return False
 
 
@@ -440,21 +447,27 @@ def analyze_room(forms):
     proc_calls = []      # (instance, method, procedure name) -- `(proc342_2)`, how a room runs a
     #                      helper script's cutscene when it does not `setScript:` anything itself
 
-    def walk(form, inst, meth, state, pos=False):
+    def walk(form, inst, meth, state, pos=False, octx=None):
         if not isinstance(form, list) or not form:
             return
         h = form[0]
         if is_sym(h, "instance") or is_sym(h, "class"):
             name = form[1].name if len(form) > 1 and isinstance(form[1], Sym) else "?"
             for s in form[2:]:
-                walk(s, name, meth, state, pos)
+                walk(s, name, meth, state, pos, octx)
             return
         if is_sym(h, "method"):
             sig = form[1]
             mname = sig[0].name if isinstance(sig, list) and sig and isinstance(sig[0], Sym) else "?"
+            mctx = set()                   # onControl-derived variables, fresh per method
             for s in form[2:]:
-                walk(s, inst, mname, None, False)
+                walk(s, inst, mname, None, False, mctx)
             return
+        # `(= temp0 (gEgo onControl: 1))` -- the hoisted spelling of the standing-position test.
+        # Record the variable so the cond that dispatches on it still reads as positional.
+        if is_sym(h, "=") and octx is not None and len(form) >= 3 \
+                and isinstance(form[1], Sym) and _mentions_oncontrol(form[2], octx):
+            octx.add(form[1].name)
         if is_sym(h, "switch") or is_sym(h, "switchto"):
             seq = 0
             for clause in form[2:]:
@@ -467,26 +480,26 @@ def analyze_room(forms):
                         st = seq  # switchto: implicit sequential
                     seq += 1
                     for b in clause[1:]:
-                        walk(b, inst, meth, st, pos)
+                        walk(b, inst, meth, st, pos, octx)
             return
         # A `cond`/`if` whose TEST asks where the ego is standing makes its body positional -- the
         # player walked onto that control colour, so the crossing is theirs to refuse.
         if is_sym(h, "cond"):
             for clause in form[1:]:
                 if isinstance(clause, list) and clause:
-                    cpos = pos or _mentions_oncontrol(clause[0])
+                    cpos = pos or _mentions_oncontrol(clause[0], octx)
                     for b in clause[1:]:
-                        walk(b, inst, meth, state, cpos)
+                        walk(b, inst, meth, state, cpos, octx)
             return
         if is_sym(h, "if"):
-            tpos = pos or (len(form) > 1 and _mentions_oncontrol(form[1]))
+            tpos = pos or (len(form) > 1 and _mentions_oncontrol(form[1], octx))
             for s in form[2:]:
-                walk(s, inst, meth, state, tpos)
+                walk(s, inst, meth, state, tpos, octx)
             return
         if isinstance(h, Sym) and not h.is_selector() and re.fullmatch(r"proc\d+_\d+", h.name):
             proc_calls.append((inst, meth, h.name))
             for s in form[1:]:
-                walk(s, inst, meth, state, pos)
+                walk(s, inst, meth, state, pos, octx)
             return
         ms = _message_send(form)
         if ms:
@@ -502,19 +515,19 @@ def analyze_room(forms):
                 elif sel == "changeState" and isinstance(a0, int):
                     cs_calls.append((inst, meth, a0, recv))
                 elif sel == "setScript" and isinstance(a0, Sym):
-                    ss_calls.append((inst, meth, a0.name, recv))
+                    ss_calls.append((inst, meth, a0.name, recv, pos))
                 elif sel == "setScript" and _script_id(a0):
                     # `(global2 setScript: (ScriptID 344 3))` -- SCI1.1 arms a cutscene that lives
                     # in ANOTHER script by export number rather than by name. Recorded under a
                     # canonical key so the armer can be matched to the script that owns the
                     # `newRoom` (see `exports_of` / `find_arming`).
-                    ss_calls.append((inst, meth, _script_id(a0), recv))
+                    ss_calls.append((inst, meth, _script_id(a0), recv, pos))
                 for a in args:
-                    walk(a, inst, meth, state, pos)
-            walk(form[0], inst, meth, state, pos)
+                    walk(a, inst, meth, state, pos, octx)
+            walk(form[0], inst, meth, state, pos, octx)
             return
         for s in form:
-            walk(s, inst, meth, state, pos)
+            walk(s, inst, meth, state, pos, octx)
 
     for f in forms:
         walk(f, None, None, None, False)
@@ -559,10 +572,24 @@ def find_trigger(forms, target_room):
     # `closer` does `newRoom: 690`). Guard that setScript call.
     # `i2 is not None` because the wrapper locates the edit by `(instance <i2> ...)`: an arming
     # made from a bare PROCEDURE has no instance to scope to, so there is no site to rewrite.
-    ss_cands = [(i2, m2) for (i2, m2, target, recv) in ss
+    ss_cands = [(i2, m2) for (i2, m2, target, recv, _p) in ss
                 if target == inst and m2 in CONTROLLABLE_METHODS and i2 is not None]
     if ss_cands:
         i2, m2 = ss_cands[0]
+        return {"kind": "setscript", "trigger_instance": i2, "trigger_method": m2,
+                "target_script": inst, "target_room": target_room}
+    # ...or the arming is POSITIONAL: a `doit` clause that tests where the ego is STANDING and
+    # arms the crossing's cutscene. The player walked there, so the move is theirs to refuse --
+    # the same doctrine the direct-positional `newRoom` case has always had, extended to
+    # ARMINGS. Play-found (finding #11, 2026-08-04): rm550's mists crossing is
+    # `(cond (... (global1 handsOff:) (setScript: walkNorthScript)))` in doit, the arm-event
+    # wrap gated only the setScript, and the un-gated handsOff sibling hung the game for a
+    # lampless player. As a refusal-bearing `setscript` placement the whole clause is wrapped,
+    # handsOff included, and the player is told no while their controls still exist.
+    pos_cands = [(i2, m2) for (i2, m2, target, recv, p) in ss
+                 if target == inst and p and i2 is not None]
+    if pos_cands:
+        i2, m2 = pos_cands[0]
         return {"kind": "setscript", "trigger_instance": i2, "trigger_method": m2,
                 "target_script": inst, "target_room": target_room}
     # ...or the Script is armed by a setScript in an UNCONTROLLABLE method -- an ADVERSARIAL event
@@ -570,7 +597,7 @@ def find_trigger(forms, target_room):
     # whaleActions)` on a Random roll; nightfall is the same shape in `KQ4::newRoom`). There is no
     # player action to guard, so we gate the ARMING itself: the event fires only when the survival
     # item is held. If it is missing the event simply does not arm -- exactly the prevention.
-    arm_cands = [(i2, m2) for (i2, m2, target, recv) in ss if target == inst and i2 is not None]
+    arm_cands = [(i2, m2) for (i2, m2, target, recv, _p) in ss if target == inst and i2 is not None]
     if arm_cands:
         i2, m2 = arm_cands[0]
         return {"kind": "arm-event", "trigger_instance": i2, "trigger_method": m2,

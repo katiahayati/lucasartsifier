@@ -1,14 +1,14 @@
 # KQ6 patched-build play-test plan
 
-Written 2026-08-03 from the shipped spec set; current build **v15** (2026-08-04,
-`build/kq6_patch_v15/patch`, 15 scripts, 341/341 compiled — the cliff guard is the up-step
+Written 2026-08-03 from the shipped spec set; current build **v16** (2026-08-04,
+`build/kq6_patch_v16/patch`, 15 scripts, 341/341 compiled — the cliff guard is the up-step
 "Not yet!" refusal in rCliffs (finding #9), with rm320's cue arm-gate as backstop; the v13
 rm300 re-route is retired (finding #10) and the stock shortcut is back). Every row below is
 generated from the live specs, not from memory:
 reproduce the table with `python3 src/snapshot.py KQ6 --placements`.
 
 **Install**: DELETE any previous patch files from the game copy first (a stale set was found
-live on 2026-08-04: 11/425/460/470.* from Aug 1), then copy `build/kq6_patch_v15/patch/*` in.
+live on 2026-08-04: 11/425/460/470.* from Aug 1), then copy `build/kq6_patch_v16/patch/*` in.
 **Revert**: delete those files — the game's own resources are never touched.
 **Method**: save (F5) immediately before each test point; every PREVENT test needs its
 ALLOW twin — a guard that blocks the softlock but also blocks the legitimate path is a
@@ -74,8 +74,9 @@ SURVIVING scene: when warned, **hide** (the `hideEgo` flow) and let
 Sailing to the Isle of the Mists and approaching the Druids' bonfire (rm580) demands
 the lamp; the trade itself is untouched.
 - **PREVENT (550→580)**: trade the lamp at the docks (rm240), sail to the mists,
-  walk toward rm580 from rm550. Expected: the crossing's cutscene does not arm; no
-  capture, no death. You must be able to walk away and finish the SHORT ending.
+  walk toward rm580 from rm550. Expected (v16, finding #11): a "Not yet!" REFUSAL at the
+  trail — controls stay live, walk away freely. (The v15 arm-gate HUNG here: the crossing
+  is armed from a positional doit clause whose `handsOff` sibling ran un-gated.)
 - **PREVENT (560→580)**: same but via rm560's east edge. Expected: the east exit is
   closed (a wall, silent — the game's own idiom); rm560's other exits still work.
 - **ALLOW**: carry the lamp in. Expected: capture happens, cage inset opens, and with
@@ -153,6 +154,7 @@ through (misplacement). "Findings identical to stock" is also a result — say i
 
 | date | room | finding | verdict |
 |---|---|---|---|
+| 2026-08-04 | rm550 | **FINDING #11 (real, FIXED in v16): the mists carry-in guard HANGS.** Lampless approach to rm580: the crossing is armed from rm550's doit — `(cond (… (global1 handsOff:) (setScript: walkNorthScript)))` — and the arm-event wrap gated only the bare `setScript`, so the un-gated `handsOff` sibling fired and controls never returned. Root cause one level down: the clause is POSITIONAL (the player walked onto the trail), but rm550 HOISTS the `onControl` read into a temp, and the positional classifier only read the inline spelling — so a player move was classified as an adversarial event. Fix: `analyze_room` tracks onControl-derived variables per method (`octx`), positional armings are now refusal-bearing `setscript` placements (the whole clause wraps, `handsOff` inside the guard, "Not yet!" in the else — the same doctrine the direct-positional `newRoom` case always had). | fixed in v16, re-test A2 |
 | 2026-08-04 | rm300 | **FINDING #10 (UX, FIXED in v15): the v13 nav re-route taxed vetted players.** Stock gives repeat climbers a shortcut (climb screen 1, jump to the summit); the re-route made everyone climb the whole cliff again. With the v14 step refusal in place the re-route protects nobody — an itemless capture-stage player is refused on the base wall's own rocks — so `_guard_arrival_entries` now treats nav-assign as a LAST resort, applied only when no chain refusal landed. rm300 reverts to stock (300.SCR leaves the patch set). | ✅ PLAY-VERIFIED 2026-08-04 (user: "it woooooorks") — shortcut back to stock |
 | 2026-08-04 | rm320 | **FINDING #9 (UX, FIXED in v14): the arm-gate is a silent dead-end.** Play: the re-routed climb goes up two screens of faces and then "it just... stops" — the flagged silent-wall risk, confirmed as bad as feared. Fix (user-designed): refuse at the STEPPING, the true controllable moment. `trigger.find_cue_chain_armings` reads the delivering cue case off the room's cue method (case 1 → `nextCliffUp`), finds the chain that cues it in the room's `(use ...)` files (`nextScreenUp` ← `takeStep`), and walks the armings back to the controllable handler — `RockStep::handleEvent`, where `wrap_all_armings_in_source` wraps ALL FOUR up-step clauses with a "Not yet!" refusal (one wrap is a bypass — finding #4's lesson, third appearance). Down-chains cue 0/-1 and never enter the walk, so descent cannot be caught. `takeFirstStep` (ground → rock 1) is outside the chain and stays free: the refusal comes at the first continuation step, one rock up. The v12/v13 gates remain as backstops. New emitted file: 21.SCR/HEP (rCliffs). | ✅ PLAY-VERIFIED 2026-08-04: PREVENT ("it guards the second step", user-accepted) and ALLOW (with the four, the climb and capture proceed) |
 | 2026-08-04 | rm300 | **FINDING #8 (real, FIXED): the v12 cliff gate had a bypass — the solved-puzzles shortcut.** With nothing in hand and the capture stage armed (g137=$2E00: flag 1 clear, flag 2 set), the climb went straight to the summit and the winged ones threw the player in. Root cause: flag 157 (set on every rm340 arrival) makes `rm300::init` point its `north` at 340, and the region's step-completion exits via `newRoom: (global2 north:)` — a crossing with no `newRoom:` in rm300's own file, so the frontier room silently got no wrap (the model's frontier {300, 320} was right; the placement covered only rm320 — and the capture stage REQUIRES a repeat climb, so the guarded route was exactly the one the stage never uses). Fix: `trigger.find_nav_assign` — the shortcut ASSIGNMENT is gated, `(if <or not-stage items> (self north: 340) else (self north: 320))`, so a non-compliant climb takes the game's own long way into rm320, where the cue-gate refuses; an assignment has no scene, so no hang class. Plus: a frontier room with no wrap now marks the row `entry-frontier-PARTIAL` — a bypass can never again ship silently. Re-test with v13: same save, climb → expect routing through the upper faces and the ascent refusing to arm. Also found in the same session: the install had stale Aug-1 patches (11/425/460/470.*) alongside v12 — delete old files when installing. | fixed in v13, re-test |
