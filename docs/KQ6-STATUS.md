@@ -504,5 +504,9 @@ that room. Places at rm550→rm580 (arm-event) and rm560→rm580 (edge-exit; the
 property closes while lampless, which needed the SCI1.1 `super init: &rest` anchor). Fires
 nowhere on LSL2/KQ4/Dagger (byte-identical); demands only the ITEM half — the poured-waters
 conjunct is established inside and demanding it at the door would wall the player who comes to
-establish it. NOT play-tested; a legitimate lampless revisit of rm580 would be walled, which
-only play can rule out — the spec's own note says so.)
+establish it. NOT play-tested as a guard; the over-block worry ("a legitimate lampless
+revisit of rm580 would be walled") was RETIRED BY MEASUREMENT 2026-08-05: the game's own
+forced revisit is the mists-shore capture (rm550.sc:282, flag 25 ∧ ¬14 — flag 25 is
+"visited and left", `rMist::dispose`), whose `captured` script delivers `newRoom: 580`
+directly, bypassing the guarded trail crossing entirely. The carry, not the walk, is the
+required path — see the 2026-08-05 rm550 row in the play plan's findings log.)
