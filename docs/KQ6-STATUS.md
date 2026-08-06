@@ -410,8 +410,25 @@ and placements are UNCHANGED — snapshot byte-identical to v25's surface, verif
 903.SCR/HEP). The sink retractions became mode-conditional (the `put:` executes in
 stock/lite-warned; full is behaviorally identical to the v25 deletion). Play plan: the
 GUARD-MODES.md checklist — chooser reachable, lite warns once at the mists trail, stock
-silent, save/restore persistence, restart resets to full. R13's honest runs should be
-made on v26 in FULL mode (the default), where behavior is v25's.
+silent, save/restore persistence, restart resets to full.
+
+## R13 is OFF the roadmap (user ruling, 2026-08-06)
+
+R13 — the "honest runs" (both wins plus the losing ending, start to finish, zero console
+commands, no guard allowed to fire) — was the last box in the play plan and was treated as
+the final gate on KQ6. **It is retired as a gate.** The user's ruling: *"we're not going to
+do r13 any time soon because it's just too much work to gate anything. it'll get done at
+some point (by me or by a fan lol) and we'll report bugs."*
+
+So: **nothing is blocked on R13, and no future work should cite it as a prerequisite.** Three
+full playthroughs is an unreasonable cost to pay per patch revision, and it was never the
+thing catching bugs anyway — every play finding to date (#1–#18) came from a targeted probe of
+a specific guard, not from a complete run. Whole-game runs will happen opportunistically, and
+what they produce is BUG REPORTS to act on, not a signature that unblocks anything.
+
+What actually gates KQ6 now: the oracle (`test_kq6_ground_truth.py`), the full-surface
+snapshot, `guards.verify` reporting no NEW softlocks, the compile count, and the targeted
+play probes recorded per finding.
 
 ## Two caveats on "19/19"
 

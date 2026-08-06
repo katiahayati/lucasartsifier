@@ -182,8 +182,16 @@ pending-room global). Wedding setup block (letterless, fuse lit):
 | R9 | ✅ **VERIFIED 2026-08-05** (same sweep) | catacombs captures both ways | — | — |
 | R10 | ✅ **VERIFIED 2026-08-05** (same sweep) | both castle doors | — | — |
 | R11 | ✅ **VERIFIED 2026-08-05** (same sweep) | skull refusal + rm420 regression | — | — |
-| R12 | mint/peppermint deletions | unplayed | `get 23`, `get 31` | wrong-object use no longer consumes; rm750 genie feed still works (fold into R13) |
-| R13 | E-rows: both wins + THE DEFEAT | final bar; and E.4 is the doctrine the old fuse-skip protected — v22 changed that behavior, so prove the loss survives | none — honest runs | short win; long win; and with letter fetched, let the wedding complete → the losing end (rm94 credits) must still be reachable |
+| R12 | mint/peppermint deletions | unplayed | `get 23`, `get 31` | wrong-object use no longer consumes; rm750 genie feed still works |
+| ~~R13~~ | ~~E-rows: both wins + THE DEFEAT~~ | 🚫 **RETIRED AS A GATE, user ruling 2026-08-06** | — | see below |
+
+**R13 is off the roadmap.** *"we're not going to do r13 any time soon because it's just too much
+work to gate anything. it'll get done at some point (by me or by a fan lol) and we'll report
+bugs."* (user, 2026-08-06). Three complete playthroughs per patch revision is not a cost this
+project can pay per release, and the record says it would not have been the thing catching
+bugs: every play finding so far (#1–#18) came from a targeted probe of one guard, never from a
+full run. Whole-game runs still WELCOME — they just produce bug reports to act on, and nothing
+is blocked waiting for one. Do not cite R13 as a prerequisite in future plans.
 
 **Cosmetic note (2026-08-05, user):** in the CD version's speech mode, every stock line is
 voiced while our injected refusal/retraction Prints are silent text windows. Functional but

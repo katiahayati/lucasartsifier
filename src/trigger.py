@@ -794,19 +794,35 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
     site = site if site is not None else _ModeSite()
     if placement["kind"] == "direct":
         pat = re.compile(r"\([^()]*newRoom:\s*%d\b[^()]*\)" % placement["target_room"])
-        if placement.get("positional"):
-            # The whole cond-clause, not just the call: a positional exit's siblings take control
-            # away and start the walk-off animation, so leaving them to run and refusing only the
-            # room change hangs the game with hands off. Same care as the setScript case below.
-            m = pat.search(text)
-            if not m:
-                return text, 0
-            clause = _enclosing_clause_body(text, m.start())
-            if clause:
-                bs, be = clause
-                wrapped = guarded_wrap(guard_sexpr, text[bs:be], refuse, site=site)
-                return text[:bs] + wrapped + text[be:], 1
-        return _wrap_matches_in(text, site, pat, guard_sexpr, refuse)
+        # SCOPED TO THE CLASSIFIED SITE, like every other kind here. This branch used to hand
+        # the WHOLE FILE to `_wrap_matches_in`, so it wrapped every textual `newRoom: N` --
+        # including the ones in `changeState` cutscene tails, which is exactly what this
+        # module's opening docstring exists to prevent. Measured: Dagger's blackWidowInset
+        # took three extra wraps (spiderRush/bitParchment/touchSpider) and KQ4's Room698/699
+        # took one each (creditActions, playMusic).
+        #
+        # AND THROUGH THE CLAUSE, also like every other kind: refusing only the room change
+        # leaves the committing siblings to run first -- `handsOff:` then a refusal is the
+        # rm38 hang the sibling branches' comments memorialise, and an award paid before the
+        # refusal is farmable by repeating a refused action (Dagger rm454/rm520 `points:`).
+        inst, meth = placement.get("instance"), placement.get("method")
+        span = _find_region(text, r"\((?:instance|class)\s+%s\b" % re.escape(inst)) if inst \
+            else None
+        if span is None:
+            return text, 0                     # unclassifiable site: honestly unplaced beats
+        i0, i1 = span                          # a wrap somewhere we did not analyse
+        if meth:
+            mrel = _find_region(text[i0:i1], r"\(method\s+\(%s\b" % re.escape(meth))
+            if mrel:
+                i0, i1 = i0 + mrel[0], i0 + mrel[1]
+        region = text[i0:i1]
+        m = pat.search(region)
+        if not m:
+            return text, 0
+        clause = _enclosing_clause_body(region, m.start())
+        bs, be = clause if clause else (m.start(), m.end())
+        wrapped = guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
+        return text[:i0] + region[:bs] + wrapped + region[be:] + text[i1:], 1
     if placement["kind"] == "proc-call":
         # Guard the CALL to a helper script's procedure -- the whole enclosing cond-clause, so the
         # siblings that set up the scene cannot run ahead of the refusal. Same care as `setscript`.

@@ -3490,9 +3490,180 @@ def _flag_set_inside(R, pocket, inroom):
     return any(1 in vs for room, vs in (inroom.get(R) or {}).items() if room in pocket)
 
 
-def load(cfg=None, ir_path=None):
-    cfg = cfg or config.ACTIVE
+_MODEL_MEMO = {}                       # in-process: key -> built model
+
+
+def _model_cache_key(cfg, ir_path):
+    """Identity of a BUILT MODEL: the config that shapes it, the IR it is built from, and the
+    code that builds it.
+
+    The code hash is the load-bearing part. A cached model is only sound while every module
+    that participates in building or querying it is byte-identical to the one that produced
+    the pickle -- otherwise an edit to a detector would be silently answered from a model built
+    by the previous version, and the suite would gate on a stale analysis. So every non-test
+    source file in this directory goes into the hash: touching any of them misses the cache and
+    rebuilds. (Test files are excluded on purpose -- editing a test must not throw away the
+    models it is about to read.)"""
+    import hashlib
+    here = os.path.dirname(os.path.abspath(__file__))
+    h = hashlib.sha1()
+    h.update(repr((cfg.name, cfg.src_dir, cfg.ir_path, cfg.resource_dir, cfg.start_room,
+                   sorted(cfg.goal_rooms), tuple(cfg.death_signal),
+                   sorted(cfg.debug_globals), repr(cfg.promote_registers))).encode())
+    try:
+        st = os.stat(ir_path)
+        h.update(("%d:%d" % (st.st_size, st.st_mtime_ns)).encode())
+    except OSError:
+        return None
+    for fn in sorted(os.listdir(here)):
+        if fn.endswith(".py") and not fn.startswith("test_"):
+            with open(os.path.join(here, fn), "rb") as f:
+                h.update(f.read())
+    return h.hexdigest()
+
+
+# Module-level state a BUILD installs and a QUERY later reads. It must travel with a cached
+# model or the model answers against whichever game was loaded last. This list is the cache's
+# one fragile seam -- it is a hand-maintained mirror of every `global` a build assigns -- so
+# `test_model_cache.py` pins it by diffing a cache-hit's state against a fresh build's, which
+# is what caught `_IPROP_SPEC` missing here (four KQ4 resource-exhaustion checks went empty).
+# Derived from `grep -rn "^\s*global [_A-Z]" src/`: extract's vocabulary (one `global`
+# statement, seven names), extract's doVerb parameter, and missability's item-property spec.
+_BUILD_STATE = (("extract", ("_VOCAB", "_IPROPS", "_EGO", "_CURROOM", "_ITEM_MSG", "_ONEOF",
+                             "_MENUS", "_VERB_PARAM")),
+                ("missability", ("_IPROP_SPEC",)))
+
+
+def _vocab_state():
+    """The module-level state a build INSTALLS, so a cached model can restore it.
+
+    Several query paths read this state at ANSWER time -- `guards.sink_survival_carryins`
+    reads `extract._CURROOM`, `resource_exhaustion` reads `_IPROP_SPEC` -- so a model handed
+    back without it answers against another game. `vocab.BOOL_GLOBALS` is snapshotted rather
+    than re-derived because it is a byproduct of the lowering passes, and restoring it also
+    fixes a bug that predates caching: it only ever GREW, so loading LSL2 after KQ6 left
+    KQ6's synthetic registers in the set (measured elsewhere at 57 KQ4 / 28 LSL2 registers
+    wrongly marked boolean)."""
+    import importlib
+    return ({mod: {k: getattr(importlib.import_module(mod), k, None) for k in names}
+             for mod, names in _BUILD_STATE},
+            set(vocab.BOOL_GLOBALS))
+
+
+def _restore_vocab_state(state):
+    import importlib
+    mods, bools = state
+    for mod, names in mods.items():
+        m = importlib.import_module(mod)
+        for k, v in names.items():
+            setattr(m, k, v)
+    vocab.BOOL_GLOBALS.clear()
+    vocab.BOOL_GLOBALS.update(bools)
+
+
+class DeathSignal:
+    """`(global, value)` -> "is this write a death", as a PICKLABLE callable.
+
+    A closure would be the obvious spelling and was the original one, but the emitter and the
+    MachineBuilder both hold this object, so a local lambda made the entire analysis model
+    unpicklable -- and that is what blocked caching a built model between callers. `value`
+    None means "any non-zero" (KQ4's global127 is a plain boolean set in 37 death rooms;
+    LSL2 raises death as the magic constant `gCurrentStatus == 1001`)."""
+    __slots__ = ("gi", "val")
+
+    def __init__(self, gi, val):
+        self.gi, self.val = gi, val
+
+    def __call__(self, gi, v):
+        return gi == self.gi and (v == self.val if self.val is not None else bool(v))
+
+    def __eq__(self, other):
+        return (isinstance(other, DeathSignal)
+                and (self.gi, self.val) == (other.gi, other.val))
+
+    def __hash__(self):
+        return hash((self.gi, self.val))
+
+
+_UNSET = object()      # "argument omitted", which is NOT the same request as `cfg=None`
+
+
+def load(cfg=_UNSET, ir_path=None, cache=True):
+    """The analysed model for `cfg`, built once and REUSED.
+
+    Building is expensive (measured: LSL2 27s, KQ4 78s, KQ6 171s) and the suite asks for the
+    same three models 26 times across six processes, which was ~96% of a 39-minute run. The
+    model is pure derived data, so it is cached: in-process first, then a pickle under
+    `build/.model_cache` keyed by `_model_cache_key` (config + IR + the hash of every
+    non-test source file here). Round-tripping is ~164x faster than rebuilding.
+
+    Set `cache=False`, or `SOFTLOCK_NO_MODEL_CACHE=1` in the environment, to force a build --
+    and note the cache is per (cfg, IR, code), so a source edit invalidates every entry by
+    construction rather than by anyone remembering to clear it.
+
+    An EXPLICIT `cfg=None` is an error, while omitting the argument still means "the active
+    config". The two are not the same request: `config.sweep_config(name)` returns None for a
+    title with no IR built, and `cfg or config.ACTIVE` silently turned that into a full,
+    confident analysis of whatever was active -- measured, five swept titles each reported
+    LSL2's rooms, items and softlock count under their own name."""
+    if cfg is _UNSET:
+        cfg = config.ACTIVE
+    elif cfg is None:
+        raise ValueError(
+            "load(cfg=None): no config. `config.sweep_config(name)` returns None when that "
+            "title has no IR under build/sweep/<name>/ -- build it first, or pass a real "
+            "GameConfig. (Omit the argument entirely to analyse config.ACTIVE.)")
     ir_path = ir_path or cfg.ir_path
+    use_cache = cache and not os.environ.get("SOFTLOCK_NO_MODEL_CACHE")
+    key = _model_cache_key(cfg, ir_path) if use_cache else None
+    if key is None:
+        return _build(cfg, ir_path)
+    import pickle
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "build", ".model_cache", key + ".pkl")
+    blob = _MODEL_MEMO.get(key)
+    if blob is None and os.path.exists(path):
+        try:
+            with open(path, "rb") as f:
+                blob = f.read()
+            pickle.loads(blob)                     # reject a truncated/stale file here, not later
+            _MODEL_MEMO[key] = blob
+        except Exception:                          # noqa: BLE001 -- a bad pickle is not a
+            blob = None                            # failure: fall through and rebuild
+    if blob is None:
+        model = _build(cfg, ir_path)
+        blob = pickle.dumps((model, _vocab_state()), protocol=5)
+        _MODEL_MEMO[key] = blob
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + ".%d.tmp" % os.getpid()   # atomic: parallel test processes race here
+            with open(tmp, "wb") as f:
+                f.write(blob)
+            os.replace(tmp, path)
+        except Exception:                          # noqa: BLE001 -- caching is an optimisation
+            pass
+        _restore_vocab_state(_vocab_state())
+        return model
+    # EVERY CALLER GETS ITS OWN COPY, which is why the memo holds bytes rather than the object.
+    # `guards.apply_guards(s, specs)` mutates the model IN PLACE to build the guarded world it
+    # verifies against (`s._emeta[key] = ...`, `s._pstates = ...`, and four `.clear()`s), so a
+    # shared instance would hand the next caller a model with someone else's guards already
+    # applied. Unpickling costs ~0.2s against a ~27-170s rebuild, so isolation is nearly free.
+    model, state = pickle.loads(blob)
+    _restore_vocab_state(state)
+    return model
+
+
+def _build(cfg, ir_path):
+    # A BUILD OWNS ITS OWN BOOL_GLOBALS. The set is a module-level accumulator the lowering
+    # passes add to, and it only ever grew: a process that loaded KQ6 and then KQ4 left KQ6's
+    # synthetic registers in it, and since each game allocates its synthetic block from
+    # `max_gi+1` the ranges overlap (KQ6 172..558 against KQ4's real 0..400), so registers of
+    # the second game were read as boolean when they are nothing of the kind -- which widens a
+    # `(!= gN 0)` into a hard `== 1` requirement and can invent a stranding. Clearing here
+    # makes the set exactly this game's, which is also what lets a cached model restore a
+    # clean one instead of freezing whatever contamination existed when it was built.
+    vocab.BOOL_GLOBALS.clear()
     ir = I.load_ir(ir_path)
     # DERIVE both of the old per-game constants; config is now only a fallback/override.
     # See vocab.derive_death / derive_debug -- the anchors are engine vocabulary (the Game
@@ -3607,8 +3778,7 @@ def load(cfg=None, ir_path=None):
     # wrong store's writes.
     V.lower_mask_globals(ir, V.derive_mask_globals(ir))
     d_gi, d_val = sig[0], (sig[1] if len(sig) > 1 else None)
-    is_death = (lambda gi, v: gi == d_gi and v == d_val) if d_val is not None else \
-               (lambda gi, v: gi == d_gi and bool(v))
+    is_death = DeathSignal(d_gi, d_val)
     em = E.OpEmitter(ir, cfg, is_death)
     if not cfg.start_room or not cfg.goal_rooms:
         # Derive the reachability anchors from the game rather than declaring them. See anchors.py:
@@ -3619,6 +3789,19 @@ def load(cfg=None, ir_path=None):
         cfg = dataclasses.replace(cfg, start_room=cfg.start_room or st,
                                   goal_rooms=cfg.goal_rooms or gl)
         em.cfg = cfg
+    # AN UNANCHORED GOAL IS A FAILURE, NOT A CLEAN BILL OF HEALTH. Every "is X still
+    # required?" question is answered against goal reachability, so an empty goal set makes
+    # `goal_reaching` false everywhere: every guarded item lands in `hopeless`, `required`
+    # collapses, and the pipeline prints "softlocks: 0 items" for a game it never anchored.
+    # The death signal already refuses to be silent about this (see the SystemExit above);
+    # the goal is the other half of the same pair and was not symmetric.
+    if not cfg.goal_rooms:
+        raise SystemExit(
+            "could not derive a goal room for %s, and config.goal_rooms is unset. Every "
+            "requirement question is answered against goal reachability, so continuing "
+            "would report zero softlocks for a game that was never anchored. See anchors.py: "
+            "a goal is terminal, reachable and never fatal; where the ending shares its flag "
+            "with death, the ending that TESTS WHAT YOU ACHIEVED is the win." % cfg.name)
     return IrSccReach(em)
 
 
