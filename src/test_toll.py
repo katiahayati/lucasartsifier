@@ -6,6 +6,7 @@ truth: KQ5's temple strands the Brass_Bottle + Gold_Coin behind the Staff, while
 whose every toll candidate is re-obtainable -- must stay empty (the regression guard)."""
 import os, sys, types, dataclasses
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import guards as G
 import missability as M
 from guard_ast import Pred
 from scc_core import reachable
@@ -414,12 +415,50 @@ def test_register_strandings_is_degenerate_on_sci11():
           repr(letter_row))
 
 
+def test_mists_survival_demand_carries_the_register_half():
+    """🔴 The cage sorter demands BOTH halves; the carry-in guard demands only the item.
+
+    USER FINDING 2026-08-05 (in play): "same as the teacup in the realm: we need it to have
+    water and ready to cast the make rain spell." Source truth (rm580.sc:1181): survival is
+    `(and (gEgo has: 19) (== global161 15))` -- the lamp alone burns in the cage. The four
+    readiness bits of global161 are ALL established off-isle or from inventory (rm540.sc:945
+    $0001, KqInv water-on-page $0002, CryBaby $0004, openBook's cast $0008 at ==7) and rm580
+    only RESETS it (rm580.sc:1007), so `sink_survival_carryins`' premise for demanding only
+    the item half -- "the other conjuncts are established inside" -- is FALSE. Guard oracle
+    rows 5b/5c carry the ruling. Two REDs:
+
+    1. the 550->580 / 560->580 demands must conjoin the sorter's own register literal
+       (global161 == 15), presentability-checked like every register-valued demand;
+    2. the REVISIT boundary: with `flag 25 & !14 & !74` the shore capture (rm550.sc:282,
+       `captured` -> direct `newRoom: 580`) reaches the same sorter with no controllable
+       moment after landing -- leave-and-return-unready dies ON ARRIVAL in stock. The last
+       complying crossing is the landing itself; no current spec guards any edge into rm550."""
+    print("\n-- the mists demand: item half only (the teacup's entrance-half class) --")
+    import os
+    import config
+    if not (config.KQ6.ir_path and os.path.exists(config.KQ6.ir_path)):
+        print("  [SKIP] no KQ6 IR")
+        return
+    s = M.load(cfg=config.KQ6)
+    rows = [sp for sp in G.sink_survival_carryins(s) if sp.get("to_room") == 580]
+    check("🔴 KNOWN GAP: the mists carry-in demands rain-readiness (global161==15), not just the lamp",
+          bool(rows) and all("161" in sp["condition"] for sp in rows),
+          repr([sp["condition"] for sp in rows]))
+    landing = [sp for sp in G.guard_specs(s) + G.sink_survival_carryins(s)
+               if sp.get("to_room") == 550 and not sp.get("refused")]
+    check("🔴 KNOWN GAP: the isle landing is guarded when the shore-carry revisit is armed",
+          bool(landing),
+          "no spec guards any edge into rm550; the revisit ambush carries an unready player "
+          "to the cage sorter with no controllable moment after landing")
+
+
 if __name__ == "__main__":
     test_toll_logic()
     test_carry_in_logic()
     test_local_latch_is_modelled()
     test_exit_guard_placement()
     test_register_strandings_is_degenerate_on_sci11()
+    test_mists_survival_demand_carries_the_register_half()
     test_ground_truth()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))

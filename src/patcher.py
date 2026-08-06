@@ -261,6 +261,28 @@ def _ensure_refusal_use(text, titles_by_num):
     return text[:at] + "\n(use %s)" % owner + text[at:]
 
 
+_CLASS_OWNER = {}
+
+
+def _class_owner_title(dest, class_name):
+    """The TITLE of the script that DEFINES `class_name` in this project -- what a file that
+    references the class must `(use ...)`. Derived by scanning the project's own sources: KQ6
+    defines `Script` in System.sc, not in a file named Script.sc, so ensuring `(use Script)`
+    by class name manufactures an unresolvable dependency (measured: it was the whole of
+    Main's v23 compile failure)."""
+    key = (dest, class_name)
+    if key not in _CLASS_OWNER:
+        _CLASS_OWNER[key] = None
+        pat = re.compile(r"^\(class\s+%s\b" % re.escape(class_name), re.M)
+        src = os.path.join(dest, "src")
+        for f in sorted(os.listdir(src)) if os.path.isdir(src) else ():
+            if f.endswith(".sc") and pat.search(open(os.path.join(src, f),
+                                                     errors="replace").read()):
+                _CLASS_OWNER[key] = f[:-3]
+                break
+    return _CLASS_OWNER[key]
+
+
 def _ensure_use(text, name):
     """Add `(use <name>)` when the file lacks it -- the class-script twin of
     `_ensure_refusal_use`, for wraps that introduce a class reference (MoveTo needs Motion)."""
@@ -393,11 +415,31 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
         # sense after the game has said the thing it is retracting, and SCI1.1 puts the disposal
         # FIRST: KQ6's `(63 (gEgo put: 23 280) (say: ...))` printed "Just kidding!" before the joke
         # it was answering. LSL2 happened to order them the other way, which is why this shipped.
-        retraction = "%s%s\n" % (indent, _RETRACTION_FORM
-                                 % "Just kidding! You hold on to it because you still need it.")
+        #
+        # LAST IN TEXT IS NOT LAST ON SCREEN (finding #18, user play 2026-08-05, "a huge mess"):
+        # a Messager `say:` is ASYNC -- it queues a talker box for later cycles -- while our
+        # retraction is a MODAL Print, so a sibling statement opens ON TOP of the still-queued
+        # joke and the two fight for input claiming; neither dismisses. When the surviving
+        # clause speaks through a `say:` whose CALLER slot is free, the retraction rides the
+        # messager's COMPLETION instead: the caller argument is pointed at an injected
+        # cue-object that prints when the joke's box is dismissed. The sibling-append remains
+        # the fallback (and the path LSL2's synchronous Print clauses always used, unchanged).
+        wording = "Just kidding! You hold on to it because you still need it."
+        retraction = "%s%s\n" % (indent, _RETRACTION_FORM % wording)
         del lines[i]
         end = _clause_end_line(lines, i)
-        lines.insert(end, retraction)
+        say_pat = re.compile(r"(\(\s*global\d+\s+say:(?:\s+\S+){4}\s+)0(\s+\S+\s*\))")
+        say_at = next((j for j in range(i, end)
+                       if say_pat.search(lines[j]) and "softlock" not in lines[j]), None)
+        if say_at is not None:
+            inst = "sgRetract%d" % sk["item"]
+            lines[say_at] = say_pat.sub(r"\1%s\2" % inst, lines[say_at], count=1)
+            lines[say_at] = lines[say_at].rstrip("\n") + "  ; softlock-guard: retraction rides the say\n"
+            lines.append("\n(instance %s of Script\n\t(properties)\n\n"
+                         "\t(method (cue)\n\t\t%s\n\t)\n)\n"
+                         % (inst, _RETRACTION_FORM % wording))
+        else:
+            lines.insert(end, retraction)
         # Drop the penalty too. It was the price of DESTROYING the item, and the destruction is
         # gone -- charging for something that did not happen also caps the reachable score
         # permanently, which is a small unwinnable state of its own in a scored game. Only ever a
@@ -408,9 +450,15 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
             if sm:
                 dropped_score = int(sm.group(1))
                 del lines[i + 1]
-        open(path, "w").write(_ensure_refusal_use("".join(lines), titles_by_num))
+        new_txt = _ensure_refusal_use("".join(lines), titles_by_num)
+        if say_at is not None:
+            owner = _class_owner_title(dest, "Script")  # the injected cue-object's base class
+            if owner:
+                new_txt = _ensure_use(new_txt, owner)
+        open(path, "w").write(new_txt)
         edits.append({**sk, "applied": True, "title": title, "line": i + 1,
-                      "score_removed": dropped_score})
+                      "score_removed": dropped_score,
+                      "retraction": "rides-the-say" if say_at is not None else "appended"})
     return edits
 
 

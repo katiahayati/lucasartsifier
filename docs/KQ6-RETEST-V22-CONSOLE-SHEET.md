@@ -217,14 +217,19 @@ Throw the skull into the gears → refusal line, skull still in inventory, still
 Without the skull the room speaks stock. Regression-eye the whole room: crushing
 ceiling timing, the brick business — all must be stock.
 
-## R12 — mint / peppermint can't be destroyed anymore
+## R12 — ✅ VERIFIED 2026-08-05 on v23 ("mints refusal works")
 
+FINDING #18 (2026-08-05): v22's retraction Print clobbered the async joke message when
+using the mint on yourself — fixed in **v23** (the retraction now rides the say's
+completion). Install: v23 = v22 + new `0.SCR`/`0.HEP` — copy those two from
+`build/kq6_patch_v23/patch/` over your game copy (everything else is byte-identical).
 ```
 send ?ego get 23
 send ?ego get 31
 ```
-Use them on wrong objects around the world → they must no longer be consumed.
-(The genie feed at the pawn shop is covered inside R13's runs.)
+Use each on YOURSELF (the finding's own trace): the joke box shows, dismisses normally,
+THEN "Just kidding!..." shows, dismisses normally, item still in inventory. Then wrong
+objects around the world → never consumed. (The genie feed at the pawn shop is in R13.)
 
 ## R13 — the honest runs (NO console commands — that's the point)
 

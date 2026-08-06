@@ -56,6 +56,7 @@ def _placements(cfg):
     def where(e):
         return (e.get("title") or f"rm{e.get('from_room')}->rm{e.get('to_room')}") + (
             f"/{s.g.item_name(e['item'])}" if e.get("item") is not None else "")
+    _placements.last_rows = rows
     return ([where(e) for e in rows if e["applied"]],
             [(where(e), e.get("why") or "") for e in rows if not e["applied"]], s, specs)
 
@@ -95,6 +96,18 @@ def test_placement():
             check("KQ6: the wedding hold wraps rgCastle's own fuse write (all three spellings)",
                   {"rm740", "rm880", "rgCastle"} <= set(applied),
                   f"applied={sorted(set(applied))}")
+            # FINDING #18 (user play, 2026-08-05, fixed same day): "the just kidding message
+            # clobbers the action message and neither can be dismissed". LAST IN TEXT IS NOT
+            # LAST ON SCREEN: a Messager `say:` is async, so a sibling modal Print opens on
+            # top of the still-queued joke and the two fight for input. The retraction must
+            # ride the say's COMPLETION -- its caller argument points at an injected
+            # cue-object. LSL2's synchronous Print clauses keep the appended form (its golden
+            # is byte-identical).
+            sink_rows = [e for e in _placements.last_rows
+                         if e.get("retraction") and e["applied"]]
+            check("KQ6: sink retractions ride the say's caller, not a clobbering sibling Print",
+                  sink_rows and all(e["retraction"] == "rides-the-say" for e in sink_rows),
+                  repr([(e.get("item"), e.get("retraction")) for e in sink_rows]))
 
 
 def test_refusal_primitive_is_derived():

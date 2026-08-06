@@ -39,6 +39,26 @@ SRC = os.path.join(_ROOT, "src")
 # the next reader can tell a known limitation from a broken test without opening the file.
 KNOWN_RED = {
     "test_toll.py": {
+        "🔴 KNOWN GAP: the mists carry-in demands rain-readiness (global161==15), not just the lamp":
+            "USER FINDING 2026-08-05 (play): the cage sorter is (has:19 AND global161==15) -- "
+            "rm580.sc:1181 -- and all four readiness bits are established off-isle or from "
+            "inventory (rm540/KqInv/CryBaby/openBook), so sink_survival_carryins' item-half-only "
+            "premise ('the other conjuncts are established inside') is FALSE. The teacup's "
+            "entrance-half class, first real instance. Cure direction: carry the sorter's "
+            "conjunctively-required register literals into the demand, presentability-checked. "
+            "MEASURED BLOCKER (2026-08-05): reg161 has NO modeled writers -- every state reads 0 "
+            "-- because all four bit-writes are `(|= global161 $mask)` (compound assignment on a "
+            "GLOBAL, the Increment/Decrement gap's sibling; extract collects only plain "
+            "assignments) and three live in inventory/scene scripts (KqInv, openBook -- the "
+            "inventory-script scope gap). Cure = a bit-accumulator store: lower plain-global "
+            "mask arithmetic to per-bit synthetic registers with accumulation threaded, the way "
+            "Machine.local_regs threads local counters. Guard oracle row 5b.",
+        "🔴 KNOWN GAP: the isle landing is guarded when the shore-carry revisit is armed":
+            "Same finding, the harder half: under flag 25 & !14 & !74 the mists shore capture "
+            "(rm550.sc:282; captured -> direct newRoom: 580) delivers an unready player to the "
+            "same sorter with no controllable moment after landing -- leave-and-return-unready "
+            "dies ON ARRIVAL in stock. The last complying crossing is the landing itself "
+            "(stage-conditioned, like the cliff's capture-arm test). Guard oracle row 5c.",
         # ✅ CORRECTED, NOT PROMOTED, 2026-08-05 -- "the long route's treasure-corral letter
         # seal is detected" demanded a row with `register != 338`, and that row should never
         # exist: remeasured against the source, flag 166 (reg338, rFlag1 $0002) IS the long

@@ -103,11 +103,12 @@ owner's own property arithmetic) now freezes the enclosing countdown clause —
 and the game's own clock resumes on pickup; `vocab.lower_prop_flags` stashes
 `ir._sel_names` so the patcher can spell `rFlag1` from the store's numeric identity.
 80.SCR + 80.HEP join the emission (v22 = v21 + rgCastle, byte-identical elsewhere).
-✅ PLAY-TESTED 2026-08-05, the HOLD half (user, in-game, via the console recipe — armed
-fuse + letterless): "the wedding got held". Still open: resume-on-pickup (music starts
-after taking the letter), stock preservation with letter in hand (treasure-room exit still
-fires fast), and the full honest route. The capture-actor rule is no longer needed for the
-letter; it would only add earlier refusals for the corral hazard itself.
+✅ PLAY-VERIFIED 2026-08-05, ALL castle rows (user: "the castle is verified") — the hold
+fires letterless, the clock resumes on pickup, the with-letter path equals stock, and the
+treasures-first trace (finding #3's own reproduction) survives: passage open, letter
+fetchable, music on pickup. Finding #3's softlock is CLOSED in play. Still open: the full
+honest long route (E-row). The capture-actor rule is no longer needed for the letter; it
+would only add earlier refusals for the corral hazard itself.
 
 `test_kq6_ground_truth` passes all 16 checks. `KNOWN_GAPS` is empty and `LONG_ENDING_ONLY` is
 empty, so every unit the oracle calls real is caught and nothing outside the oracle is flagged.
@@ -361,8 +362,9 @@ cup-filled site ITSELF: flag 58 joins gauntlet+mirror on Charon's boarding (rm66
 mirror-shown rows refuse loudly at the pocket boundary. v20 = v19 with 660.SCR changed
 and 670.\*/680.\* LEAVING the set (stock); byte-identical elsewhere; LSL2/KQ4/Dagger
 surfaces byte-identical; pinned by test_toll's "water at Charon" / "interior seals
-modelled" / "no guard past Charon" checks. ⚠️ Charon's crossing needs RE-play-verifying
-(the verified v19 wrap gained the cup conjunct).
+modelled" / "no guard past Charon" checks. ✅ RE-PLAY-VERIFIED 2026-08-05 (user: "the
+realm is verified") — the cup conjunct at Charon and the stock interior, no hang past
+Charon, on the clean install after the stale-680.SCR incident (findings log).
 
 **The catacombs collapse (2026-08-01).** The 8 `rm*->rm420` brick wall-guards were an extraction
 artifact: `_maze_reach` flooded THROUGH other rooms' cells as if they were corridors, inventing a
@@ -509,4 +511,12 @@ revisit of rm580 would be walled") was RETIRED BY MEASUREMENT 2026-08-05: the ga
 forced revisit is the mists-shore capture (rm550.sc:282, flag 25 ∧ ¬14 — flag 25 is
 "visited and left", `rMist::dispose`), whose `captured` script delivers `newRoom: 580`
 directly, bypassing the guarded trail crossing entirely. The carry, not the walk, is the
-required path — see the 2026-08-05 rm550 row in the play plan's findings log.)
+required path — see the 2026-08-05 rm550 row in the play plan's findings log.
+⚠️ FINDING #17 (user play, 2026-08-05, PINNED RED ×2): the demand itself is HALF-RIGHT —
+the cage sorter is `(and (has: 19) (== global161 15))` (rm580.sc:1181), and this
+paragraph's old premise ("the poured-waters conjunct is established inside") is FALSE:
+all four readiness bits are off-isle/inventory and rm580 only resets 161. The teacup's
+entrance-half class, first real instance. AND the shore-carry revisit delivers an
+unready player to the same sorter with no post-landing control — leave-and-return-unready
+dies on arrival in stock; the landing is the last complying crossing. Guard oracle rows
+5b/5c; both REDs in test_toll.)
