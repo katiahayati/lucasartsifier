@@ -319,6 +319,33 @@ def _bump(cur, delta):
     return UNKNOWN_CTR if cur is UNKNOWN_CTR else cur + delta
 
 
+def _ctr_atom(a):
+    """`(tuple, negated)` if `a` is a counter test, however many `not`s wrap it -- else None.
+
+    BOTH POLARITIES, which is the fix. The walk used to test `isinstance(a, tuple)`, so a
+    positive `(if local1 ...)` resolved against the tracked value while the `else` arm --
+    `GNot(("CTR", ...))`, not a tuple -- fell through to the external-atom branch and was never
+    decided. Then-arms got pruned, else-arms always survived. Measured step-guard CTR atoms are
+    near parity, so this was half the counter tests in the corpus: LSL2 52 bare / 45 negated,
+    KQ4 32 / 19, KQ6 337 / 328, LB2 103 / 105.
+
+    Two things were wrong with that. It is PERMISSIVE -- a step that provably cannot run is
+    walked anyway, and its exits and effects are believed reachable, which misses softlocks
+    rather than inventing them. And it breaks `compile_machine`'s stated contract that guards
+    are "over EXTERNAL atoms only (counters resolved concretely)": the undecided atom leaked
+    into the exit guard, where a consumer meets a `("CTR", ...)` tuple in register-land and
+    cannot spell it.
+
+    `_lreg_test` already unwraps `GNot` this way for the lowered-register spelling of the same
+    question; this is that loop, for the raw counter."""
+    neg = False
+    while isinstance(a, GNot):
+        neg, a = (not neg), a.kid
+    if isinstance(a, tuple) and a and a[0] == "CTR":
+        return (a, neg)
+    return None
+
+
 def _ctr_holds(cond, counters, unknown=True):
     """Does this counter test hold at the valuation the walk established?
 
@@ -444,8 +471,11 @@ def compile_machine(machine, is_death):
             budget[0] -= 1
             ext, ok = [], True
             for a in st.guard:
-                if isinstance(a, tuple) and a and a[0] == "CTR":
-                    if not _ctr_holds(a, counters):
+                ctr = _ctr_atom(a)
+                if ctr is not None:
+                    tup, neg = ctr
+                    res = _ctr_holds(tup, counters, unknown=None)
+                    if res is not None and (not res if neg else res) is False:
                         ok = False
                         break
                 elif a is not None:
