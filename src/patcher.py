@@ -35,10 +35,11 @@ import guards as G
 import ir as I
 import missability as M
 from sexpr import read_file
+import trigger as T
 from trigger import (find_trigger, find_arming, find_all_armings, find_cue_chain_armings,
                      find_nav_assign, find_proc_calls, exports_of,
                      reaching_procs, reaching_owners, wrap_trigger_in_source,
-                     wrap_all_armings_in_source,
+                     wrap_all_armings_in_source, guarded_wrap, stock_or, _ModeSite,
                      _block_span,
                      _enclosing_clause_body, enclosing_clause_head, _find_region)
 
@@ -66,15 +67,19 @@ _IR = None                     # the analysed IR, stashed by configure() for ass
 def configure(ir):
     """Derive this game's object-global layout so the patcher emits its real indices, not the
     template's 0/1/2. Call once before apply_*()."""
-    global _EGO, _GAME, _ROOM, _IR, REFUSE, _JUST_KIDDING, _SEL_NAMES
+    global _EGO, _GAME, _ROOM, _IR, REFUSE, _JUST_KIDDING, _SEL_NAMES, _WARNED_LINE, _MODE_DEST
     _IR = ir
     _SEL_NAMES = None              # per-game: the selector table is the game's own
+    _MODE_DEST = None              # a new game invalidates the mode-global derivation
+    T.MODE = None
     form = refusal_form(ir)
     # No derivable way to show a line -> emit NO refusal text at all. A guard that refuses
     # silently is the "the game lied to the player" class that only play-testing caught last time,
     # so `apply_guards` treats an empty refusal as a reason not to place a refusal-bearing guard.
     REFUSE = (form % "Not yet!") if form else None
     _JUST_KIDDING = (form % "Just kidding! You still need it.") if form else None
+    # Lite mode's repeat-firing line, same derived display form as every other wording.
+    _WARNED_LINE = (form % "You have been warned!") if form else None
     globals()["_RETRACTION_FORM"] = form or "%s"
     import extract as X
     X.install_vocabulary(ir)                       # sets X._EGO = the ego holder global(s)
@@ -340,12 +345,59 @@ def _all_sources(src_dir):
     return "\n".join(parts)
 
 
+_MODE_DEST = None                  # the dest _init_mode last derived for (cache key)
+
+
+def _init_mode(dest):
+    """Derive the guard-mode storage for this project and hand it to the emitters.
+
+    The mode global is the first index past everything the game declares OR references --
+    computed from the assembled sources exactly as `_declare_missing_globals` computes its
+    ceiling, so the two can never claim the same word (LSL2's stock rm63 already reads
+    global480 out of bounds; the mode lands at 481 there for the same reason the declaration
+    pass ends at 480). Warned-bit words follow it, allocated 16 bits at a time as sites ask.
+    All of them become ordinary declared globals when `_declare_missing_globals` re-runs at
+    compile time, because by then the guard text REFERENCES them -- nothing is registered
+    anywhere by hand.
+
+    A game with no derivable display form gets no mode at all (T.MODE stays None -> classic
+    always-refuse emission): there is no way to print the warned line, and no way to build
+    the chooser UI either."""
+    global _MODE_DEST
+    if _WARNED_LINE is None or _MODE_DEST == dest:
+        return
+    _MODE_DEST = dest
+    src_dir = os.path.join(dest, "src")
+    txt = _all_sources(src_dir)
+    highest = max((int(m) for m in re.findall(r"\bglobal(\d+)\b", txt)), default=-1)
+    base = highest + 1
+    counter = [0]
+
+    def alloc():
+        b = counter[0]
+        counter[0] += 1
+        return base + 1 + b // 16, "$%04x" % (1 << (b % 16))
+    T.MODE = {"g": base, "warned": _WARNED_LINE, "alloc": alloc}
+
+
 def apply_sink_remedies(dest, sinks, titles_by_num):
-    """Delete the item consumption in each dangerous PURE SINK.
+    """Withhold the item consumption in each dangerous PURE SINK.
 
     Safe by construction: a pure sink is a clause that does nothing EXCEPT destroy the item (it
-    arms no machine state and writes no register any guard reads), so removing its one effect
-    cannot perturb anything else. The joke and the score penalty stay; the player keeps the item."""
+    arms no machine state and writes no register any guard reads), so withholding its one effect
+    cannot perturb anything else. The joke stays; the player keeps the item.
+
+    Mode-aware since the lite-mode feature: the `put:` is no longer DELETED but wrapped in the
+    run-time mode dispatch -- full mode withholds it exactly as v25's deletion did (the branch
+    never runs under mode 0), stock lets the stock disposal through, and lite withholds once
+    then lets a warned player waste the item for real. The adjacent negative `changeScore:`
+    rides the disposal branch: the penalty is the price of the destruction, charged exactly
+    when it happens. The retraction only speaks when the disposal was actually withheld --
+    inline behind `(not <allow>)` on the appended path, and via the cue-object's `armed`
+    property on the rides-the-say path (armed by the withhold branch, cleared by the cue), so
+    full-mode timing is unchanged. A MODE-less run (no derivable display form) keeps the
+    original deletion shape."""
+    _init_mode(dest)
     edits = []
     seen = set()
     for sk in sinks:
@@ -425,31 +477,86 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
         # cue-object that prints when the joke's box is dismissed. The sibling-append remains
         # the fallback (and the path LSL2's synchronous Print clauses always used, unchanged).
         wording = "Just kidding! You hold on to it because you still need it."
-        retraction = "%s%s\n" % (indent, _RETRACTION_FORM % wording)
-        del lines[i]
-        end = _clause_end_line(lines, i)
         say_pat = re.compile(r"(\(\s*global\d+\s+say:(?:\s+\S+){4}\s+)0(\s+\S+\s*\))")
-        say_at = next((j for j in range(i, end)
-                       if say_pat.search(lines[j]) and "softlock" not in lines[j]), None)
-        if say_at is not None:
-            inst = "sgRetract%d" % sk["item"]
-            lines[say_at] = say_pat.sub(r"\1%s\2" % inst, lines[say_at], count=1)
-            lines[say_at] = lines[say_at].rstrip("\n") + "  ; softlock-guard: retraction rides the say\n"
-            lines.append("\n(instance %s of Script\n\t(properties)\n\n"
-                         "\t(method (cue)\n\t\t%s\n\t)\n)\n"
-                         % (inst, _RETRACTION_FORM % wording))
+        forms = _ModeSite().forms() if T.MODE is not None else None
+        if forms is None:
+            # No mode (no derivable display form): the original deletion shape, unchanged.
+            retraction = "%s%s\n" % (indent, _RETRACTION_FORM % wording)
+            del lines[i]
+            end = _clause_end_line(lines, i)
+            say_at = next((j for j in range(i, end)
+                           if say_pat.search(lines[j]) and "softlock" not in lines[j]), None)
+            if say_at is not None:
+                inst = "sgRetract%d" % sk["item"]
+                lines[say_at] = say_pat.sub(r"\1%s\2" % inst, lines[say_at], count=1)
+                lines[say_at] = lines[say_at].rstrip("\n") + "  ; softlock-guard: retraction rides the say\n"
+                lines.append("\n(instance %s of Script\n\t(properties)\n\n"
+                             "\t(method (cue)\n\t\t%s\n\t)\n)\n"
+                             % (inst, _RETRACTION_FORM % wording))
+            else:
+                lines.insert(end, retraction)
+            # Drop the penalty too. It was the price of DESTROYING the item, and the destruction
+            # is gone -- charging for something that did not happen also caps the reachable score
+            # permanently, a small unwinnable state of its own in a scored game. Only ever a
+            # NEGATIVE score adjacent to the consumption; a positive one rewards something real.
+            dropped_score = None
+            if i + 1 < len(lines):
+                sm = re.match(r"\s*\(global%d\s+changeScore:\s*(-\d+)\)\s*$" % _GAME, lines[i + 1])
+                if sm:
+                    dropped_score = int(sm.group(1))
+                    del lines[i + 1]
         else:
-            lines.insert(end, retraction)
-        # Drop the penalty too. It was the price of DESTROYING the item, and the destruction is
-        # gone -- charging for something that did not happen also caps the reachable score
-        # permanently, which is a small unwinnable state of its own in a scored game. Only ever a
-        # NEGATIVE score adjacent to the consumption; a positive one rewards something legitimate.
-        dropped_score = None
-        if i + 1 < len(lines):
-            sm = re.match(r"\s*\(global%d\s+changeScore:\s*(-\d+)\)\s*$" % _GAME, lines[i + 1])
-            if sm:
-                dropped_score = int(sm.group(1))
-                del lines[i + 1]
+            # Mode dispatch. The put line becomes the conditional block IN PLACE (indices below
+            # stay stable); the penalty joins the disposal branch; the retraction speaks only
+            # when the disposal was withheld.
+            allow, warn, mark = forms
+            put_src = lines[i].strip()
+            dropped_score = None
+            score_src = ""
+            if i + 1 < len(lines):
+                sm = re.match(r"\s*\(global%d\s+changeScore:\s*(-\d+)\)\s*$" % _GAME, lines[i + 1])
+                if sm:
+                    dropped_score = int(sm.group(1))
+                    score_src = "%s\t%s\n" % (indent, lines[i + 1].strip())
+                    del lines[i + 1]
+            end = _clause_end_line(lines, i)
+            say_at = next((j for j in range(i + 1, end)
+                           if say_pat.search(lines[j]) and "softlock" not in lines[j]), None)
+            if say_at is not None:
+                # The withheld-this-time latch is the Script class's own `register` property --
+                # an EXISTING selector, deliberately: a novel property name would need a new
+                # entry in the selector vocab (997), which the patch set does not ship.
+                inst = "sgRetract%d" % sk["item"]
+                lines[say_at] = say_pat.sub(r"\1%s\2" % inst, lines[say_at], count=1)
+                lines[say_at] = lines[say_at].rstrip("\n") + "  ; softlock-guard: retraction rides the say\n"
+                lines[i] = ("%s(if %s\n"
+                            "%s\t%s\n"
+                            "%s\t%s\n"
+                            "%s"
+                            "%selse\n"
+                            "%s\t(%s register: 1)\n"
+                            "%s\t%s\n"
+                            "%s)  ; softlock-guard: mode-conditional disposal\n"
+                            % (indent, allow, indent, warn, indent, put_src, score_src,
+                               indent, indent, inst, indent, mark, indent))
+                lines.append("\n(instance %s of Script\n\t(properties)\n\n"
+                             "\t(method (cue)\n\t\t(if register\n\t\t\t(= register 0)\n\t\t\t%s\n"
+                             "\t\t)\n\t)\n)\n"
+                             % (inst, _RETRACTION_FORM % wording))
+            else:
+                lines[i] = ("%s(if %s\n"
+                            "%s\t%s\n"
+                            "%s\t%s\n"
+                            "%s"
+                            "%s)  ; softlock-guard: mode-conditional disposal\n"
+                            % (indent, allow, indent, warn, indent, put_src, score_src, indent))
+                # Retraction LAST in the clause, after the announcement it answers -- and the
+                # warned mark rides it: nothing between here and the block writes the warned
+                # word, so `allow` reads the same both times.
+                end = _clause_end_line(lines, i)
+                lines.insert(end, "%s(if (not %s)\n%s\t%s\n%s\t%s\n%s)  ; softlock-guard: retraction\n"
+                             % (indent, allow, indent, _RETRACTION_FORM % wording,
+                                indent, mark, indent))
         new_txt = _ensure_refusal_use("".join(lines), titles_by_num)
         if say_at is not None:
             owner = _class_owner_title(dest, "Script")  # the injected cue-object's base class
@@ -599,6 +706,8 @@ REFUSE = "(proc255_0 {Not yet!})"
 # announcement is not left lying. Generic on PURPOSE -- it must fit any wasted item, counter or
 # flag, so it says nothing about what the item does. No apostrophes -- a single quote opens a Said.
 _JUST_KIDDING = "(proc255_0 {Just kidding! You still need it.})"
+# Lite mode's repeat-firing line (see trigger.guarded_wrap); derived by configure() like the rest.
+_WARNED_LINE = "(proc255_0 {You have been warned!})"
 _RETRACTION_FORM = "(proc255_0 {%s})"   # the same form, un-worded; set by configure()
 # NOT the stock refusals. proc0_20 ("You don't have it.") LIES -- reported from live play at rm26,
 # where the player was holding the very item they had just used; what they lacked was something
@@ -652,16 +761,20 @@ def guard_edgehit_clause(text, direction, cond):
         i += 1
     body = text[m.end():i - 1]
     ego = "global%d" % _EGO
-    wrapped = ("\n\t\t\t\t(if %s%s\n\t\t\t\telse\n"
-               "\t\t\t\t\t(%s setMotion: 0)\n"
-               "\t\t\t\t\t(%s x: (- (%s x:) 12))\n"
-               "\t\t\t\t\t(%s edgeHit: 0)   ; else the clause re-fires every cycle\n"
-               "\t\t\t\t\t%s  ; softlock-guard\n\t\t\t\t)\n\t\t\t"
-               % (cond, body, ego, ego, ego, ego, REFUSE))
+    # The motion/flag resets ride EVERY refusal (deny_extra): without them the clause re-fires
+    # each cycle. In lite-once-warned and stock the body runs instead, and the crossing itself
+    # moves the ego off the edge, so the resets are refusal-only by construction.
+    wrapped = ("\n\t\t\t\t"
+               + guarded_wrap(cond, body, REFUSE, site=_ModeSite(), indent="\t\t\t\t",
+                              deny_extra=("(%s setMotion: 0)" % ego,
+                                          "(%s x: (- (%s x:) 12))" % (ego, ego),
+                                          "(%s edgeHit: 0)   ; else the clause re-fires every cycle"
+                                          % ego))
+               + "\n\t\t\t")
     return text[:m.end()] + wrapped + text[i - 1:], 1
 
 
-def _recycle_counter_break(text, write_start, msg):
+def _recycle_counter_break(text, write_start, msg, forms=None):
     """Neutralize a COUNTER-GATED break whose counter also indexes a bounded store.
 
     Some degradations are not a standalone write but a break clause `(if (>= C L) <then> else <E>)`
@@ -713,10 +826,24 @@ def _recycle_counter_break(text, write_start, msg):
     anns = re.findall(r"\(proc255_0[^()]*\)", text[cond_e:elp])   # keep the clause's own announcements
     else_body = text[elp + 4:e - 1].strip()
     ind = text[text.rfind("\n", 0, s) + 1:s]
-    body = "".join("\n%s\t%s" % (ind, a) for a in anns)
-    body += "\n%s\t%s  ; softlock-guard: retract the break" % (ind, msg)
-    body += ("\n%s\t(= %s %d)  ; softlock-guard: recycle the bounded store, never exhaust"
-             % (ind, counter, limit - 1))
+    if forms is not None:
+        # Mode dispatch: stock (and lite-once-warned) keeps the game's own break -- the original
+        # THEN body runs untouched -- while full withholds it exactly as the recycle always did.
+        allow, warn, mark = forms
+        then_body = text[cond_e:elp].strip()
+        body = "\n%s\t(if %s\n%s\t\t%s\n%s\t\t%s\n%s\telse" % (ind, allow, ind, warn,
+                                                               ind, then_body, ind)
+        body += "".join("\n%s\t\t%s" % (ind, a) for a in anns)
+        body += "\n%s\t\t%s  ; softlock-guard: retract the break" % (ind, msg)
+        body += "\n%s\t\t%s" % (ind, mark)
+        body += ("\n%s\t\t(= %s %d)  ; softlock-guard: recycle the bounded store, never exhaust"
+                 % (ind, counter, limit - 1))
+        body += "\n%s\t)" % ind
+    else:
+        body = "".join("\n%s\t%s" % (ind, a) for a in anns)
+        body += "\n%s\t%s  ; softlock-guard: retract the break" % (ind, msg)
+        body += ("\n%s\t(= %s %d)  ; softlock-guard: recycle the bounded store, never exhaust"
+                 % (ind, counter, limit - 1))
     rebuilt = "(if %s%s\n%s)\n%s%s" % (cond, body, ind, ind, else_body)
     return text[:s] + rebuilt + text[e:], True
 
@@ -732,6 +859,7 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
     NOTE for play-test: the shovel's break CLAUSE also prints a 'broke' line and plays a break
     animation; removing only the `loop: 1` leaves those cosmetics saying it broke when it did not.
     Harmless (no softlock), flagged for a later polish pass."""
+    _init_mode(dest)
     out, seen = [], set()
     for r in remedies:
         it, prop, room = r["item"], r["property"], r["room"]
@@ -755,6 +883,7 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
             out.append({**r, "applied": False,
                         "why": "no literal-display form derives for this game"})
             continue
+        forms = _ModeSite().forms() if T.MODE is not None else None
         valpat = r"\(\+" if r["counter"] else r"%d\b" % r["value"]     # increment vs literal dead value
         pat = re.compile(r"\(\([^()]*\bat:\s*%d\s*\)\s*%s:\s*%s" % (it, re.escape(prop), valpat))
         hits = [i for i, l in enumerate(lines) if pat.search(l)]
@@ -768,7 +897,7 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
         text = "".join(lines)
         recycled = 0
         for m in reversed(list(pat.finditer(text))):
-            nt, ok = _recycle_counter_break(text, m.start(), _JUST_KIDDING)
+            nt, ok = _recycle_counter_break(text, m.start(), _JUST_KIDDING, forms)
             if ok:
                 text, recycled = nt, recycled + 1
         if recycled:
@@ -779,7 +908,15 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
         msg = _JUST_KIDDING
         for i in hits:
             indent = re.match(r"[ \t]*", lines[i]).group(0)
-            lines[i] = "%s; [softlock-guard] %s no longer wasted here\n" % (indent, r["item_name"])
+            if forms is None:
+                lines[i] = "%s; [softlock-guard] %s no longer wasted here\n" % (indent, r["item_name"])
+            else:
+                # Mode dispatch: stock (and lite-once-warned) wastes the resource as stock does;
+                # full withholds the write exactly as the comment-out always did.
+                allow, warn, _mark = forms
+                lines[i] = ("%s(if %s\n%s\t%s\n%s\t%s\n"
+                            "%s)  ; softlock-guard: mode-conditional degradation\n"
+                            % (indent, allow, indent, warn, indent, lines[i].strip(), indent))
             # Print a JUST-KIDDING line right after the clause's OWN announcement (the "you broke
             # it" / "you shot it away" message), like the airsick-bag sink, so the game does not
             # claim a loss that no longer happens. Embed the new line in the target string so the
@@ -831,10 +968,202 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
                                 tgt = tear - 1 if tear is not None else nxt
                         break
             aind = re.match(r"[ \t]*", lines[tgt]).group(0)
-            lines[tgt] = lines[tgt].rstrip("\n") + "\n%s%s  ; [softlock-guard]\n" % (aind, msg)
+            if forms is None:
+                lines[tgt] = lines[tgt].rstrip("\n") + "\n%s%s  ; [softlock-guard]\n" % (aind, msg)
+            else:
+                # The retraction only speaks when the write was withheld, and the warned mark
+                # rides it (nothing between the write and here touches the warned word).
+                allow, _warn, mark = forms
+                lines[tgt] = (lines[tgt].rstrip("\n")
+                              + "\n%s(if (not %s) %s %s)  ; [softlock-guard]\n"
+                              % (aind, allow, msg, mark))
         open(path, "w").write("".join(lines))
         out.append({**r, "applied": True, "title": title, "sites": len(hits)})
     return out
+
+
+_CHOOSER_TEXT = ("Softlock guards: FULL refuses dangerous moves. "
+                 "LITE warns once then allows. STOCK is the original game.")
+
+
+def install_mode_ui(dest, titles_by_num):
+    """Install the in-game guard-mode chooser and declare the mode/warned globals.
+
+    The player-facing half of the mode feature: an entry in each game's own settings surface
+    that sets the mode global (0 full / 1 lite / 2 stock). The SURFACE is derived by shape,
+    the same way `refusal_form` derives the display proc:
+
+      * SCI0's settings live on the MENU BAR -- the file with the most literal `(AddMenu {..}
+        {..})` declarations (Menu.sc on LSL2/KQ4; KQ4's DebugMenu has one and Interface's
+        `(AddMenu &rest)` forwarder has none). A `Guards...` item is APPENDED to the last
+        declared menu -- appending is the one placement that cannot shift any existing menu
+        code, including KQ4's runtime DebugMenu (menu 6) -- and its handler case is inserted
+        before the handleEvent switch's own top-level `else`, reusing the switch's `temp0`.
+        The chooser is the game's own button dialog (`81 <text> <value>` pairs on the derived
+        display proc, values 1/2/3 so 0 = dismissed = keep).
+      * SCI1.1's settings are the CONTROL PANEL -- the file holding the `of GameControls`
+        instance. A ControlIcon is added below the deepest existing icon row (nsTop expression
+        copied from the host file with its row offsets +20; view 947's window interior leaves
+        ~38px below the last row, measured), cloned from iconTextSwitch's working shape
+        (signal $0183: the panel stays open, `theObj: self selector: #doit`), face reusing an
+        existing button loop. Its doit runs a 3-button `Print` chooser (the font spelled as
+        the host file spells it).
+
+    Also the one place the NEW globals get declared: `_declare_missing_globals` re-runs here,
+    AFTER every apply pass, because the mode/warned globals exist only in emitted text --
+    `assemble()`'s early run cannot see them. Returns edit rows (never merged into the
+    apply_* returns -- those are a frozen snapshot surface); `title`s must join the emission
+    set, `Main` included when the declaration pass touched it."""
+    _init_mode(dest)
+    if T.MODE is None:
+        return []
+    g = T.MODE["g"]
+    src_dir = os.path.join(dest, "src")
+    out = []
+    row = _install_menu_chooser(src_dir, g)
+    if row is None:
+        row = _install_panel_chooser(src_dir, g)
+    out.append(row if row is not None else
+               {"applied": False, "ui": None,
+                "why": "no menu bar or control panel shape found to host the chooser"})
+    if _declare_missing_globals(src_dir):
+        out.append({"applied": True, "title": "Main", "ui": "globals",
+                    "why": "mode/warned globals declared"})
+    return out
+
+
+def _install_menu_chooser(src_dir, g):
+    """The SCI0 half of `install_mode_ui`. Returns an edit row, or None if no menu bar."""
+    addmenu = re.compile(r"\(AddMenu\s+\{[^}]*\}\s+\{([^}]*)\}\s*\)", re.S)
+    best, best_n = None, 0
+    for fn in sorted(os.listdir(src_dir)):
+        if fn.endswith(".sc"):
+            txt = open(os.path.join(src_dir, fn), errors="replace").read()
+            n = len(addmenu.findall(txt))
+            if n > best_n:
+                best, best_n, text = fn, n, txt
+    if best is None or best_n < 2:     # one AddMenu is a runtime extension, not the bar
+        return None
+    menus = list(addmenu.finditer(text))
+    last = menus[-1]
+    menu_idx = len(menus)                            # 1-based menu position
+    item_idx = last.group(1).count(":") + 2          # separators count; ours appends after all
+    code = (menu_idx << 8) | item_idx
+    text = text[:last.end(1)] + ":Guards..." + text[last.end(1):]
+    # the handler case, before the switch's own top-level else (same file, same method)
+    hm = re.search(r"\(method\s+\(handleEvent\b", text)
+    if not hm:
+        return {"applied": False, "ui": "menu", "title": best[:-3],
+                "why": "menu bar has no handleEvent to extend"}
+    ms, me = _block_span(text, hm.start())
+    sw = re.search(r"\(switch\s+\(=\s+(\w+)\s+\(super handleEvent:", text[ms:me])
+    if not sw:
+        return {"applied": False, "ui": "menu", "title": best[:-3],
+                "why": "menu handleEvent has no `(switch (= tN (super handleEvent:` head"}
+    tmp = sw.group(1)
+    ss, se = _block_span(text, ms + sw.start())
+    # top-level clauses of the switch: depth-1 forms after the head expression
+    head_end = _block_span(text, text.index("(", ms + sw.start() + 1))[1]   # the head expr
+    at, depth, i = None, 0, head_end
+    while i < se:
+        ch = text[i]
+        if ch == "(":
+            if depth == 0 and re.match(r"\(\s*else\b", text[i:]):
+                at = i
+                break
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth < 0:
+                break
+        i += 1
+    if at is None:
+        at = se - 1                                   # no else: before the switch's close
+    indent = re.search(r"[ \t]*$", text[:at]).group(0)
+    proc = re.search(r"\(proc\d+_\d+", _RETRACTION_FORM).group(0)[1:]
+    case = ("(%d\n"
+            "%s\t(= %s\n"
+            "%s\t\t(%s\n"
+            "%s\t\t\t{%s}\n"
+            "%s\t\t\t81 { Full } 1\n"
+            "%s\t\t\t81 { Lite } 2\n"
+            "%s\t\t\t81 { Stock } 3\n"
+            "%s\t\t)\n"
+            "%s\t)\n"
+            "%s\t(if %s (= global%d (- %s 1)))\n"
+            "%s)  ; softlock-guard: mode chooser\n%s"
+            % (code, indent, tmp, indent, proc, indent, _CHOOSER_TEXT, indent, indent,
+               indent, indent, indent, indent, tmp, g, tmp, indent, indent))
+    text = text[:at] + case + text[at:]
+    open(os.path.join(src_dir, best), "w").write(text)
+    return {"applied": True, "ui": "menu", "title": best[:-3], "menu_code": code}
+
+
+def _install_panel_chooser(src_dir, g):
+    """The SCI1.1 half of `install_mode_ui`. Returns an edit row, or None if no panel."""
+    host, text = None, None
+    for fn in sorted(os.listdir(src_dir)):
+        if fn.endswith(".sc"):
+            t = open(os.path.join(src_dir, fn), errors="replace").read()
+            if re.search(r"\(instance\s+\w+\s+of\s+GameControls\b", t):
+                host, text = fn, t
+                break
+    if host is None:
+        return None
+    # the new row: the host's own nsTop spelling, its two row-offset constants bumped one
+    # row (+20) past the deepest existing row; its own font; an existing button face
+    tops = re.findall(r"\(=\s+nsTop\s+(\(.*?\))\s*\)", text)
+    rows = [(int(m.group(1)), int(m.group(2)), t)
+            for t in tops
+            for m in [re.search(r"\(if [^)]*\)\s*(\d+)\s+else\s+(\d+)", t.replace("\n", " "))]
+            if m]
+    if not rows:
+        return {"applied": False, "ui": "panel", "title": host[:-3],
+                "why": "no `(= nsTop (.. X else Y ..))` row idiom to clone"}
+    x, y, tmpl = max(rows)
+    ns_top = tmpl.replace(" %d " % x, " %d " % (x + 20), 1)
+    ns_top = re.sub(r"else\s+%d\b" % y, "else %d" % (y + 20), ns_top, count=1)
+    fm = re.search(r"font:\s*(global\d+|\d+)", text)
+    font = fm.group(1) if fm else "0"
+    im = re.search(r"\(instance\s+\w+\s+of\s+ControlIcon\b.*?view\s+(\d+).*?loop\s+(\d+)",
+                   text, re.S)
+    if not im:
+        return {"applied": False, "ui": "panel", "title": host[:-3],
+                "why": "no ControlIcon instance to clone a face from"}
+    view, loop = im.group(1), im.group(2)
+    # join the panel's add: list right before its first eachElementDo:
+    ee = re.search(r"\n([ \t]*)eachElementDo:", text)
+    if not ee:
+        return {"applied": False, "ui": "panel", "title": host[:-3],
+                "why": "GameControls add: list has no eachElementDo: anchor"}
+    ind = ee.group(1)
+    entry = "\n%s(iconGuards theObj: iconGuards selector: #doit yourself:)" % ind
+    text = text[:ee.start()] + entry + text[ee.start():]
+    inst = (
+        "\n(instance iconGuards of ControlIcon\n"
+        "\t(properties\n\t\tview %s\n\t\tloop %s\n\t\tcel 0\n\t\tsignal 387\n\t)\n\n"
+        "\t(method (show)\n"
+        "\t\t(= nsLeft 108)\n"
+        "\t\t(= nsTop %s)\n"
+        "\t\t(super show: &rest)\n"
+        "\t)\n\n"
+        "\t(method (doit &tmp temp0)\n"
+        "\t\t(= temp0\n"
+        "\t\t\t(Print\n"
+        "\t\t\t\tfont: %s\n"
+        "\t\t\t\taddText: {%s}\n"
+        "\t\t\t\taddButton: 1 {Full} 0 12\n"
+        "\t\t\t\taddButton: 2 {Lite} 45 12\n"
+        "\t\t\t\taddButton: 3 {Stock} 95 12\n"
+        "\t\t\t\tinit:\n"
+        "\t\t\t)\n"
+        "\t\t)\n"
+        "\t\t(if temp0 (= global%d (- temp0 1)))\n"
+        "\t\t(self show:)\n"
+        "\t)\n)\n" % (view, loop, ns_top, font, _CHOOSER_TEXT, g))
+    text = text + inst
+    open(os.path.join(src_dir, host), "w").write(text)
+    return {"applied": True, "ui": "panel", "title": host[:-3]}
 
 
 def guard_board_commit(text, cond):
@@ -857,8 +1186,8 @@ def guard_board_commit(text, cond):
     if not clause:
         return text, 0
     bs, be = clause
-    wrapped = ("(if %s\n\t\t\t\t%s\n\t\t\telse\n\t\t\t\t%s  ; softlock-guard: cannot board without it"
-               "\n\t\t\t)" % (cond, text[bs:be], REFUSE))
+    wrapped = guarded_wrap(cond, text[bs:be], REFUSE, site=_ModeSite(),
+                           marker="; softlock-guard: cannot board without it")
     return text[:bs] + wrapped + text[be:], 1
 
 
@@ -927,7 +1256,7 @@ def guard_edge_exit(text, inst_name, to_room, cond):
     closes = "".join("\n%s\t(global%d %s: 0)" % (indent, _ROOM, d) for d in directions)
     ins = ("\n%s; [softlock-guard] close this exit until the player can survive past it\n"
            "%s(if (not %s)%s\n%s)"
-           % (indent, indent, cond, closes, indent))
+           % (indent, indent, stock_or(cond), closes, indent))
     return text[:at] + ins + text[at:], 1, "+".join(directions)
 
 
@@ -969,7 +1298,7 @@ def guard_register_write(text, register, trap, cond):
             named = [e for e in encls if _cond_names_reg(e[0])]
             es, ee = named[0] if named else min(encls, key=lambda e: e[0])
             wrapped = ("(if %s\n\t\t\t%s\n\t\t)  ; softlock-guard: hold the flip until survivable"
-                       % (cond, region[es:ee]))
+                       % (stock_or(cond), region[es:ee]))
             return text[:bs] + region[:es] + wrapped + region[ee:] + text[be:], 1
     return text, 0
 
@@ -992,7 +1321,7 @@ def guard_prop_flag_write(text, sel, word, bit, recv_src, cond):
     mask = 1 << bit
     want_recv = re.sub(r"\s+", " ", recv_src.strip("() ")).strip()
     guarded = "(if %s (%s %s: %d %d))  ; softlock-guard: hold the flip until obtainable" % (
-        cond, recv_src, sel, word, mask)
+        stock_or(cond), recv_src, sel, word, mask)
     edits = []                      # (send_start, send_end, replacement)
     for m in re.finditer(r"%s:\s+%d\s+%d\b" % (re.escape(sel), word, mask), text):
         # the innermost balanced form containing the message IS the send (its args are literals)
@@ -1090,7 +1419,7 @@ def guard_prop_flag_owner_write(text, prop_name, mask, cond):
             named = [e for e in encls if _cond_names_prop(e[0])]
             es, ee = named[0] if named else min(encls, key=lambda e: e[0])
             wrapped = ("(if %s\n\t\t\t%s\n\t\t)  ; softlock-guard: hold the flip until obtainable"
-                       % (cond, region[es:ee]))
+                       % (stock_or(cond), region[es:ee]))
             return text[:bs] + region[:es] + wrapped + region[ee:] + text[be:], 1
     return text, 0
 
@@ -1206,14 +1535,16 @@ def _guard_travel_dispatch(dest, sp, titles_by_num, seen_dispatch):
             continue
         guard = "(or (not (== %s %d)) %s)" % (prop, sp["to_room"],
                                               to_source_syntax(sp["condition"]))
+        site = _ModeSite()             # one dispatch guard, one warned bit across its arms
         for (bs, be, body) in reversed(edits):
             # the marker comment must be followed by a newline BEFORE the arm's own closing
             # paren resumes at text[be:], or the `;` swallows that paren and the file no
-            # longer balances
+            # longer balances (guarded_wrap keeps that property)
             text = (text[:bs]
-                    + "\n\t\t\t\t(if %s%s\n\t\t\t\telse\n\t\t\t\t\t%s\n\t\t\t\t)"
-                      "  ; softlock-guard: the landing\n\t\t\t"
-                    % (guard, body.rstrip(), REFUSE)
+                    + "\n\t\t\t\t"
+                    + guarded_wrap(guard, body, REFUSE, site=site, indent="\t\t\t\t",
+                                   marker="; softlock-guard: the landing")
+                    + "\n\t\t\t"
                     + text[be:])
         open(path, "w").write(_ensure_refusal_use(text, titles_by_num))
         seen_dispatch.add(key)
@@ -1237,6 +1568,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
     `entry_frontier(room)` -- MODEL knowledge for the arrival-commit re-site: the rooms that
     cross INTO `room` from outside its pocket (`guards.commit_entry_frontier`). Without it an
     arrival commit stays honestly unplaced, exactly as before this parameter existed."""
+    _init_mode(dest)               # runtime stock/lite/full dispatch for everything placed below
     out_unplaced = []
     by_title = {}
     for sp in specs:
@@ -1639,7 +1971,7 @@ def _gate_notify_awards(dest, cond):
                 a0, a1 = bs + am.start(), bs + am.end()
                 wrapped = ("(if %s\n\t\t\t\t\t%s\n\t\t\t\t)"
                            "  ; softlock-guard: the award belongs to the ride"
-                           % (cond, text[a0:a1]))
+                           % (stock_or(cond), text[a0:a1]))
                 text = text[:a0] + wrapped + text[a1:]
                 n += 1
         if n:
@@ -2048,7 +2380,12 @@ def main():
         print("  [%s] %-16s %s" % (mark, loc, how))
         if e["applied"]:
             print("        %s" % to_source_syntax(e["condition"]))
-    touched = sorted({e["title"] for e in edits + resedits + gedits if e["applied"]})
+    uedits = install_mode_ui(dest, titles_by_num)
+    for e in uedits:
+        print("  [%s] mode-ui %-10s %s" % ("ok " if e["applied"] else "SKIP",
+                                           e.get("title", "?"), e.get("why", "")))
+    touched = sorted({e["title"] for e in edits + resedits + gedits + uedits
+                      if e["applied"] and e.get("title")})
 
     print("\ncompiling...")
     r = compile_project(dest)

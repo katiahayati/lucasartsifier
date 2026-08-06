@@ -182,11 +182,19 @@ def main(argv=None):
                                    else f"script{e.get('script', '?')}")
         why = "" if e["applied"] else f"  ({e.get('why', 'not placed')})"
         print(f"    [{'ok ' if e['applied'] else 'SKIP'}] {where}{why}")
+    # The in-game mode chooser + the mode/warned global declarations -- AFTER every apply pass
+    # (the globals exist only in emitted text), and NEVER merged into the apply_* rows (those
+    # are a frozen snapshot surface).
+    uedits = P.install_mode_ui(dest, titles)
+    for e in uedits:
+        print(f"    [{'ok ' if e['applied'] else 'SKIP'}] mode-ui {e.get('title', '?')}"
+              + (f"  ({e['why']})" if e.get("why") else ""))
     # A row edits ONE file -- except an entry-frontier row, which wraps every crossing into the
     # commit room. Collecting only `title` dropped rm320 from the v13 emission the moment rm300's
     # nav-assign joined the same row: the wrap compiled into the project and silently never
     # shipped. Every edited file must reach the patch set.
-    touched = sorted({e["title"] for e in edits + gedits if e["applied"] and e.get("title")}
+    touched = sorted({e["title"] for e in edits + gedits + uedits
+                      if e["applied"] and e.get("title")}
                      | {p["title"] for e in gedits if e["applied"]
                         for p in e.get("entry_sites", ())}
                      | {p["title"] for e in gedits if e["applied"]

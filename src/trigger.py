@@ -30,6 +30,106 @@ from sexpr import read_file, Sym, Str, Said  # noqa: E402
 
 CONTROLLABLE_METHODS = {"handleEvent", "doVerb"}
 
+# ---------------------------------------------------------------------------
+# Runtime guard mode (full / lite / stock), configured by `patcher._init_mode`.
+#
+# The mode is a GLOBAL the player sets in-game (0 = full, 1 = lite, 2 = stock --
+# 0 must be full because uninitialized globals and stale saves read 0, and the
+# default experience is the guarded one). A refusal-bearing wrap dispatches on
+# it at run time; detection and placement never see it. `MODE is None` -- the
+# state before `_init_mode`, and permanently for a game with no derivable
+# display form -- emits the classic always-refuse shape, byte-identical to what
+# every existing golden was built with.
+#
+#   MODE = {"g": <mode global index>,
+#           "warned": "<the (proc.. {You have been warned!}) line>",
+#           "alloc": callable -> (warned-word global index, "$%04x" mask)}
+#
+# Each SITE (one placement application -- a multi-clause wrap shares one bit,
+# "every guard fires once" is per guard, not per clause) owns one warned bit in
+# a trailing bitmask global, allocated lazily so a placement that fails to land
+# does not burn one. LITE semantics: the first firing refuses exactly as full
+# does and sets the bit; later firings print the warned line and let the
+# original body run. STOCK lets the body run silently. Warned bits and the mode
+# live in ordinary globals, so both persist through save/restore and reset on
+# restart, like every other game variable.
+MODE = None
+
+
+class _ModeSite:
+    """One guard site's lazily-allocated warned bit, shared across its clauses."""
+
+    def __init__(self):
+        self._forms = None
+
+    def forms(self):
+        """(allow_test, warn_line, mark_line), or None when the mode is unconfigured."""
+        if MODE is None:
+            return None
+        if self._forms is None:
+            g = MODE["g"]
+            w, mask = MODE["alloc"]()
+            self._forms = (
+                "(or (== global%d 2) (and (== global%d 1) (& global%d %s)))" % (g, g, w, mask),
+                "(if (== global%d 1) %s)" % (g, MODE["warned"]),
+                "(if (== global%d 1) (|= global%d %s))" % (g, w, mask))
+        return self._forms
+
+
+def stock_or(cond):
+    """`cond`, bypassed in stock mode. For the SILENT guard kinds (arm-event, nav-assign,
+    edge-exit close, award gate) and the register/flag holds: they never speak, so warn-once
+    does not apply -- lite behaves as full there [user ruling 2026-08-06] -- but stock must
+    let the stock behavior through."""
+    if MODE is None:
+        return cond
+    return "(or (== global%d 2) %s)" % (MODE["g"], cond)
+
+
+def guarded_wrap(guard_sexpr, body, refuse, site=None, deny_extra=(),
+                 indent="\t\t\t", marker="; softlock-guard"):
+    """The refusal-bearing wrap, in one place for every kind that says no.
+
+    Classic (mode unconfigured): `(if <guard> <body> else <refuse>)` -- the exact v25 shape.
+    Mode-aware: the else branch dispatches on the mode global --
+
+        (if <guard>
+            <body>
+        else
+            (if <stock, or lite-and-already-warned>
+                <print the warned line (lite only)>
+                <body>                                  ; proceed
+            else
+                <deny_extra lines, e.g. edgeHit resets>
+                <refuse>
+                <mark this site warned (lite only)>
+            )
+        )
+
+    The body is duplicated once (pure text; the compiler sees two identical branches), which
+    keeps the guard condition verbatim at the site -- nothing is hoisted into a helper, so a
+    reader of the patched source still sees what is demanded where. `deny_extra` carries the
+    mechanical lines that must accompany a refusal (guard_edgehit_clause's motion/flag resets).
+    A `;` marker is always followed by a newline before any paren resumes (the balance gotcha,
+    2026-08-06)."""
+    b = indent + "\t"
+    body = body.strip()
+    forms = site.forms() if site is not None else None
+    if forms is None:
+        return (f"(if {guard_sexpr}\n{b}{body}\n{indent}else\n"
+                + "".join(f"{b}{ln}\n" for ln in deny_extra)
+                + f"{b}{refuse}  {marker}\n{indent})")
+    allow, warn, mark = forms
+    return (f"(if {guard_sexpr}\n{b}{body}\n{indent}else\n"
+            f"{b}(if {allow}\n"
+            f"{b}\t{warn}\n"
+            f"{b}\t{body}\n"
+            f"{b}else\n"
+            + "".join(f"{b}\t{ln}\n" for ln in deny_extra)
+            + f"{b}\t{refuse}\n"
+            f"{b}\t{mark}\n"
+            f"{b})  {marker}\n{indent})")
+
 
 def is_sym(x, n=None):
     return isinstance(x, Sym) and (n is None or x.name == n)
@@ -444,10 +544,10 @@ def wrap_all_armings_in_source(text, placement, guard_sexpr, refuse):
         if not any(bs < span[1] and span[0] < be for (bs, be) in spans):
             spans.append(span)
     n = 0
+    site = _ModeSite()                 # ONE warned bit for all clauses: one guard, one warning
     for (bs, be) in sorted(spans, reverse=True):
-        wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
-                   f"\t\t\t\t{refuse}  ; softlock-guard\n\t\t\t)")
-        region = region[:bs] + wrapped + region[be:]
+        region = (region[:bs] + guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
+                  + region[be:])
         n += 1
     return text[:m0] + region + text[m1:], n
 
@@ -685,6 +785,7 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
     """Wrap the controllable trigger's `(self changeState: K)` (scoped to the
     right instance+method) in the item guard. For a 'direct' placement, wrap the
     `newRoom: N` instead."""
+    site = _ModeSite()                 # one warned bit per placement, shared by its match sites
     if placement["kind"] == "direct":
         pat = re.compile(r"\([^()]*newRoom:\s*%d\b[^()]*\)" % placement["target_room"])
         if placement.get("positional"):
@@ -697,10 +798,9 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
             clause = _enclosing_clause_body(text, m.start())
             if clause:
                 bs, be = clause
-                wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{text[bs:be]}\n\t\t\telse\n"
-                           f"\t\t\t\t{refuse}  ; softlock-guard\n\t\t\t)")
+                wrapped = guarded_wrap(guard_sexpr, text[bs:be], refuse, site=site)
                 return text[:bs] + wrapped + text[be:], 1
-        return _wrap_matches_in(text, None, pat, guard_sexpr, refuse)
+        return _wrap_matches_in(text, site, pat, guard_sexpr, refuse)
     if placement["kind"] == "proc-call":
         # Guard the CALL to a helper script's procedure -- the whole enclosing cond-clause, so the
         # siblings that set up the scene cannot run ahead of the refusal. Same care as `setscript`.
@@ -719,8 +819,7 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
             return text, 0
         clause = _enclosing_clause_body(region, pm.start())
         bs, be = clause if clause else (pm.start(), pm.end())
-        wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
-                   f"\t\t\t\t{refuse}  ; softlock-guard\n\t\t\t)")
+        wrapped = guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
         return text[:m0] + region[:bs] + wrapped + region[be:] + text[m1:], 1
     if placement["kind"] == "setscript":
         # Guard `(<recv> setScript: <target>)` in the controllable handler (its whole cond-clause,
@@ -747,12 +846,11 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
         clause = _enclosing_clause_body(region, ssm.start())
         if clause:
             bs, be = clause
-            wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
-                       f"\t\t\t\t{refuse}  ; softlock-guard\n\t\t\t)")
+            wrapped = guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
             new_meth = region[:bs] + wrapped + region[be:]
         else:
             new_meth, _ = _wrap_matches_in(
-                region, None, re.compile(r"\(%ssetScript:\s*%s%s\)" % (_ANY, tpat, _ANY)),
+                region, site, re.compile(r"\(%ssetScript:\s*%s%s\)" % (_ANY, tpat, _ANY)),
                 guard_sexpr, refuse)
         return text[:m0] + new_meth + text[m1:], 1
     if placement["kind"] == "proc-arm":
@@ -774,7 +872,7 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
                 continue
             p0, p1 = span
             pat = re.compile(r"\(%ssetScript:\s*(?:%s)\b%s\)" % (_ANY, alts, _ANY))
-            new_region, n = _wrap_matches_in(text[p0:p1], None, pat, guard_sexpr, refuse)
+            new_region, n = _wrap_matches_in(text[p0:p1], site, pat, guard_sexpr, refuse)
             text = text[:p0] + new_region + text[p1:]
             n_total += n
         return text, n_total
@@ -799,10 +897,11 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
         # the whale is never active without the feather. No `else`: a missing item just doesn't arm.
         pat = re.compile(r"\([^()]*setScript:\s*%s\b[^()]*\)" % re.escape(target))
         n = [0]
+        gs = stock_or(guard_sexpr)     # silent kind: stock bypasses, lite behaves as full
 
         def repl(m):
             n[0] += 1
-            return (f"(if {guard_sexpr}\n\t\t\t\t{m.group(0)}\n\t\t\t)"
+            return (f"(if {gs}\n\t\t\t\t{m.group(0)}\n\t\t\t)"
                     f"  ; softlock-guard: arm only when survivable")
         new_meth = pat.sub(repl, region)
         return text[:m0] + new_meth + text[m1:], n[0]
@@ -852,10 +951,28 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
             else:
                 xe = f"({'+' if tx < 160 else '-'} ({ego} x:) 35)"
                 ye = f"({ego} y:)"
-            wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
-                       f"\t\t\t\t(if (not ({room} script:))\n"
-                       f"\t\t\t\t\t({room} setScript: {tb})\n"
-                       f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
+            forms = site.forms()
+            if forms is None:
+                wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
+                           f"\t\t\t\t(if (not ({room} script:))\n"
+                           f"\t\t\t\t\t({room} setScript: {tb})\n"
+                           f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
+            else:
+                # The turn-back IS this kind's refusal; the mark rides its once-per-approach
+                # arming gate (doit re-fires every cycle -- the gate is what keeps the
+                # turn-back, and so the mark, from machine-gunning). In lite-once-warned the
+                # warned line prints and the body arms the crossing as the game built it.
+                allow, warn, mark = forms
+                wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
+                           f"\t\t\t\t(if {allow}\n"
+                           f"\t\t\t\t\t{warn}\n"
+                           f"\t\t\t\t\t{region[bs:be].strip()}\n"
+                           f"\t\t\t\telse\n"
+                           f"\t\t\t\t\t(if (not ({room} script:))\n"
+                           f"\t\t\t\t\t\t({room} setScript: {tb})\n"
+                           f"\t\t\t\t\t\t{mark}\n"
+                           f"\t\t\t\t\t)\n"
+                           f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
             instance_txt = (
                 "\n(instance %s of Script\n\t(properties)\n\n"
                 "\t(method (changeState param1)\n"
@@ -867,7 +984,7 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
                 "\t\t)\n\t)\n)\n" % (tb, game, refuse, ego, xe, ye, game))
             new_text = text[:m0] + region[:bs] + wrapped + region[be:] + text[m1:]
             return new_text + instance_txt, 1
-        wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\t)"
+        wrapped = (f"(if {stock_or(guard_sexpr)}\n\t\t\t\t{region[bs:be]}\n\t\t\t)"
                    f"  ; softlock-guard: positional gate, silent by design")
         return text[:m0] + region[:bs] + wrapped + region[be:] + text[m1:], 1
     if placement["kind"] == "nav-assign":
@@ -889,10 +1006,12 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
         pat = re.compile(r"\(self\s+%s:\s*%d\s*\)"
                          % (re.escape(placement["prop"]), placement["target_room"]))
         n = [0]
+        gs = stock_or(guard_sexpr)     # a route re-decision never speaks: stock takes the
+        #                                shortcut, lite keeps the re-route exactly as full does
 
         def repl(m):
             n[0] += 1
-            return (f"(if {guard_sexpr}\n\t\t\t\t{m.group(0)}\n\t\t\telse\n"
+            return (f"(if {gs}\n\t\t\t\t{m.group(0)}\n\t\t\telse\n"
                     f"\t\t\t\t(self {placement['prop']}: {placement['fallback']})"
                     f"  ; softlock-guard: the long way keeps its gate\n\t\t\t)")
         new_meth = pat.sub(repl, region)
@@ -920,12 +1039,11 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
     clause = _enclosing_clause_body(region, csm.start())
     if clause:
         bs, be = clause
-        wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
-                   f"\t\t\t\t{refuse}  ; softlock-guard\n\t\t\t)")
+        wrapped = guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
         new_meth = region[:bs] + wrapped + region[be:]
     else:
         new_meth, _ = _wrap_matches_in(
-            region, None, re.compile(r"\(self\s+changeState:\s*%d\s*\)" % k),
+            region, site, re.compile(r"\(self\s+changeState:\s*%d\s*\)" % k),
             guard_sexpr, refuse)
     return text[:m0] + new_meth + text[m1:], 1
 
@@ -1028,13 +1146,14 @@ def _clause_body(region, cs, ce):
     return bs, be
 
 
-def _wrap_matches_in(region, _unused, pat, guard_sexpr, refuse):
+def _wrap_matches_in(region, site, pat, guard_sexpr, refuse):
     n = 0
+    site = site if site is not None else _ModeSite()
 
     def repl(m):
         nonlocal n
         n += 1
-        return f"(if {guard_sexpr}\n\t\t\t\t{m.group(0)}\n\t\t\telse\n\t\t\t\t{refuse}  ; softlock-guard\n\t\t\t)"
+        return guarded_wrap(guard_sexpr, m.group(0), refuse, site=site)
     return pat.sub(repl, region), n
 
 

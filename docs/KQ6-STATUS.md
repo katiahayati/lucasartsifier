@@ -399,6 +399,20 @@ by `test_sci11_patch.py`.
 
 ---
 
+## v26 — guard modes (2026-08-06, not yet play-tested)
+
+v26 = v25 + the **stock/lite/full mode feature** (`docs/GUARD-MODES.md`): every placed
+guard now dispatches at run time on `global171` (0 full — the default, 1 lite =
+warn-once-then-allow with per-site warned bits in `global172+`, 2 stock = bypass), and the
+control panel (903.SCR, `kq6Controls`) gains an `iconGuards` chooser. Detection, specs
+and placements are UNCHANGED — snapshot byte-identical to v25's surface, verify still
+"fixed 10 + 1 group(s), NEW: none", compiled 341/341, **19 patch files** (v25's 18 +
+903.SCR/HEP). The sink retractions became mode-conditional (the `put:` executes in
+stock/lite-warned; full is behaviorally identical to the v25 deletion). Play plan: the
+GUARD-MODES.md checklist — chooser reachable, lite warns once at the mists trail, stock
+silent, save/restore persistence, restart resets to full. R13's honest runs should be
+made on v26 in FULL mode (the default), where behavior is v25's.
+
 ## Two caveats on "19/19"
 
 A perfect score against our own oracle is the shape a fitted result takes, so state the limits:
