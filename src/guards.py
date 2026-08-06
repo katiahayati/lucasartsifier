@@ -35,6 +35,7 @@ import sys
 from collections import defaultdict
 
 import missability as M
+import vocab
 
 
 def designer_score(s):
@@ -217,6 +218,68 @@ def _own_polarity(g, it, neg=False):
     return pos, negv
 
 
+def _render_reg_equals(s, musts):
+    """`{R: v}` -> one SCI condition string in the game's own spelling, or None.
+
+    The mask-global store gets its own grouping: its per-bit registers are OUR lowering of a
+    plain global the game reads by equality, so when the demand pins the word's every observed
+    bit the natural spelling is the game's own `(== global161 15)` -- exactly the comparison the
+    sorter performs -- rather than four bit-tests. A partial pin renders per bit as
+    `(& globalN $mask)` / `(not ...)`, the idiom the game itself reads single bits with. Every
+    other register goes through `render_register`; any register with no spelling refuses the
+    whole conjunction (None), because a guard that silently asks for less is an under-guard."""
+    ir = getattr(s.em, "ir", None)
+    mg = getattr(ir, "_mask_global_index", {}) if ir is not None else {}
+    by_word, rest = {}, {}
+    for R, v in musts.items():
+        if R in mg:
+            gi, bit = mg[R]
+            by_word.setdefault(gi, {})[bit] = v
+        else:
+            rest[R] = v
+    terms = []
+    for gi, bits in sorted(by_word.items()):
+        universe = sorted(b for (g2, b) in mg.values() if g2 == gi)
+        if set(bits) == set(universe):
+            terms.append(f"(== global{gi} {sum(1 << b for b, v in bits.items() if v)})")
+        else:
+            for b, v in sorted(bits.items()):
+                t = f"(& global{gi} {1 << b})"
+                terms.append(t if v else f"(not {t})")
+    for R, v in sorted(rest.items()):
+        t = render_register(s, R, v)
+        if t is None:
+            return None
+        terms.append(t)
+    if not terms:
+        return None
+    return terms[0] if len(terms) == 1 else "(and " + " ".join(terms) + ")"
+
+
+def _conj_reg_reqs(s, guard, drop=()):
+    """The single-valued register literals `guard` REQUIRES (structural, so a disjunction of two
+    ways through keeps only what both demand), minus the positional registers in `drop`."""
+    req = M.structural_reqs(guard, s.regs)
+    return {R: next(iter(vs)) for R, vs in req.items()
+            if len(vs) == 1 and R not in drop}
+
+
+def _one_way_set(s, gi):
+    """Is `gi` a register the game only ever writes 1 to -- a latch nothing clears?
+
+    Judged over the emitter's RAW write sources (machine states, handler writes, arrival
+    writes), not `_inroom`/`_rstep`: those exist only for GATING registers, and a success
+    latch need not gate anything we model to be a truthful record of past survival."""
+    vals = set()
+    for info in s.em.machines + getattr(s.em, "global_machines", []):
+        for paths in info["states"].values():
+            for (_g, w, _gg, _c, _tr) in paths:
+                vals.update(v for (g2, v) in w if g2 == gi)
+    vals.update(v for (_r, _sc, g2, v, _g) in s.em.handler_writes if g2 == gi)
+    vals.update(vs[gi] for vs in getattr(s.em, "init_writes", {}).values() if gi in vs)
+    return vals == {1}
+
+
 def sink_survival_carryins(s):
     """A sink-lost item that is later the PRICE OF SURVIVING a room: demand it at the crossings
     into that room.
@@ -235,36 +298,173 @@ def sink_survival_carryins(s):
     Fires only where the GAME ITSELF holds a death sorted on the item -- some machine at the
     need room mentions own(item) positively in one arming and negatively in a sibling. A mere
     action-need (mint at the genie's palace) has no such sorter, so this cannot over-demand an
-    item whose loss the disjunctive-group machinery already covers. The demand is the ITEM
-    half only: the sorter's other conjuncts (the poured waters) are established INSIDE, and
-    demanding them at the door would wall the player who comes to establish them."""
+    item whose loss the disjunctive-group machinery already covers.
+
+    THE DEMAND IS THE SORTER'S WHOLE CONDITION, not the item half alone. The original premise
+    here -- "the other conjuncts are established inside" -- was FALSE for the very instance it
+    shipped for (USER FINDING #17, play, 2026-08-05): KQ6's cage sorter demands the lamp AND
+    rain-readiness (`global161 == 15`), and every readiness bit is established off-isle or from
+    inventory; rm580 only RESETS the word. So the positive arming's conjunctive register
+    literals ride along (`structural_reqs`, so a disjunction keeps only what every way through
+    demands), presentability-checked at each crossing like every register-valued demand.
+
+    Two derived qualifications keep the register half from shipping a wall:
+      * SUCCESS CONSUMES COMPLIANCE. The surviving arm itself RESETS the demanded register
+        (makeRain sets `global161 := 0` on the way to the rain) -- so a player who already
+        survived can never present the value again, and demanding it unconditionally would
+        seal the befriended camp off from every winner. The same arm writes a one-way boolean
+        latch nothing in the game ever clears (flag 74, befriended-forever), and the latch
+        waives the WHOLE demand, item half included: `(or <latch> (and <item> <registers>))`
+        [USER RULING 2026-08-06: "let you revisit the camp without the lamp once there's no
+        trap there" -- with the latch up the capture cannot re-arm, so nothing is demanded].
+        All facts are read off the machine's own modeled writes; if the arm resets the demand
+        and no such latch exists, the register half is refused rather than walled.
+      * THE LANDING PROPAGATES ONE ROOM BACK (row 5c's class). A machine at another room
+        whose modeled paths EXIT into the sorter's room, armed with no player action under a
+        register stage (KQ6's shore ambush: `captured`, armed via `waitForCapture` only under
+        flag 25 & !14, delivering `newRoom: 580` on arrival), makes the crossing INTO that room
+        the last complying moment -- leave-and-return-unready died on arrival in stock. The
+        same demand is emitted on every crossing into the delivering room, conditioned on the
+        stage (`(or (not <stage>) <demand>)`) so every non-ambush crossing stays free. The
+        stage is the machine's own entry requirement with positional registers (previous-room,
+        current-room) dropped; a player-initiated delivery (doVerb/handleEvent-sourced arming)
+        does not qualify, because the player could decline it inside."""
+    import extract as X
     out, seen = [], set()
+    prev = M.prev_room_reg(s.em)
+    positional = {prev, getattr(X, "_CURROOM", None)}
     for r in s.dangerous_sinks():
         it = r["item"]
         for N in r.get("still_needed_at", ()):
-            pos = neg = False
+            pos_rows, neg_rows = [], []
             for info in s.em.machines:
                 if info["room"] != N:
                     continue
                 for _k, g in (info.get("entries") or ()):
                     p, n = _own_polarity(g, it)
-                    pos, neg = pos or p, neg or n
-            if not (pos and neg):
+                    if p:
+                        pos_rows.append((info, g))
+                    if n:
+                        neg_rows.append(info)
+            if not (pos_rows and neg_rows):
                 continue
+            # -- the register half: what EVERY hopeful arming of the sorter also requires
+            common = None
+            for _info, g in pos_rows:
+                req = _conj_reg_reqs(s, g, drop=positional)
+                common = req if common is None else \
+                    {R: v for R, v in common.items() if req.get(R) == v}
+            common = common or {}
+            reg_cond, reg_refused, waivers = None, [], []
+            if common:
+                # success-latch analysis, off the sorter's own modeled writes
+                neg_writes = {gi for info in neg_rows
+                              for paths in info["states"].values()
+                              for (_g, w, _gg, _c, _tr) in paths for (gi, _v) in w}
+                resets, latches = False, set()
+                for info, _g in pos_rows:
+                    for paths in info["states"].values():
+                        for (_g2, w, _gg, _c, _tr) in paths:
+                            for (gi, v) in w:
+                                if gi in common and v != common[gi]:
+                                    resets = True
+                                if (v == 1 and gi not in common and gi not in neg_writes
+                                        and gi in vocab.BOOL_GLOBALS and _one_way_set(s, gi)):
+                                    latches.add(gi)
+                reg_cond = _render_reg_equals(s, common)
+                if reg_cond is None:
+                    reg_refused.append("the sorter's register demand has no spelling in the "
+                                       "game's own source")
+                elif resets:
+                    waivers = [w for w in (render_register(s, L, 1)
+                                           for L in sorted(latches)) if w]
+                    if not waivers:
+                        reg_refused.append(
+                            "the surviving arm resets the demanded register and no one-way "
+                            "success latch marks past survival -- demanding it would wall "
+                            "every winner out")
+                        reg_cond = None
+            # The latch waives the WHOLE demand, item half included [USER RULING 2026-08-06,
+            # in play: "we should let you revisit the camp without the lamp once there's no
+            # trap there"]. The derivation agrees: the latch is set by the surviving arm and
+            # the game arms the capture only under its negation, so with the latch up there
+            # is no death left to guard against -- demanding anything is over-block. And a
+            # sorter that DID re-arm under the latch would be unwinnable by the game's own
+            # design, since its surviving arm already consumed the register compliance.
+            if reg_cond and waivers:
+                cond = "(or %s (and (gEgo has: %d) %s))" % (" ".join(waivers), it, reg_cond)
+            elif reg_cond:
+                cond = f"(and (gEgo has: {it}) {reg_cond})"
+            else:
+                cond = f"(gEgo has: {it})"
             for a, bs in s.edges.items():
                 if N in bs and (a, N, it) not in seen:
                     seen.add((a, N, it))
                     rec = {"items": {it}, "groups": []}
+                    refused = unsatisfiable(s, a, N, rec) + list(reg_refused)
+                    # presentability: the demanded value must be REACHABLE at the crossing, or
+                    # the guard refuses players who can no longer comply (finding #15's class)
+                    for R, v in sorted(common.items()):
+                        if reg_cond and (a, v) not in s._pstates.get(R, ()):
+                            refused.append(f"reg{R}={v} is not presentable at rm{a}")
                     out.append({"site": "edge", "from_room": a, "to_room": N,
-                                "condition": f"(gEgo has: {it})",
+                                "condition": cond,
                                 "items": [it], "groups": [],
-                                "refused": unsatisfiable(s, a, N, rec),
-                                "note": f"{s.g.item_name(it)} is the price of surviving "
-                                        f"rm{N} (the game's own death sorter), and the sink "
-                                        f"at rm{r['at_room']} that loses it cannot itself be "
-                                        f"guarded -- refuse the trip instead. NOT play-tested; "
-                                        f"a legitimate item-less revisit of rm{N} would be "
-                                        f"walled, which only play can rule out."})
+                                "refused": refused,
+                                "note": f"{s.g.item_name(it)} and the sorter's register "
+                                        f"condition are the price of surviving rm{N} (the "
+                                        f"game's own death sorter), and the sink at "
+                                        f"rm{r['at_room']} that loses the item cannot itself "
+                                        f"be guarded -- refuse the trip instead. The WHOLE "
+                                        f"demand is waived once the surviving arm's own "
+                                        f"one-way latch is set: with the latch up the death "
+                                        f"cannot re-arm, so nothing is demanded of a revisit "
+                                        f"[user ruling 2026-08-06]."})
+            # -- the LANDING: a no-player-action delivery into rm N from another room makes
+            #    the crossings into THAT room the last complying moment (guard oracle row 5c)
+            for info in s.em.machines:
+                A = info["room"]
+                if A == N or (A, N, it, "landing") in seen:
+                    continue
+                exits_to_n = any(tr and tr[0] == "EXIT" and tr[1] == N
+                                 for paths in info["states"].values()
+                                 for (_g, _w, _gg, _c, tr) in paths)
+                if not exits_to_n:
+                    continue
+                srcs = info.get("entry_sources") or []
+                if any(src in ("doVerb", "handleEvent") for src in srcs):
+                    continue
+                stage = None
+                for _k, g in (info.get("entries") or ()):
+                    req = _conj_reg_reqs(s, g, drop=positional)
+                    stage = req if stage is None else \
+                        {R: v for R, v in stage.items() if req.get(R) == v}
+                if not stage:
+                    continue
+                stage_cond = _render_reg_equals(s, stage)
+                if stage_cond is None:
+                    continue
+                seen.add((A, N, it, "landing"))
+                landing_cond = f"(or (not {stage_cond}) {cond})"
+                for P, bs in s.edges.items():
+                    if A not in bs or (P, A, it) in seen:
+                        continue
+                    seen.add((P, A, it))
+                    rec = {"items": {it}, "groups": []}
+                    refused = unsatisfiable(s, P, A, rec) + list(reg_refused)
+                    for R, v in sorted(common.items()):
+                        if reg_cond and (P, v) not in s._pstates.get(R, ()):
+                            refused.append(f"reg{R}={v} is not presentable at rm{P}")
+                    out.append({"site": "edge", "from_room": P, "to_room": A,
+                                "condition": landing_cond,
+                                "items": [], "groups": [],
+                                "refused": refused,
+                                "note": f"the landing at rm{A}: under its stage "
+                                        f"({stage_cond}) rm{A}'s `{info['inst']}` delivers "
+                                        f"the player into rm{N}'s death sorter with no "
+                                        f"controllable moment after arrival, so this "
+                                        f"crossing is the last place compliance can be "
+                                        f"demanded. Free whenever the stage is off."})
     return out
 
 

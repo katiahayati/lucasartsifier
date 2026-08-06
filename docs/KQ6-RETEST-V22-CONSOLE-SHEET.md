@@ -247,3 +247,97 @@ No guard may fire on a correctly-played run. Un-die overlay for exploring death 
 Reporting, per defect: room, what you did, expected vs got, and a save from just
 before. The three finding classes that matter most: a guard that HANGS, a guard that
 fires on a legitimate path (over-block), and a PREVENT that walks through.
+
+---
+
+# v24 addendum — the mists (finding #17) + the sacred-water catch
+
+**Install (delete-then-copy, as always):** in the game copy `rm -f *.SCR *.HEP *.VOC`,
+then copy `build/kq6_patch_v24/patch/*` + `build/kq6_patch_v24/patch_project/999.VOC`.
+The complete v24 set is exactly: **0 21 80 130 190 220 230 320 340 344 420 550 560 580
+640 660 740 880** (.SCR+.HEP each) + 999.VOC. New vs v23: **130** (the magic map —
+the landing guard lives in the map click) and **580**; 0/550/560 changed.
+
+New flag/global cheats for this block: `vv g 161` reads the Make-Rain readiness word
+(0 = nothing done, 15 = fully ready; the game RESETS it to 0 when the rain succeeds —
+that reset is why the guard waives readiness under flag 74). Faking readiness:
+`vv g 161 15` then `sf 31`. Flags: **25** = visited the mists and left · **14** = met
+the druids · **74** = befriended-forever (the rain happened). Items: magic map **0** ·
+huntersLamp **19** · sacredWater **40**.
+
+⚠️ Do NOT use `room 550` to test the landing — the guard sits on the MAP CLICK, and
+teleporting bypasses it. Use the map from the inventory.
+
+## R6a — first visit, unready: the trail refuses (the map must NOT)
+
+Fresh game, console:
+```
+tf 25          (expect 0 -- if 1, cf 25: the flag-25 leak gotcha)
+tf 14          (expect 0)
+tf 74          (expect 0)
+send ?ego get 0
+send ?ego get 19
+vv g 161       (expect 0)
+```
+Esc → open the map, click the Isle of the Mists → **landing works** (first visit is
+free). Walk north up the trail → Alexander **turns back, "Not yet!"** — v16 demanded
+only the lamp; v24 also demands readiness, so even with the lamp in hand this refuses.
+(Stock: capture → cage → burn.)
+
+## R6b — the legitimate run, readiness faked
+
+Standing on the mists shore from R6a:
+```
+vv g 161 15
+sf 31
+```
+Esc → walk north → capture plays out → the cage → **make rain → befriended**. Verify:
+```
+tf 74          (expect 1)
+vv g 161       (expect 0 -- the game's own reset)
+```
+
+## R7a — leave-unready-then-return: the NEW map refusal
+
+Fresh game (or a pre-mists save):
+```
+send ?ego get 0
+send ?ego get 19
+sf 25          (fake "visited and left" -- honest version: land once, map away)
+tf 14          (expect 0)
+vv g 161       (expect 0)
+```
+Esc → map → click the mists → **"Not yet!" and the map stays usable** — this exact
+click is the crossing that in stock delivers you to the shore ambush and the burning
+cage with no further control. Then make it legitimate:
+```
+vv g 161 15
+sf 31
+```
+map → mists → landing proceeds → **shore druids seize you on the beach** → cage →
+rain → befriended. (The other two islands' clicks must be untouched — click Wonder
+or the Beast isle any time: stock behavior.)
+
+## R7b — befriended is never walled (the waiver) — v25 SHAPE
+
+USER RULING 2026-08-06 (on v24, in play): "let you revisit the camp without the lamp
+once there's no trap there." From **v25** the 74 latch waives the WHOLE demand:
+after a completed rain (74 set): leave, map back → **landing free** (no ambush), then
+```
+send ?ego put 19 0
+```
+walk north WITHOUT the lamp → **allowed**, friendly camp. (On v24 this refused — that
+refusal is the finding this ruling retired.)
+
+## W1 — sacred water: wasting it is retracted (the by-product catch)
+
+Anywhere:
+```
+send ?ego get 40
+```
+Esc → use the water on random scenery / the ground / yourself. Expect: the stock
+flavor line, then **"Just kidding! You hold on to it because you still need it."**,
+water still in inventory (stock: silently destroyed — mint/peppermint's class, found
+when g161's bits gave the pour a modeled consequence). The legitimate pour (on the
+spell page during Make Rain prep, flag 77 studied) must still consume it — that path
+writes the readiness bit and is untouched.

@@ -2062,6 +2062,251 @@ def lower_item_bit_flags(ir, flags, item_of_receiver):
     return n_read, n_write
 
 
+def derive_mask_globals(ir):
+    """`{global: universe-of-bits}` for plain globals used ONLY as bit-mask words.
+
+    The SIXTH container, and the simplest: the same bit-in-a-word abstraction as every flag
+    store, kept in an ordinary global with no accessor at all -- written `(|= gN $mask)` /
+    `(&= gN $mask)` / `(= gN <literal>)`, read by equality against a literal, by bit-test
+    `(& gN $mask)`, or bare (truthiness). KQ6's global161 is the instance that forced it: the
+    Make-Rain readiness word (bits: isle water $0001, sacred water $0002, tears $0004, the cast
+    $0008), whose `== 15` is the other half of the cage sorter's survival condition -- and with
+    the `|=` spelling invisible to extract's plain-assignment collection, every state read 0.
+
+    Derived by SHAPE, refusing anything it cannot rewrite exactly:
+      * at least one literal-mask `|=`/`&=` write (a counter or a scalar never has one);
+      * EVERY appearance is a recognised mask idiom -- the writes above, `(== g lit)` /
+        `(!= g lit)`, the already-set test `(== g (| g $mask))`, `(& g $mask)`, or a bare
+        boolean read (a kid of Not/And/Or/an `if` test);
+      * one arithmetic read, one non-literal write, one `<` compare -- and the global is
+        REFUSED, because per-bit lowering would misstate it.
+
+    MEASURED (2026-08-06, the census probe): exactly ONE global in the whole corpus matches --
+    KQ6's g161. LSL2/KQ4/Dagger have zero `|=`-written globals at all, so the shape needs no
+    extra tightening clauses and the pass is inert everywhere else by construction. The proc
+    flag array cannot alias it: KQ6's flags top out at 163 (words g137..g147), short of g161."""
+    evid = {}
+
+    def rec(gi):
+        return evid.setdefault(gi, {"mask": False, "bits": set(), "bad": False})
+
+    for s in ir.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            consumed = set()
+            for n in I.walk(body):
+                if id(n) in consumed:
+                    continue
+                t, ks = n.get("t"), n.get("kids") or []
+                shape = _mask_site(n)
+                if shape is not None and shape[0] not in ("bare", "bad"):
+                    kind, gi, val = shape
+                    r = rec(gi)
+                    if kind in ("or", "and"):
+                        r["mask"] = True
+                    if val is not None:
+                        r["bits"].update(b for b in range(16) if (val & 0xFFFF) >> b & 1)
+                    for k in I.walk(n):
+                        consumed.add(id(k))
+                    continue
+                if shape is not None and shape[0] == "bad":
+                    rec(shape[1])["bad"] = True
+                    # and FALL THROUGH: a two-global compare condemns both sides, and only
+                    # the kid loop below sees the second one
+                # Not a shape owner: judge each DIRECT bare-global kid by where it sits. A
+                # boolean context (`(not g)`, an `if`/`cond` test) reads truthiness, which
+                # per-bit lowering expresses exactly (any observed bit). Anything else -- a
+                # call argument, a copy into another variable, an array index, a `switch`
+                # head, arithmetic -- consumes the VALUE, which per-bit lowering would
+                # misstate, so the global is refused.
+                for i, k in enumerate(ks):
+                    if not (isinstance(k, dict) and I.is_global(k)):
+                        continue
+                    if t in ("Not", "And", "Or"):
+                        continue
+                    if t in ("If", "Case", "While") and i == 0:
+                        continue
+                    rec(k["index"])["bad"] = True
+    return {gi: frozenset(r["bits"]) for gi, r in evid.items()
+            if r["mask"] and not r["bad"] and r["bits"]}
+
+
+def _const_or(n):
+    """A literal, or a BinOr over literals, folded -- else None."""
+    v = I.as_int(n)
+    if v is not None:
+        return v
+    if isinstance(n, dict) and n.get("t") == "BinOr":
+        vals = [_const_or(k) for k in (n.get("kids") or [])]
+        if vals and all(v is not None for v in vals):
+            out = 0
+            for v in vals:
+                out |= v
+            return out
+    return None
+
+
+def _mask_site(n):
+    """Classify one node as a mask-global idiom: `(kind, global, value)` or None.
+
+    Kinds: 'or'/'and' (compound mask write), 'assign' (literal store), 'eq'/'ne' (literal
+    compare), 'setq' (`(== g (| g mask))` -- the already-set test), 'test' (`(& g mask)`),
+    'bare' (the global itself: truthiness, or an lvalue another shape owns), or ('bad', gi,
+    None) for a global written or compared in a way per-bit lowering cannot express. A 'bare'
+    at the top of a walk (not consumed by an enclosing shape) is a boolean read -- extract
+    reads exactly that as `!= 0` -- so it stays lowerable; genuinely arithmetic uses all
+    surface as literal-less compares/writes, which is what 'bad' catches."""
+    if not isinstance(n, dict):
+        return None
+    t, ks = n.get("t"), n.get("kids") or []
+
+    def g_of(x):
+        return x["index"] if isinstance(x, dict) and I.is_global(x) else None
+    if t in ("AssignmentBinOr", "AssignmentBinAnd") and ks and g_of(ks[0]) is not None:
+        m = _const_or(ks[1]) if len(ks) > 1 else None
+        gi = g_of(ks[0])
+        return ("or" if t == "AssignmentBinOr" else "and", gi, m) if m is not None \
+            else ("bad", gi, None)
+    if t == "Assignment" and ks and g_of(ks[0]) is not None:
+        v = I.as_int(ks[1]) if len(ks) > 1 else None
+        # a non-literal store is only 'bad' for a global OTHER shapes made a candidate;
+        # scalars assigned computed values simply never qualify (no mask write)
+        return ("assign", g_of(ks[0]), v) if v is not None else ("bad", g_of(ks[0]), None)
+    if t in ("AssignmentAdd", "AssignmentSub", "AssignmentMul", "AssignmentDiv",
+             "AssignmentShl", "AssignmentShr", "AssignmentXor", "AssignmentMod",
+             "Increment", "Decrement") and ks and g_of(ks[0]) is not None:
+        return ("bad", g_of(ks[0]), None)
+    if t in ("Eq", "Ne") and len(ks) == 2:
+        for x, y in ((ks[0], ks[1]), (ks[1], ks[0])):
+            gi = g_of(x)
+            if gi is None:
+                continue
+            v = I.as_int(y)
+            if v is not None:
+                return ("eq" if t == "Eq" else "ne", gi, v)
+            # `(== g (| g $mask))` -- "are these bits already set"
+            if isinstance(y, dict) and y.get("t") == "BinOr":
+                yks = y.get("kids") or []
+                if any(g_of(k) == gi for k in yks):
+                    lits = [_const_or(k) for k in yks if g_of(k) != gi]
+                    if lits and all(v is not None for v in lits):
+                        m = 0
+                        for v in lits:
+                            m |= v
+                        return ("setq" if t == "Eq" else "setq_ne", gi, m)
+            return ("bad", gi, None)
+    if t in ("Lt", "Le", "Gt", "Ge", "Ugt", "Uge", "Ult", "Ule") and len(ks) == 2:
+        for x in ks:
+            if g_of(x) is not None:
+                return ("bad", g_of(x), None)
+    if t == "BinAnd" and len(ks) == 2:
+        for x, y in ((ks[0], ks[1]), (ks[1], ks[0])):
+            gi = g_of(x)
+            if gi is not None:
+                m = _const_or(y)
+                return ("test", gi, m) if m is not None else ("bad", gi, None)
+    if t == "Variable" and n.get("vtype") == "Global":
+        return ("bare", n["index"], None)
+    return None
+
+
+def lower_mask_globals(ir, cands):
+    """Rewrite a mask global's every site into per-bit synthetic globals, in place.
+
+    Same destination as every other store: each bit becomes an ordinary boolean register, so a
+    `|=` is a set of plain writes, `(== g 15)` is a conjunction of four bit reads, and nothing
+    downstream learns a new concept. The identity map back (`ir._mask_global_index`) lets
+    `guards.render_register` spell a bit in the game's own source -- `(& global161 $0001)` --
+    because unlike every other lowered store these registers DO have a plain-global spelling."""
+    if not cands:
+        return 0, 0, 0
+    max_gi = 0
+    for s in ir.scripts.values():
+        for body in [b for o in s.objects for b in o.methods.values()] + list(s.procs.values()):
+            for n in I.walk(body):
+                if I.is_global(n):
+                    max_gi = max(max_gi, n["index"])
+    base, index = max_gi + 1, {}
+    for gi in sorted(cands):
+        for b in sorted(cands[gi]):
+            index[(gi, b)] = base + len(index)
+    BOOL_GLOBALS.update(index.values())
+    try:
+        ir._mask_global_index = {sg: k for k, sg in index.items()}
+    except Exception:                                      # noqa: BLE001
+        pass
+
+    def gread(sg):
+        return {"t": "Variable", "vtype": "Global", "index": sg}
+
+    def sets(gi, bs, val):
+        return [{"t": "Assignment", "kids": [gread(index[(gi, b)]),
+                                             {"t": "Number", "value": val}]} for b in bs]
+
+    def conj(gi, want_pattern):
+        """And over the universe: bit b read positively where the pattern has it, negated
+        where it does not -- `(== g V)` is exactly 'the observed bits spell V'."""
+        terms = [gread(index[(gi, b)]) if (want_pattern >> b) & 1
+                 else {"t": "Not", "kids": [gread(index[(gi, b)])]}
+                 for b in sorted(cands[gi])]
+        return terms[0] if len(terms) == 1 else {"t": "And", "kids": terms}
+
+    def disj(gi, bs):
+        terms = [gread(index[(gi, b)]) for b in sorted(bs)]
+        return terms[0] if len(terms) == 1 else {"t": "Or", "kids": terms}
+
+    sites = 0
+    for s in ir.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            plan, consumed = [], set()
+            for n in I.walk(body):
+                if id(n) in consumed:
+                    continue
+                shape = _mask_site(n)
+                if shape is None or shape[1] not in cands:
+                    continue
+                kind, gi, val = shape
+                U = cands[gi]
+                if kind == "or":
+                    new = sets(gi, [b for b in sorted(U) if (val >> b) & 1], 1)
+                elif kind == "and":
+                    new = sets(gi, [b for b in sorted(U) if not (val >> b) & 1], 0)
+                elif kind == "assign":
+                    new = sets(gi, sorted(U), None)     # per-bit values fixed below
+                    for a, b in zip(new, sorted(U)):
+                        a["kids"][1]["value"] = (val >> b) & 1
+                elif kind in ("eq", "setq", "ne", "setq_ne"):
+                    if kind in ("eq", "ne"):
+                        if val & ~sum(1 << b for b in U) & 0xFFFF:
+                            body_new = {"t": "Number", "value": 0}   # unspellable value: never
+                        else:
+                            body_new = conj(gi, val)
+                    else:
+                        body_new = (disj(gi, [b for b in sorted(U) if (val >> b) & 1])
+                                    if bin(val).count("1") == 1 else
+                                    {"t": "And", "kids": [gread(index[(gi, b)])
+                                                          for b in sorted(U) if (val >> b) & 1]})
+                    new = [{"t": "Not", "kids": [body_new]}] if kind in ("ne", "setq_ne") \
+                        else [body_new]
+                elif kind == "test":
+                    hit = [b for b in sorted(U) if (val >> b) & 1]
+                    new = [disj(gi, hit) if hit else {"t": "Number", "value": 0}]
+                elif kind == "bare":
+                    new = [disj(gi, sorted(U))]         # truthiness: any observed bit set
+                else:
+                    continue
+                for k in I.walk(n):
+                    consumed.add(id(k))
+                plan.append((n, new))
+            for n, new in plan:
+                rep = new[0] if len(new) == 1 else {"t": "List", "kids": new}
+                n.clear()
+                n.update(rep)
+                sites += 1
+    return base, sites, len(index)
+
+
 def derive_walk_icon(ir):
     """(icon-bar global, walk-icon index, walk-icon object name), or None.
 

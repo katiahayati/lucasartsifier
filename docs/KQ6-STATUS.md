@@ -512,11 +512,38 @@ forced revisit is the mists-shore capture (rm550.sc:282, flag 25 ∧ ¬14 — fl
 "visited and left", `rMist::dispose`), whose `captured` script delivers `newRoom: 580`
 directly, bypassing the guarded trail crossing entirely. The carry, not the walk, is the
 required path — see the 2026-08-05 rm550 row in the play plan's findings log.
-⚠️ FINDING #17 (user play, 2026-08-05, PINNED RED ×2): the demand itself is HALF-RIGHT —
-the cage sorter is `(and (has: 19) (== global161 15))` (rm580.sc:1181), and this
-paragraph's old premise ("the poured-waters conjunct is established inside") is FALSE:
-all four readiness bits are off-isle/inventory and rm580 only resets 161. The teacup's
-entrance-half class, first real instance. AND the shore-carry revisit delivers an
-unready player to the same sorter with no post-landing control — leave-and-return-unready
-dies on arrival in stock; the landing is the last complying crossing. Guard oracle rows
-5b/5c; both REDs in test_toll.)
+✅ FINDING #17 CLOSED 2026-08-06 (v24; both REDs promoted, NOT play-tested). Three
+derivations, each measured before building (the probes-first doctrine):
+1. **The SIXTH store** — `vocab.derive_mask_globals` / `lower_mask_globals`: a plain global
+   used only as a bit-mask word (`|=`/`&=` literal masks; equality / bit-test / bare-boolean
+   reads; anything else refuses the global) lowers to per-bit synthetic registers, the
+   prop-flags treatment with no accessor to key on. Census probe: exactly ONE global in the
+   whole corpus matches — KQ6's g161 (bits 0–3 = regs 489–492); LSL2/KQ4/Dagger have zero
+   `|=`-written globals, so the pass is inert there by construction. All four bits then have
+   modeled writers: rm540 (bit 0, getWater), KqInv icon-bar-wide (bit 1, water on the lamp),
+   rm480 (bit 2, getBabyTears — an ordered 0→1 step), rm230/340 (bit 3, the cast). The cage
+   sorter's guard now extracts as `own(19) ∧ 489∧490∧491∧492` with `inTheCage` its negation.
+2. **The register half of the carry-in** — `sink_survival_carryins` conjoins the positive
+   arming's structural register literals, presentability-checked per crossing, spelled the
+   game's own way. Placed (rm550 arm-clause, rm560 east-close), v25 shape:
+   `(or (proc913_0 74) (and (has: 19) (== global161 15)))`. The **74 waiver is load-bearing
+   and covers the WHOLE demand** — USER RULING 2026-08-06 on v24 in play ("let you revisit
+   the camp without the lamp once there's no trap there"); the derivation agrees: `makeRain`
+   RESETS g161 to 0 (rm580.sc:1007) as it sets flag 74 (unconditional `==15` would wall every
+   winner), and both capture armings demand ¬74 (no death left to guard under the latch).
+   Derived, not named: the surviving arm's own writes show the reset AND the one-way latch
+   (`_one_way_set`); no latch → the register half refuses rather than walls.
+3. **The landing (row 5c)** — the shore ambush's `captured` now inherits its stage
+   (25 ∧ ¬14) from `waitForCapture`'s init arming (the new machine-method armer link in
+   `MachineBuilder._build`), and the demand propagates to every crossing INTO rm550 as
+   `(or (not <stage>) <demand>)`: the magic-map click (`pullOutMapScr` — the new
+   `travel-dispatch` placement, one edit discriminated by `tpRoom 550` covers all four beach
+   launches) plus rm560→550 and rm580→550 (edge-exit closes).
+Gates: LSL2/KQ4/Dagger snapshots byte-identical; KQ6 delta = the mists rows **plus two
+by-products the lowering surfaced** (below); v24 compiles 341/341; verify: no NEW softlocks.
+⚠️ BY-PRODUCT, NEEDS USER REVIEW: with g161 modeled, `dangerous_sinks` gained a row —
+**sacredWater (40), Main's generic `(gEgo put: 40 0)` disposal** (same class as
+mint/peppermint: wasting a spell ingredient the cage still needs), so v24's 0.SCR also
+deletes that disposal; and the huntersLamp row's still-needed set grew to {480, 540, 580}
+(the lamp is the collection vessel at the fountain and the crybaby). Report-and-ask, not
+silently shipped: these are output changes beyond the mists rows.

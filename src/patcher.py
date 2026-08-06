@@ -1123,6 +1123,106 @@ def _edit_candidates(dest, titles_by_num, sp, rooms):
     return out
 
 
+def _balanced_span(text, i):
+    """End index (exclusive) of the balanced parenthesis group starting at text[i] == '('."""
+    depth = 0
+    for j in range(i, len(text)):
+        if text[j] == "(":
+            depth += 1
+        elif text[j] == ")":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+    return len(text)
+
+
+def _guard_travel_dispatch(dest, sp, titles_by_num, seen_dispatch):
+    """Place an edge guard on an INDIRECT travel dispatch, the spelling `_edit_candidates`
+    cannot see: `(<room> newRoom: (<x> <prop>:))` fanned out by INSTANCES that each declare
+    `<prop> <destination>`.
+
+    KQ6's magic map is the instance that forced this. Every landing on a beach room is
+    `pullOutMapScr.sc`'s `(global2 newRoom: (local8 tpRoom:))`; the mists carry `tpRoom 550`;
+    and the CONTROLLABLE moment is the island click -- the dispatch class's `doVerb` arm
+    `((== param1 5) ...)`, which highlights the island and rides an uncontrollable cutscene
+    into the teleport. The beach rooms the spec names never perform the crossing, which is why
+    the ordinary candidate search reports not-found for all four.
+
+    The edit: wrap that commit arm's body in the guard, discriminated by the instance property
+    (`(or (not (== <prop> <to>)) <cond>)`), refusing with the derived line otherwise. One edit
+    covers every crossing the dispatch fans to that destination, so sibling rows report shared.
+    Discrimination keeps every other island's click byte-for-byte on its stock path.
+
+    Refuses (returns None) rather than guessing when: no file performs a property-read
+    `newRoom:` whose property some instance pins to this destination; the file has no doVerb
+    cond arm testing the verb parameter against a literal alone (the 'already here' arm also
+    compares the current-room global and is deliberately not matched -- clicking the island
+    you stand on never travels); or no refusal line derives for the game."""
+    if REFUSE is None:
+        return None
+    src_dir = os.path.join(dest, "src")
+    for fn in sorted(os.listdir(src_dir)):
+        if not fn.endswith(".sc"):
+            continue
+        path = os.path.join(src_dir, fn)
+        text = open(path, errors="replace").read()
+        m = re.search(r"newRoom:\s*\(\s*\w+\s+(\w+):\s*\)", text)
+        if not m:
+            continue
+        prop = m.group(1)
+        if not re.search(r"\(properties[^()]*\b%s\s+%d\b" % (re.escape(prop), sp["to_room"]),
+                         text):
+            continue
+        key = (fn, sp["to_room"], sp["condition"])
+        if key in seen_dispatch:
+            return {"applied": True, "sites": 0, "title": fn[:-3], "shared": True,
+                    "placement": {"kind": "travel-dispatch", "instance": fn[:-3],
+                                  "property": prop}}
+        # the commit arm: a doVerb cond clause whose test is exactly `(== param1 <lit>)`
+        dv = re.search(r"\(method\s+\(doVerb\s+(\w+)[^)]*\)", text)
+        if not dv:
+            continue
+        pname = dv.group(1)
+        mend = _balanced_span(text, text.rfind("(", 0, dv.start() + 1))
+        edits = []
+        for cm in re.finditer(r"\(cond\b", text[dv.start():mend]):
+            ci = dv.start() + cm.start()
+            cend = _balanced_span(text, ci)
+            j = ci + len("(cond")
+            while j < cend:
+                while j < cend and text[j] != "(":
+                    j += 1
+                if j >= cend - 1:
+                    break
+                aend = _balanced_span(text, j)
+                arm = text[j:aend]
+                tm = re.match(r"\(\s*\(\s*==\s+%s\s+\d+\s*\)" % re.escape(pname), arm)
+                if tm and prop not in arm[:tm.end()]:
+                    tend = _balanced_span(arm, arm.index("(", 1))
+                    body = arm[tend:-1]
+                    edits.append((j + tend, j + len(arm) - 1, body))
+                j = aend
+        if not edits:
+            continue
+        guard = "(or (not (== %s %d)) %s)" % (prop, sp["to_room"],
+                                              to_source_syntax(sp["condition"]))
+        for (bs, be, body) in reversed(edits):
+            # the marker comment must be followed by a newline BEFORE the arm's own closing
+            # paren resumes at text[be:], or the `;` swallows that paren and the file no
+            # longer balances
+            text = (text[:bs]
+                    + "\n\t\t\t\t(if %s%s\n\t\t\t\telse\n\t\t\t\t\t%s\n\t\t\t\t)"
+                      "  ; softlock-guard: the landing\n\t\t\t"
+                    % (guard, body.rstrip(), REFUSE)
+                    + text[be:])
+        open(path, "w").write(_ensure_refusal_use(text, titles_by_num))
+        seen_dispatch.add(key)
+        return {"applied": True, "sites": len(edits), "title": fn[:-3],
+                "placement": {"kind": "travel-dispatch", "instance": fn[:-3],
+                              "property": prop, "guard": guard}}
+    return None
+
+
 def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), rooms=None,
                  entry_frontier=None):
     """Place each EDGE guard at its CONTROLLABLE TRIGGER.
@@ -1182,6 +1282,8 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
 
     out = out_unplaced
     seen_entry = set()             # (title, from_room, guard) -- entry-commit dedup across rows
+    seen_dispatch = set()          # (file, to_room, condition) -- one travel-dispatch edit
+    #   covers every crossing the dispatch fans to that destination; siblings report shared
     # FATAL USES -- refuse the ACTION. The site is the arming of the machine that kills you, in the
     # room that offers the move: KQ6's rm420 `(gCurRoom setScript: throwSkull)`. `find_arming`
     # already locates an arming by name, so this reuses the Realm-entry path rather than adding a
@@ -1390,6 +1492,12 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                     out.append({**sp, "applied": True, "title": title, "sites": n,
                                 "placement": {"kind": "edge-exit", "instance": title,
                                               "trigger_method": "init", "trigger_state": direction}})
+                    continue
+                # ...then the indirect travel dispatch (the magic-map class), whose crossing no
+                # from-room file performs at all
+                got = _guard_travel_dispatch(dest, sp, titles_by_num, seen_dispatch)
+                if got:
+                    out.append({**sp, **got})
                     continue
                 out.append({**sp, "applied": False,
                             "why": "no controllable trigger (%s) and no room-property exit"

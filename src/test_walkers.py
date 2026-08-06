@@ -116,8 +116,35 @@ ACCEPTED = {
                    "dispatch on selectors via ir.send_pairs and never touch Selector nodes.",
     "Decrement":   "KNOWN GAP, tracked as TODO A0g(1): Increment/Decrement are handled for LOCALS "
                    "in the machine walkers and not at all in extract, and never for GLOBALS "
-                   "anywhere -- which is why KQ4's dig counter and its clock are invisible.",
+                   "anywhere -- which is why KQ4's dig counter and its clock are invisible. "
+                   "vocab's mention is only the mask-global store DISQUALIFYING a candidate "
+                   "(a counted global is not a bit word).",
     "Increment":   "as Decrement -- TODO A0g(1).",
+    # -- the mask-global store (vocab._mask_site / derive_mask_globals / lower_mask_globals,
+    #    2026-08-06) reads node types it either LOWERS exactly or must SEE to refuse a
+    #    candidate. None of these is shared control-flow logic: extract's atom() is the only
+    #    consumer of the emitted booleans, and the relational/arithmetic mentions exist solely
+    #    to disqualify.
+    "And":         "vocab EMITS And/Or/Not as the per-bit lowering of a mask-global equality "
+                   "(`(== g161 15)` -> a conjunction of bit reads) and treats a bare mask word "
+                   "under one as a boolean read it can lower exactly; extract.atom consumes "
+                   "them as guard atoms. The control-flow walkers see them only through atoms.",
+    "Or":          "as And.",
+    "Not":         "as And.",
+    "Ge":          "relational compares are guard-atom concerns (extract); vocab reads one ONLY "
+                   "to REFUSE a mask-global candidate -- a `<`/`>` on a word is scalar use that "
+                   "per-bit lowering would misstate.",
+    "Gt":          "as Ge.",
+    "Le":          "as Ge.",
+    "Lt":          "as Ge.",
+    "Uge":         "as Ge.",
+    "Ugt":         "as Ge.",
+    "Ule":         "as Ge.",
+    "Ult":         "as Ge.",
+    "AssignmentAdd": "compound-arithmetic assignment: machine walkers thread it for LOCAL "
+                   "counters; vocab reads it only to disqualify a mask-global candidate. The "
+                   "GLOBAL half is the same known gap as Increment/Decrement (TODO A0g(1)).",
+    "AssignmentSub": "as AssignmentAdd.",
 }
 
 PASS, FAIL = [], []

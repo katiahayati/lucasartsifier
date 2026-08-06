@@ -416,40 +416,73 @@ def test_register_strandings_is_degenerate_on_sci11():
 
 
 def test_mists_survival_demand_carries_the_register_half():
-    """🔴 The cage sorter demands BOTH halves; the carry-in guard demands only the item.
+    """The cage sorter's BOTH halves are demanded at the crossings -- promoted from a 🔴 KNOWN
+    GAP 2026-08-06 (USER FINDING #17, play, 2026-08-05: "same as the teacup in the realm: we
+    need it to have water and ready to cast the make rain spell").
 
-    USER FINDING 2026-08-05 (in play): "same as the teacup in the realm: we need it to have
-    water and ready to cast the make rain spell." Source truth (rm580.sc:1181): survival is
-    `(and (gEgo has: 19) (== global161 15))` -- the lamp alone burns in the cage. The four
-    readiness bits of global161 are ALL established off-isle or from inventory (rm540.sc:945
-    $0001, KqInv water-on-page $0002, CryBaby $0004, openBook's cast $0008 at ==7) and rm580
-    only RESETS it (rm580.sc:1007), so `sink_survival_carryins`' premise for demanding only
-    the item half -- "the other conjuncts are established inside" -- is FALSE. Guard oracle
-    rows 5b/5c carry the ruling. Two REDs:
+    Source truth (rm580.sc:1181): survival is `(and (gEgo has: 19) (== global161 15))`, all
+    four readiness bits established off-isle or from inventory, rm580 only RESETS the word
+    (rm580.sc:1007). Three derivations carry the cure, each pinned here:
 
-    1. the 550->580 / 560->580 demands must conjoin the sorter's own register literal
-       (global161 == 15), presentability-checked like every register-valued demand;
-    2. the REVISIT boundary: with `flag 25 & !14 & !74` the shore capture (rm550.sc:282,
-       `captured` -> direct `newRoom: 580`) reaches the same sorter with no controllable
-       moment after landing -- leave-and-return-unready dies ON ARRIVAL in stock. The last
-       complying crossing is the landing itself; no current spec guards any edge into rm550."""
-    print("\n-- the mists demand: item half only (the teacup's entrance-half class) --")
+    * the SIXTH store: `vocab.derive_mask_globals` finds plain globals used only as bit-mask
+      words (`|=`/`&=` literal masks, equality/bit-test reads) and lowers them per-bit --
+      measured corpus-wide it matches EXACTLY KQ6's g161 and nothing on LSL2/KQ4, so the cage
+      sorter's register half finally has modeled writers (rm540 bit0, KqInv bit1 icon-bar-wide,
+      CryBaby bit2 at rm480, openBook bit3 at rm230/340);
+    * `sink_survival_carryins` conjoins the positive arming's structural register literals,
+      presentability-checked, spelled the game's own way (`== global161 15`) -- and WAIVED
+      under the surviving arm's own one-way latch (flag 74, befriended-forever), because
+      makeRain RESETS g161 on success, so an unconditional demand would wall every winner
+      out of the befriended camp;
+    * the LANDING (guard oracle row 5c): rm550's shore ambush (`captured`, armed via
+      `waitForCapture` only under flag 25 & !14, delivering `newRoom: 580` with no
+      controllable moment) propagates the same demand to every crossing INTO rm550,
+      stage-conditioned `(or (not <stage>) <demand>)` so non-ambush crossings stay free.
+      The stage inherits through the machine-method arming chain (MachineBuilder armer link
+      for doit/cue armings), which is what makes it derivable at all.
+
+    Guard oracle rows 5b/5c carry the ruling."""
+    print("\n-- the mists demand: both halves, waived for winners, landing guarded --")
     import os
     import config
+    import ir as I
+    import vocab as V
     if not (config.KQ6.ir_path and os.path.exists(config.KQ6.ir_path)):
         print("  [SKIP] no KQ6 IR")
         return
+    # the store derivation is exact: g161 with bits 0-3 on KQ6, nothing on LSL2
+    cands = V.derive_mask_globals(I.load_ir(config.KQ6.ir_path))
+    check("the mask-global store derives exactly g161 bits 0-3 on KQ6",
+          cands == {161: frozenset({0, 1, 2, 3})}, repr(cands))
+    if config.LSL2.ir_path and os.path.exists(config.LSL2.ir_path):
+        check("the mask-global store is empty on LSL2 (inert by construction)",
+              V.derive_mask_globals(I.load_ir(config.LSL2.ir_path)) == {})
     s = M.load(cfg=config.KQ6)
     rows = [sp for sp in G.sink_survival_carryins(s) if sp.get("to_room") == 580]
-    check("🔴 KNOWN GAP: the mists carry-in demands rain-readiness (global161==15), not just the lamp",
-          bool(rows) and all("161" in sp["condition"] for sp in rows),
+    check("the mists carry-in demands rain-readiness (global161==15), not just the lamp",
+          {(sp["from_room"], sp["to_room"]) for sp in rows} == {(550, 580), (560, 580)}
+          and all("(== global161 15)" in sp["condition"]
+                  and "(gEgo has: 19)" in sp["condition"]
+                  and not sp["refused"] for sp in rows),
+          repr([(sp["from_room"], sp["condition"], sp["refused"]) for sp in rows]))
+    # USER RULING 2026-08-06 (in play, on v24): "we should let you revisit the camp without
+    # the lamp once there's no trap there" -- the flag-74 latch waives the WHOLE demand,
+    # item half included, so the befriended camp is open to a lampless winner. Pinned as the
+    # exact condition, because this shape is a ruling, not a rendering choice.
+    check("the latch waives the WHOLE demand (lampless befriended revisit allowed)",
+          all(sp["condition"] ==
+              "(or (proc913_0 74) (and (gEgo has: 19) (== global161 15)))"
+              for sp in rows),
           repr([sp["condition"] for sp in rows]))
-    landing = [sp for sp in G.guard_specs(s) + G.sink_survival_carryins(s)
+    landing = [sp for sp in G.sink_survival_carryins(s)
                if sp.get("to_room") == 550 and not sp.get("refused")]
-    check("🔴 KNOWN GAP: the isle landing is guarded when the shore-carry revisit is armed",
-          bool(landing),
-          "no spec guards any edge into rm550; the revisit ambush carries an unready player "
-          "to the cage sorter with no controllable moment after landing")
+    check("the isle landing is guarded when the shore-carry revisit is armed",
+          bool(landing)
+          and {sp["from_room"] for sp in landing} ==
+          {a for a, bs in s.edges.items() if 550 in bs}
+          and all("(proc913_0 25)" in sp["condition"]
+                  and "(== global161 15)" in sp["condition"] for sp in landing),
+          repr([(sp["from_room"], sp["condition"]) for sp in landing]))
 
 
 if __name__ == "__main__":

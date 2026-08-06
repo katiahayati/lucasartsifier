@@ -3596,6 +3596,16 @@ def load(cfg=None, ir_path=None):
     V.lower_room_locals(ir, V.derive_room_locals(ir, _X._room_numbers(ir)))
     _X.install_vocabulary(ir)
     V.lower_item_bit_flags(ir, V.derive_item_bit_flags(ir, _X._at_item), _X._at_item)
+    # SIXTH container: a plain global used as a BIT-MASK WORD -- written `(|= gN $mask)`, read
+    # by equality/bit-test -- with no accessor to key on. Same per-bit lowering as every flag
+    # store. Measured corpus-wide: exactly one instance, KQ6's g161 (the Make-Rain readiness
+    # word, the register half of the mists cage sorter); LSL2/KQ4/Dagger have zero mask-written
+    # globals, so this is inert there by construction. LAST of the lowerings, deliberately:
+    # ALLOCATION ORDER IS REGISTER IDENTITY (see lower_prop_flags), and a new store that
+    # allocates mid-sequence renumbers every store after it -- measured: it took the skull's
+    # item-bit registers (489/490) and test_scopes' pinned callback-scope check tripped on the
+    # wrong store's writes.
+    V.lower_mask_globals(ir, V.derive_mask_globals(ir))
     d_gi, d_val = sig[0], (sig[1] if len(sig) > 1 else None)
     is_death = (lambda gi, v: gi == d_gi and v == d_val) if d_val is not None else \
                (lambda gi, v: gi == d_gi and bool(v))

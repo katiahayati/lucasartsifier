@@ -361,8 +361,18 @@ class MachineBuilder:
                         self._scan_setscript(c["kids"][1], [], m, source=mn,
                                              armer=(other.name, k), owner=owner)
                     continue
+                # An arming inside another MACHINE's doit/cue is a continuation of that machine
+                # exactly as a changeState-case arming is, so it carries the same armer link and
+                # `_chain_entries` conjoins that machine's own preconditions. KQ6's mists shore
+                # ambush is the instance this was deaf to: `waitForCapture` (armed by rm550::init
+                # only under flag 25 & !14) arms `captured` from its `doit`, and without the link
+                # the seizure that delivers the player to the cage sorter read as free-standing.
+                # `_chain_entries`' own bounds still apply: an armer that is not a built machine,
+                # has no entries, or has any unconditional entry changes nothing.
+                armer = ((other.name, None)
+                         if other.name != m.inst and "changeState" in other.methods else None)
                 self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn),
-                                     owner=owner)
+                                     owner=owner, armer=armer)
         # ...and this script's own PROCEDURES, which were never scanned at all. A machine armed
         # from a proc in its own script had no entry whatever: KQ6's realm cutscene is armed by
         # `proc344_1`, and the item-state test guarding it went with it.

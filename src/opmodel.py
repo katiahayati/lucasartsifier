@@ -626,6 +626,7 @@ class OpEmitter:
                 "entries": m.entries, "init_entries": m.init_entries,
                 "entry_locals": m.entry_locals, "init_entry_locals": m.init_entry_locals,
                 "entry_armers": m.entry_armers, "entry_recv": m.entry_recv,
+                "entry_sources": m.entry_sources,
                 "local_regs": dict(getattr(m, "local_regs", None) or {}),
                 "start": m.start, "delivered": delivered, "drops": drops}
 
