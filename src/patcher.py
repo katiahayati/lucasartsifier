@@ -604,12 +604,22 @@ def _enclosing_form(text, pos):
 def _clause_end_line(lines, i):
     """The line index just past the statement list `lines[i]` belongs to.
 
-    Walks forward tracking parenthesis depth relative to the deleted line's position: the clause
-    ends where depth would go negative, i.e. at its own closing paren. Used to put a retraction
-    AFTER the text it retracts."""
+    Walks forward tracking parenthesis depth relative to the line's position: the list ends
+    where depth would go negative (its own closing paren) -- or at a bare `else`, which ends
+    the arm without closing anything. Used to put a retraction AFTER the text it retracts.
+
+    THE `else` STOP IS LOAD-BEARING (found by review, 2026-08-06). Without it the walk runs
+    straight through into the sibling arm, and the retraction is emitted in the branch the
+    disposal is NOT in: KQ4's `((Said 'eat/fruit') (if (has: 25) <eat+destroy> else <you do
+    not have it>))` printed "Just kidding! You hold on to it" to a player who never had the
+    fruit. Harmless noise until lite mode, where that stray print also SPENDS the guard's one
+    warning -- so the first real fruit-eating destroys it with only "You have been warned!"."""
     depth = 0
     for j in range(i, len(lines)):
-        for ch in _strip_literals(lines[j]):
+        stripped = _strip_literals(lines[j])
+        if depth == 0 and re.match(r"\s*else\b", stripped):
+            return j
+        for ch in stripped:
             if ch == "(":
                 depth += 1
             elif ch == ")":
@@ -826,24 +836,33 @@ def _recycle_counter_break(text, write_start, msg, forms=None):
     anns = re.findall(r"\(proc255_0[^()]*\)", text[cond_e:elp])   # keep the clause's own announcements
     else_body = text[elp + 4:e - 1].strip()
     ind = text[text.rfind("\n", 0, s) + 1:s]
+    recycle = "".join("\n%s\t\t%s" % (ind, a) for a in anns)
+    recycle += "\n%s\t\t%s  ; softlock-guard: retract the break" % (ind, msg)
     if forms is not None:
-        # Mode dispatch: stock (and lite-once-warned) keeps the game's own break -- the original
-        # THEN body runs untouched -- while full withholds it exactly as the recycle always did.
+        # MODE DISPATCH, and the exclusion matters. The recycle lifts `<E>` out of the `else`
+        # and runs it unconditionally -- correct when the break never happens, which is what
+        # full mode does. But stock must be STOCK: the break fires and `<E>` does NOT run, or
+        # the player both breaks the tool and completes the dig, and the clamp that keeps the
+        # counter inside its array never runs either (measured on KQ4's shovel: state 6 wrote
+        # three globals past the 5-slot store). So the allow branch keeps the original
+        # then/else exclusion and only the deny branch recycles.
         allow, warn, mark = forms
-        then_body = text[cond_e:elp].strip()
-        body = "\n%s\t(if %s\n%s\t\t%s\n%s\t\t%s\n%s\telse" % (ind, allow, ind, warn,
-                                                               ind, then_body, ind)
-        body += "".join("\n%s\t\t%s" % (ind, a) for a in anns)
-        body += "\n%s\t\t%s  ; softlock-guard: retract the break" % (ind, msg)
-        body += "\n%s\t\t%s" % (ind, mark)
-        body += ("\n%s\t\t(= %s %d)  ; softlock-guard: recycle the bounded store, never exhaust"
-                 % (ind, counter, limit - 1))
-        body += "\n%s\t)" % ind
-    else:
-        body = "".join("\n%s\t%s" % (ind, a) for a in anns)
-        body += "\n%s\t%s  ; softlock-guard: retract the break" % (ind, msg)
-        body += ("\n%s\t(= %s %d)  ; softlock-guard: recycle the bounded store, never exhaust"
-                 % (ind, counter, limit - 1))
+        # keep the stock body readable at its new depth: it moves one level in
+        then_body = ("\n%s\t\t" % ind).join(
+            ln.strip() for ln in text[cond_e:elp].strip().splitlines() if ln.strip())
+        recycle += "\n%s\t\t%s" % (ind, mark)
+        recycle += ("\n%s\t\t(= %s %d)"
+                    "  ; softlock-guard: recycle the bounded store, never exhaust"
+                    % (ind, counter, limit - 1))
+        rebuilt = ("(if %s\n%s\t(if %s\n%s\t\t%s\n%s\t\t%s\n%s\telse%s\n%s\t\t%s\n%s\t)\n"
+                   "%selse\n%s\t%s\n%s)"
+                   % (cond, ind, allow, ind, warn, ind, then_body, ind, recycle,
+                      ind, else_body, ind, ind, ind, else_body, ind))
+        return text[:s] + rebuilt + text[e:], True
+    body = "".join("\n%s\t%s" % (ind, a) for a in anns)
+    body += "\n%s\t%s  ; softlock-guard: retract the break" % (ind, msg)
+    body += ("\n%s\t(= %s %d)  ; softlock-guard: recycle the bounded store, never exhaust"
+             % (ind, counter, limit - 1))
     rebuilt = "(if %s%s\n%s)\n%s%s" % (cond, body, ind, ind, else_body)
     return text[:s] + rebuilt + text[e:], True
 
@@ -1110,8 +1129,11 @@ def _install_panel_chooser(src_dir, g):
                 break
     if host is None:
         return None
-    # the new row: the host's own nsTop spelling, its two row-offset constants bumped one
-    # row (+20) past the deepest existing row; its own font; an existing button face
+    # THE NEW ROW. The panel's rows are a ladder: each icon's `nsTop` is the same expression
+    # with one constant per row, and the PITCH is the gap between consecutive rungs (20 on
+    # KQ6). Derive the pitch from the ladder rather than assuming it, then hang the new row
+    # one pitch below the deepest one -- and grow the window by the same amount, or the icon
+    # lands outside the window and is clipped (the v26 bug, user screenshot 2026-08-06).
     tops = re.findall(r"\(=\s+nsTop\s+(\(.*?\))\s*\)", text)
     rows = [(int(m.group(1)), int(m.group(2)), t)
             for t in tops
@@ -1120,50 +1142,134 @@ def _install_panel_chooser(src_dir, g):
     if not rows:
         return {"applied": False, "ui": "panel", "title": host[:-3],
                 "why": "no `(= nsTop (.. X else Y ..))` row idiom to clone"}
+    ladder = sorted({r[0] for r in rows})
+    pitch = min((b - a for a, b in zip(ladder, ladder[1:])), default=20)
     x, y, tmpl = max(rows)
-    ns_top = tmpl.replace(" %d " % x, " %d " % (x + 20), 1)
-    ns_top = re.sub(r"else\s+%d\b" % y, "else %d" % (y + 20), ns_top, count=1)
+    ns_top = tmpl.replace(" %d " % x, " %d " % (x + pitch), 1)
+    ns_top = re.sub(r"else\s+%d\b" % y, "else %d" % (y + pitch), ns_top, count=1)
     fm = re.search(r"font:\s*(global\d+|\d+)", text)
     font = fm.group(1) if fm else "0"
-    im = re.search(r"\(instance\s+\w+\s+of\s+ControlIcon\b.*?view\s+(\d+).*?loop\s+(\d+)",
-                   text, re.S)
-    if not im:
+    # THE FACE, and why it is not a button cel. Every button face in a panel like this is a
+    # WORD baked into the art (KQ6's view 947: SAVE/RESTORE/RESTART/QUIT/ABOUT/PLAY/SPEECH/
+    # TEXT), so borrowing one ships a control that lies about what it does -- the v26 build
+    # grew a second "SAVE". What the window DOES have is blank art: the inset plates its own
+    # `open` draws behind its controls. Take that cel as the face and write the label with
+    # `Display`, the same kernel the game uses for every other run-time string. Zero new art,
+    # and the label says what the control is.
+    #
+    # The plate is found by its y-expression carrying the DEEPEST row's constant (KQ6: the
+    # 58x22 inset under the text/speech switch); its own DrawCel arguments give view/loop/cel
+    # and x. Spans come from `_balanced_span`, not a nesting-depth regex: the y argument is
+    # three forms deep (`(+ 0 (if (== g 256) A else B) 7)`) and a hand-rolled pattern misses it.
+    plate = None
+    deep = re.compile(r"\b%d\b\s+else\s+\b%d\b" % (x, y))
+    for dm in re.finditer(r"\(\s*DrawCel\b", text):
+        d = text[dm.start():_balanced_span(text, dm.start())]
+        args = re.match(r"\(\s*DrawCel\s+(\d+)\s+(\d+)\s+(\d+)\s+(-?\d+)\s+(\(|-?\d)", d)
+        if not args or not deep.search(re.sub(r"\s+", " ", d)):
+            continue
+        ym = re.search(r"\(\s*DrawCel\s+\d+\s+\d+\s+\d+\s+-?\d+\s+", d)
+        yexpr = d[ym.end():_balanced_span(d, ym.end())] if d[ym.end()] == "(" else None
+        if yexpr is None:
+            continue
+        plate = {"view": args.group(1), "loop": args.group(2), "cel": args.group(3),
+                 "x": int(args.group(4)),
+                 "y": deep.sub("%d else %d" % (x + pitch, y + pitch), yexpr, count=1)}
+        break
+    if plate is None:
         return {"applied": False, "ui": "panel", "title": host[:-3],
-                "why": "no ControlIcon instance to clone a face from"}
-    view, loop = im.group(1), im.group(2)
+                "why": "no blank inset cel is drawn behind the deepest control row, so there "
+                       "is no unlabelled face to host the chooser (every button face in the "
+                       "panel art carries a baked-in word)"}
+    view, loop, cel = plate["view"], plate["loop"], plate["cel"]
+    deep_left, ns_top = plate["x"], plate["y"]
+    # the label's colour: the panel's own highlight colour, as it sets it on every element
+    hm = re.search(r"eachElementDo:\s*#highlightColor\s+(\d+)", text)
+    ink = hm.group(1) if hm else "0"
+    # centre the label in the plate the icon is about to draw
+    try:
+        import sci_gfx as _gfx
+        import sci_resource as _res
+        cels = _gfx.decode_view(_res.Sci0Game(config.ACTIVE.resource_dir), int(view))
+        plate_w = cels[int(loop)]["cels"][int(cel)].width
+    except Exception:                                  # noqa: BLE001 -- unreadable art
+        plate_w = 58
     # join the panel's add: list right before its first eachElementDo:
     ee = re.search(r"\n([ \t]*)eachElementDo:", text)
     if not ee:
         return {"applied": False, "ui": "panel", "title": host[:-3],
                 "why": "GameControls add: list has no eachElementDo: anchor"}
+    # THREE SPLICES, ONE TEXT. All spans are measured on the same pristine text, so they are
+    # applied BACK TO FRONT -- splicing front to back shifts every later span and lands the
+    # next edit mid-form (measured: it chopped the plaque draw in half).
+    edits = []
     ind = ee.group(1)
-    entry = "\n%s(iconGuards theObj: iconGuards selector: #doit yourself:)" % ind
-    text = text[:ee.start()] + entry + text[ee.start():]
+    edits.append((ee.start(), ee.start(),
+                  "\n%s(iconGuards theObj: iconGuards selector: #doit yourself:)" % ind))
+    # GROW THE WINDOW by one pitch, or the new row is drawn outside it and clipped (the v26
+    # bug). The window's own `bottom:` expression is WRAPPED, never rewritten, so whatever
+    # the game computed still decides where the panel sits and how tall its art is.
+    grew = False
+    bset = re.search(r"\n\s*bottom:\s*", text)
+    if bset:
+        rest = text[bset.end():]
+        if rest.lstrip()[:1] == "(":
+            off = bset.end() + (len(rest) - len(rest.lstrip()))
+            bend = _balanced_span(text, off)
+            edits.append((off, bend, "(+ " + text[off:bend] + " %d)" % pitch))
+            grew = True
+    for (s0, s1, rep) in sorted(edits, reverse=True):
+        text = text[:s0] + rep + text[s1:]
     inst = (
         "\n(instance iconGuards of ControlIcon\n"
-        "\t(properties\n\t\tview %s\n\t\tloop %s\n\t\tcel 0\n\t\tsignal 387\n\t)\n\n"
+        "\t(properties\n\t\tview %s\n\t\tloop %s\n\t\tcel %s\n\t\tsignal 387\n\t)\n\n"
+        # The label is written AFTER `super show:` -- the plate is the icon's own face, so a
+        # label drawn before it would be painted over. dsBACKGROUND -1 keeps the plate visible
+        # behind the text; dsALIGN 1 centres it in the plate's own width.
         "\t(method (show)\n"
-        "\t\t(= nsLeft 108)\n"
+        "\t\t(= nsLeft %d)\n"
         "\t\t(= nsTop %s)\n"
         "\t\t(super show: &rest)\n"
+        "\t\t(Display {GUARDS}\n"
+        "\t\t\t100 nsLeft (+ nsTop 6)\n"
+        "\t\t\t105 %s\n"
+        "\t\t\t102 %s\n"
+        "\t\t\t103 -1\n"
+        "\t\t\t106 %d\n"
+        "\t\t\t101 1\n"
+        "\t\t)\n"
         "\t)\n\n"
-        "\t(method (doit &tmp temp0)\n"
+        # The chooser dialog. Laid out the way the game's own multi-button dialogs are
+        # (a title line, then items on the 14px line pitch, buttons on their own row):
+        # a long unpositioned sentence WRAPS, and buttons placed on the wrapped line are
+        # drawn over the text -- the v26 bug the user screenshotted. Short lines only.
+        "\t(method (doit &tmp temp0 temp1)\n"
+        "\t\t(= temp1 {now: stock})\n"
+        "\t\t(if (== global%d 0)\n"
+        "\t\t\t(= temp1 {now: full})\n"
+        "\t\telse\n"
+        "\t\t\t(if (== global%d 1) (= temp1 {now: lite}))\n"
+        "\t\t)\n"
         "\t\t(= temp0\n"
         "\t\t\t(Print\n"
         "\t\t\t\tfont: %s\n"
-        "\t\t\t\taddText: {%s}\n"
-        "\t\t\t\taddButton: 1 {Full} 0 12\n"
-        "\t\t\t\taddButton: 2 {Lite} 45 12\n"
-        "\t\t\t\taddButton: 3 {Stock} 95 12\n"
+        "\t\t\t\taddText: {Softlock guards:}\n"
+        "\t\t\t\taddText: temp1 0 14\n"
+        "\t\t\t\taddButton: 1 {  Full  } 0 34\n"
+        "\t\t\t\taddButton: 2 {  Lite  } 48 34\n"
+        "\t\t\t\taddButton: 3 { Stock } 96 34\n"
         "\t\t\t\tinit:\n"
         "\t\t\t)\n"
         "\t\t)\n"
         "\t\t(if temp0 (= global%d (- temp0 1)))\n"
         "\t\t(self show:)\n"
-        "\t)\n)\n" % (view, loop, ns_top, font, _CHOOSER_TEXT, g))
+        "\t)\n)\n" % (view, loop, cel, deep_left, ns_top, font, ink, plate_w,
+                      g, g, font, g))
     text = text + inst
     open(os.path.join(src_dir, host), "w").write(text)
-    return {"applied": True, "ui": "panel", "title": host[:-3]}
+    return {"applied": True, "ui": "panel", "title": host[:-3], "row_pitch": pitch,
+            "window_grown": grew, "face": "%s/%s/%s (blank plate + Display label)"
+                                          % (view, loop, cel)}
 
 
 def guard_board_commit(text, cond):
@@ -1720,6 +1826,12 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                         "from_room": None, "to_room": None})
     for title, group in sorted((k, v) for k, v in by_title.items() if k):
         for sp in group:
+            # ONE WARNED BIT PER SPEC ROW. A row is wrapped at more sites than one -- extra
+            # armings of the same script, cue-chain arms, every room on an entry frontier --
+            # and they are all the SAME guard saying the same no. Minting the bit inside each
+            # wrapper call (as the first cut did) charges the player a fresh warning at each
+            # one, so lite refuses a single demand two, four, six times.
+            row_site = _ModeSite()
             # The edit does not always live in the FROM room's own file. KQ6's Realm entry
             # `rm340 -> rm155` is delivered by `nightMare.sc` (script 344), a helper the room
             # arms, and looking only at rm340.sc reports `not-found` for that reason alone. Try
@@ -1847,7 +1959,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                 frontier = sorted(entry_frontier(sp["from_room"])) if entry_frontier else []
                 placed, stage, unwrapped = (
                     _guard_arrival_entries(dest, sp, titles_by_num, rooms, path,
-                                           placement, seen_entry, frontier)
+                                           placement, seen_entry, frontier, site=row_site)
                     if frontier else ([], None, []))
                 if placed:
                     # A frontier crossing without a wrap is a BYPASS, not a detail: v12 shipped
@@ -1892,7 +2004,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                                              "room": "global%d" % _ROOM,
                                              "game": "global%d" % _GAME}}
             new_text, n = wrap_trigger_in_source(
-                text, placement, to_source_syntax(sp["condition"]), REFUSE)
+                text, placement, to_source_syntax(sp["condition"]), REFUSE, site=row_site)
             if n == 0:
                 out.append({**sp, "applied": False, "why": "trigger found but no site rewritten",
                             "placement": placement})
@@ -1915,7 +2027,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                         continue
                     t2 = open(path, errors="replace").read()
                     nt2, n2 = wrap_trigger_in_source(
-                        t2, extra, to_source_syntax(sp["condition"]), REFUSE)
+                        t2, extra, to_source_syntax(sp["condition"]), REFUSE, site=row_site)
                     if n2:
                         open(path, "w").write(_ensure_refusal_use(nt2, titles_by_num))
                         row["sites"] = row.get("sites", 1) + n2
@@ -1981,7 +2093,7 @@ def _gate_notify_awards(dest, cond):
 
 
 def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, seen,
-                           entry_rooms):
+                           entry_rooms, site=None):
     """An ARRIVAL COMMIT cannot be refused in place. Play-found (finding #5, the winged-guards
     capture): the proc-call wrap put a refusal inside `rm340::init`, and by then the seizure
     has begun -- the refusal left a half-armed scene and the game hung two rooms later. The
@@ -2084,7 +2196,7 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
                 chain = find_cue_chain_armings(room_text, t3, _ROOM, trig["target_script"])
                 total = 0
                 for arm in chain:
-                    t3, n3 = wrap_all_armings_in_source(t3, arm, guard, REFUSE)
+                    t3, n3 = wrap_all_armings_in_source(t3, arm, guard, REFUSE, site=site)
                     total += n3
                 if total:
                     open(p3, "w").write(_ensure_refusal_use(t3, titles_by_num))
@@ -2099,7 +2211,7 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
             unwrapped.append({"room": num, "why": "no refusal form"})
             continue                       # a wordless refusal is the "game lied" class
         t2 = open(p2, errors="replace").read()
-        nt, n = wrap_trigger_in_source(t2, trig, guard, REFUSE)
+        nt, n = wrap_trigger_in_source(t2, trig, guard, REFUSE, site=site)
         if n:
             if trig["kind"] != "arm-event":            # an arm-gate prints nothing
                 nt = _ensure_refusal_use(nt, titles_by_num)
@@ -2125,7 +2237,7 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
                 unwrapped.append({"room": num, "why": "no wrappable site"})
             continue
         t2 = open(p2, errors="replace").read()
-        nt, n = wrap_trigger_in_source(t2, trig, guard, REFUSE)
+        nt, n = wrap_trigger_in_source(t2, trig, guard, REFUSE, site=site)
         if n:
             open(p2, "w").write(nt)                    # a route re-decision prints nothing
             seen.add(key)

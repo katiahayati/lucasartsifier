@@ -6,8 +6,22 @@ upgrades leave RETIRED scripts behind, and retired-by-removal is how v20 fixed t
 finding-#15 hang: a stale v19 `680.SCR` hangs the game right after the Lord of the Dead
 challenge completes (bitten 2026-08-04 with the Aug-1 leftovers, again 2026-08-05).
 The complete v22 set is exactly: 0 21 80 190 220 230 320 340 344 420 550 560 640 660
-740 880 (.SCR+.HEP each) + 999.VOC — anything else (670, 680, 300, 11, 425, 460, 470)
-is a leftover; delete it.
+740 880 (.SCR+.HEP each) + 999.VOC — anything else (670, 680, 300, 11) is a leftover
+from an older emission; delete it.
+
+⚠️ CORRECTION 2026-08-06: **425, 460 and 470 are SIERRA'S OWN shipped loose patches, not
+our leftovers, and must be RESTORED after the delete-then-copy.** This line used to list
+them as leftovers, so every install since has been silently reverting three of Sierra's
+late bug fixes to their buggier volume versions. Measured: the loose files differ from
+the volumes (425 identical size but different bytes; 460 9306 vs 9316; 470 11576 vs
+11578). Our 420 is the exception — it legitimately supersedes Sierra's, because
+sci-tools decompiled the PATCHED 420 and our guard is added on top of it (see
+`patcher.assemble`, which copies the game's own loose patches into the project for
+exactly this reason). Keep `65535.MAP` too: `rm -f *.SCR *.HEP *.VOC` leaves it alone,
+which is correct.
+
+    # after copying our set:
+    for n in 425 460 470; do cp <pristine>/$n.SCR <pristine>/$n.HEP <copy>/ ; done
 Console = Ctrl-Alt-D. Three rules, then no more theory:
 
 1. **`room <N>` doesn't act until you close the console.** Type it, press Esc, let the

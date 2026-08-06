@@ -518,7 +518,7 @@ def find_cue_chain_armings(room_text, cand_text, room_global, target_script):
     return out
 
 
-def wrap_all_armings_in_source(text, placement, guard_sexpr, refuse):
+def wrap_all_armings_in_source(text, placement, guard_sexpr, refuse, site=None):
     """Wrap EVERY `setScript: <target>` clause in the placement's method -- the multi-site twin
     of `wrap_trigger_in_source`'s setscript branch, which wraps only the first match. KQ6's
     rock-stepping arms `takeStep` from FOUR geometric clauses of one handler; wrapping one is a
@@ -544,7 +544,10 @@ def wrap_all_armings_in_source(text, placement, guard_sexpr, refuse):
         if not any(bs < span[1] and span[0] < be for (bs, be) in spans):
             spans.append(span)
     n = 0
-    site = _ModeSite()                 # ONE warned bit for all clauses: one guard, one warning
+    # ONE warned bit for all clauses -- and for every other call the caller makes for the same
+    # guard, when it threads its own site in (a spec row is wrapped at several armings, cue-chain
+    # arms and entry rooms; a site minted here would give each of them its own warning).
+    site = site if site is not None else _ModeSite()
     for (bs, be) in sorted(spans, reverse=True):
         region = (region[:bs] + guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
                   + region[be:])
@@ -781,11 +784,14 @@ def _find_region(text, header_re):
     return _block_span(text, m.start())
 
 
-def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)"):
+def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site=None):
     """Wrap the controllable trigger's `(self changeState: K)` (scoped to the
     right instance+method) in the item guard. For a 'direct' placement, wrap the
-    `newRoom: N` instead."""
-    site = _ModeSite()                 # one warned bit per placement, shared by its match sites
+    `newRoom: N` instead.
+
+    `site` carries the lite-mode warned bit. Pass the SPEC ROW's site: one demand wrapped at
+    two armings, or at six entry rooms, is one guard and owes the player one warning."""
+    site = site if site is not None else _ModeSite()
     if placement["kind"] == "direct":
         pat = re.compile(r"\([^()]*newRoom:\s*%d\b[^()]*\)" % placement["target_room"])
         if placement.get("positional"):

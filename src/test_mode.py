@@ -198,8 +198,66 @@ def test_synthetic_project_end_to_end():
     T.MODE = None
 
 
+def test_review_defects():
+    """The three emission defects a contextless review found on the first cut (2026-08-06).
+
+    All three were invisible to the existing gates, which freeze the ANALYSIS surface (specs,
+    placement rows) and cannot see a character of emitted script text. Each is pinned here on
+    the smallest thing that carries it."""
+    print("\n-- review defects (2026-08-06) --")
+
+    # D2: one spec row is wrapped at several sites; they are one guard and owe ONE warning.
+    _fake_mode()
+    site = T._ModeSite()
+    a = T.guarded_wrap("(g)", "(b)", "(r)", site=site)
+    b = T.guarded_wrap("(g)", "(b)", "(r)", site=site)
+    masks = lambda s: set(re.findall(r"\$[0-9a-f]{4}", s))
+    check("D2: a threaded site keeps ONE warned bit across wrapper calls",
+          masks(a) == masks(b) and len(masks(a)) == 1, "%s vs %s" % (masks(a), masks(b)))
+    import inspect
+    sig = inspect.signature(T.wrap_trigger_in_source).parameters
+    sig2 = inspect.signature(T.wrap_all_armings_in_source).parameters
+    check("D2: both wrappers accept the caller's site", "site" in sig and "site" in sig2)
+    psrc = open(P.__file__).read()
+    check("D2: apply_guards mints one site per SPEC ROW and threads it",
+          "row_site = _ModeSite()" in psrc and psrc.count("site=row_site") >= 3, "")
+    check("D2: the entry frontier shares the row's site",
+          re.search(r"def _guard_arrival_entries\([^)]*site=None", psrc, re.S) is not None)
+
+    # D1: the recycle lifts the productive continuation out of the `else`; stock must not run
+    # BOTH the break and the continuation (and must not skip the clamp that bounds the store).
+    stock_src = ("\t\t(if (>= global113 5)\n"
+                 "\t\t\t(proc255_0 16 22)\n"
+                 "\t\t\t((Inv at: 15) loop: 1)\n"
+                 "\t\telse\n"
+                 "\t\t\t(global0 cel: 0 setCycle: End self)\n"
+                 "\t\t)\n")
+    forms = T._ModeSite().forms()
+    out, ok = P._recycle_counter_break(stock_src, stock_src.index("(Inv at: 15)"),
+                                       "(proc255_0 {kidding})", forms)
+    check("D1: the recycle rewrites the counter-gated break", ok, out)
+    allow = forms[0]
+    # the allow branch runs from the inner `(if <allow>` to the FIRST `else` after it
+    body = out[out.index(allow):out.index("else", out.index(allow))] if ok else ""
+    check("D1: stock runs the break WITHOUT the productive continuation",
+          ok and "(Inv at: 15) loop: 1" in body and "setCycle: End self" not in body, out)
+    check("D1: the clamp and the mark stay on the withheld path only",
+          ok and out.count("(= global113 4)") == 1
+          and out.index("(= global113 4)") > out.index("else"), out)
+
+    # D4: the retraction (and lite's mark) must stay in the arm the disposal is in.
+    lines = ["\t\t\t((Said 'eat/fruit')\n", "\t\t\t\t(if (global0 has: 25)\n",
+             "\t\t\t\t\t(proc255_0 0 43)\n", "\t\t\t\t\t(global0 put: 25 999)\n",
+             "\t\t\t\telse\n", "\t\t\t\t\t(proc0_17)\n", "\t\t\t\t)\n", "\t\t\t)\n"]
+    end = P._clause_end_line(lines, 3)
+    check("D4: the clause walk stops at a bare `else`, not in the sibling arm",
+          end == 4, "landed at %d: %r" % (end, lines[end].strip()))
+    T.MODE = None
+
+
 def run():
     test_wrapper_shapes()
+    test_review_defects()
     test_ui_installers()
     test_mode_stays_out_of_the_surface()
     test_synthetic_project_end_to_end()
