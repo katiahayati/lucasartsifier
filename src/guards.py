@@ -781,7 +781,19 @@ def render_register(s, R, value):
     proc = getattr(ir, "flag_test_proc", None)
     if base is None or proc is None or R < base:
         return None
-    test = f"({proc} {R - base})"
+    # BOUNDED BY THE FLAGS THE GAME ACTUALLY HAS. "At or past the base" is not "is a flag":
+    # every store lowered after `lower_flags` allocates further up the same synthetic range,
+    # and this fallback claimed all of them. Measured on KQ6, where the mask-global store
+    # (global161's four bits) landed at registers 555-558: register 555 rendered as
+    # `(proc913_0 383)`, a flag number past the end of a 224-bit array the game never reads
+    # there. The 2026-08-02 fix for the same defect reordered the checks above instead of
+    # bounding this one, so the next two stores reopened it; `flag_indices` is the set the
+    # lowering itself consumed, so a register outside it is refused rather than mis-spelled.
+    n = R - base
+    known = getattr(ir, "flag_indices", None)
+    if known is not None and n not in known:
+        return None
+    test = f"({proc} {n})"
     return test if value else f"(not {test})"
 
 

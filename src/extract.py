@@ -2182,8 +2182,16 @@ class Extractor:
         seen = {}                              # room -> [guard, ...] one per assignment site
 
         def is_room(v):
+            # PASS THE IR, or this falls back to the `rm<N>` naming convention that
+            # `_room_species`' own docstring says "silently analysed almost nothing" -- the
+            # decompiler names KQ4's rooms `RoomNNN`, LB2's and QFG-VGA's likewise, so
+            # inheritance is the only reliable test and it needs the class table. Measured
+            # rooms recognised WITH the ir vs by name: KQ4 110 vs 2, LB2 78 vs 70, QFG-VGA
+            # 120 vs 97 -- and each unrecognised room is an indirect `newRoom:` destination
+            # that resolves to nothing, i.e. a missing edge, i.e. an invented dead end (LB2
+            # lost 6 destinations, QFG-VGA 13).
             rs = self.ir.scripts.get(v)
-            return rs is not None and _room_object(rs) is not None
+            return rs is not None and _room_object(rs, self.ir) is not None
 
         def is_dest(n):
             return (n and n.get("t") == "Variable" and n.get("vtype") == vtype

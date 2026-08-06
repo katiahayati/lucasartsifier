@@ -177,7 +177,25 @@ class Sci0Game:
                           f"(package={package} offset={offset})")
         if h["method"] == 0:
             return h["body"][:h["decomp"]] if h["decomp"] else h["body"]
-        return _decompress(h["method"], h["body"], h["decomp"])
+        out = _decompress(h["method"], h["body"], h["decomp"])
+        # THE RESOURCE SAYS HOW BIG IT DECOMPRESSES TO, SO CHECK IT. Without this a decoder
+        # that is wrong for the game's SCI version returns a short or scrambled buffer and
+        # every consumer treats it as art: `sci_gfx` renders a control plane from garbage,
+        # `control_oracle` reads "the exit does NOT force the rect" off it, and the run
+        # reports fewer gates with nothing amiss. MEASURED on titles outside the corpus,
+        # where the SCI0-only method table is wrong: Police Quest 640/830 and Quest for
+        # Glory 2 687/968 resources decoded to the wrong size, silently. Our four games are
+        # clean (LSL2 650, KQ4 963, KQ6 1397, LB2 980 resources, zero mismatches), so this
+        # costs them nothing and turns the next title's format gap into an error that names
+        # the resource instead of a quiet loss of detection.
+        if h["decomp"] and len(out) != h["decomp"]:
+            raise ValueError(
+                "%s.%d decompressed to %d bytes, not the %d the map declares (method %d). "
+                "The decompressor is wrong for this game's SCI version -- see "
+                "ScummVM resource.cpp, where methods 1 and 2 are version-dependent and "
+                "3/4 exist too." % (_TYPE_NAME.get(rtype, rtype), number, len(out),
+                                    h["decomp"], h["method"]))
+        return out
 
     def get_script(self, n):
         return self.get(SCRIPT, n)

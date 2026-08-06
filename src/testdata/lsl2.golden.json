@@ -1,4 +1,5 @@
 {
+  "action_specs": [],
   "dangerous": [
     "Airsick_Bag@rm61->1 rooms",
     "Airsick_Bag@rm62->1 rooms",
@@ -45,26 +46,27 @@
     "Main/Hair_Rejuvenator: applied=True kind=None",
     "Main/Matches: applied=True kind=None",
     "Main/Parachute: applied=True kind=None",
-    "rm26: applied=True kind=trigger",
-    "rm38: applied=True kind=trigger",
-    "rm47: applied=True kind=edge-exit",
-    "rm57: applied=True kind=trigger",
+    "rm26: applied=True kind=trigger sites=1",
+    "rm38: applied=True kind=trigger sites=1",
+    "rm47: applied=True kind=edge-exit sites=1",
+    "rm57: applied=True kind=trigger sites=1",
     "rm600/Airsick_Bag: applied=True kind=None",
     "rm63/Hair_Rejuvenator: applied=True kind=None",
-    "rm63: applied=True kind=trigger",
-    "rm79: applied=True kind=trigger",
+    "rm63: applied=True kind=trigger sites=1",
+    "rm79: applied=True kind=trigger sites=1",
     "rm81/Hair_Rejuvenator: applied=True kind=None"
   ],
   "register_strandings": [],
+  "register_write_specs": [],
   "sinks": [
-    "Airsick_Bag dest=-1 refused=False",
-    "Airsick_Bag dest=-1 refused=False",
-    "Airsick_Bag dest=-1 refused=False",
-    "Hair_Rejuvenator dest=-1 refused=False",
-    "Hair_Rejuvenator dest=-1 refused=False",
-    "Hair_Rejuvenator dest=-1 refused=False",
-    "Matches dest=-1 refused=False",
-    "Parachute dest=-1 refused=False"
+    "Airsick_Bag@rm61 dest=-1 refused=False",
+    "Airsick_Bag@rm62 dest=-1 refused=False",
+    "Airsick_Bag@rm63 dest=-1 refused=False",
+    "Hair_Rejuvenator@rm0 dest=-1 refused=False",
+    "Hair_Rejuvenator@rm63 dest=-1 refused=False",
+    "Hair_Rejuvenator@rm81 dest=-1 refused=False",
+    "Matches@rm0 dest=-1 refused=False",
+    "Parachute@rm0 dest=-1 refused=False"
   ],
   "softlock_items": [
     "Swimsuit",

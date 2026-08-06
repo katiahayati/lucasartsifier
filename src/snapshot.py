@@ -6,6 +6,10 @@ dict, so any change can be diffed. The lesson that motivated it: "findings ident
 Usage:
     python3 snapshot.py LSL2 > /tmp/lsl2.before      # then make a change, re-run, diff
     python3 snapshot.py LSL2 --start 21              # override an anchor to compare
+    python3 snapshot.py LSL2 --no-placements         # analysis half only (skips the patcher)
+
+Placements are INCLUDED by default: they are half of what this file claims to freeze, and
+while they were opt-in the documented command above silently froze the analysis half alone.
 """
 from __future__ import annotations
 
@@ -88,7 +92,23 @@ def snapshot(cfg, with_placements=False):
                                 for sp in specs if sp["site"] == "edge")
     snap["gate_specs"] = sorted(f"rm{sp['room']}/{sp['state']}: {sp['condition']}"
                                 for sp in specs if sp["site"] == "gate")
-    snap["sinks"] = sorted(f"{s.g.item_name(sk['item'])} dest={sk.get('dest')} "
+    # THE OTHER TWO SPEC KINDS. `guard_specs` emits four site kinds and this file froze two, so
+    # an `action` remedy (KQ6's skull) or a `register-write` hold (KQ6's user-confirmed letter
+    # seal) could change its condition, or vanish, with every golden byte-identical -- against
+    # this file's own rule that a detector outside the surface "cannot move any golden".
+    snap["action_specs"] = sorted(f"{s.g.item_name(sp['item'])}@rm{sp.get('room')}: "
+                                  f"{sp['condition']}"
+                                  + (" [REFUSED]" if sp["refused"] else "")
+                                  for sp in specs if sp["site"] == "action")
+    snap["register_write_specs"] = sorted(
+        f"reg{sp.get('register')}={sp.get('trap')}: {sp['condition']}"
+        + (" [REFUSED]" if sp["refused"] else "")
+        for sp in specs if sp["site"] == "register-write")
+    # The sink row carries its ROOM: the identity of a sink remedy is (script, item, room), and
+    # without the room LSL2's Hair_Rejuvenator appears three times as the same string -- so a
+    # sink moving rooms produced a byte-identical golden (the same defect fixed one block below
+    # for placements, left standing here).
+    snap["sinks"] = sorted(f"{s.g.item_name(sk['item'])}@rm{sk.get('room')} dest={sk.get('dest')} "
                            f"refused={bool(sk['refused'])}" for sk in G.sink_remedies(s))
     if with_placements:
         # THE OTHER HALF OF THE SURFACE. A spec is a claim; a PLACEMENT is whether the patcher
@@ -119,6 +139,12 @@ def snapshot(cfg, with_placements=False):
                 f"{e.get('title') or ('rm%s->rm%s' % (e.get('from_room'), e.get('to_room')))}"
                 + (f"/{s.g.item_name(e['item'])}" if e.get("item") is not None else "")
                 + f": applied={e['applied']} kind={e.get('placement', {}).get('kind')}"
+                # SITES, because coverage is part of the placement. Findings #4 and #8 were both
+                # the same shape: a guard that wrapped ONE of four armings, which the player
+                # walked straight around. That is a change from `sites=4` to `sites=1` with
+                # `applied` and `kind` unmoved -- invisible here until now.
+                + (f" sites={e['sites']}" if e.get("sites") is not None else "")
+                + (f" entry_sites={len(e['entry_sites'])}" if e.get("entry_sites") else "")
                 + (f" why={e['why']}" if not e["applied"] and e.get("why") else "")
                 for e in edits + gedits)
         finally:
@@ -138,7 +164,12 @@ def main():
         overrides["goal_rooms"] = frozenset({int(sys.argv[sys.argv.index("--goal") + 1])})
     if overrides:
         cfg = dataclasses.replace(cfg, **overrides)
-    print(json.dumps(snapshot(cfg, with_placements="--placements" in sys.argv), indent=2))
+    # PLACEMENTS ARE ON BY DEFAULT. This file calls itself "the FULL analysis+patch output
+    # surface", but the patch half used to be opt-in -- so the documented invocation froze the
+    # analysis half only, and every "byte-identical" claim made with it said nothing about
+    # whether the guards still LANDED. `--no-placements` skips them when only the analysis is
+    # wanted (it is the slower half: it assembles a project and runs the patcher).
+    print(json.dumps(snapshot(cfg, with_placements="--no-placements" not in sys.argv), indent=2))
 
 
 if __name__ == "__main__":

@@ -1003,6 +1003,7 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
 
 _CHOOSER_TEXT = ("Softlock guards: FULL refuses dangerous moves. "
                  "LITE warns once then allows. STOCK is the original game.")
+_CHOOSER_TITLE = "Softlock guards"      # short form, for a prompt that names the current mode
 
 
 def install_mode_ui(dest, titles_by_num):
@@ -1064,11 +1065,36 @@ def _install_menu_chooser(src_dir, g):
     if best is None or best_n < 2:     # one AddMenu is a runtime extension, not the bar
         return None
     menus = list(addmenu.finditer(text))
-    last = menus[-1]
-    menu_idx = len(menus)                            # 1-based menu position
-    item_idx = last.group(1).count(":") + 2          # separators count; ours appends after all
+    # WHICH MENU. Not simply the last one: that is the SOUND menu on both SCI0 games, and a
+    # softlock-guard setting does not belong beside the volume control [user, play,
+    # 2026-08-06: "it shouldn't be under Sound"]. The menus that own DEVICE and SESSION
+    # settings identify themselves by what their handler cases DO -- audio menus call the
+    # sound kernel, speed menus send `setSpeed:`, the file menu sends save/restore/restart/
+    # quit -- so they are excluded by the game's own vocabulary rather than by reading their
+    # English titles. What remains is the gameplay menu; take the last of those (LSL2 and KQ4
+    # both land on `Action`, beside Pause and Inventory).
+    hm0 = re.search(r"\(method\s+\(handleEvent\b", text)
+    sw_text = text[_block_span(text, hm0.start())[0]:_block_span(text, hm0.start())[1]] \
+        if hm0 else ""
+    _DEVICE = ("DoSound", "setSpeed:", "save:", "restore:", "restart:", "quitGame:",
+               "restartGame", "RestartGame")
+
+    def _is_device_menu(mi, m):
+        """Does menu `mi`'s own handler code only touch the sound/speed/session machinery?"""
+        n_items = m.group(1).count(":") + 1
+        bodies = []
+        for item in range(1, n_items + 1):
+            cm = re.search(r"\(\s*%d\b" % ((mi << 8) | item), sw_text)
+            if cm:
+                bodies.append(sw_text[cm.start():_balanced_span(sw_text, cm.start())])
+        return bool(bodies) and all(any(d in b for d in _DEVICE) for b in bodies)
+
+    eligible = [i for i, m in enumerate(menus, 1) if not _is_device_menu(i, m)]
+    menu_idx = eligible[-1] if eligible else len(menus)
+    host_menu = menus[menu_idx - 1]
+    item_idx = host_menu.group(1).count(":") + 2      # separators count; ours appends after all
     code = (menu_idx << 8) | item_idx
-    text = text[:last.end(1)] + ":Guards..." + text[last.end(1):]
+    text = text[:host_menu.end(1)] + ":Guards..." + text[host_menu.end(1):]
     # the handler case, before the switch's own top-level else (same file, same method)
     hm = re.search(r"\(method\s+\(handleEvent\b", text)
     if not hm:
@@ -1100,10 +1126,32 @@ def _install_menu_chooser(src_dir, g):
         at = se - 1                                   # no else: before the switch's close
     indent = re.search(r"[ \t]*$", text[:at]).group(0)
     proc = re.search(r"\(proc\d+_\d+", _RETRACTION_FORM).group(0)[1:]
+    # A SCRATCH TEMP FOR THE PROMPT, taken from the method's own `&tmp` list (never invented:
+    # a name the method does not declare will not compile). The prompt names the CURRENT mode,
+    # as the SCI1.1 chooser does [user, 2026-08-06: "it should give you the currently selected
+    # level, same as kq6"] -- built by picking one of three literals, because this display proc
+    # takes a single text argument and `Format` would need a game-specific buffer global.
+    decl = re.search(r"\(method\s+\(handleEvent[^)]*&tmp([^)]*)\)", text)
+    temps = [t for t in re.findall(r"\b(\w+)\b", decl.group(1) or "") if t != tmp] if decl else []
+    label = temps[0] if temps else None
+    if label is None:
+        prompt = "{%s}" % _CHOOSER_TEXT
+        pre = ""
+    else:
+        prompt = label
+        pre = ("%s\t(= %s {%s -- now: FULL})\n"
+               "%s\t(if (== global%d 1)\n"
+               "%s\t\t(= %s {%s -- now: LITE})\n"
+               "%s\telse\n"
+               "%s\t\t(if (== global%d 2) (= %s {%s -- now: STOCK}))\n"
+               "%s\t)\n"
+               % (indent, label, _CHOOSER_TITLE, indent, g, indent, label, _CHOOSER_TITLE,
+                  indent, indent, g, label, _CHOOSER_TITLE, indent))
     case = ("(%d\n"
+            "%s"
             "%s\t(= %s\n"
             "%s\t\t(%s\n"
-            "%s\t\t\t{%s}\n"
+            "%s\t\t\t%s\n"
             "%s\t\t\t81 { Full } 1\n"
             "%s\t\t\t81 { Lite } 2\n"
             "%s\t\t\t81 { Stock } 3\n"
@@ -1111,21 +1159,23 @@ def _install_menu_chooser(src_dir, g):
             "%s\t)\n"
             "%s\t(if %s (= global%d (- %s 1)))\n"
             "%s)  ; softlock-guard: mode chooser\n%s"
-            % (code, indent, tmp, indent, proc, indent, _CHOOSER_TEXT, indent, indent,
+            % (code, pre, indent, tmp, indent, proc, indent, prompt, indent, indent,
                indent, indent, indent, indent, tmp, g, tmp, indent, indent))
     text = text[:at] + case + text[at:]
     open(os.path.join(src_dir, best), "w").write(text)
-    return {"applied": True, "ui": "menu", "title": best[:-3], "menu_code": code}
+    return {"applied": True, "ui": "menu", "title": best[:-3], "menu_code": code,
+            "menu_index": menu_idx, "shows_current": label is not None}
 
 
 def _install_panel_chooser(src_dir, g):
     """The SCI1.1 half of `install_mode_ui`. Returns an edit row, or None if no panel."""
-    host, text = None, None
+    host, text, panel = None, None, None
     for fn in sorted(os.listdir(src_dir)):
         if fn.endswith(".sc"):
             t = open(os.path.join(src_dir, fn), errors="replace").read()
-            if re.search(r"\(instance\s+\w+\s+of\s+GameControls\b", t):
-                host, text = fn, t
+            m = re.search(r"\(instance\s+(\w+)\s+of\s+GameControls\b", t)
+            if m:
+                host, text, panel = fn, t, m.group(1)
                 break
     if host is None:
         return None
@@ -1261,10 +1311,15 @@ def _install_panel_chooser(src_dir, g):
         "\t\t\t\tinit:\n"
         "\t\t\t)\n"
         "\t\t)\n"
+        # REDRAW THE WHOLE PANEL, not just this icon [user, play, 2026-08-06: "once you click
+        # the button this +- slider appears"]. The chooser is a modal window drawn OVER the
+        # panel; dismissing it leaves the region it covered -- the sliders and their +/-
+        # steppers -- unrepainted, and `(self show:)` only repaints this one icon. The panel
+        # object is the instance whose `add:` list we joined, so it is named, not guessed.
         "\t\t(if temp0 (= global%d (- temp0 1)))\n"
-        "\t\t(self show:)\n"
+        "\t\t(%s show:)\n"
         "\t)\n)\n" % (view, loop, cel, deep_left, ns_top, font, ink, plate_w,
-                      g, g, font, g))
+                      g, g, font, g, panel))
     text = text + inst
     open(os.path.join(src_dir, host), "w").write(text)
     return {"applied": True, "ui": "panel", "title": host[:-3], "row_pitch": pitch,

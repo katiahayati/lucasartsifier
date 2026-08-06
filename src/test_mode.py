@@ -115,8 +115,12 @@ def test_ui_installers():
     print("\n-- UI installers on the real game files --")
     scratch = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build",
                            "test_mode_ui")
-    cases = [("lsl2", "../build/ir/src/Menu.sc", "(proc255_0 {%s})", "menu", 1283),
-             ("kq4", "../build/kq4/src/Menu.sc", "(proc255_0 {%s})", "menu", 1284),
+    # Codes are (menu << 8) | item. Menu 3 is `Action` on both SCI0 games -- the chooser is
+    # placed by EXCLUDING the device menus (sound/speed/file, identified by what their handler
+    # cases call), not by naming one, after the user rejected the Sound menu it used to append
+    # to. LSL2's Action has 7 items (separators count) so ours is 8 -> 776; KQ4's has 3 -> 772.
+    cases = [("lsl2", "../build/ir/src/Menu.sc", "(proc255_0 {%s})", "menu", 776),
+             ("kq4", "../build/kq4/src/Menu.sc", "(proc255_0 {%s})", "menu", 772),
              ("kq6", "../build/sweep/kq6/src/kq6Controls.sc", "(proc921_0 {%s})", "panel", None)]
     here = os.path.dirname(os.path.abspath(__file__))
     for game, rel, form, want_ui, want_code in cases:
@@ -140,6 +144,17 @@ def test_ui_installers():
         edited = open(os.path.join(d, os.path.basename(src))).read()
         check("%s edited file balanced" % game, _balanced(edited))
         check("%s chooser writes the mode global" % game, "global481" in edited)
+        # the chooser must NAME THE CURRENT MODE, on both dialects [user, 2026-08-06]
+        check("%s chooser shows the current level" % game,
+              all(w in edited for w in ("now: FULL", "now: LITE", "now: STOCK"))
+              or all(w in edited for w in ("now: full", "now: lite", "now: stock")), edited[:0])
+        if want_ui == "menu":
+            # ...and it must not land on the audio menu
+            host = re.search(r"\(AddMenu\s+\{([^}]*)\}\s+\{[^}]*Guards", edited)
+            check("%s chooser is not on a device menu" % game,
+                  bool(host) and "sound" not in host.group(1).lower()
+                  and "speed" not in host.group(1).lower(),
+                  host.group(1) if host else "no host menu found")
     shutil.rmtree(scratch, ignore_errors=True)
 
 

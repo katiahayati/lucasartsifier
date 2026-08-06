@@ -179,6 +179,12 @@ LEAF_NODES = frozenset({
     "Send", "SendMessage", "Assignment", "Increment", "Decrement", "PublicCall", "LocalCall",
     "KernelCall", "AssignmentAdd", "AssignmentSub", "AssignmentXor", "AssignmentBinOr",
     "AssignmentBinAnd",
+    # the rest of the compound-assignment family, classified 2026-08-06 when the ("unknown", t)
+    # path was finally made to speak: these had been unrecognised in KQ6 (12 nodes) and LB2 (3),
+    # AssignmentShl additionally in QFG-VGA. They are effects exactly like their siblings above
+    # -- an arithmetic write whose value the register model cannot express either way -- so
+    # naming them changes no behaviour and leaves the loud path for forms genuinely never seen.
+    "AssignmentMul", "AssignmentDiv", "AssignmentMod", "AssignmentShl", "AssignmentShr",
     # jumps with no contained statements
     "Break", "BreakIf", "Continue", "Return",
     # operands / expressions
@@ -291,7 +297,33 @@ def control_shape(node):
         return ("seq", ks)
     if t in LEAF_NODES:
         return ("leaf",)
+    # LOUD MEANS SAYING SOMETHING. The docstring above promises "a third title fails visibly
+    # rather than quietly analysing less", but no walker ever distinguished ("unknown", t)
+    # from ("leaf",): `extract.walk_stream` falls through to its leaf handler, `compile`
+    # returns a one-step path and DROPS the subtree, `machine` is silent. So the mechanism
+    # built to catch the next title had already fired in three games without a word --
+    # AssignmentDiv/AssignmentMul in KQ6 and LB2, plus AssignmentShl in QFG-VGA, the last of
+    # which is mask arithmetic of exactly the kind the flag stores read. `test_walkers` is a
+    # source-regex matrix and structurally cannot see this; only the running code can.
+    #
+    # Warn, once per form, rather than raise: an unrecognised statement is a bounded gap (a
+    # dropped subtree can miss a finding, not invent one), and aborting the run would trade a
+    # measurable gap for no analysis at all.
+    _warn_unknown(t)
     return ("unknown", t)
+
+
+_UNKNOWN_SEEN = set()
+
+
+def _warn_unknown(t):
+    if t in _UNKNOWN_SEEN:
+        return
+    _UNKNOWN_SEEN.add(t)
+    import sys as _sys
+    print("  [degraded] unmodelled statement form %r: its subtree is not walked, so anything "
+          "it contains (a `newRoom:`, a `get:`, a flag write) is invisible to the analysis. "
+          "Classify it in ir.control_shape / LEAF_NODES." % t, file=_sys.stderr)
 
 
 def is_global(n, index=None):

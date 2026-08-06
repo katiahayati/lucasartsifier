@@ -72,7 +72,13 @@ class _ModeSite:
             self._forms = (
                 "(or (== global%d 2) (and (== global%d 1) (& global%d %s)))" % (g, g, w, mask),
                 "(if (== global%d 1) %s)" % (g, MODE["warned"]),
-                "(if (== global%d 1) (|= global%d %s))" % (g, w, mask))
+                # THE MARK IS UNCONDITIONAL, not lite-only [user, play, 2026-08-06: refused at
+                # the mists trail in FULL, switched to lite, refused again -- "I kinda feel like
+                # it should say You've been warned the second time"]. The bit means "this guard
+                # has already told you about this danger", and a full-mode refusal did exactly
+                # that. Costs full mode nothing: its allow test requires mode 1 or 2, so the bit
+                # is never consulted there -- it only decides what LITE does after a switch.
+                "(|= global%d %s)" % (w, mask))
         return self._forms
 
 

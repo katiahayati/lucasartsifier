@@ -48,6 +48,31 @@ def _cmp_const(cur, op, val):
             "<": cur < val, "<=": cur <= val}.get(op, True)
 
 
+_WARNED = set()
+
+
+def _degraded(what, exc):
+    """Say out loud that a LAYER OF DETECTION just went missing.
+
+    These paths used to swallow and return an empty list, which reads downstream as "this
+    title has no positional gates" -- identical to a clean run, so a single undecodable PIC
+    could remove the whole geometric layer of a 100-room game and nothing would say so. The
+    project's rule is that a failure must be visible; degrading quietly to "found less" is
+    the failure mode it exists to prevent.
+
+    A warning rather than a raise, deliberately: one bad room should not abort an analysis
+    that is sound everywhere else. Deduplicated so a per-room loop cannot spam. Measured
+    2026-08-06: fires on none of LSL2/KQ4/KQ6/LB2 -- the SCI1.1 games find zero prop gates
+    because the sprite recogniser is the SCI0 idiom, not because anything raises."""
+    key = (what, type(exc).__name__, str(exc)[:80])
+    if key in _WARNED:
+        return
+    _WARNED.add(key)
+    import sys as _sys
+    print("  [degraded] %s unavailable: %s: %s" % (what, type(exc).__name__, str(exc)[:200]),
+          file=_sys.stderr)
+
+
 def _has_pos_edge(guard, codes, edge_regs=()):
     """Does this guard test "the ego left by one of `codes`"?
 
@@ -300,12 +325,22 @@ class OpEmitter:
             # -- among them regUnicorn's `uniActions`, the ONLY place the Golden_Bridle is ever
             # required. The duplication is not an approximation: the same machine really is live
             # in each of those rooms.
+            # ...and MAIN is a SCOPE, not a room -- the fourth case, which the HANDLER pass
+            # below spells out and this one did not. LSL2's script 0 happens to land in
+            # `ts.rooms` so it was walked here by luck; KQ4's does not, so this pass hit
+            # `continue` and `_init_writes(0, script0)` never ran. Lost with it: the whole of
+            # KQ4's `Main::init` seeding -- global50=7, global26=1, global169=1, global205=1,
+            # global16=230, global160=8, global116=1, the day/night clock among them -- while
+            # register promotion, the per-room projections, the arrival commit and start-room
+            # seeding all modelled those registers as starting at 0. Same rule, two places,
+            # one of them fixed 90 lines below this one and not here.
             targets = (self.region_rooms.get(rn) or ({rn} if rn in self.ts.rooms else None)
+                       or ({0} if rn == MAIN_SCRIPT else None)
                        or self.armed_rooms.get(rn))
             if not targets:
                 continue
-            if rn in self.ts.rooms:
-                self._init_writes(rn, s)
+            if rn in self.ts.rooms or rn == MAIN_SCRIPT:
+                self._init_writes(rn if rn in self.ts.rooms else 0, s)
                 # A lowered ROOM LOCAL resets when the script reloads, i.e. on every entry --
                 # exactly an unconditional entry write, so it rides the same channel (and the
                 # same commit semantics) as any other arrival write. vocab.lower_room_locals
@@ -677,7 +712,8 @@ class OpEmitter:
         self.polygon_gates = []
         try:
             import polygons as PG
-        except Exception:                                   # noqa: BLE001
+        except Exception as e:                              # noqa: BLE001
+            _degraded("polygon gates (whole game)", e)
             return
         by_room = {}
         for info in self.machines:
@@ -685,7 +721,8 @@ class OpEmitter:
         for room in sorted(by_room):
             try:
                 gates = PG.polygon_gates(self.ir, room)
-            except Exception:                               # noqa: BLE001
+            except Exception as e:                          # noqa: BLE001
+                _degraded("polygon gates for rm%s" % room, e)
                 continue
             for gate in gates:
                 self.polygon_gates.append(gate)
@@ -727,7 +764,9 @@ class OpEmitter:
         try:
             import control_oracle as CO
             gates = CO.find_gates(self.cfg, self.ir)
-        except Exception:
+        except Exception as e:                              # noqa: BLE001
+            # ONE exception here used to remove every positional gate in the game, silently.
+            _degraded("control-plane gates (whole game)", e)
             return
         self.control_gates = gates
         for gate in gates:

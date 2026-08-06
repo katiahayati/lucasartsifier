@@ -129,13 +129,20 @@ KNOWN_RED = {
 
 CHECK = re.compile(r"^\s*\[(PASS|FAIL)\]\s*(.*?)\s*$")
 TALLY = re.compile(r"^(\d+) passed, (\d+) failed")
+# A gate that cannot find its game says so and returns True. That is the right behaviour on a
+# machine without the games -- and it is also how the whole regression net can report success
+# having asserted nothing, because this runner only ever compared the FAILING set to KNOWN_RED.
+# Skips are now counted and printed; `--strict` turns them into failures.
+SKIPPED = re.compile(r"^\s*\(skip\b", re.I)
 
 
 def run_one(path, echo=True):
-    """Run one test file, streaming its output. Returns (passed, failed_names, exit_code)."""
+    """Run one test file, streaming its output.
+
+    Returns (passed, failed_names, exit_code, skips)."""
     proc = subprocess.Popen([sys.executable, "-u", path], cwd=SRC,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    passed, failed = 0, []
+    passed, failed, skips = 0, [], []
     for line in proc.stdout:
         if echo:
             sys.stdout.write("    " + line)
@@ -146,12 +153,16 @@ def run_one(path, echo=True):
                 passed += 1
             else:
                 failed.append(m.group(2))
+        elif SKIPPED.match(line):
+            skips.append(line.strip())
     proc.wait()
-    return passed, failed, proc.returncode
+    return passed, failed, proc.returncode, skips
 
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    strict = "--strict" in argv
+    argv = [a for a in argv if a != "--strict"]
     names = sorted(f for f in os.listdir(SRC) if f.startswith("test_") and f.endswith(".py"))
     if argv:
         names = [f for f in names if any(a in f for a in argv)]
@@ -160,26 +171,43 @@ def main(argv=None):
 
     t0 = time.time()
     total_pass, unexpected, promoted, crashed = 0, [], [], []
+    skipped, silent = [], []
     for f in names:
         print(f"\n\033[1m=== {f}\033[0m", flush=True)
         t1 = time.time()
-        passed, failed, code = run_one(os.path.join(SRC, f))
+        passed, failed, code, skips = run_one(os.path.join(SRC, f))
         total_pass += passed
         red = KNOWN_RED.get(f, {})
         unexpected += [(f, n) for n in failed if n not in red]
         promoted += [(f, n) for n in red if n not in failed]
+        skipped += [(f, s) for s in skips]
+        # A file that asserts NOTHING is not a passing file. Under the old accounting it was
+        # indistinguishable from a clean one, because only failures were ever compared to
+        # KNOWN_RED -- so a machine without the games printed "agrees with KNOWN_RED" having
+        # checked nothing at all.
+        if passed == 0 and not failed:
+            silent.append(f)
         # A file that dies before printing a tally (import error, traceback) fails silently
         # under a pure check-line count -- it has no FAIL lines to find. Catch it on the code.
         if code != 0 and not failed:
             crashed.append((f, code))
-        print(f"  \033[2m-- {passed} passed, {len(failed)} failed "
-              f"({time.time() - t1:.0f}s)\033[0m", flush=True)
+        print(f"  \033[2m-- {passed} passed, {len(failed)} failed"
+              + (f", {len(skips)} skipped" if skips else "")
+              + f" ({time.time() - t1:.0f}s)\033[0m", flush=True)
 
     n_red = sum(len(v) for k, v in KNOWN_RED.items() if k in names)
     print("\n" + "=" * 78)
     print(f"\033[1m{total_pass} passed, {n_red - len(promoted)} known-red, "
-          f"{len(unexpected)} unexpected, {len(crashed)} crashed\033[0m  "
-          f"({time.time() - t0:.0f}s)")
+          f"{len(unexpected)} unexpected, {len(crashed)} crashed"
+          + (f", {len(skipped)} skipped" if skipped else "")
+          + f"\033[0m  ({time.time() - t0:.0f}s)")
+    # SKIPS IN THE HEADLINE, so "green" cannot quietly mean "absent". Each one is a gate that
+    # did not run because its game files were not there.
+    for f, s in skipped:
+        print(f"  \033[33mskipped\033[0m  {f}: {s}")
+    for f in silent:
+        print(f"  \033[31mASSERTED NOTHING\033[0m  {f}: no [PASS]/[FAIL] line -- the file ran "
+              f"but checked nothing, which is not the same as passing")
 
     for f, name in unexpected:
         print(f"  \033[31mUNEXPECTED FAILURE\033[0m  {f}: {name}")
@@ -192,13 +220,23 @@ def main(argv=None):
               f"      If the gap really is closed, say so with the user and remove it from "
               f"KNOWN_RED in this file. Until then this is a failure, because a limitation "
               f"that silently stops being one is a limitation nobody will remember to re-check.")
-    if not (unexpected or crashed or promoted):
+    # A file that asserted nothing is always a failure; a SKIPPED section is one only under
+    # --strict, because skipping is correct on a machine that does not have the game.
+    bad = bool(unexpected or crashed or promoted or silent or (strict and skipped))
+    if not bad:
         for f, red in KNOWN_RED.items():
             if f in names:
                 for name in red:
                     print(f"  \033[2mknown-red\033[0m  {f}: {name}")
-        print("\n\033[32mThe suite agrees with KNOWN_RED.\033[0m")
+        print("\n\033[32mThe suite agrees with KNOWN_RED.\033[0m"
+              + ("" if not skipped else
+                 f"  \033[33m({len(skipped)} section(s) skipped -- those gates did not run; "
+                 f"`--strict` fails on them)\033[0m"))
         return 0
+    if strict and skipped and not (unexpected or crashed or promoted or silent):
+        print("\n\033[31m--strict: the run is red because gates were SKIPPED, not because "
+              "anything failed. A regression net that can go green by being absent is not a "
+              "net.\033[0m")
     return 1
 
 

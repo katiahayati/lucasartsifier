@@ -269,21 +269,81 @@ def compress_chains(steps_by_state, entry_states, start):
                     st.trans = ("JUMP", tgt)
 
 
+class _UnknownCtr:
+    """"This local WAS written, with a value we could not evaluate" -- distinct from absent.
+
+    A singleton with a STABLE repr and a pickle reduction, not a bare `object()`: the walks key
+    their visited-sets with `tuple(sorted(counters.items(), key=repr))`, so an address-bearing
+    repr would reorder those keys between processes and make the analysis non-deterministic --
+    and the built model is pickled by the load cache, which a plain sentinel would break."""
+    __slots__ = ()
+    _inst = None
+
+    def __new__(cls):
+        if cls._inst is None:
+            cls._inst = super().__new__(cls)
+        return cls._inst
+
+    def __repr__(self):
+        return "UNKNOWN_CTR"
+
+    def __reduce__(self):
+        return (_UnknownCtr, ())
+
+
+UNKNOWN_CTR = _UnknownCtr()
+
+
 def _apply_counters(counters, updates):
     c = dict(counters)
     for (name, kind, val) in updates:
         if kind == "inc":
-            c[name] = c.get(name, 0) + 1
+            c[name] = _bump(c.get(name, 0), 1)
         elif kind == "dec":
-            c[name] = c.get(name, 0) - 1
-        elif kind == "set" and val is not None:
-            c[name] = val
+            c[name] = _bump(c.get(name, 0), -1)
+        elif kind == "set":
+            # A COMPUTED ASSIGNMENT IS NOT A NON-ASSIGNMENT. Dropping it left the name absent,
+            # which reads as SCI's zero-initialised default -- so a local the game had just set
+            # to something unknown was answered for as if it were still 0, confidently, and the
+            # branch testing it died. KQ6's `alexWedding` case 0 is
+            # `(= local0 (== ((gInv at: 25) owner:) gCurRoomNum))`: computed, dropped, read as
+            # 0, and all six later `(if local0 ...)` arms went with it -- zero exits compiled
+            # for the WINNING wedding cutscene. Recording the write as UNKNOWN keeps the two
+            # cases apart: never-written still means 0 (which is what the interpreter does),
+            # written-but-unevaluable means undecidable, and only the second one is permissive.
+            c[name] = val if val is not None else UNKNOWN_CTR
     return c
 
 
-def _ctr_holds(cond, counters):
+def _bump(cur, delta):
+    return UNKNOWN_CTR if cur is UNKNOWN_CTR else cur + delta
+
+
+def _ctr_holds(cond, counters, unknown=True):
+    """Does this counter test hold at the valuation the walk established?
+
+    An ABSENT name still reads as 0 -- that is not an assumption, it is what the interpreter
+    does, since SCI zero-initialises locals. What is an assumption, and was the bug, is
+    treating a local the game DID write with an unevaluable value the same way: see
+    `_apply_counters`, which now records that case as `UNKNOWN_CTR`. Here it answers
+    `unknown` (default True, permissive), so the branch survives instead of being pruned on a
+    value we never saw.
+
+    Measured, KQ6's `alexWedding`: with the write dropped entirely, `compile_machine` returned
+    ZERO exits for the winning wedding cutscene. Keeping the distinction restores it without
+    relaxing every other test -- a first cut that made ANY untracked name permissive also
+    re-opened the catacombs cells, whose locals are simply never written, and weakened a
+    play-validated guard by letting the model walk back out of a room the game does not let
+    you leave.
+
+    `_lreg_test` has the matching contract for the lowered-register spelling."""
     _, name, op, val = cond
-    cur = counters.get(name, 0)
+    if name not in counters:
+        cur = 0                          # SCI zero-initialises locals; this is the game's rule
+    elif counters[name] is UNKNOWN_CTR:
+        return unknown                   # written, but with a value we could not evaluate
+    else:
+        cur = counters[name]
     return {"==": cur == val, "!=": cur != val, ">": cur > val, ">=": cur >= val,
             "<": cur < val, "<=": cur <= val}[op]
 

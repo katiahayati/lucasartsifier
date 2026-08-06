@@ -61,6 +61,15 @@ class Machine:
     #   `newRoom: 18` when local1==1, so the coin/bottle inside are reachable ONLY with the staff.
     #   Kept parallel (not a 3-tuple) so every consumer that unpacks `(state, guard)` is untouched.
     init_entry_locals: list = field(default_factory=list)   # PARALLEL to init_entries.
+    init_entry_idx: list = field(default_factory=list)   # PARALLEL to init_entries: which
+    #   `entries` row each init entry IS. An init entry is the SAME entry, additionally bundled
+    #   onto room arrival -- but it used to be stored as a COPY of the (state, guard) pair, and
+    #   the passes that strengthen an entry (`_chain_entries`, `_inherit_local_continuations`)
+    #   rewrite `entries[i]` only. So the arrival copy kept the WEAKER guard: LSL2's rm26
+    #   `birdScript` arrived as `CTR(L3 != 0)` while its entry had grown
+    #   `AND(CTR(L3 != 0), own(3), own(10))` -- i.e. the arrival copy asserted the cutscene
+    #   fires without owning the items. Keeping the index lets `_resync_init_entries` restate
+    #   them from the entries they are, so there is one guard, not two that drift.
     entry_recv: list = field(default_factory=list)      # PARALLEL to entries: the SLOT the arming
     #   `setScript:` wrote -- ("G", 2) for the room's script, ("G", 0) for the ego's, ("O", name)
     #   for an actor's. A Script object occupies one slot, so two machines armed into the SAME slot
@@ -273,7 +282,27 @@ class MachineBuilder:
                 if m.states:
                     out.append(m)
         self._chain_entries(out)
+        for m in out:
+            self._resync_init_entries(m)
         return out
+
+    @staticmethod
+    def _resync_init_entries(m):
+        """Restate the ROOM-ARRIVAL copies from the entries they are.
+
+        `init_entries` is not a second, weaker way in -- it is the same entry, additionally
+        bundled onto arrival because it runs atomically with room init. Every pass that
+        STRENGTHENS an entry (`_chain_entries` conjoining the armer's preconditions,
+        `_inherit_local_continuations` conjoining the local writes that must have happened)
+        rewrites `entries[i]`, so a copy taken at append time goes stale the moment either
+        fires. Measured drift before this: LSL2 1 machine, KQ6 4.
+
+        The arrival copy is the one bundled onto every room entry, so drift here is the
+        permissive direction -- the model believes a cutscene can fire on arrival under a
+        guard the game would not accept."""
+        for j, i in enumerate(m.init_entry_idx):
+            if 0 <= i < len(m.entries) and j < len(m.init_entries):
+                m.init_entries[j] = m.entries[i]
 
     def _chain_entries(self, ms):
         """A cutscene armed by ANOTHER cutscene inherits its preconditions.
@@ -497,6 +526,12 @@ class MachineBuilder:
         m.entry_armers = [m.entry_armers[i] for i in keep]
         m.entry_sources = [m.entry_sources[i] for i in keep]
         m.entry_recv = [m.entry_recv[i] for i in keep]
+        # `init_entry_idx` points INTO `entries`, so re-index it here or the arrival copies
+        # would later be restated from whatever entry slid into the dropped row's place. A
+        # dropped row is always a `cue` arming and an init entry never is, so nothing an init
+        # entry points at can vanish -- but the positions still move.
+        remap = {old: new for new, old in enumerate(keep)}
+        m.init_entry_idx = [remap.get(i, -1) for i in m.init_entry_idx]
 
     def _targets(self, param, m):
         """Does this `setScript:` argument name machine `m`? An Object reference is scoped to the
@@ -625,6 +660,7 @@ class MachineBuilder:
         if is_init:
             m.init_entries.append((state, guard))
             m.init_entry_locals.append(dict(locals_))
+            m.init_entry_idx.append(len(m.entries) - 1)
 
     def _top_switch(self, cs):
         """The `(switch (= state param1) ...)` that IS the machine -- identified by its head

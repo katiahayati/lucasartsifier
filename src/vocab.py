@@ -907,12 +907,14 @@ def lower_flags(ir, base_global, flag_procs):
                     calls.append(node)
     synth_base = max_gi + 1
     lowered = skipped = 0
+    seen_flags = set()
     for node in calls:
         op = flag_procs[node["name"]]
         flags = [I.as_int(k) for k in (node.get("kids") or []) if I.as_int(k) is not None]
         if op == "toggle" or not flags:
             skipped += 1
             continue
+        seen_flags.update(flags)
         BOOL_GLOBALS.update(synth_base + f for f in flags)
         if op == "test":
             node.clear()
@@ -925,6 +927,17 @@ def lower_flags(ir, base_global, flag_procs):
             node.clear()
             node.update(assigns[0] if len(assigns) == 1 else {"t": "List", "kids": assigns})
         lowered += 1
+    # WHICH flags this block actually covers, so a later store's registers cannot be mistaken
+    # for flags. The block is allocated at `max_gi + 1` and every store lowered AFTER it takes
+    # indices further up, but `guards.render_register`'s fallback was "anything at or past the
+    # base is flag `R - base`" -- unbounded, so a mask-global register renders as a flag number
+    # outside the game's array entirely (measured on KQ6: register 555 spelled `(proc913_0 383)`
+    # where the highest real flag is 163). Recording the set makes the test exact rather than a
+    # range guess, and it is free: these are the literals the lowering just consumed.
+    try:
+        ir.flag_indices = frozenset(seen_flags)
+    except Exception:                                       # noqa: BLE001
+        pass
     return synth_base, lowered, skipped
 
 

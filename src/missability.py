@@ -199,6 +199,20 @@ def _iprop_spec(em):
 
 
 _IPROP_SPEC = {}
+_WARNED_MODEL = set()
+
+
+def _degraded_model(msg):
+    """Report a place where the model gave up and answered with less than the game contains.
+
+    Budget caps and fallbacks are legitimate, but a SILENT one is indistinguishable from a
+    clean analysis -- the failure mode this project keeps naming. Deduplicated so a per-machine
+    loop cannot spam."""
+    if msg in _WARNED_MODEL:
+        return
+    _WARNED_MODEL.add(msg)
+    import sys as _sys
+    print("  [degraded] " + msg, file=_sys.stderr)
 
 
 def build_maps(em):
@@ -984,9 +998,11 @@ def state_musts(info, regs):
     instead of as part of the node does not work, and was tried; the merge still erases them.)
 
     Locals are the machine's own, resolved exactly as `compile_machine` resolves them -- same
-    `_apply_counters` / `_ctr_holds`, same "unset reads as 0", same seeding from the arming
+    `_apply_counters` / `_ctr_holds`, same "an UNESTABLISHED local is unknown, not 0" (corrected
+    2026-08-06: reading it as 0 answered confidently about a value the walk never saw and killed
+    203 KQ6 state-paths, `alexWedding`'s exits among them), same seeding from the arming
     context's `entry_locals` -- so the two views of one machine cannot drift. A path whose counter
-    guard is false at the current valuation is not walked at all.
+    guard is decidably false at the current valuation is not walked at all.
 
     Returns a mapping usable as before (`sm.get(K, {})` merges every valuation reaching K, the
     conservative answer) plus `sm.at(K, guard)`, which keeps only the valuations that guard's own
@@ -1047,6 +1063,19 @@ def state_musts(info, regs):
             else:
                 out[dk] = nxt
             work.append((dst, nloc, out[dk]))
+    if work:
+        # THE CAP RAN OUT WITH WORK LEFT, so `out` holds constraints established by only SOME
+        # of the paths that reach each state -- and a MUST is an intersection, so a partial
+        # answer is too TIGHT, not too loose. Downstream `edge_meta` intersects it into the
+        # crossing's requirements, so an over-tight must removes a crossing the game allows,
+        # shrinks `reobtainable_rooms` and INVENTS a stranding. Fall back to no constraints,
+        # which is the direction the sibling walk at `_entry_reach_walk` already takes ("fall
+        # back to permissive rather than under-report"), and say so: a machine whose musts we
+        # could not establish is a real gap in the model, not a normal result.
+        _degraded_model("state_musts hit its %d-step cap for %s; treating its musts as "
+                        "UNKNOWN (permissive) rather than shipping a partial intersection"
+                        % (20000, info.get("inst", "?")))
+        return _Musts({})
     return _Musts(out)
 
 
