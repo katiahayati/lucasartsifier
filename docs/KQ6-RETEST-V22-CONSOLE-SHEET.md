@@ -132,19 +132,28 @@ send ?ego get 19
 ```
 Both crossings behave completely normally.
 
-## R7 — mists: the recorded OVER-BLOCK risk (please try to break our guard)
+## R7 — mists: the forced revisit rides the SHORE CAPTURE (measured 2026-08-05)
 
-Question on record: after the rain, the lamp gets traded away — does the game ever
-NEED you back at the Druids' (580) lampless? If yes, our guard walls a required visit.
+Flag 25 = "visited the mists and LEFT" (written by the region's own dispose,
+`rMist.sc:42`) — NOT the rain. The shore druids (rm550.sc:282: flag 25 ∧ NOT flag 14)
+are the game's forced-revisit mechanic, and their `captured` script ends in a direct
+`newRoom: 580` — it never touches the trail crossing our lamp guard wraps, so the
+recorded over-block risk is structurally moot. What's left to confirm:
 ```
-sf 25               (the rain has happened)
+sf 25
+cf 14
 send ?ego put 19 0
 room 550            (Esc, wait, reopen)
 ```
-Walk toward 580 → our refusal fires (expected). Now keep playing the real chain
-(genie trap, etc.) and watch whether the night-mare still shows up at the mountain
-when it should. `tf 14` any time — if flag 14 never sets and the mare never comes,
-**that's an over-block finding: report it.**
+Let the shore druids take you. Expect: carried to the camp (580) lampless with no
+interference from our guard, and `tf 14` reads set afterwards. Separately, WALKING
+the trail lampless (R6) still gets our turn-back — that path is a player walk, not
+the game's carry.
+
+⚠️ Fresh-game gotcha (bitten 2026-08-05): flag 25 can leak into a "fresh" test game
+(a leftover `sf 25`, or restarting while standing in a mists room lets the region's
+dispose stamp it). `tf 25` on any fresh start before a mists trip; `cf 25` if set —
+otherwise the shore ambush fires on your FIRST landing.
 
 ## R8 — cliff: ALLOW with the four + free down-climb
 
