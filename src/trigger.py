@@ -657,6 +657,14 @@ def analyze_room(forms):
                     # destination = the room's own declared nav property, resolved by the
                     # caller against nav_props(forms) -- see find_trigger.
                     newroom_sites.append((inst, meth, state, ("nav", _nav_read(a0)), pos))
+                elif sel == "newRoom" and isinstance(a0, Sym):
+                    # destination = a VARIABLE the room computed earlier: `(gGame newRoom: local0)`.
+                    # The third destination shape, and the one that made LB2's act break
+                    # unguardable -- `find_trigger` matched only literals, so the crossing into
+                    # the inquest reported "no controllable trigger" while the analysis knew the
+                    # edge perfectly well. Resolved by the caller, which knows the target room and
+                    # so only has to confirm the variable can hold it -- see find_trigger.
+                    newroom_sites.append((inst, meth, state, ("var", a0.name), pos))
                 elif sel == "changeState" and isinstance(a0, int):
                     cs_calls.append((inst, meth, a0, recv))
                 elif sel == "setScript" and isinstance(a0, Sym):
@@ -679,31 +687,65 @@ def analyze_room(forms):
     return newroom_sites, cs_calls, ss_calls, proc_calls
 
 
+def _var_assigned_rooms(forms):
+    """{variable name: {room numbers assigned to it}} over this file's `(= <var> <int>)`.
+
+    DELIBERATELY NOT a second `extract.var_room_values`. That function DERIVES a destination set --
+    it has to decide which literals are rooms at all, which needs the class table and hence the IR.
+    Here the destination is already known (`target_room` came from the analysed edge), so the only
+    question is the much weaker "can this variable hold that room", and the answer is a plain scan
+    of the source we are about to edit. Answering it here keeps the patcher reading the file it
+    patches instead of carrying a resolution it cannot verify against the text."""
+    out = defaultdict(set)
+
+    def walk(form):
+        if not isinstance(form, list):
+            return
+        if (len(form) == 3 and is_sym(form[0], "=") and isinstance(form[1], Sym)
+                and isinstance(form[2], int)):
+            out[form[1].name].add(form[2])
+        for s in form:
+            walk(s)
+
+    for f in forms:
+        walk(f)
+    return out
+
+
 def find_trigger(forms, target_room):
     """Return the guard placement for a frontier newRoom into `target_room`."""
     nr, cs, ss, _pc = analyze_room(forms)
     nav = nav_props(forms)
+    assigned = _var_assigned_rooms(forms)
     sites = [s for s in nr if s[3] == target_room
              or (isinstance(s[3], tuple) and s[3][0] == "nav"
-                 and nav.get(s[3][1]) == target_room)]
+                 and nav.get(s[3][1]) == target_room)
+             or (isinstance(s[3], tuple) and s[3][0] == "var"
+                 and target_room in assigned.get(s[3][1], ()))]
     if not sites:
         return {"kind": "not-found", "target_room": target_room}
-    inst, meth, state, _, positional = sites[0]
+    inst, meth, state, dest, positional = sites[0]
+    # A VARIABLE destination serves several rooms from one statement, so a guard wrapped around it
+    # would refuse them all: LB2's act break sends you to five different rooms and only the one
+    # into the inquest is a frontier. Carry the discriminator so the placement ANDs it in and the
+    # refusal speaks only for the crossing we mean.
+    dest_test = ("(== %s %d)" % (dest[1], target_room)
+                 if isinstance(dest, tuple) and dest[0] == "var" else None)
     if inst is None:
         # A `newRoom` in a bare procedure: nothing to scope an edit to. Report it as unfound
         # rather than crashing the wrapper, which locates every site by its instance.
         return {"kind": "no-trigger", "instance": None, "cutscene_state": state,
-                "target_room": target_room}
+                "target_room": target_room, "dest_test": dest_test}
     if meth in CONTROLLABLE_METHODS:
         return {"kind": "direct", "instance": inst, "method": meth,
-                "target_room": target_room}
+                "target_room": target_room, "dest_test": dest_test}
     if positional:
         # SCI1.1's positional exit: `doit` sees the ego standing on a control colour and calls
         # `newRoom:`. `doit` is not a handler method, but the move IS the player's -- they walked
         # there -- so it is refusable, and refusing it is exactly what an edge guard wants. Wrap
         # the whole cond-clause, not just the call: its siblings hand control off and animate.
         return {"kind": "direct", "instance": inst, "method": meth, "positional": True,
-                "target_room": target_room}
+                "target_room": target_room, "dest_test": dest_test}
     # newRoom is inside a cutscene (changeState). Find the controllable trigger.
     cands = [(k, m) for (i, m, k, recv) in cs
              if i == inst and m in CONTROLLABLE_METHODS and recv == "self"
@@ -711,7 +753,7 @@ def find_trigger(forms, target_room):
     if cands:
         kstar, trig_meth = max(cands, key=lambda km: km[0])
         return {"kind": "trigger", "instance": inst, "trigger_method": trig_meth,
-                "trigger_state": kstar, "cutscene_state": state, "target_room": target_room}
+                "trigger_state": kstar, "cutscene_state": state, "target_room": target_room, "dest_test": dest_test}
     # ...or the newRoom lives in a Script `inst` that a controllable handler STARTS with
     # `(self setScript: inst)` -- KQ4's rm45 amulet handover (`(self setScript: closer)`, and
     # `closer` does `newRoom: 690`). Guard that setScript call.
@@ -722,7 +764,7 @@ def find_trigger(forms, target_room):
     if ss_cands:
         i2, m2 = ss_cands[0]
         return {"kind": "setscript", "trigger_instance": i2, "trigger_method": m2,
-                "target_script": inst, "target_room": target_room}
+                "target_script": inst, "target_room": target_room, "dest_test": dest_test}
     # ...or the arming is POSITIONAL: a `doit` clause that tests where the ego is STANDING and
     # arms the crossing's cutscene. Play-found twice on rm550's mists crossing (2026-08-04):
     # `(cond (... (global1 handsOff:) (setScript: walkNorthScript)))` in doit. The bare
@@ -738,7 +780,7 @@ def find_trigger(forms, target_room):
     if pos_cands:
         i2, m2 = pos_cands[0]
         return {"kind": "arm-clause", "trigger_instance": i2, "trigger_method": m2,
-                "target_script": inst, "target_room": target_room}
+                "target_script": inst, "target_room": target_room, "dest_test": dest_test}
     # ...or the Script is armed by a setScript in an UNCONTROLLABLE method -- an ADVERSARIAL event
     # the player cannot refuse (KQ4's whale swallow: `Room31::init` does `(global0 setScript:
     # whaleActions)` on a Random roll; nightfall is the same shape in `KQ4::newRoom`). There is no
@@ -747,10 +789,23 @@ def find_trigger(forms, target_room):
     arm_cands = [(i2, m2) for (i2, m2, target, recv, _p) in ss if target == inst and i2 is not None]
     if arm_cands:
         i2, m2 = arm_cands[0]
+        # ...UNLESS THE ARMING IS THE ROOM'S ONLY WAY OUT, in which case gating it is not a
+        # prevention but a WALL: the player stands in a room that has nothing left to run.
+        #
+        # "If it is missing the event simply does not arm" is sound for an event the room merely
+        # OFFERS -- KQ4's whale, KQ6's rm440/rm480, all rooms with ordinary exits besides. LB2's
+        # act-break card is the other shape: script 26 contains exactly one `newRoom:`, inside the
+        # cutscene we would be refusing to arm, so a player without the five inquest items would
+        # sit on the title card forever. The rule reads the file rather than naming a game: an
+        # arm-event is safe only while some newRoom site lives OUTSIDE the script being gated.
+        outside = [s for s in nr if s[0] != inst]
+        if not outside:
+            return {"kind": "sole-exit", "instance": inst, "trigger_instance": i2,
+                    "trigger_method": m2, "target_room": target_room, "dest_test": dest_test}
         return {"kind": "arm-event", "trigger_instance": i2, "trigger_method": m2,
-                "target_script": inst, "target_room": target_room}
+                "target_script": inst, "target_room": target_room, "dest_test": dest_test}
     return {"kind": "no-trigger", "instance": inst, "cutscene_state": state,
-            "target_room": target_room}
+            "target_room": target_room, "dest_test": dest_test}
 
 
 # --------------------------------------------------------------------------

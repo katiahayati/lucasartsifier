@@ -68,7 +68,7 @@ def _seq(forms):
 # ---- interpret a path into (guard, writes, gets, counters, transition) ---
 class Step:
     __slots__ = ("guard", "writes", "gets", "counters", "trans", "cues", "drops", "moves",
-                 "gincs")
+                 "gincs", "vexit")
 
     def __init__(self):
         self.guard = []            # atoms (external) or ("CTR", (vt,idx), op, val)
@@ -84,6 +84,10 @@ class Step:
         self.gincs = []            # (glob, delta) -- `(++ G)`/`(-- G)`. NOT a write: the new
         #   value depends on the old one, so it can only be resolved against the values that
         #   global is known to take. Fanned out per value in walk().
+        self.vexit = None          # (vtype, index) -- `(newRoom: <var>)`, an INDIRECT exit whose
+        #   destination is computed. Like `gincs` it cannot be one transition, because the
+        #   variable holds several rooms, each assigned under its own condition -- so it is
+        #   fanned out per destination against `machine.var_dests`. See `_fan_exit`.
 
 
 def _count_cues_send(recv, msgs):
@@ -122,6 +126,17 @@ def _interp(path, is_death):
                     r = I.as_int(params[0])
                     if r is not None:
                         st.trans = ("EXIT", r); fixed = True
+                    elif I.is_global(params[0]) or I.is_local_or_temp(params[0]):
+                        # INDIRECT exit. Recorded, not resolved: the variable holds several
+                        # rooms and a Step carries one transition, so the fan happens where the
+                        # counter fan already does. Until this landed, a state that computed its
+                        # destination read as PARK -- and because a state's REGISTER WRITES only
+                        # ride an edge when the state EXITS, that also dropped whatever the state
+                        # wrote on the way out. LB2's act break is exactly that: `(++ global123)`
+                        # and `(newRoom: local0)` in one state, so the act advance never reached
+                        # the crossing that performs it. See `_fan_exit`.
+                        st.vexit = (params[0].get("vtype"), params[0].get("index"))
+                        fixed = True
                 elif sel == "changeState" and recv.get("t") == "Self" and params and not fixed:
                     k = I.as_int(params[0])
                     if k is not None:
@@ -433,22 +448,97 @@ def _fan_globals(guard, writes, gincs, gdom):
     return branches
 
 
-def step_paths(st, gdom):
+def _eq_value(p):
+    """`p` as (var, value) if it is a positive `==` on a register, else None. Values arrive as
+    ints from `atom()` and as strings from `_fan_globals`, so both are normalised."""
+    if not isinstance(p, Pred) or p.kind != "CMP" or p.op != "==":
+        return None
+    try:
+        return p.var, int(p.value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _contradicts(guard):
+    """True when this conjunction pins one register to two different values.
+
+    Fanning a computed exit across a counter's own values forms a CROSS PRODUCT -- LB2's act
+    break yields 6 counter branches x 5 destinations -- and most of those cells are impossible:
+    `123 == 3` (the counter branch) with `123 == 2` (the branch that chose rm355). Dropping them
+    here, where the product is formed, is the only place it can be done once. Downstream they
+    would be read by `guard_reqs`, which unions equalities FLAT and so turns the contradiction
+    into the permissive `{2, 3}` -- an act break crossable at either act, which is worse than
+    having no ordering at all.
+
+    Only the top-level conjunction is inspected. Inside a disjunction two values are ALTERNATIVES,
+    not a contradiction, and a negation flips the reading -- so those are left alone, which is
+    the permissive direction."""
+    req, banned = {}, {}
+
+    def w(g):
+        if g is None:
+            return
+        if isinstance(g, list):
+            for k in g:
+                w(k)
+        elif isinstance(g, GAnd):
+            for k in g.kids:
+                w(k)
+        elif isinstance(g, GNot):
+            eq = _eq_value(g.kid)
+            if eq:
+                banned.setdefault(eq[0], set()).add(eq[1])
+        else:
+            eq = _eq_value(g)
+            if eq:
+                req.setdefault(eq[0], set()).add(eq[1])
+    w(guard)
+    return any(len(vs) > 1 or (vs & banned.get(r, set())) for r, vs in req.items())
+
+
+def _fan_exit(st, guard, dests):
+    """Expand `(newRoom: <var>)` into one (transition, guard) branch per destination.
+
+    The mirror of `_fan_globals` for the OTHER thing a Step cannot hold once: a computed exit.
+    `dests` is `machine.var_dests` -- {(vtype, index): {room: assignment guard}} -- resolved by
+    `extract.var_room_values`, which is also what the flat-edge builder uses.
+
+    Each destination carries the condition it was ASSIGNED under, and that condition belongs on
+    the branch: LB2's act break can deliver five rooms, but `(switch global123 (2 (= local0
+    355)))` says rm355 is the destination exactly when the act counter is 2. Dropping it would
+    make the routing room a free hub between everywhere it can send you.
+
+    A variable with no resolvable destination yields the step's own transition unchanged (a
+    PARK), never a guess -- the same discipline `_fan_globals` applies to an unknown domain.
+    """
+    if st.vexit is None:
+        return [(st.trans, guard)]
+    got = (dests or {}).get(st.vexit) or {}
+    if not got:
+        return [(st.trans, guard)]
+    out = [(("EXIT", dst), guard + [extra] if extra is not None else guard)
+           for dst, extra in sorted(got.items())]
+    return [(tr, g) for (tr, g) in out if not _contradicts(g)]
+
+
+def step_paths(st, gdom, dests=None):
     """A Step as the (guard, writes, gets, counters, trans) tuples the machine-state view uses.
 
-    More than one when the step increments a global. compile_machine's walk and opmodel's
-    per-state view must expand an increment IDENTICALLY, so this is the single place that
-    decides how -- the alternative is the same rule in two places, which is how a fix lands
-    and the output does not move.
+    More than one when the step increments a global or computes its destination.
+    compile_machine's walk and opmodel's per-state view must expand both IDENTICALLY, so this is
+    the single place that decides how -- the alternative is the same rule in two places, which is
+    how a fix lands and the output does not move.
     """
-    return [(g, w, st.gets, st.counters, st.trans)
-            for (g, w) in _fan_globals(st.guard, st.writes, st.gincs, gdom)]
+    return [(g2, w, st.gets, st.counters, tr)
+            for (g, w) in _fan_globals(st.guard, st.writes, st.gincs, gdom)
+            for (tr, g2) in _fan_exit(st, g, dests)]
 
 
 def compile_machine(machine, is_death):
     """-> (exits, deaths). exits = [(exit_room, guard_tree, {glob: val})], deaths =
     [guard_tree]. Guards are over EXTERNAL atoms only (counters resolved concretely)."""
     gdom = getattr(machine, "glob_dom", {}) or {}
+    dests = getattr(machine, "var_dests", None) or {}
     lregs = getattr(machine, "local_regs", None) or {}
     steps = {k: [_interp(p, is_death) for p in _paths_of(body)]
              for k, body in machine.bodies.items()}
@@ -491,7 +581,6 @@ def compile_machine(machine, is_death):
             for (gi, v) in st.writes:
                 if gi in lregs:               # the machine's own write to its lowered local:
                     nc[gi] = v                # tracked here AND delivered as a register write
-            tr = st.trans
             # key=repr: counter names mix (vt,idx) tuples, REG_KEY and lowered-local ints,
             # which Python cannot order together.
             key = (state, tuple(sorted(nc.items(), key=repr)))
@@ -500,20 +589,24 @@ def compile_machine(machine, is_death):
             # `G == v` and delivering `G := v+delta`. A global with no known domain is dropped
             # rather than guessed, which is what keeps this inert on the games that only ever
             # increment a score.
-            for (ng, nw) in _fan_globals(guard + ext, writes + st.writes, st.gincs, gdom):
-                if tr[0] == "EXIT":
-                    exits.append((tr[1], _conj(ng), dict(nw)))
-                elif tr[0] == "DEATH":
-                    deaths.append(_conj(ng))
-                elif key in seen:
-                    continue
-                elif tr[0] == "ADVANCE":
-                    walk(state + 1, nc, ng, nw, depth + 1, seen | {key})
-                elif tr[0] == "JUMP":
-                    walk(tr[1], nc, ng, nw, depth + 1, seen | {key})
-                elif tr[0] == "SETSTATE":
-                    walk(tr[1] + 1, nc, ng, nw, depth + 1, seen | {key})
-                # PARK: dead end (no exit from this path)
+            for (ng0, nw) in _fan_globals(guard + ext, writes + st.writes, st.gincs, gdom):
+                # ...and the same fan for a COMPUTED destination, in the same loop so the two
+                # compose: LB2's act break both advances the counter and routes on it, and the
+                # branches must agree about which act they are in.
+                for (tr, ng) in _fan_exit(st, ng0, dests):
+                    if tr[0] == "EXIT":
+                        exits.append((tr[1], _conj(ng), dict(nw)))
+                    elif tr[0] == "DEATH":
+                        deaths.append(_conj(ng))
+                    elif key in seen:
+                        continue
+                    elif tr[0] == "ADVANCE":
+                        walk(state + 1, nc, ng, nw, depth + 1, seen | {key})
+                    elif tr[0] == "JUMP":
+                        walk(tr[1], nc, ng, nw, depth + 1, seen | {key})
+                    elif tr[0] == "SETSTATE":
+                        walk(tr[1] + 1, nc, ng, nw, depth + 1, seen | {key})
+                    # PARK: dead end (no exit from this path)
 
     # Lowered own-script locals seed at their declared reset value -- the script reloads on room
     # entry, so the reset is the value a walk starts from, exactly as an untracked raw local has

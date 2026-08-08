@@ -287,6 +287,20 @@ def build_maps(em):
         w(guard)
         return bool(refs)
     sources, drops = defaultdict(set), defaultdict(set)
+    # ...and the CONDITION each surviving site was reached under, kept per (item, room) so the
+    # reobtainability walk can ask whether the site is live in a given register state. `sources`
+    # answers "which rooms give you this", which is a question about PLACES; a room whose giving
+    # is gated -- LB2's `rm440` places the work boot only under `(== global123 4)` -- gives it
+    # only in some of the states you can stand there in, and dropping the condition here is what
+    # made every act-gated source read as available in every act. The site-level filters below
+    # (`_own_required`, `_prev_impossible`) already answer the questions that need no fixpoint;
+    # this carries the rest to the one consumer that has the product to judge them.
+    #
+    # A room keeps the PERMISSIVE reading if any of its sites is unconditional: `None` in the
+    # list means "this site needs nothing", and `reobtainable_rooms` reads the list that way.
+    # A plain dict, not a defaultdict-of-defaultdict: the model is PICKLED into the build
+    # cache and a lambda factory cannot be pickled.
+    source_guards = {}                                       # item -> room -> [guard | None]
     # AN ACQUISITION YOU CAN ONLY REACH WHILE ALREADY HOLDING THE ITEM IS NOT A SOURCE. Sierra
     # writes "take it back down" with the very same `get:` as "pick it up", and the only thing
     # separating them is the condition: KQ6's hole-in-the-wall sticks onto any wall you like and
@@ -313,10 +327,12 @@ def build_maps(em):
         if (not _debug_gated(a.guard) and a.item not in _own_required(a.guard)
                 and not _prev_impossible(a.guard, a.room, prev, edges)):
             sources[a.item].add(a.room)
+            source_guards.setdefault(a.item, {}).setdefault(a.room, []).append(a.guard)
     for room, script, it, g in em.handler_gets:
         if (not _debug_gated(g) and it not in _own_required(g)
                 and not _prev_impossible(g, room, prev, edges)):
             sources[it].add(room)
+            source_guards.setdefault(it, {}).setdefault(room, []).append(g)
     for info in em.machines:
         em_ = entry_musts(info)
         for K, paths in info["states"].items():
@@ -326,6 +342,10 @@ def build_maps(em):
                 for it in gg:
                     if it not in must | _own_required(g):
                         sources[it].add(info["room"])
+                        # The state's own path condition, NOT the machine's arming: the arming is
+                        # an item cost (`entry_musts`, already applied above), while what a
+                        # register walk needs is the condition under which this statement runs.
+                        source_guards.setdefault(it, {}).setdefault(info["room"], []).append(g)
 
     # BULK transfers -- the whole inventory at once, written as a walk of the Inv list setting
     # each item's `owner:`. KQ4 confiscates everything at rm92 (captured) and rm81 (the wedding
@@ -338,6 +358,8 @@ def build_maps(em):
     for room, dest, _g in getattr(em.ts, "bulk_moves", ()):
         for it in all_items:
             (sources if dest == E.EGO else drops)[it].add(room)
+            if dest == E.EGO:
+                source_guards.setdefault(it, {}).setdefault(room, []).append(_g)
 
     # THE FOURTH STORE. An item's own property can hold state, and putting it into a state the
     # item's USES reject is the same thing as losing the item:
@@ -510,7 +532,7 @@ def build_maps(em):
     # volcano to the island hub, hiding the Ashes/Sand stranding. The gate-aware product graph
     # subsumes it -- the ticket FP was really an unguarded duplicate edge shadowing the machine
     # EXIT's own(ticket) guard (see edge_meta's machine_delivered filter).
-    return edges, edge_kind, sources, drops, required, guard_required
+    return edges, edge_kind, sources, drops, required, guard_required, source_guards
 
 
 def _cmp_atoms(guard, out):
@@ -1661,7 +1683,7 @@ class IrSccReach(SccReach):
         self.em = em
         self.g = _ItemNames(vocab.item_names(em.ir))
         (self.edges, self.edge_kind, self.sources, self.drops, self.required,
-         self.guard_required) = build_maps(em)
+         self.guard_required, self.source_guards) = build_maps(em)
         self.rooms = list(em.rooms)
         self.comps, self.comp_of = tarjan_scc(self.rooms, self.edges)
         self.cedges = defaultdict(set)
@@ -1774,7 +1796,28 @@ class IrSccReach(SccReach):
                     for (gi, v) in w:
                         if gi not in regset:
                             continue
-                        need = gates.get(gi)
+                        # THE WRITE'S OWN PATH CONDITION FIRST. A write reached only under
+                        # `R == k` is executed only at `R == k`, so ordering it from there is
+                        # sound with no argument about entries at all -- and it is the ONLY
+                        # thing that can order a counter. `compile._fan_globals` turns `(++ R)`
+                        # into exactly this shape (guard `R == k`, write `R := k+1`), and until
+                        # this line read it, the fan's whole point was thrown away one step
+                        # later: LB2's act break delivered six writes with six pinning guards
+                        # and they all landed in `_inroom`, making the act-break card a room
+                        # where any act may be selected. Entry-derived `gates` stay as the
+                        # fallback for the case they were written for (KQ4's Lolotte counter,
+                        # where the ordering lives in the machine's arming, not its body).
+                        #
+                        # STRUCTURAL, not flat. `required_values`/`guard_reqs` read the atoms
+                        # flat and UNION the equalities -- right for "what values may this edge
+                        # be crossed at", wrong here: a fanned branch carries both the counter's
+                        # own `R == k` and the chosen destination's `R == j`, and flat those
+                        # union to {j, k}, which yields the full 6x6 cross product of act steps
+                        # instead of the six real ones. `structural_reqs` COMPOSES (AND
+                        # intersects, OR keeps only what every branch constrains), so a
+                        # contradictory branch yields the empty set and orders nothing.
+                        own = structural_reqs(g, (gi,)).get(gi)
+                        need = own or gates.get(gi)
                         if need:
                             for frm in need:
                                 self._rstep[gi][info["room"]].add((frm, v))
@@ -2226,6 +2269,37 @@ class IrSccReach(SccReach):
         return {R for R in raw
                 if not any(it in G and len(G) > 1 for G in groups.get(R, ()))}
 
+    def _source_live(self, ban, node, R):
+        """Can any of `ban`'s sites in this room actually hand the item over in THIS state?
+
+        The register half of the site filters `build_maps` already applies. A source is a place
+        AND a condition: LB2's `rm440` places the work boot under `(== global123 4)`, so
+        `(rm440, act 5)` is a state you can stand in where the boot is not on offer. Seeding the
+        backward walk from every state whose ROOM is a source ignored the condition entirely, and
+        with it the whole act structure -- every act-gated pickup read as available in every act.
+
+        Same shape and same direction as `_prev_impossible`, which asks this question for the
+        previous-room register alone and can answer it without the product; this one needs the
+        product, so it is asked here rather than in `build_maps`.
+
+        PERMISSIVE by construction, three times over: an unconditional site (`None`) keeps the
+        room live; a site whose guard does not mention R keeps it live; and a room is live if ANY
+        of its sites is. So this can only ever remove a state the game genuinely gates away."""
+        room, st = node
+        vals = st if isinstance(R, tuple) else (st,)
+        regs = R if isinstance(R, tuple) else (R,)
+        for it in ban:
+            gs = self.source_guards.get(it, {}).get(room)
+            if not gs:
+                return True                   # no recorded condition -> the old, permissive read
+            for g in gs:
+                if g is None:
+                    return True
+                need = structural_reqs(g, regs)
+                if all(v in need[Ri] for Ri, v in zip(regs, vals) if Ri in need):
+                    return True
+        return False
+
     def reobtainable_rooms(self, item):
         """Rooms from which `item` can still be ACQUIRED -- GATE-AWARE, intersected over every
         projection.
@@ -2267,7 +2341,22 @@ class IrSccReach(SccReach):
                 for v in self._psucc(R, u, ban):
                     if v in states:
                         prev[v].add(u)
-            back = {p for p in states if p[0] in srcs}
+            back = {p for p in states if p[0] in srcs and self._source_live(ban, p, R)}
+            # THE SOURCE FLOOR, and it is the same lesson as `entry_reqs`' arming floor: a room
+            # where NO reachable state satisfies any site is IGNORANCE about how the site's
+            # condition gets established, not evidence that the item cannot be had there.
+            # Measured: LSL2's Knife has one site, in rm43, gated on `498 != 0`, and the 498
+            # projection reaches rm43 only at 498 == 0 -- so the strict reading concluded the
+            # Knife has no source at all and deleted a play-validated softlock. `sources` being
+            # condition-blind had been COMPENSATING for that gap; making it condition-aware turns
+            # every such gap into a lost finding, which is the wrong direction to be wrong in.
+            # So the filter only ever DISCRIMINATES BETWEEN states of a room it already believes
+            # in: it prunes act 5 from LB2's rm440 because act 4 IS reachable there and satisfies
+            # the boot's `123 == 4`, and it leaves rm43 alone because nothing there satisfies
+            # anything.
+            for r in srcs:
+                if not any(p[0] == r for p in back):
+                    back |= {p for p in states if p[0] == r}
             q = deque(back)
             while q:
                 u = q.popleft()

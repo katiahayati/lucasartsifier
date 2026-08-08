@@ -197,8 +197,8 @@
   "dagger": {
     "action_specs": [],
     "dangerous": [
-      "pressPass@rm435->3 rooms",
-      "pressPass@rm435->3 rooms"
+      "pressPass@rm240->3 rooms",
+      "pressPass@rm240->3 rooms"
     ],
     "death_signal": [
       370,
@@ -207,8 +207,8 @@
     "debug_globals": [],
     "edge_specs": [
       "rm26->rm750: (and (gEgo has: 10) (gEgo has: 11) (gEgo has: 26) (gEgo has: 27) (gEgo has: 31) (or (gEgo has: 10) (gEgo has: 11)))",
-      "rm440->rm435: (and (gEgo has: 0) (gEgo has: 1) (gEgo has: 3) (gEgo has: 4) (gEgo has: 5) (gEgo has: 6) (gEgo has: 9) (gEgo has: 10) (gEgo has: 11) (gEgo has: 12) (gEgo has: 13) (gEgo has: 14) (gEgo has: 15) (gEgo has: 16) (gEgo has: 18) (gEgo has: 19) (gEgo has: 23) (gEgo has: 26) (gEgo has: 27) (gEgo has: 28) (gEgo has: 29) (gEgo has: 31) (gEgo has: 34) (gEgo has: 35) (or (gEgo has: 10) (gEgo has: 11)) (or (gEgo has: 18) (gEgo has: 19)))",
-      "rm480->rm435: (and (gEgo has: 0) (gEgo has: 1) (gEgo has: 3) (gEgo has: 4) (gEgo has: 5) (gEgo has: 6) (gEgo has: 9) (gEgo has: 10) (gEgo has: 11) (gEgo has: 12) (gEgo has: 13) (gEgo has: 14) (gEgo has: 15) (gEgo has: 16) (gEgo has: 18) (gEgo has: 19) (gEgo has: 23) (gEgo has: 26) (gEgo has: 27) (gEgo has: 28) (gEgo has: 29) (gEgo has: 31) (gEgo has: 34) (gEgo has: 35) (or (gEgo has: 10) (gEgo has: 11)) (or (gEgo has: 18) (gEgo has: 19)))"
+      "rm440->rm435: (gEgo has: 6)",
+      "rm480->rm435: (gEgo has: 6)"
     ],
     "exhaustion": [],
     "fatal_uses": [],
@@ -222,10 +222,10 @@
     "groups": [],
     "joint": [],
     "placements": [
-      "rm26->rm750: applied=False kind=not-found why=no controllable trigger (not-found) and no room-property exit",
+      "Main/pressPass: applied=True kind=None",
+      "rm26->rm750: applied=False kind=sole-exit why=no controllable trigger (sole-exit) and no room-property exit",
       "rm440: applied=True kind=arm-event sites=1",
-      "rm480: applied=True kind=arm-event sites=1",
-      "rmNone->rmNone/pressPass: applied=False kind=None why=expected exactly one `put: 6 0` (or with no destination) in Main, found 0"
+      "rm480: applied=True kind=arm-event sites=1"
     ],
     "register_strandings": [],
     "register_write_specs": [],

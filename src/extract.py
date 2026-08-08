@@ -2154,72 +2154,85 @@ class Extractor:
         return room if recv.get("t") == "Object" and name in ("self", "Self") else None
 
     def _var_room_values(self, room, var):
-        """Room numbers an indirect `newRoom:` destination variable can hold, from
-        switch-on-V case labels and `(= V lit)` assignments anywhere in this room's script.
-        Filtered to real rooms (an rm<N> Room instance exists), so cycle counters like 0
-        are excluded.
+        """This extractor's view of `var_room_values` -- see the module-level function."""
+        return var_room_values(self.ir, room, var)
 
-        The variable may be a GLOBAL or a script LOCAL/TEMP -- same idiom, different storage,
-        so the same scan answers both. Scoping the scan to THIS script is exact for a local
-        (that is all a script local can see) and is the deliberate narrowing we already chose
-        for the global case.
 
-        Returns {room: guard}, where the guard is the PATH CONDITION UNDER WHICH THE
-        DESTINATION WAS ASSIGNED -- `None` meaning unconditional. That is what stops a routing
-        room from becoming a free hub between everywhere it can send you: LB2's act break is
-        reached from seven rooms and can deliver five, but `(switch global123 (2 (= local0 355)))`
-        says rm355 is the destination exactly when the act counter is 2. Without the condition
-        the model would let you walk out of act 1 into act 5 -- the same over-merge that hid the
-        LSL2 parachute.
+def var_room_values(ir, room, var):
+    """Room numbers an indirect `newRoom:` destination variable can hold, from
+    switch-on-V case labels and `(= V lit)` assignments anywhere in this room's script.
+    Filtered to real rooms (an rm<N> Room instance exists), so cycle counters like 0
+    are excluded.
 
-        A value assigned at more than one site drops to `None`: we compose conditions with AND
-        and the honest reading of two sites is their OR, so the permissive answer is the sound
-        one here (we never invent a constraint the game does not have)."""
-        s = self.ir.scripts.get(room)
-        if s is None:
-            return {}
-        vtype, vindex = var.get("vtype"), var.get("index")
-        seen = {}                              # room -> [guard, ...] one per assignment site
+    MODULE-LEVEL BECAUSE IT HAS TWO CALLERS, and the second one arriving late is what this
+    project keeps paying for ([[same-rule-two-places]]). The flat-edge builder above resolved
+    the idiom; `machine._send_op` did not, so a `newRoom: <var>` inside a `changeState` body
+    emitted PARK instead of EXIT -- and a machine state's REGISTER WRITES only ride an edge when
+    the state exits. LB2's act break is exactly that shape: `(++ global123)` and
+    `(newRoom: local0)` in one state, so the act advance was orphaned from the act-break edge
+    and rm26 became a free act-setter. One resolver, both callers.
 
-        def is_room(v):
-            # PASS THE IR, or this falls back to the `rm<N>` naming convention that
-            # `_room_species`' own docstring says "silently analysed almost nothing" -- the
-            # decompiler names KQ4's rooms `RoomNNN`, LB2's and QFG-VGA's likewise, so
-            # inheritance is the only reliable test and it needs the class table. Measured
-            # rooms recognised WITH the ir vs by name: KQ4 110 vs 2, LB2 78 vs 70, QFG-VGA
-            # 120 vs 97 -- and each unrecognised room is an indirect `newRoom:` destination
-            # that resolves to nothing, i.e. a missing edge, i.e. an invented dead end (LB2
-            # lost 6 destinations, QFG-VGA 13).
-            rs = self.ir.scripts.get(v)
-            return rs is not None and _room_object(rs, self.ir) is not None
+    The variable may be a GLOBAL or a script LOCAL/TEMP -- same idiom, different storage,
+    so the same scan answers both. Scoping the scan to THIS script is exact for a local
+    (that is all a script local can see) and is the deliberate narrowing we already chose
+    for the global case.
 
-        def is_dest(n):
-            return (n and n.get("t") == "Variable" and n.get("vtype") == vtype
-                    and n.get("index") == vindex)
+    Returns {room: guard}, where the guard is the PATH CONDITION UNDER WHICH THE
+    DESTINATION WAS ASSIGNED -- `None` meaning unconditional. That is what stops a routing
+    room from becoming a free hub between everywhere it can send you: LB2's act break is
+    reached from seven rooms and can deliver five, but `(switch global123 (2 (= local0 355)))`
+    says rm355 is the destination exactly when the act counter is 2. Without the condition
+    the model would let you walk out of act 1 into act 5 -- the same over-merge that hid the
+    LSL2 parachute.
 
-        def on_leaf(n, pc):
-            if n["t"] == "Assignment" and is_dest(n["kids"][0]):
-                v = I.as_int(n["kids"][1])
-                if v is not None and is_room(v):
-                    seen.setdefault(v, []).append(_conj(pc))
+    A value assigned at more than one site drops to `None`: we compose conditions with AND
+    and the honest reading of two sites is their OR, so the permissive answer is the sound
+    one here (we never invent a constraint the game does not have)."""
+    s = ir.scripts.get(room)
+    if s is None:
+        return {}
+    vtype, vindex = var.get("vtype"), var.get("index")
+    seen = {}                              # room -> [guard, ...] one per assignment site
 
-        for o in s.objects:
-            for _mn, ast in o.methods.items():
-                # TWO scans, because the two shapes need different walkers and conflating them
-                # cost LSL2 eight softlocks once already. `(switch <dest> ...)` is DATA -- the
-                # case labels ARE the values -- but walk_stream reads a Switch as control flow
-                # and never hands it to on_leaf, so that harvest has to run on the flat walk.
-                # The assignment shape genuinely needs the path condition, so it uses
-                # walk_stream. See test_walkers on Switch-as-data.
-                for n in I.walk(ast):
-                    if n["t"] == "Switch" and is_dest(n["kids"][0]):
-                        for c in n["kids"][1:]:
-                            if c["t"] == "Case":
-                                v = I.as_int(c["kids"][0])
-                                if v is not None and is_room(v):
-                                    seen.setdefault(v, []).append(None)
-                walk_stream(ast, [], on_leaf)
-        return {v: (gs[0] if len(gs) == 1 else None) for v, gs in seen.items()}
+    def is_room(v):
+        # PASS THE IR, or this falls back to the `rm<N>` naming convention that
+        # `_room_species`' own docstring says "silently analysed almost nothing" -- the
+        # decompiler names KQ4's rooms `RoomNNN`, LB2's and QFG-VGA's likewise, so
+        # inheritance is the only reliable test and it needs the class table. Measured
+        # rooms recognised WITH the ir vs by name: KQ4 110 vs 2, LB2 78 vs 70, QFG-VGA
+        # 120 vs 97 -- and each unrecognised room is an indirect `newRoom:` destination
+        # that resolves to nothing, i.e. a missing edge, i.e. an invented dead end (LB2
+        # lost 6 destinations, QFG-VGA 13).
+        rs = ir.scripts.get(v)
+        return rs is not None and _room_object(rs, ir) is not None
+
+    def is_dest(n):
+        return (n and n.get("t") == "Variable" and n.get("vtype") == vtype
+                and n.get("index") == vindex)
+
+    def on_leaf(n, pc):
+        if n["t"] == "Assignment" and is_dest(n["kids"][0]):
+            v = I.as_int(n["kids"][1])
+            if v is not None and is_room(v):
+                seen.setdefault(v, []).append(_conj(pc))
+
+    for o in s.objects:
+        for _mn, ast in o.methods.items():
+            # TWO scans, because the two shapes need different walkers and conflating them
+            # cost LSL2 eight softlocks once already. `(switch <dest> ...)` is DATA -- the
+            # case labels ARE the values -- but walk_stream reads a Switch as control flow
+            # and never hands it to on_leaf, so that harvest has to run on the flat walk.
+            # The assignment shape genuinely needs the path condition, so it uses
+            # walk_stream. See test_walkers on Switch-as-data.
+            for n in I.walk(ast):
+                if n["t"] == "Switch" and is_dest(n["kids"][0]):
+                    for c in n["kids"][1:]:
+                        if c["t"] == "Case":
+                            v = I.as_int(c["kids"][0])
+                            if v is not None and is_room(v):
+                                seen.setdefault(v, []).append(None)
+            walk_stream(ast, [], on_leaf)
+    return {v: (gs[0] if len(gs) == 1 else None) for v, gs in seen.items()}
 
 
 def extract(ir):

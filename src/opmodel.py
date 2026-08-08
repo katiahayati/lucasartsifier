@@ -604,8 +604,9 @@ class OpEmitter:
             for st in steps:
                 if C.step_effects(st) or st.trans[0] in ("EXIT", "DEATH"):
                     has_effect = True
-                # one tuple normally; several when the step counts a global up or down
-                paths.extend(C.step_paths(st, m.glob_dom))
+                # one tuple normally; several when the step counts a global up or down, or
+                # computes its destination (`newRoom: <var>`) -- one branch per room it can hold
+                paths.extend(C.step_paths(st, m.glob_dom, m.var_dests))
             states[K] = paths
         # Items CONSUMED (`gEgo put: N -1`) on a SURVIVABLE path: consuming an item requires
         # owning it (the Flower at rm50 has no own() guard at all, only the consumption). Skip

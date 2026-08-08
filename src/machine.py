@@ -81,6 +81,10 @@ class Machine:
     glob_dom: dict = field(default_factory=dict)   # glob -> sorted values, for globals this
     #   script uses as a COUNTER (`++`/`--`). compile fans an increment out over these: the new
     #   value depends on the old one, so it is only resolvable against values we know it takes.
+    var_dests: dict = field(default_factory=dict)   # (vtype, index) -> {room: assignment guard},
+    #   for every variable this machine hands to `newRoom:`. The counterpart of glob_dom for the
+    #   OTHER computed thing a state body can do: route. Resolved by extract.var_room_values --
+    #   the same function the flat-edge builder uses, so a routing room is read one way, not two.
     local_regs: dict = field(default_factory=dict)  # synthetic-global index -> declared reset
     #   value, for the lowered ROOM LOCALS of this machine's OWN script (vocab.lower_room_locals).
     #   Lowering moved the latch into register-land, but inside this script it is still the
@@ -219,6 +223,7 @@ class MachineBuilder:
         self._cast_cache = {}             # script number -> extract.cast_conditions(script)
         self._local_cache = {}            # script number -> extract.local_write_conditions(script)
         self._lreg_cache = {}             # script number -> {lowered-local gi: reset value}
+        self._vdest_cache = {}            # script number -> {(vtype,idx): {room: guard}}
         self._entry_guard = {}            # (script, inst) -> the machine's entry disjunction, from
         #   the PREVIOUS pass. Empty until `prime` runs, which is the permissive answer. See prime.
         for rn, s in ir.scripts.items():
@@ -329,6 +334,36 @@ class MachineBuilder:
                 K, g = m.entries[i]
                 m.entries[i] = (K, GAnd([pre, g]) if g is not None else pre)
 
+    def _var_dests(self, script):
+        """{(vtype, index): {room: guard}} for every variable this script gives to `newRoom:`.
+
+        Scanned once per script and cached, because the resolution walks the whole script and a
+        script can hold several machines. The values come from `extract.var_room_values`, which
+        the flat-edge builder has used since LSL2's revolving door -- shared rather than
+        reimplemented, since having this rule in only one of the two places is what left LB2's
+        act break emitting PARK and orphaned the act advance from its own edge."""
+        got = self._vdest_cache.get(script.number)
+        if got is None:
+            got = self._vdest_cache[script.number] = {}
+            for o in script.objects:
+                for _mn, ast in o.methods.items():
+                    for n in I.walk(ast):
+                        if n.get("t") != "Send":
+                            continue
+                        _recv, msgs = I.send_pairs(n)
+                        for sel, params in msgs:
+                            if sel != "newRoom" or not params:
+                                continue
+                            p = params[0]
+                            if I.as_int(p) is not None:
+                                continue
+                            if not (I.is_global(p) or I.is_local_or_temp(p)):
+                                continue
+                            key = (p.get("vtype"), p.get("index"))
+                            if key not in got:
+                                got[key] = X.var_room_values(self.ir, script.number, p)
+        return got
+
     def _local_regs(self, script_number):
         """{synthetic gi: reset value} for `script_number`'s own lowered room locals."""
         got = self._lreg_cache.get(script_number)
@@ -342,6 +377,7 @@ class MachineBuilder:
     def _build(self, script, obj):
         m = Machine(script.number, obj.name, start=obj.props.get("start", 0))
         m.glob_dom = _glob_domains(script)
+        m.var_dests = self._var_dests(script)
         m.local_regs = self._local_regs(script.number)
         cs = obj.methods["changeState"]
         sw = self._top_switch(cs)
@@ -352,7 +388,7 @@ class MachineBuilder:
                     if k is not None:
                         m.bodies[k] = c["kids"][1]
                         ops = []
-                        self._ops(c["kids"][1], [], ops)
+                        self._ops(c["kids"][1], [], ops, script.number)
                         m.states[k] = ops
         # entries: ANY object's init/handleEvent/doit that does `(<inst> changeState: K)`
         # (guarded) -- the machine is often started/redirected by the ROOM object, not by
@@ -710,19 +746,22 @@ class MachineBuilder:
             if tgt != 255 and body is not None and name not in seen:
                 self._entries(body, pc, m, tgt, seen | {name}, source, is_self_obj)
 
-    def _ops(self, node, pc, out):
+    def _ops(self, node, pc, out, room=None):
         """Walk a state body, composing path conditions, appending guarded ops.
 
         Control flow comes from `extract.walk_stream` / `ir.control_shape`; this used to
-        re-implement If/Cond/Switch itself, in code identical to extract's and opmodel's."""
-        from extract import walk_stream
-        walk_stream(node, pc, lambda n, p: self._op_leaf(n, _conj(p), out))
+        re-implement If/Cond/Switch itself, in code identical to extract's and opmodel's.
 
-    def _op_leaf(self, node, g, out):
+        `room` is the script the body lives in, threaded only so an indirect `newRoom:` can be
+        resolved against that script's own assignments -- see `_send_op`."""
+        from extract import walk_stream
+        walk_stream(node, pc, lambda n, p: self._op_leaf(n, _conj(p), out, room))
+
+    def _op_leaf(self, node, g, out, room=None):
         """What one statement means to the machine model -- the part that is ours, not shared."""
         tp = node["t"]
         if tp == "Send":
-            self._send_op(node, g, out)
+            self._send_op(node, g, out, room)
         elif tp == "Assignment":
             self._assign_op(node, g, out)
         elif tp == "Increment":
@@ -730,13 +769,29 @@ class MachineBuilder:
         elif tp == "Decrement":
             self._counter_op(node["kids"][0], "dec", None, g, out)
 
-    def _send_op(self, node, g, out):
+    def _send_op(self, node, g, out, room=None):
         recv, msgs = I.send_pairs(node)
         for sel, params in msgs:
             if sel == "newRoom" and params:
                 r = I.as_int(params[0])
                 if r is not None:
                     out.append(Op("EXIT", g, r))
+                elif room is not None and (I.is_global(params[0])
+                                           or I.is_local_or_temp(params[0])):
+                    # INDIRECT destination inside a state body -- `(newRoom: <var>)`. The flat
+                    # edge builder has resolved this since LSL2's revolving door; the machine
+                    # lift never did, and that costs more than an edge, because a state's
+                    # REGISTER WRITES only reach `edge_meta` when the state EXITS. LB2's act
+                    # break is one state -- `(++ global123)` then `(newRoom: local0)` -- so the
+                    # act advance was orphaned from the crossing that performs it and the model
+                    # read rm26 as a room where any act may be selected. One resolver, shared,
+                    # for exactly the reason it keeps being two ([[same-rule-two-places]]).
+                    #
+                    # Each destination carries the condition it was ASSIGNED under, which is what
+                    # keeps a routing room from becoming a free hub between everywhere it can
+                    # send you. ANDed with the state's own path condition -- both held.
+                    for dst, extra in X.var_room_values(self.ir, room, params[0]).items():
+                        out.append(Op("EXIT", _conj([g, extra]), dst))
             elif sel == "changeState" and recv.get("t") == "Self" and params:
                 k = I.as_int(params[0])
                 if k is not None:

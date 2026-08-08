@@ -114,16 +114,45 @@ KNOWN_RED = {
         # is wrapped in place (kind `proc-arm`: nightMare.sc's `(nightMare setScript:
         # catchNiteMare)` inside proc344_1), and init call sites still route to the
         # entry-frontier re-site. test_realm_entry_guard_sits_on_the_spell_delivery pins it.
+        # ✅ TWO OF LB2's THREE CAUSES CLOSED 2026-08-06, and the count is no longer the story.
+        # The old note here said "2 of 4 place, and the two that DO are 24-item guards ... events
+        # that would never fire". Both halves are now false: the 24-item conjunctions collapsed to
+        # `(gEgo has: 6)` when the act break got its ordering (docs/LB2-ORACLE.md §7g), and the
+        # press-pass sink places -- it had been re-found by a pattern hardcoded to `(globalN put:
+        # I D)`, while LB2's Main spells the receiver `(ego put: ...)` and carries nine trailing
+        # arguments the engine ignores (`patcher.ego_spellings` derives the names from the game's
+        # own `(= global0 ego)`).
         "🔴 KNOWN GAP (dagger): every non-refused spec places":
-            "PHASE 4. 2 of 4 place, and the two that DO are 24-item guards placed as arm-event, "
-            "i.e. events that would never fire -- so Dagger is worse off than the count "
-            "suggests and Phase 3's §6.1 is what fixes it.",
+            "PHASE 4, and the one left is a DESIGN gap, not a search gap. rm26->rm750 (the act "
+            "break into the inquest) is now FOUND -- `analyze_room` learned the third destination "
+            "shape, a variable-valued `newRoom:` -- and is then deliberately refused as "
+            "`sole-exit`: script 26 holds exactly one `newRoom:`, inside the very cutscene the "
+            "arm-event would decline to start, so gating it leaves the player on the title card "
+            "with nothing left to run. Measured by reading the emitted source, not inferred. The "
+            "real placement is a DEFERRAL to the last controllable commit before an unavoidable "
+            "crossing -- `apply_guards` already does exactly that for prohibitions (the "
+            "Spinach_Dip raft) and the same treatment has to be extended to demands.",
         # ✅ PHASE 5 LANDED 2026-08-02 -- "every KQ6 finding is closed by a guard" is GREEN and no
         # longer listed. The last three: handkerchief + skeletonKey placed at the Realm's exit
         # frontier (pocket_carryout_frontier, rm640->rm650), and the wrong-door stranding rows
         # died to edge_strandings applying two of its own siblings' rules to its output (forced-
         # not-missable, unholdable-cannot-strand; SINGLETON-only -- the group form deletes LSL2's
         # play-validated raft guard and is ruled out). `pipeline --report` exits 0 on KQ6.
+    },
+    "test_lb2_ground_truth.py": {
+        "🔴 KNOWN GAP (LB2): the act-boundary carries are caught":
+            "THE ACT COUNTER IS MODELLED; THE ACT STRUCTURE IS NOT. The act break itself now "
+            "reads as the game writes it -- `rm26->X req{k} sets{k+1}`, the ordering in `_rstep`, "
+            "nothing free in `_inroom` -- and that moved no item verdict. LB2's act gates what "
+            "rooms PUT IN THEMSELVES, not their doors: rm650 (the cheese) and rm740 (the rats "
+            "that need it) are both reachable at acts 0-5, because the cheese's pickup carries no "
+            "act test and what stops you fetching it during the chase is that the museum rooms "
+            "never initialise the objects and exits that would let you walk there. So no act "
+            "boundary can be a frontier and snakeOil, cheese, snakeLasso, smellingSalts and "
+            "eveningGown stay invisible. Goes green when an act-gated `init:` on a door means "
+            "THIS EDGE IS NOT THERE IN THIS STATE (modelling-gap census #1, the control map). "
+            "The source half of the same question is already built (`_source_live`) and is inert "
+            "on LB2. docs/LB2-ORACLE.md §7g/§7h.",
     },
 }
 

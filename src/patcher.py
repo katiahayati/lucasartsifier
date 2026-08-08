@@ -88,6 +88,34 @@ def configure(ir):
     _ROOM = _dominant_receiver(ir, "newRoom", 2)
 
 
+def ego_spellings(ir):
+    """Every way this game's source WRITES the ego as a send receiver: `globalN`, plus the names
+    of the objects assigned to it.
+
+    The analysis reads the IR, where a receiver is a node and the ego is whatever the vocabulary
+    says holds items. The patcher has to find the same statement in TEXT, and text has more than
+    one spelling of it: LSL2 and KQ6 write `(global0 put: 23 280)`, while LB2's Main writes
+    `(ego put: 6 0 …)` -- and a pattern hardcoded to `global0` matched zero lines there, so the
+    press-pass sink had no remedy and was reported as an unplaceable spec.
+
+    Derived from the game's own `(= global<EGO> <object>)`, which is how every SCI game installs
+    its ego. Not a name list: `ego` is LB2's identifier, not a convention we may assume."""
+    out = {"global%d" % _EGO}
+    for s in ir.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for n in I.walk(body):
+                if n.get("t") != "Assignment":
+                    continue
+                ks = n.get("kids") or []
+                if len(ks) < 2 or not I.is_global(ks[0], _EGO):
+                    continue
+                nm = ks[1].get("name") if isinstance(ks[1], dict) else None
+                if nm:
+                    out.add(nm)
+    return out
+
+
 def _dominant_receiver(ir, selector, default):
     """The global most often used as the RECEIVER of `selector` -- e.g. `changeScore:` identifies
     the score object, `newRoom:` the room object. Falls back to the SCI template index."""
@@ -419,8 +447,19 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
         # NOWHERE, which is how KQ6 destroys the hunter's lamp. Accept either spelling of the same
         # disposal rather than only the one the first game happened to use.
         disposal = sk.get("dest", -1)
-        pat = re.compile(r"^\s*\(global%d\s+put:\s*%d\s*(?:%d\s*)?\)\s*$"
-                         % (_EGO, sk["item"], disposal))
+        # RECEIVER: every spelling the game uses for the ego (see `ego_spellings`), not just
+        # `globalN`. LB2's Main writes `(ego put: …)` and the globalN-only pattern found nothing.
+        #
+        # ARGUMENTS: the disposal, then ANYTHING ELSE on the line. SCI's `put:` is declared
+        # `(method (put param1 param2))` and reads exactly two arguments, so trailing ones are
+        # pushed and ignored -- and LB2's Main really does carry nine of them:
+        # `(ego put: 6 0 1 3 4 5 8 9 18 23 32)`, which the engine executes as "item 6 to room 0"
+        # and the rest as dead numbers. The analysis reads it that way already (vocab.transfer
+        # takes the item and dest args by position); this makes the text pattern agree instead of
+        # refusing the line for having extra tokens.
+        recv = "|".join(re.escape(e) for e in sorted(ego_spellings(_IR)))
+        pat = re.compile(r"^\s*\((?:%s)\s+put:\s*%d\b\s*(?:%d\b)?[^)]*\)\s*$"
+                         % (recv, sk["item"], disposal))
         hits = [i for i, l in enumerate(lines) if pat.match(l)]
         if len(hits) != 1:
             edits.append({**sk, "applied": False,
@@ -1913,6 +1952,14 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             if placement is None:
                 continue                            # parse failure, already reported
             title = title_used
+            # A COMPUTED destination serves several rooms from one statement, so the guard has to
+            # say WHICH crossing it is about or it refuses them all. `(or (not (== <var> N)) …)`:
+            # every other destination passes untouched, and only the frontier is demanded. Applied
+            # once, here, where the placement is settled -- every kind below reads `sp["condition"]`
+            # and threading it through each of them would be the same rule in nine places.
+            if placement.get("dest_test"):
+                sp = {**sp, "condition": "(or (not %s) %s)"
+                                         % (placement["dest_test"], sp["condition"])}
             if placement["kind"] not in _PLACED_KINDS and placement.get("instance"):
                 # The cutscene that performs the `newRoom` is in one file and the ARMING that
                 # starts it is in another: KQ6's rm340 arms script 344's cutscenes, and script
