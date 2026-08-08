@@ -1040,9 +1040,28 @@ def apply_resource_remedies(dest, remedies, titles_by_num):
     return out
 
 
-_CHOOSER_TEXT = ("Softlock guards: FULL refuses dangerous moves. "
-                 "LITE warns once then allows. STOCK is the original game.")
+# ⭐ THE THREE MODES AS THE PLAYER SEES THEM, indexed by the mode value (0 full / 1 lite /
+# 2 stock). The INTERNAL name of mode 2 stays "stock" -- it is the stock game, and that is what
+# `trigger.stock_or` and every doc call it -- but "Stock" means nothing to somebody mid-game,
+# where the question is only whether the guards are on: **"Off"** [user, 2026-08-08].
+#
+# It is one tuple because the label was written out SIX times across the two dialects (a button,
+# a "now:" line and a face label on each), and a rename that reaches five of them is worse than
+# no rename at all -- the UI would then disagree with itself about what the mode is called.
+MODE_NAMES = ("Full", "Lite", "Off")
+_CHOOSER_TEXT = ("Softlock guards: %s refuses dangerous moves. "
+                 "%s warns once then allows. %s is the original game."
+                 % tuple(n.upper() for n in MODE_NAMES))
 _CHOOSER_TITLE = "Softlock guards"      # short form, for a prompt that names the current mode
+
+
+def _mode_button(i):
+    """The button label for mode `i`, padded so the three read as one row of controls.
+
+    Both choosers place their buttons at fixed x positions, so the box each one draws is sized
+    by its own text: centring every name in the widest name's width keeps them even when the
+    names are not (`Off` is two characters shorter than `Stock` was)."""
+    return "  %s  " % MODE_NAMES[i].center(max(len(n) for n in MODE_NAMES))
 
 
 def install_mode_ui(dest, titles_by_num):
@@ -1178,32 +1197,73 @@ def _install_menu_chooser(src_dir, g):
         pre = ""
     else:
         prompt = label
-        pre = ("%s\t(= %s {%s -- now: FULL})\n"
+        pre = ("%s\t(= %s {%s -- now: %s})\n"
                "%s\t(if (== global%d 1)\n"
-               "%s\t\t(= %s {%s -- now: LITE})\n"
+               "%s\t\t(= %s {%s -- now: %s})\n"
                "%s\telse\n"
-               "%s\t\t(if (== global%d 2) (= %s {%s -- now: STOCK}))\n"
+               "%s\t\t(if (== global%d 2) (= %s {%s -- now: %s}))\n"
                "%s\t)\n"
-               % (indent, label, _CHOOSER_TITLE, indent, g, indent, label, _CHOOSER_TITLE,
-                  indent, indent, g, label, _CHOOSER_TITLE, indent))
+               % (indent, label, _CHOOSER_TITLE, MODE_NAMES[0].upper(),
+                  indent, g, indent, label, _CHOOSER_TITLE, MODE_NAMES[1].upper(),
+                  indent, indent, g, label, _CHOOSER_TITLE, MODE_NAMES[2].upper(), indent))
     case = ("(%d\n"
             "%s"
             "%s\t(= %s\n"
             "%s\t\t(%s\n"
             "%s\t\t\t%s\n"
-            "%s\t\t\t81 { Full } 1\n"
-            "%s\t\t\t81 { Lite } 2\n"
-            "%s\t\t\t81 { Stock } 3\n"
+            "%s\t\t\t81 {%s} 1\n"
+            "%s\t\t\t81 {%s} 2\n"
+            "%s\t\t\t81 {%s} 3\n"
             "%s\t\t)\n"
             "%s\t)\n"
             "%s\t(if %s (= global%d (- %s 1)))\n"
             "%s)  ; softlock-guard: mode chooser\n%s"
-            % (code, pre, indent, tmp, indent, proc, indent, prompt, indent, indent,
-               indent, indent, indent, indent, tmp, g, tmp, indent, indent))
+            % (code, pre, indent, tmp, indent, proc, indent, prompt,
+               indent, _mode_button(0), indent, _mode_button(1), indent, _mode_button(2),
+               indent, indent, indent, tmp, g, tmp, indent, indent))
     text = text[:at] + case + text[at:]
     open(os.path.join(src_dir, best), "w").write(text)
     return {"applied": True, "ui": "menu", "title": best[:-3], "menu_code": code,
             "menu_index": menu_idx, "shows_current": label is not None}
+
+
+def _icon_press_bit(src_dir):
+    """The signal bit that makes a control icon ANIMATE ITS PRESS, read out of the icon class.
+
+    `IconI::select` draws cel 1 of the icon's own loop while the button is held and cel 0 when it
+    is released -- the SCI convention that a control's loop is a two-cel pair {0: up, 1: down}.
+    An icon whose face is NOT such a pair must not ask for that animation, or the press paints
+    whatever else happens to live in the loop (see `_install_panel_chooser`). The bit is a class
+    constant, so read it off the condition that guards that first DrawCel rather than naming it.
+    """
+    m = re.search(r"\(&\s*signal\s*\$([0-9a-fA-F]+)\s*\)[^\n]*\n\s*"
+                  r"\(DrawCel\s+view\s+loop\s+\(=\s*\w+\s+1\)", _all_sources(src_dir))
+    return int(m.group(1), 16) if m else 1
+
+
+def _dialog_icon(text):
+    """The panel's OWN control that opens a dialog: a `select` that hides the panel, then prints.
+
+    Returns (name, signal). That signal is the one to clone for a chooser, because opening a
+    dialog from inside the panel is not a free-standing act: the panel is a modal running its own
+    event loop, and only an icon whose signal carries the "dismiss" bit makes that loop exit
+    (`IconBar::dispatchEvent` sets its exit flag from `(& signal $0040)`). Cloning the icon that
+    already does it correctly takes that bit, and the panel's own "I position myself" and "the
+    arrow keys reach me" bits, without this code having to know which is which.
+    """
+    found = None
+    for m in re.finditer(r"\(instance\s+(\w+)\s+of\s+\w+", text):
+        body = text[m.start():_balanced_span(text, m.start())]
+        sm = re.search(r"\(method\s+\(select\b", body)
+        if not sm:
+            continue
+        sel = body[sm.start():_balanced_span(body, sm.start())]
+        if "hide:" not in sel or "Print" not in sel:
+            continue
+        g = re.search(r"\bsignal\s+(\d+)", body)
+        if g:
+            found = (m.group(1), int(g.group(1)))
+    return found
 
 
 def _install_panel_chooser(src_dir, g):
@@ -1218,6 +1278,13 @@ def _install_panel_chooser(src_dir, g):
                 break
     if host is None:
         return None
+    # THE GLOBAL THAT HOLDS THE PANEL, read from its own `(= globalN self)` -- the panel has to
+    # be hidden before a chooser opens over it (see the instance below), and `iconAbout` does
+    # that through this global rather than by naming the instance. Derived, not assumed: a game
+    # that keeps its panel somewhere else still gets the right receiver, and one that keeps it
+    # nowhere falls back to the instance name, which is in scope in the same file anyway.
+    pg = re.search(r"\(=\s*(global\d+)\s+self\)", text)
+    panel_global = pg.group(1) if pg else panel
     # THE NEW ROW. The panel's rows are a ladder: each icon's `nsTop` is the same expression
     # with one constant per row, and the PITCH is the gap between consecutive rungs (20 on
     # KQ6). Derive the pitch from the ladder rather than assuming it, then hang the new row
@@ -1275,14 +1342,71 @@ def _install_panel_chooser(src_dir, g):
     # the label's colour: the panel's own highlight colour, as it sets it on every element
     hm = re.search(r"eachElementDo:\s*#highlightColor\s+(\d+)", text)
     ink = hm.group(1) if hm else "0"
-    # centre the label in the plate the icon is about to draw
+    # MEASURE the plate and the font, rather than assume they fit. Two UI defects came out of
+    # assuming: v26 put a long sentence in a dialog and the wrap drew the buttons over the text,
+    # and the single-line label was sized by eye. A font is a resource like any other
+    # (`sci_gfx.decode_font`), so the label layout below is derived from real metrics --
+    # measured on KQ6: plate 58x22, font 4 is 9px tall, "GUARDS" 31px, "STOCK" 27px.
+    plate_w, plate_h, font_h = 58, 22, 9
+    # Is the face a BUTTON PAIR -- loop = {cel 0: up, cel 1: down}, the shape `IconI::select`
+    # assumes when it animates a press? Ours never is (see the signal below), but prove it from
+    # the art instead of asserting it, and default to "no" when the art cannot be read: the
+    # safe answer is the one that draws nothing extra.
+    face_is_button_pair = False
     try:
         import sci_gfx as _gfx
         import sci_resource as _res
-        cels = _gfx.decode_view(_res.Sci0Game(config.ACTIVE.resource_dir), int(view))
-        plate_w = cels[int(loop)]["cels"][int(cel)].width
-    except Exception:                                  # noqa: BLE001 -- unreadable art
-        plate_w = 58
+        game = _res.Sci0Game(config.ACTIVE.resource_dir)
+        cels = _gfx.decode_view(game, int(view))[int(loop)]["cels"]
+        c = cels[int(cel)]
+        plate_w, plate_h = c.width, c.height
+        face_is_button_pair = (int(cel) == 0 and len(cels) > 1
+                               and (cels[0].width, cels[0].height)
+                                   == (cels[1].width, cels[1].height))
+        # the panel names its font as a GLOBAL (KQ6: `font: global22`); resolve it to the
+        # number the game assigns, since only a number can be looked up as a resource
+        fnum = font
+        if str(font).startswith("global"):
+            am = re.search(r"\(=\s*%s\s+(\d+)\)" % re.escape(str(font)), _all_sources(src_dir))
+            fnum = am.group(1) if am else None
+        if fnum is not None:
+            font_h = _gfx.decode_font(game, int(fnum))["height"] or font_h
+    except Exception:                                  # noqa: BLE001 -- unreadable art/font
+        pass
+    # Two lines -- what the control IS, and what it is SET TO -- when the plate can hold them.
+    two_line = 2 * font_h <= plate_h
+    top1 = max(0, (plate_h - (2 * font_h if two_line else font_h)) // 2)
+    top2 = top1 + font_h
+    # ⭐ THE SIGNAL, AND THE ONE BIT THAT BROKE THREE BUILDS.
+    #
+    # `IconI::select` animates a press by drawing cel 1 of the icon's own loop while the mouse is
+    # held and cel 0 when it is released -- the SCI convention that a control's loop is a two-cel
+    # pair {0: up, 1: down}. Every real button in this panel obeys it (KQ6 loops 2..9 are each
+    # exactly two 50x15 cels). OUR FACE DELIBERATELY DOES NOT: it is a blank plate taken from the
+    # window's decorative loop, because every button loop has a word baked into its art. On KQ6
+    # that loop is [0: a 12x43 slider arrow strip, 1: the 58x122 left-hand inset, 2: the plate],
+    # so asking for the animation painted the arrow strip and the big inset at the control's
+    # position. Three play reports, one mechanism -- and the artifact was MEASURED off the
+    # screenshot back to those two cels at nsLeft/nsTop, not inferred:
+    #   v29 "a + - slider artifact"  -- cel 0 IS the strip; its top rows are a +, its bottom a -.
+    #   v30 "looks weird on click"   -- cel 1, clipped by the window edge, plus cel 0 on release.
+    #   v31 "same behavior"          -- nothing in v31 touched this bit, so nothing changed.
+    # (The nesting theory and the window-growth theory were both wrong: v29 grows the window too
+    # and is clean at rest, and v31 hid the panel before printing to no effect.)
+    #
+    # So: clone the signal of the panel's own dialog-opening control -- which is where `select`,
+    # the hide, and the dismiss bit that lets the icon bar's modal loop exit all come from -- and
+    # clear the press bit unless the face really is a button pair. Both the bit and the template
+    # are read out of the game.
+    tmpl = _dialog_icon(text)
+    if tmpl is None:
+        return {"applied": False, "ui": "panel", "title": host[:-3],
+                "why": "the panel has no control of its own that opens a dialog (a `select` that "
+                       "hides the panel and then prints), so there is no working shape to clone "
+                       "for a chooser -- and an icon that opens one without the panel's dismiss "
+                       "bit leaves the modal loop running over a disposed window"}
+    press_bit = _icon_press_bit(src_dir)
+    signal = tmpl[1] if face_is_button_pair else tmpl[1] & ~press_bit
     # join the panel's add: list right before its first eachElementDo:
     ee = re.search(r"\n([ \t]*)eachElementDo:", text)
     if not ee:
@@ -1293,8 +1417,11 @@ def _install_panel_chooser(src_dir, g):
     # next edit mid-form (measured: it chopped the plaque draw in half).
     edits = []
     ind = ee.group(1)
+    # `init:` and `selector: #doit`, exactly as `iconAbout` joins the list -- an icon that opens
+    # a dialog is initialised like the game's own do, and positions itself in `init` as well as
+    # `show`. (iconTextSwitch, which only toggles, skips both; we are the About shape now.)
     edits.append((ee.start(), ee.start(),
-                  "\n%s(iconGuards theObj: iconGuards selector: #doit yourself:)" % ind))
+                  "\n%s(iconGuards init: selector: #doit yourself:)" % ind))
     # GROW THE WINDOW by one pitch, or the new row is drawn outside it and clipped (the v26
     # bug). The window's own `bottom:` expression is WRAPPED, never rewritten, so whatever
     # the game computed still decides where the panel sits and how tall its art is.
@@ -1309,61 +1436,112 @@ def _install_panel_chooser(src_dir, g):
             grew = True
     for (s0, s1, rep) in sorted(edits, reverse=True):
         text = text[:s0] + rep + text[s1:]
+    # ⭐ THE CHOOSER IS A DIALOG, OPENED THE WAY THIS PANEL ALREADY OPENS ONE. Four play reports
+    # shaped it:
+    #   1. v26: the chooser drew its buttons over its own wrapped text  -> short lines.
+    #   2. v29: a "+ - slider" artifact, and THE PANEL NEVER CLOSING    -> a broken game.
+    #   3. v30: cycling in place fixed the closing, but it "looks weird on click", and the user
+    #      preferred the dialog: "I liked the previous UI better honestly."
+    #   4. v31: the dialog restored, panel hidden first -- "same behavior".
+    # The artifact common to (2), (3) and (4) is the press animation, and it is dealt with by the
+    # signal above, not here. What (2) needed was this: its `doit` ended with `(<panel> show:)`,
+    # which re-enters `GameControls::show` and runs the panel's whole modal event loop a second
+    # time from inside itself -- so dismissing the inner loop only ever returned to the outer one
+    # and the panel never went away. The panel is not re-shown; it is DISMISSED, and the dismiss
+    # bit in the cloned signal is what makes the icon bar's loop stop.
+    #
+    # `iconAbout`, in this same file, is the shape:
+    #
+    #     (method (select)
+    #         (super select: &rest)
+    #         (global63 hide:)          ; the panel goes away FIRST
+    #         (KQ6Print ... init:))
+    #
+    # so: `select` (not `doit`), the panel hidden before the chooser opens, and `(return 1)` at
+    # the end -- `IconBar::dispatchEvent` only reaches its exit flag inside `(if (self select:
+    # ...))`, so a `select` that returns 0 when the chooser is dismissed would leave the modal
+    # loop spinning over a window it had just disposed. `global63` is the panel itself,
+    # `(= global63 self)` in its own init, so it is read from the game and not assumed.
     inst = (
         "\n(instance iconGuards of ControlIcon\n"
-        "\t(properties\n\t\tview %s\n\t\tloop %s\n\t\tcel %s\n\t\tsignal 387\n\t)\n\n"
+        "\t(properties\n\t\tview %s\n\t\tloop %s\n\t\tcel %s\n\t\tsignal %d\n\t)\n\n"
         # The label is written AFTER `super show:` -- the plate is the icon's own face, so a
         # label drawn before it would be painted over. dsBACKGROUND -1 keeps the plate visible
-        # behind the text; dsALIGN 1 centres it in the plate's own width.
-        "\t(method (show)\n"
+        # behind the text; dsALIGN 1 centres it in the plate's own width, and the vertical
+        # offsets are the font's real height in the plate's real height, not a guessed 6. Two
+        # lines when they fit -- what the control IS over what it is SET TO -- so the mode is
+        # legible without opening anything, which is also the only way to read it back after the
+        # chooser has closed the panel behind itself.
+        "\t(method (show%s)\n"
+        "%s"
         "\t\t(= nsLeft %d)\n"
         "\t\t(= nsTop %s)\n"
         "\t\t(super show: &rest)\n"
         "\t\t(Display {GUARDS}\n"
-        "\t\t\t100 nsLeft (+ nsTop 6)\n"
-        "\t\t\t105 %s\n"
-        "\t\t\t102 %s\n"
-        "\t\t\t103 -1\n"
-        "\t\t\t106 %d\n"
-        "\t\t\t101 1\n"
+        "\t\t\t100 nsLeft (+ nsTop %d)\n"
+        "\t\t\t105 %s\n\t\t\t102 %s\n\t\t\t103 -1\n\t\t\t106 %d\n\t\t\t101 1\n"
         "\t\t)\n"
+        "%s"
         "\t)\n\n"
-        # The chooser dialog. Laid out the way the game's own multi-button dialogs are
-        # (a title line, then items on the 14px line pitch, buttons on their own row):
-        # a long unpositioned sentence WRAPS, and buttons placed on the wrapped line are
-        # drawn over the text -- the v26 bug the user screenshotted. Short lines only.
-        "\t(method (doit &tmp temp0 temp1)\n"
-        "\t\t(= temp1 {now: stock})\n"
+        # About defines `init` as well as `show`, because it is init:-ed from the add: list.
+        "\t(method (init)\n"
+        "\t\t(= nsLeft %d)\n"
+        "\t\t(= nsTop %s)\n"
+        "\t\t(super init: &rest)\n"
+        "\t)\n\n"
+        # Short lines only: a long unpositioned sentence WRAPS, and buttons placed on the
+        # wrapped line are drawn over the text (the v26 defect).
+        "\t(method (select &tmp temp0 temp1)\n"
+        "\t\t(super select: &rest)\n"
+        "\t\t(%s hide:)\n"
+        "\t\t(= temp1 {now: %s})\n"
         "\t\t(if (== global%d 0)\n"
-        "\t\t\t(= temp1 {now: full})\n"
+        "\t\t\t(= temp1 {now: %s})\n"
         "\t\telse\n"
-        "\t\t\t(if (== global%d 1) (= temp1 {now: lite}))\n"
+        "\t\t\t(if (== global%d 1) (= temp1 {now: %s}))\n"
         "\t\t)\n"
         "\t\t(= temp0\n"
         "\t\t\t(Print\n"
         "\t\t\t\tfont: %s\n"
         "\t\t\t\taddText: {Softlock guards:}\n"
         "\t\t\t\taddText: temp1 0 14\n"
-        "\t\t\t\taddButton: 1 {  Full  } 0 34\n"
-        "\t\t\t\taddButton: 2 {  Lite  } 48 34\n"
-        "\t\t\t\taddButton: 3 { Stock } 96 34\n"
+        "\t\t\t\taddButton: 1 {%s} 0 34\n"
+        "\t\t\t\taddButton: 2 {%s} 48 34\n"
+        "\t\t\t\taddButton: 3 {%s} 96 34\n"
         "\t\t\t\tinit:\n"
         "\t\t\t)\n"
         "\t\t)\n"
-        # REDRAW THE WHOLE PANEL, not just this icon [user, play, 2026-08-06: "once you click
-        # the button this +- slider appears"]. The chooser is a modal window drawn OVER the
-        # panel; dismissing it leaves the region it covered -- the sliders and their +/-
-        # steppers -- unrepainted, and `(self show:)` only repaints this one icon. The panel
-        # object is the instance whose `add:` list we joined, so it is named, not guessed.
+        # dismissing the chooser (temp0 == 0) keeps the current mode
         "\t\t(if temp0 (= global%d (- temp0 1)))\n"
-        "\t\t(%s show:)\n"
-        "\t)\n)\n" % (view, loop, cel, deep_left, ns_top, font, ink, plate_w,
-                      g, g, font, g, panel))
+        # ...and the icon bar's loop only reads its exit flag on a TRUE select (see above)
+        "\t\t(return 1)\n"
+        "\t)\n)\n" % (view, loop, cel, signal,
+                      " &tmp temp0" if two_line else "",
+                      ("\t\t(= temp0 {%s})\n"
+                       "\t\t(if (== global%d 0)\n"
+                       "\t\t\t(= temp0 {%s})\n"
+                       "\t\telse\n"
+                       "\t\t\t(if (== global%d 1) (= temp0 {%s}))\n"
+                       "\t\t)\n" % (MODE_NAMES[2].upper(), g, MODE_NAMES[0].upper(),
+                                    g, MODE_NAMES[1].upper())) if two_line else "",
+                      deep_left, ns_top, top1, font, ink, plate_w,
+                      ("\t\t(Display temp0\n"
+                       "\t\t\t100 nsLeft (+ nsTop %d)\n"
+                       "\t\t\t105 %s\n\t\t\t102 %s\n\t\t\t103 -1\n\t\t\t106 %d\n\t\t\t101 1\n"
+                       "\t\t)\n" % (top2, font, ink, plate_w)) if two_line else "",
+                      deep_left, ns_top, panel_global,
+                      MODE_NAMES[2].lower(), g, MODE_NAMES[0].lower(),
+                      g, MODE_NAMES[1].lower(), font,
+                      _mode_button(0), _mode_button(1), _mode_button(2), g))
     text = text + inst
     open(os.path.join(src_dir, host), "w").write(text)
     return {"applied": True, "ui": "panel", "title": host[:-3], "row_pitch": pitch,
             "window_grown": grew, "face": "%s/%s/%s (blank plate + Display label)"
-                                          % (view, loop, cel)}
+                                          % (view, loop, cel),
+            # say the signal out loud: it is the whole of the v29..v31 defect, and a build log
+            # that prints "cloned iconAbout 449 -> 448 (no press animation)" is reviewable
+            "signal": signal, "cloned_from": "%s %d" % tmpl,
+            "press_animation": bool(signal & press_bit)}
 
 
 def guard_board_commit(text, cond):

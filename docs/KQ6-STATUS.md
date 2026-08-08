@@ -412,6 +412,32 @@ stock/lite-warned; full is behaviorally identical to the v25 deletion). Play pla
 GUARD-MODES.md checklist — chooser reachable, lite warns once at the mists trail, stock
 silent, save/restore persistence, restart resets to full.
 
+## v27–v31 — the panel control, four wrong cuts
+
+Placements never moved; only `903.SCR/HEP` did. v26 grew a second "SAVE" face and wrapped
+a sentence under its own buttons; v29–v31 all painted stray art on click. **All of it was
+one signal bit**, diagnosed in v32 below.
+
+## v32 — the panel control works (2026-08-08, VERIFIED IN PLAY)
+
+`iconGuards` cleared the press-animation bit ($0001) from its cloned signal. `IconI::select`
+animates a press by drawing cel 1 then cel 0 of the icon's *own loop* — the SCI convention
+that a control's loop is a two-cel `{up, down}` pair — and our face is deliberately cel 2 of
+the window's decorative loop, whose cels 0 and 1 are the 12×43 slider arrow strip and the
+58×122 left-hand inset. Those two cels *are* every artifact ever reported here. See
+`docs/GUARD-MODES.md` for the derivation and the two refuted theories (nested modals; the
+window growth).
+
+Placements unchanged again: **only `903.SCR/HEP` differ from v31**, verify still "fixed 10 +
+1 group(s), NEW: none", compiled 341/341, 19 patch files.
+
+**This is the first KQ6 build whose UI was verified in the running game rather than reasoned
+about** — ScummVM driven headless via `tools/drive_scummvm.py` + `tools/kq6_panel_probe.py`.
+Panel at rest, the press frame, the chooser, mode read-back, ESC, PLAY, and the panel's own
+controls all check out; reinstalling v31's `903` reproduces the artifact as a control. The
+guard *behaviour* checklist (lite warns once, stock silent, save/restore, restart) is still
+unplayed.
+
 ## R13 is OFF the roadmap (user ruling, 2026-08-06)
 
 R13 — the "honest runs" (both wins plus the losing ending, start to finish, zero console

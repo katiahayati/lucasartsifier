@@ -7,6 +7,8 @@ scratch/
 out/
 tools/scicompile/build/
 .venv-bdd/
+.venv-x/
+tools/drive_scummvm.ini
 build/
 reports/
 
@@ -25,6 +27,10 @@ tools/pic-oracle/
 
 # GPL ScummVM SCI engine — local read-only reference for semantics study; NEVER commit
 tools/scummvm-ref/
+
+# third-party walkthrough/hint text an oracle was built from. Kept locally so a claim can be
+# traced to its sentence; NOT redistributed, same stance as vendor/ (see NOTICE).
+docs/refs/
 docs/ROADMAP.md
 docs/DESIGN-positional-model.md
 # ...and the two of those that were archived 2026-07-31; still unversioned, new path

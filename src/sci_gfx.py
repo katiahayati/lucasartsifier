@@ -10,7 +10,7 @@ its exact stated size. See tools/pic-oracle/ for the standalone validation.
 """
 from __future__ import annotations
 
-from sci_resource import Sci0Game, PIC, VIEW
+from sci_resource import Sci0Game, PIC, VIEW, FONT
 
 W, H = 320, 190
 VIS, PRI, CON = 1, 2, 4          # GFX_SCREEN_MASK_*
@@ -423,3 +423,34 @@ def decode_view(game: Sci0Game, view_num: int):
             cels.append(_decode_cel(d, co))
         loops.append({"cels": cels, "mirror": bool((mirrorBits >> L) & 1)})
     return loops
+
+
+def decode_font(game, font_num):
+    """{'height': int, 'widths': {charcode: px}} for an SCI font resource.
+
+    Written because the panel label had to be LAID OUT, and the two previous attempts guessed:
+    v26 put a long sentence in a dialog and the wrap drew buttons over the text, and the plate
+    label had to be assumed to fit in 58px. A font is a resource like any other, so measure it.
+
+    Layout (SCI0/SCI1, the only two this corpus has): word 1 = numChars, word 2 = line height,
+    then `numChars` little-endian offsets from the resource start; each character record is
+    `width, height` bytes followed by its bitmap rows. Only the metrics are read -- nothing here
+    draws -- so the bitmaps are skipped."""
+    d = game.get(FONT, font_num)
+    n = _u16(d, 2)
+    height = _u16(d, 4)
+    widths = {}
+    for c in range(n):
+        off = _u16(d, 6 + c * 2)
+        if 0 <= off < len(d) - 1:
+            widths[c] = d[off]
+    return {"height": height, "widths": widths}
+
+
+def text_width(font, s):
+    """Rendered width of `s` in a decoded font; unknown characters fall back to the mean."""
+    w = font["widths"]
+    if not w:
+        return 0
+    avg = sum(w.values()) // len(w)
+    return sum(w.get(ord(ch), avg) for ch in s)

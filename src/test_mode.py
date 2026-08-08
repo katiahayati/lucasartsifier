@@ -34,6 +34,17 @@ import patcher as P
 PASS, FAIL = [], []
 
 
+def _names_all(text, form):
+    """Does `text` name ALL THREE modes in `form` (e.g. "now: %s"), in one consistent case?
+
+    Derived from `patcher.MODE_NAMES` rather than spelled out, so renaming a mode cannot leave
+    this pinning the old word -- which is the failure mode the constant exists to prevent (the
+    label used to be written out six times, and a rename reaching five of them would leave the
+    UI disagreeing with itself while the test still passed on the sixth)."""
+    return any(all((form % getattr(n, case)()) in text for n in P.MODE_NAMES)
+               for case in ("lower", "upper", "capitalize"))
+
+
 def check(name, cond, detail=""):
     (PASS if cond else FAIL).append(name)
     print("  [%s] %s%s" % ("PASS" if cond else "FAIL", name,
@@ -144,10 +155,75 @@ def test_ui_installers():
         edited = open(os.path.join(d, os.path.basename(src))).read()
         check("%s edited file balanced" % game, _balanced(edited))
         check("%s chooser writes the mode global" % game, "global481" in edited)
-        # the chooser must NAME THE CURRENT MODE, on both dialects [user, 2026-08-06]
-        check("%s chooser shows the current level" % game,
-              all(w in edited for w in ("now: FULL", "now: LITE", "now: STOCK"))
-              or all(w in edited for w in ("now: full", "now: lite", "now: stock")), edited[:0])
+        # THE CONTROL MUST NAME THE CURRENT MODE [user, 2026-08-06]. Both dialects ask in a
+        # modal chooser that says "now: LITE"; the SCI1.1 panel control ALSO carries the mode as
+        # its own second label line, which is the only way to read it back there, since the
+        # chooser closes the panel behind itself.
+        if want_ui == "menu":
+            check("%s chooser shows the current level" % game,
+                  _names_all(edited, "now: %s"), edited[:0])
+        else:
+            check("%s chooser shows the current level" % game,
+                  _names_all(edited, "now: %s"), edited[:0])
+            body = edited[edited.find("instance iconGuards"):]
+            # ⭐ IT MUST NOT ASK FOR A PRESS ANIMATION IT HAS NO ART FOR. `IconI::select` draws
+            # cel 1 of the icon's own loop while the mouse is held and cel 0 on release -- the
+            # SCI convention that a control's loop is a two-cel {up, down} pair. Our face is
+            # deliberately taken from a loop that is NOT one (every button loop has a word baked
+            # into the art), so a press painted whatever else lives in that loop at the control's
+            # position: KQ6 loop 1 is [12x43 slider arrow strip, 58x122 inset, 58x22 plate], and
+            # the strip and the inset are exactly what three play reports described. The
+            # REQUIREMENT is "no animation without a pair", so that is what this pins -- against
+            # the game's own art and the game's own class constant, not against a signal number.
+            face = re.search(r"view\s+(\d+)\s+loop\s+(\d+)\s+cel\s+(\d+)\s+signal\s+(\d+)",
+                             re.sub(r"\s+", " ", body))
+            check("%s control declares a face and a signal" % game, bool(face), body[:400])
+            if face:
+                v, lp, cl, sig = (int(face.group(i)) for i in (1, 2, 3, 4))
+                # read the art -- and say so LOUDLY if it cannot be read, because "no pair" is
+                # also this check's pass-by-default and a silent fallback would pin nothing
+                import config, sci_gfx, sci_resource
+                cels = sci_gfx.decode_view(
+                    sci_resource.Sci0Game(config.KQ6.resource_dir), v)[lp]["cels"]
+                pair = (cl == 0 and len(cels) > 1
+                        and (cels[0].width, cels[0].height) == (cels[1].width, cels[1].height))
+                bit = P._icon_press_bit(d)
+                check("%s control animates its press only if its face is a two-cel button pair"
+                      % game, pair or not (sig & bit),
+                      "signal %d, press bit %#x, face %d/%d/%d pair=%s" % (sig, bit, v, lp, cl, pair))
+                # the sibling half: the check is only meaningful if the panel's REAL buttons do
+                # read as pairs, so the art reader is not simply always saying no
+                sibs = [(int(m.group(1)), int(m.group(2))) for m in
+                        re.finditer(r"view\s+(\d+)\s+loop\s+(\d+)\s+cel\s+0\s+message\s+0\s+signal",
+                                    re.sub(r"\s+", " ", edited))]
+                pairs = [(sv, sl) for sv, sl in sibs
+                         if len(sib := sci_gfx.decode_view(
+                             sci_resource.Sci0Game(config.KQ6.resource_dir), sv)[sl]["cels"]) > 1
+                         and (sib[0].width, sib[0].height) == (sib[1].width, sib[1].height)]
+                check("%s the pair test recognises the panel's own buttons" % game,
+                      len(pairs) >= 3, "button faces %s read as pairs: %s" % (sibs, pairs))
+            # ...AND IT MUST HIDE THE PANEL BEFORE OPENING THE CHOOSER, AND RETURN TRUE.
+            # `iconAbout`, in the same file, opens a dialog from this same panel correctly:
+            # `(super select: &rest) (global63 hide:) (KQ6Print ... init:)`. Two orderings matter
+            # and neither is about nesting (v31 hid first and behaved identically -- the artifact
+            # above was the whole of it): the panel must be gone before the chooser draws, and
+            # `select` must return non-zero, because `IconBar::dispatchEvent` only reads its exit
+            # flag inside `(if (self select: ...))` -- a 0 there leaves the modal loop spinning
+            # over a window it has just disposed. The requirement is the ORDER and the RETURN,
+            # so that is what this pins -- not "no dialog", which is what the first cut of this
+            # check asserted and which cost the UI the user preferred.
+            hide, printed = body.find("hide:"), body.find("Print")
+            check("%s hides the panel before opening the chooser" % game,
+                  printed < 0 or (0 <= hide < printed), body[:500])
+            sel = body[body.find("(method (select"):]
+            check("%s chooser select returns true so the panel's modal loop exits" % game,
+                  printed < 0 or "(return 1)" in sel, sel[:400])
+            # and it must never re-enter the panel's own modal loop: `(<panel> show:)` from
+            # inside a control runs `GameControls::show` a second time from within itself, so
+            # dismissing only ever returns to the outer loop (v29: the panel never closed).
+            panel_inst = re.search(r"\(instance\s+(\w+)\s+of\s+GameControls\b", edited)
+            check("%s control never re-shows the panel from inside it" % game,
+                  not panel_inst or ("(%s show:)" % panel_inst.group(1)) not in body, body[:500])
         if want_ui == "menu":
             # ...and it must not land on the audio menu
             host = re.search(r"\(AddMenu\s+\{([^}]*)\}\s+\{[^}]*Guards", edited)

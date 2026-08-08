@@ -73,13 +73,30 @@ python3 tools/run_tests.py toll scopes  # only files matching these names
 
 Each `src/test_*.py` is also a standalone script you can run directly.
 
+### Play-testing a build without playing it
+
+The suite checks the *emitted source*; it cannot see what the patched game draws. That gap
+cost four wrong cuts at KQ6's in-game guard control, each shipped on a theory because
+checking one meant asking someone to play. It does not:
+
+```
+python3 -m venv .venv-x && .venv-x/bin/pip install python-xlib pillow
+.venv-x/bin/python tools/drive_scummvm.py --game <COPY of the patched game> --id kq6 \
+    --script tools/kq6_panel_probe.py          # -> build/kq6_panel_probe/*.png
+```
+
+ScummVM opens a real window, XTEST drives the mouse and keyboard, and the window's pixels
+are read off the X server. Point `--game` at a **copy**, never at the installed game.
+
 **Some checks are RED on purpose, and the runner is built around that.** A test that asserts
 known-wrong behaviour would be worse than no test, so a known limitation is written as a failing
 check with its reason recorded in `KNOWN_RED` at the top of the runner. The suite therefore exits
 0 only when the failing set is **exactly** the declared one — which means a red check that starts
-*passing* is also a failure, reported as "a gap was closed, promote it". Currently three, all in
-`test_toll.py`: room locals are not modelled, register-valued pocket-exit guards cannot be placed,
-and `register_strandings` is degenerate on SCI1.1.
+*passing* is also a failure, reported as "a gap was closed, promote it". Currently three, each
+with its reason in `KNOWN_RED` at the top of the runner: two placement gaps in
+`test_sci11_patch.py` (KQ6's shared-dispatcher seam and the trade-shaped sink; the Dagger's act
+break, which needs demand-deferral) and one in `test_lb2_ground_truth.py` (LB2's act-boundary
+carries need act-conditioned exits). `test_toll.py`'s three earlier reds were all promoted.
 
 Two regression nets sit behind that. `src/testdata/lsl2.golden.json` freezes the **full** LSL2
 output surface — findings, guard specs, sink specs — because "the item list did not change" is not
@@ -92,6 +109,8 @@ treated with suspicion**; neither list may be edited without the user's sign-off
 ```
 src/                      the analysis (Python 3, standard library only)
 tools/run_tests.py        the test runner (see above)
+tools/drive_scummvm.py    play-test a patched build with nobody at the keyboard
+tools/kq6_panel_probe.py    ... a driver script: cold start -> KQ6's guard control
 tools/sci-tools-fork/     patch adding JSON-IR output to sci-tools           [C#]
 tools/scicompile/         headless Linux port of SCICompanion's compiler     [C++, GPL-2.0+]
 docs/                     how it works, architecture, current status, licensing
