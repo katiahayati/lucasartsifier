@@ -14,12 +14,12 @@ scripts and Sierra's hint file, not from a previous run of ours. When LB2's act 
 the watched surface will report the change and THIS file will say whether the change was the one
 we wanted.
 
-⚠️ ONE CHECK HERE IS DELIBERATELY RED and is declared in `tools/run_tests.py`'s KNOWN_RED:
-`the act-boundary carries are caught`. **4 of the 5 are now closed, and the survivor is not an act
-gap at all**: `eveningGown` has no source in the model because `get:` is VARIADIC and we read one
-argument (§7o). It stays RED because a KNOWN_GAPS row that quietly passes is how a limitation gets
-forgotten -- and it will need RENAMING when the variadic read lands, because by then the name will
-describe nothing that is red.
+✅ THE DELIBERATE RED THIS FILE CARRIED (`the act-boundary carries are caught`) WAS PROMOTED
+2026-08-10: all four real carries are caught and live in EXPECTED_CAUGHT, and the fifth row,
+eveningGown, was RULED *"act 2 gate, not a softlock"* -- the gown is the act-1 break's own
+precondition (see the wearingGown mechanism pins below), so it moved to NEVER_STRANDABLE. This
+file currently declares NO red; the outstanding false positive (`skeletonKey`) fails the
+suspicion check on purpose until its blame fix lands.
 
 ⚠️⚠️ THE EXPLANATION THAT USED TO SIT HERE WAS REFUTED. Read this before writing another one. It
 said: *the act counter is modelled and the act STRUCTURE is not; ordering the counter changed no
@@ -72,36 +72,64 @@ EXPECTED_CAUGHT = {
     # Real for a DIFFERENT reason than we catch it by: pressPass spans acts 1->2 (that is the
     # stranding), but what fires is `dangerous_sinks` on the three `put: 6` sites (Main, rm300,
     # rm335) with the item still `has:`-checked at 250/300/335. Kept in this column because the
-    # verdict "pressPass is missable and matters" is right; see KNOWN_GAPS for the carry itself.
+    # verdict "pressPass is missable and matters" is right.
     "pressPass",
-}
-
-# B -- REAL, AND WE MISS IT. Each is obtained in one act and needed in a later one, with no source
-# in the later act. These are what the RED check below is about.
-KNOWN_GAPS = {
+    # The four act-boundary carries, ⭐ PROMOTED FROM KNOWN_GAPS 2026-08-10 -- each was a declared
+    # RED until its cause landed (§7s: the act register could run backwards; §7y: the act-5 walls
+    # are deaths on entry and `register_strandings` walks the joint projections). From here on a
+    # drop is a regression, which is the point of the promotion.
     "snakeOil",          # act 3 rm630 -> acts 4 and 5. And it is a COUNTER, not just a `has:`:
                          # global150 (init 4 in Main, refilled to 4 at rm610 but only while the
                          # vat's cel < 3), and rm730's act-5 cobra nest tests `(== global150 0)`
-                         # -> sThrowBottle -> `put: 14`, DESTROYING it. Source + Sierra's hint
-                         # file + the Let's Play all agree. docs/LB2-ORACLE.md §5a.
+                         # -> sThrowBottle -> `put: 14`, DESTROYING it. ⚠️ The row we catch is the
+                         # ITEM carry; the ruled-in-scope empty-bottle-at-act-5 death (enter act 5
+                         # with global150 == 0) has NO detector yet -- docs/LB2-ORACLE.md §5a, §8.
     "cheese",            # act 3 rm650 -> act 5 rm740; rm650 is act 3/4 only
     "snakeLasso",        # act 3 rm640 -> act 5 rm700 (the mummy-case hook)
     "smellingSalts",     # act 4 rm525 -> act 5 rm720 (revive Steve)
-    "eveningGown",       # act 1 -> act 2; also has NO extracted `get:` site, so the source end is
-                         # unmodelled too (one of the 3 items of 36 with no source)
 }
+
+# B -- REAL, AND WE MISS IT. ✅ EMPTY SINCE 2026-08-10 -- the four real act-boundary carries are
+# all CAUGHT (promoted into EXPECTED_CAUGHT above, where a drop is a loud regression), and the
+# fifth row, eveningGown, was RULED not a softlock at all -- see NEVER_STRANDABLE. The KNOWN_RED
+# check this column fed is deleted, per the promotion half of the run_tests contract: a closed gap
+# that stays listed as red is how a real fix gets landed, forgotten, and undone.
+KNOWN_GAPS = set()
 
 # C -- CONTESTED. The walkthroughs call these fatal carries; the game source shows a second source
 # in the act that needs them. Our own authority order says the source wins, which would move them
 # to SAFE -- but they are in the list this project has carried since 2026-07-26, so they are
 # reported and NOT reclassified until the user rules. docs/LB2-ORACLE.md §5 column C, §8 item 1.
+#
+# [2026-08-10] The user delegated the check (*"should be checked"*) and gave the play-side shape
+# per item; the source was then read end to end for all three. EVERY one resolves to the same
+# idiom -- the respawn guard `(if (not (has: N)) (<thing> init:))` sitting in (or beside) the very
+# room that USES the item, with no act test, and all three rooms carry the game's own act-5 chase
+# costume branch (`view 426`), so the designers handled the chase case deliberately. The remaining
+# jeopardy in act 5 is the chase clock, which is the ruled-out-of-scope death class (preventable
+# from its own screen). Findings reported; awaiting the final word before any row moves.
 CONTESTED = {
-    "workBoot",          # rm720:46 `(if (not (has: 12)) (boot init: ...))` + its own sGetBoot at
-                         # rm720:770 -- and rm720 IS the act-5 room where the boot is used
-    "wire",              # rm430's wireEnd inits under `(or (> global123 3) ...)` and sGetThatWire
-                         # has an explicit `(== global123 5)` branch -- cuttable in act 5
-    "dinoBone",          # rm480:79 `(if (not (has: 18)) (bone init: stopUpd:))`, no act test on
-                         # that line; whether rm480 is reachable in act 4 needs the act partition
+    "workBoot",          # [checked 2026-08-10] user: obtainable act 4, used act 5, "I don't know
+                         # if it's still available in act 5". Source: rm720:46 re-places the boot
+                         # with NO act test, rm720 IS the act-5 use room (verb 23 on steve ->
+                         # `put: 12` + sGetUp), and both sGetBoot armings are plain verb-4 takes.
+                         # Even entering act 5 bootless, it waits at the point of use -> SAFE by
+                         # the source reading.
+    "wire",              # [checked 2026-08-10] user: "same shape as the boot... I'm guessing it's
+                         # really a softlock". Source disagrees: the wire is sourced AND used at
+                         # rm430 -- wireEnd inits in acts 4 AND 5 (act 3 under its progress flag,
+                         # `not (proc0_2 44)` = not already taken), sGetThatWire even dresses the
+                         # ego in the act-5 running view 426, and the use (verb 44 -> sWireItShut)
+                         # is act-5-only. Arrive wireless: cut a fresh one on the spot -- IF you
+                         # hold the wireCutters. The strandable thing in this chain is the
+                         # CUTTERS, already column A.
+    "dinoBone",          # [checked 2026-08-10] user: obtained act 2, used later, availability
+                         # unknown. Source: rm480:79 respawn guard, NO act test; the bone is
+                         # NEVER consumed (zero `put: 18` sites); real uses are rm500
+                         # (sSmashPlaster, its own guard limits it to acts <=4), rm600
+                         # (sBreakGlass) and rm650 (sDisarmTrap), all museum rooms in the same
+                         # block as rm480 -> re-obtainable whenever any use site is -> SAFE by
+                         # the source reading.
 }
 
 # D -- OUT OF SCOPE by the user's 2026-07-26 "gate on ITEMS only" ruling. Flagging one is not
@@ -146,6 +174,13 @@ OUT_OF_SCOPE = {
 # See [[commit-rule-and-red-tests]]: a green check that asserts something true is the point.
 NEVER_STRANDABLE = {
     "notebook",          # opening cutscene, rm220 `(global0 get: -1 2)` -- unavoidable
+    # [USER RULING 2026-08-10] *"evening gown: act 2 gate, not a softlock."* The derived mechanism
+    # (pinned green below): the ACT 1 -> ACT 2 break itself demands `wearingGown`, and the only
+    # act-1 writer of that property costs the gown -- so the gown is the boundary's own
+    # precondition, not a carry across it, and no reachable state loses access to it (rm270 gives
+    # it unconditionally; rm250/rm270/rm320 are one strongly-connected act-1 block). Flagging it
+    # would mean a fabricated seal or a lost source -- an FP, not a promotion. §7ab.
+    "eveningGown",
 }
 
 # D' -- IN SCOPE, BUT NOT DEMANDED [user ruling, 2026-08-09: "I don't mind catching it"].
@@ -279,37 +314,16 @@ def run():
           f"writers are act-4+ museum rooms re-asserting it after a cutscene, and Main's debug "
           f"proc, which no reachable room calls.")
 
-    # --- THE DELIBERATE RED -------------------------------------------------------------------
-    # Declared in tools/run_tests.py KNOWN_RED. Going green here is a PROMOTION, not a pass.
-    still_missed = KNOWN_GAPS - caught
-    check("🔴 KNOWN GAP (LB2): the act-boundary carries are caught", not still_missed,
-          f"MISSED: {sorted(still_missed)}. 4 of 5 are CLOSED (docs/LB2-ORACLE.md §7s, §7y). The "
-          f"survivor is `eveningGown`, and BOTH BLOCKERS THIS NOTE USED TO NAME ARE GONE -- the "
-          f"variadic `get:` read landed (it has its real source, rm270) and so did the ego-property "
-          f"store (`wearingGown`). What the model now says, derived end to end:\n      "
-          f"  * `rm250 -> rm26` (the ACT 1 -> ACT 2 break) demands the wearingGown register == 1, "
-          f"from `rm250.sc:71` `(and (== global12 300) (global0 wearingGown:)) -> sACTBREAK`;\n      "
-          f"  * the only act-1 writer of that register is `sLauraChanges` at rm320 (the speakeasy "
-          f"restroom), whose every entry demands own(32) -- the gown itself.\n      "
-          f"So the gown is not a CARRY across the act boundary at all: it is the boundary's own "
-          f"precondition, and the model is right that you cannot cross without it. It is also not "
-          f"strandable -- rm270 gives it unconditionally, rm250 re-places the laundry ticket while "
-          f"you hold neither ticket nor gown nor gown-worn, and rm250/rm270/rm320 are one "
-          f"strongly-connected act-1 block, so no reachable state loses access. Sierra's own hint "
-          f"file agrees: 'pick up an evening gown at Lo Fat's Laundry then put it on at the "
-          f"speakeasy' is listed as one of the five things that END ACT 1.\n      "
-          f"⚠️ THIS ROW THEREFORE LOOKS LIKE THE THREE `CONTESTED` ONES -- the source contradicts "
-          f"the walkthrough reading it came from -- and it is NOT reclassified here. Report and "
-          f"ask; enumerated ground truth is never flipped to make a change look good. "
-          f"docs/LB2-ORACLE.md §7ab.\n      "
-          f"⚠️ THE PREVIOUS TEXT HERE IS REFUTED, twice over, and is kept nowhere but this note so "
-          f"a stale diagnosis cannot outlive its fix. It said the gap 'goes green when an act-gated "
-          f"`init:` on a door means THIS EDGE IS NOT THERE' -- measured, there are ZERO such sites "
-          f"corpus-wide (§7q/§7r) -- and it credited `reobtainable_rooms._source_live`, which is "
-          f"inert here. What actually closed cheese and snakeOil was letting `register_strandings` "
-          f"walk the JOINT projections (§7y): act 5's two exits kill you on entry, so the way out "
-          f"is the disjunction `12 != 420 OR 123 != 5`, and each alternative passed freely in the "
-          f"scalar projection that could not see the other.")
+    # --- THE FORMER DELIBERATE RED, ✅ PROMOTED 2026-08-10 --------------------------------------
+    # "The act-boundary carries are caught" was declared in tools/run_tests.py KNOWN_RED from this
+    # file's first version. Its five rows were THREE causes, closed in sequence (§7s counter
+    # monotonicity; §7y joint projections), and the last row, eveningGown, was RULED not a
+    # softlock: *"act 2 gate, not a softlock"* [user, 2026-08-10] -- the mechanism pins above are
+    # the evidence, and the row now lives in NEVER_STRANDABLE. The four real carries moved to
+    # EXPECTED_CAUGHT, so the DROP check at the top now guards what this red used to describe.
+    # (Historic diagnoses this check carried and refuted along the way -- the act-gated door
+    # `init:` that measured to zero sites, the `_source_live` credit -- are preserved in
+    # docs/LB2-ORACLE.md §7q/§7r/§7t and the git history of this file, not here.)
 
     promoted = caught & CONTESTED
     if promoted:
@@ -318,8 +332,8 @@ def run():
               f"ruling (docs/LB2-ORACLE.md §8 item 1).")
 
     print(f"\n  caught now: {sorted(caught)}")
-    print(f"  still-missed ground truth: {sorted(still_missed)}")
-    print(f"  contested, awaiting a ruling: {sorted(CONTESTED)}")
+    print(f"  still-missed ground truth: {sorted(KNOWN_GAPS - caught)}")
+    print(f"  contested, checks done, awaiting the user's word: {sorted(CONTESTED)}")
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 

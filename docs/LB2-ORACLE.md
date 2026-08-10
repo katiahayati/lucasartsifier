@@ -258,24 +258,27 @@ state and a *quantity* we cannot.
 | redHair | `rm750` `has: 27` | ditto |
 | grapes | `rm750` `has: 31` | ditto |
 | pressPass | `put: 6` at `Main`, `rm300`, `rm335`; still `has:`-checked at 250/300/335 | `dangerous_sinks`, **not** the act-1→2 carry — the mechanism we catch it by is not the mechanism that makes it real |
+| snakeOil | act 3 `rm630` → acts 4, **5**; empty bottle *destroyed* at the cobra nest (§5a) | `register_strandings` joint row `(12,123)=(26,5)→[730]` — ⭐ **promoted from column B 2026-08-10** |
+| cheese | act 3 `rm650` → act 5 `rm740` | joint row `(26,5)→[740]` — promoted 2026-08-10 |
+| snakeLasso | act 3 `rm640` → act 5 `rm700` | joint row `(26,5)→[700]` — promoted 2026-08-10 |
+| smellingSalts | act 4 `rm525` → act 5 `rm720` | joint row `(26,5)→[720]` + `reg123=5→[720]` — promoted 2026-08-10 |
 
-**B — REAL, AND WE MISS IT** (the act-boundary carries; §7 says why)
+**B — REAL, AND WE MISS IT** — ✅ **EMPTY since 2026-08-10.** The four real act-boundary carries
+are caught (rows above); the fifth, **eveningGown, was RULED not a softlock**: *"evening gown:
+act 2 gate, not a softlock"* [user, 2026-08-10]. The derived mechanism (§7ab): the act 1→2 break
+itself demands `wearingGown`, whose only act-1 writer costs the gown — the boundary's own
+precondition, unstrandable, now pinned in `NEVER_STRANDABLE`. ⚠️ The one column-B *debt* left is
+not an item: the ruled-in-scope **empty-bottle-at-act-5 death** (`global150 == 0` crossing into
+act 5) has no detector — §8.
 
-| item | obtained | needed | consequence of arriving without it | evidence |
-|---|---|---|---|---|
-| snakeOil | act 3 `rm630` | acts 4, **5** | cobra nest impassable; empty bottle is *destroyed* (§5a) | source + Sierra hints + LP |
-| cheese | act 3 `rm650` (`(not (has: 16))` respawn — but `rm650` is act 3/4) | **5** | the rats are impassable | source + all walkthroughs |
-| snakeLasso | act 3 `rm640` (respawns in `rm640`) | **5** | cannot reach the mummy-case hook | source + all walkthroughs |
-| smellingSalts | act 4 `rm525` (respawns in `rm525`) | **5** | Steve cannot be revived | source + all walkthroughs |
-| eveningGown | act 1, Lo Fat's | 2 | no entry to the fundraiser | walkthroughs; **no `get:` site extracted**, so the source end is unmodelled too |
+**C — CONTESTED: the source contradicts the walkthroughs. CHECKS DONE 2026-08-10, awaiting the
+user's final word** (§8 item 1; the user delegated the check: *"should be checked"*)
 
-**C — CONTESTED: the source contradicts the walkthroughs. NEEDS A USER RULING (§8)**
-
-| item | walkthroughs say | the source says |
+| item | user's play-side shape (2026-08-10) | what the source check found |
 |---|---|---|
-| workBoot | miss it in act 4 → unwinnable (LP part 12) | `rm720` (the act-5 room that uses it) re-places it under `(not (has: 12))` with a working `sGetBoot` |
-| wire | clip it in act 3 or the act-5 door cannot be wired | `rm430`'s `wireEnd` inits under `(or (> global123 3) …)` and `(not flag44)`, and `sGetThatWire` has an explicit `(== global123 5)` branch — so it is cuttable *in act 5* |
-| dinoBone | act 3 only; needed act 4 to break the statue | `rm480:79` `(if (not (global0 has: 18)) (bone init: stopUpd:))` — no act test on that line. Whether `rm480` is reachable in act 4 is **unresolved** and needs the act partition |
+| workBoot | obtainable act 4, then act 5 is the chase; used in act 5; *"I don't know if it's still available in act 5"* | **available at the point of use**: `rm720:46` re-places it with NO act test, `rm720` IS the act-5 use room (verb 23 on `steve` → `put: 12` + `sGetUp`), both `sGetBoot` armings are plain takes, and `rm720` carries the act-5 chase costume branch (`view 426`) → SAFE by source |
+| wire | *"same shape as the boot… I'm guessing it's really a softlock"* | source disagrees: sourced AND used at `rm430`; `wireEnd` inits acts 4 **and 5** (`(> global123 3)`, act 3 under its progress flag; `(not flag44)` = not already cut); `sGetThatWire` dresses the ego in the act-5 running `view 426`; the use (`sWireItShut`) is act-5-only. Arrive wireless → cut a fresh one at the door, **if you hold the wireCutters** — the strandable link is the CUTTERS, already column A |
+| dinoBone | obtained act 2, used later, availability unknown | `rm480:79` respawn guard, NO act test; the bone is **never consumed** (zero `put: 18` sites); real uses `rm500` (`sSmashPlaster`, self-limited to acts ≤4), `rm600` (`sBreakGlass`), `rm650` (`sDisarmTrap`) — all in `rm480`'s museum block → SAFE by source |
 
 **D — OUT OF SCOPE BY THE 2026-07-26 RULING** (their absence from `s.required` is correct)
 
@@ -322,19 +325,24 @@ modelled. That is recorded here, not gated on, pending §8.
 
 ---
 
-## 7. WHERE WE ARE — the short version (2026-08-09)
+## 7. WHERE WE ARE — the short version (2026-08-10)
 
-> ⛔ **CORRECTED TWICE. Read §7u, then §7y.** §7u (re-measured 2026-08-09) put column B at **1 of
-> 5**, not 2 — `snakeLasso` was caught by a `fatal_uses` false positive about the mummy room, not by
-> the act-5 confinement — and established that the remaining act-5 work is **two edges**, not the
-> control-map-class project §8 item 4 assumes. §7y (later the same day) then closed cause #2 by
-> letting `register_strandings` walk the JOINT projections, taking column B to **3 of 5**. The
-> `skeletonKey` FP is untouched by both and needs §7u.2's blame fix.
+> ⛔ **This section's history corrected itself twice (§7u, §7y) before closing.** §7u put column B
+> at 1 of 5 (snakeLasso had been "caught" by a `fatal_uses` FP); §7y took it to 3 of 5 by walking
+> the joint projections; §7ab landed the last two blockers and the 2026-08-10 rulings settled the
+> remainder.
 
-**Column A 6 of 6 · Column B 3 of 5 · Column C 0 of 3 (contested, awaiting a ruling).**
-⚠️ One open false positive: **`skeletonKey`**, which has NO source in the model (§5 already noted
-"no `get:` site extracted"). It is item 8, one of the 13 variadic-`get:` sites, so cause #3 clears
-it — and cause #3 is blocked, see below.
+**Column A 10 of 10 · Column B EMPTY (closed 2026-08-10) · Column C: checks done, awaiting the
+user's word (§8 item 1).** The four real act-boundary carries were PROMOTED into column A;
+eveningGown was RULED an act gate (§8 item 5) and is pinned `NEVER_STRANDABLE`; the former
+KNOWN_RED is promoted and deleted.
+⚠️ One open false positive: **`skeletonKey`** — flagged by `fatal_uses` at rm630 with an
+applied=True placement row and a `(not (gEgo has: 8))` action spec, i.e. a PROHIBITION at its real
+use site (Spinach_Dip shape if LB2 guards ever shipped — they do not). Needs §7u.2's blame fix
+("a state that waits on the clock can be pre-empted by a reachable arming of a non-doomed machine
+on the same receiver"); ⚠️ the naive form deletes KQ6's lingering-timer deaths — measure first.
+⚠️ One in-scope death with NO detector: **entering act 5 with `global150 == 0`** (the empty
+snake-oil bottle, ruled 2026-08-09) — the caught snakeOil row is the ITEM carry, not this.
 Nothing safe is flagged, so the false-positive side is clean. The five misses turned out to be
 **three independent causes**, all diagnosed and measured:
 
@@ -1534,12 +1542,17 @@ controllable crossing of act 5, not the act break itself.
 
 ## 8. OPEN — needs a user ruling
 
-1. **The three CONTESTED rows (§5 column C).** The source says workBoot and wire are obtainable in
-   the act that uses them, contradicting the walkthroughs and the Let's Play. Our own authority
-   order says the source wins, which would move them to column E (safe) — but they are in the
-   twelve-item list this project has been carrying since 2026-07-26, and
-   [[dont-flip-enumerated-ground-truth]] says report and ask rather than reclassify. **Asking.**
-   dinoBone is genuinely unresolved and needs the act partition either way.
+1. **The three CONTESTED rows (§5 column C) — CHECKS DONE 2026-08-10, awaiting the final word.**
+   The user delegated the check (*"should be checked"*) with the play-side shape per item, and the
+   source was read end to end for all three (findings in the column-C table). All three resolve to
+   the SAME idiom: the respawn guard sits in (or beside) the very room that uses the item, with no
+   act test, and all three rooms carry the game's own act-5 chase costume (`view 426`) — the
+   designers handled the mid-chase case deliberately. Proposed: **all three → column E (safe)**;
+   the wire's strandable link is the wireCutters (already column A), and the act-5 jeopardy on all
+   three is the chase clock, i.e. the ruled-out-of-scope death class. ⚠️ The wire finding
+   CONTRADICTS the user's guess ("I'm guessing it's really a softlock"), so the rows stay
+   contested until the user says move them. Caveat stated plainly: this is a source reading, not a
+   play test.
 2. ✅ **RULED 2026-08-09 — deaths ARE in scope, when unavoidable given earlier state.** User:
    *"this is analogous to the other games… yes they're in scope, if they're unavoidable given
    earlier state (the snake oil). The chase and looking both ways are not in scope."* The
@@ -1557,18 +1570,12 @@ controllable crossing of act 5, not the act break itself.
    exits were worth a control-map-class effort. There are ZERO act-gated door inits corpus-wide
    (§7q/§7r), so the work it proposed does not exist; and the actual remaining act-5 piece was two
    edges, closed in §7y by walking the joint projections. Nothing to rule on.
-5. ⭐ **NEW 2026-08-10 — is `eveningGown` a softlock at all?** It sits in §5 column B ("real, and
-   we miss it"), on the walkthrough reading *"you need it in act 2, so missing it in act 1 strands
-   you"*. With the variadic `get:` and the ego-property store both landed, the model derives the
-   real mechanism and it is a different one (§7ab): **the act 1→2 break itself demands
-   `wearingGown`**, and the only act-1 writer of that property costs item 32. So the gown is the
-   boundary's precondition, not a carry across it — and nothing in act 1 can take it away from
-   you (unconditional source at rm270, the ticket re-places itself at rm250, and 250/270/320 are
-   one strongly-connected block). Sierra's own hint file lists putting it on among the five things
-   that END act 1. **Same shape as item 1's contested rows, so the same treatment: reported, not
-   reclassified.** If you agree it is safe, it moves to column E and the KNOWN_RED check goes with
-   it; if it is real, the mechanism that makes it real is not in the scripts I have read and I
-   need to know what it is. **Asking.**
+5. ✅ **RULED 2026-08-10 — eveningGown is an act gate, not a softlock.** User: *"evening gown:
+   act 2 gate, not a softlock."* Applied in full: the row left column B (now EMPTY — the four real
+   carries were promoted to column A), the item moved to `NEVER_STRANDABLE` in the oracle test,
+   and the KNOWN_RED check *"the act-boundary carries are caught"* was **promoted and deleted**
+   per the run_tests contract. The mechanism that earned the ruling stays pinned green (the
+   wearingGown gate + its gown-priced writer, §7ab).
 6. **`reobtainable_rooms._source_live` is inert on LB2** (§7h). It is correct, general, and the
    register form of a rule the codebase already applies to the previous-room register — but on
    today's corpus it changes nothing, so it is groundwork for item 4 rather than a result. Keep it

@@ -139,35 +139,17 @@ KNOWN_RED = {
         # not-missable, unholdable-cannot-strand; SINGLETON-only -- the group form deletes LSL2's
         # play-validated raft guard and is ruled out). `pipeline --report` exits 0 on KQ6.
     },
-    "test_lb2_ground_truth.py": {
-        "🔴 KNOWN GAP (LB2): the act-boundary carries are caught":
-            "4 of 5 CLOSED. The five were THREE INDEPENDENT CAUSES and two are now shut "
-            "(docs/LB2-ORACLE.md §7, the summary table). "
-            "✅ smellingSalts (§7s): the act register could run BACKWARDS -- `rm630`'s bare "
-            "`(= global123 4)` had no recoverable from-value, so the model stood at act 5, wound "
-            "the act back to 4 and walked to rm525. Cured by the counter-monotonicity pass in "
-            "`_build_product`. "
-            "✅ cheese/snakeOil, and snakeLasso for the right reason (§7y): act 5 is an 11-room "
-            "pursuit region whose only two exits run `sLauraDies` on entry, so the way out is the "
-            "DISJUNCTION `12 != 420 OR 123 != 5` -- and `register_strandings` walked the SCALAR "
-            "projections, in each of which the other alternative passes freely. It now walks "
-            "`self.proj`, the joints included. The joint `(12, 123)` was already being built and "
-            "nothing was reading it. "
-            "❌ eveningGown, the one left, and it is NOT an act gap -- NOR, on the evidence now "
-            "in, a CARRY. Both blockers this entry used to name are gone (2026-08-10): the "
-            "variadic `get:` read landed, so the item has its real source rm270, and the "
-            "ego-property store landed, so `wearingGown` is a register. With both, the model "
-            "derives the whole mechanism: `rm250 -> rm26`, the ACT 1 -> ACT 2 break, DEMANDS "
-            "wearingGown == 1 (`rm250.sc:71`), and the only act-1 machine that writes it is "
-            "rm320's `sLauraChanges`, whose every entry demands own(32). So the gown is the act "
-            "boundary's own PRECONDITION, not something carried across it -- and it is not "
-            "strandable, because rm250/rm270/rm320 are one strongly-connected act-1 block and "
-            "both the gown and the laundry ticket re-place themselves. Sierra's hint file lists "
-            "putting it on as one of the five things that END act 1. "
-            "⚠️ THIS ROW IS THEREFORE A CANDIDATE FOR THE `CONTESTED` COLUMN and is deliberately "
-            "NOT reclassified: enumerated ground truth is reported, never flipped. It stays RED "
-            "until the user rules. docs/LB2-ORACLE.md §7ab.",
-    },
+    # ✅ PROMOTED 2026-08-10 -- "test_lb2_ground_truth.py: the act-boundary carries are caught" is
+    # no longer red. The five rows were THREE causes plus one misclassification: §7s (the act
+    # register could run backwards) closed smellingSalts; §7y (register_strandings walks the
+    # JOINT projections) closed cheese, snakeOil and snakeLasso; and eveningGown was RULED by the
+    # user -- "act 2 gate, not a softlock" -- once the model derived the whole mechanism (the
+    # ACT 1 -> ACT 2 break itself demands `wearingGown`, whose only act-1 writer costs the gown;
+    # docs/LB2-ORACLE.md §7ab). The four real carries now sit in EXPECTED_CAUGHT, where a drop is
+    # a loud regression; the gown sits in NEVER_STRANDABLE, where flagging it is an FP. LB2's one
+    # OUTSTANDING failure -- the `skeletonKey` FP tripping the suspicion check -- is deliberately
+    # NOT declared here: it is a defect being fixed, not a limitation being tracked, and declaring
+    # it red would stop the suite from reporting the day it silently changes shape.
 }
 
 CHECK = re.compile(r"^\s*\[(PASS|FAIL)\]\s*(.*?)\s*$")
