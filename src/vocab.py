@@ -549,6 +549,77 @@ if __name__ == "__main__":
 RESTART_SELECTORS = ("restart", "restore")
 
 
+def derive_control_selectors(ir):
+    """{selector: 'restore' | 'take'} -- the Game hierarchy's own player-control switches.
+
+    The engine spells player control as properties of the User class, written by methods of the
+    Game class -- SCI1.1's `Game::handsOn` is literally `(User canControl: 1 canInput: 1)` -- and
+    a game subclass keeps the selector when it overrides the body (KQ6 adds icon-bar bookkeeping,
+    LB2 routes through its own User global). So the selectors are DERIVED, not declared: a method
+    of a Game-descendant class qualifies when its body writes constant 0/1 to a property the User
+    class INTRODUCES (inherited props like `x` are other classes' business), on a receiver that
+    IS the User class or a global holding one of its instances, and the constant says which way
+    the switch points. Same evidence tier as `game_objects` / `RESTART_SELECTORS`: the engine
+    class table, because `Game` and `User` are the engine's own names for these anchors.
+
+    MEASURED: LSL2 {} and KQ4 {} (SCI0 rooms write User directly; everything built on this is
+    inert there by construction); KQ6 and LB2 both {'handsOn': 'restore', 'handsOff': 'take'}."""
+    user, game = ir.find_class("User"), ir.find_class("Game")
+    if user is None or game is None:
+        return {}
+    # The control switches are User's own vocabulary in BOTH spellings: SCI0 declares `canInput`
+    # as a property and `canControl` as a method; SCI1.1 makes both methods over a state word.
+    # Either way the NAME is declared on the User class itself, which is the whole test.
+    uprops = (_class_introduces(ir).get(user.species, frozenset())
+              | frozenset(user.methods))
+    if not uprops:
+        return {}
+    species = {game.species}
+    changed = True
+    while changed:                                     # Game's subclass closure
+        changed = False
+        for s in ir.scripts.values():
+            for o in s.objects:
+                if o.is_class and o.super in species and o.species not in species:
+                    species.add(o.species)
+                    changed = True
+    ginst = _global_instances(ir)
+
+    def _user_recv(recv):
+        if isinstance(recv, dict) and recv.get("t") in ("Object", "Class"):
+            return recv.get("name") == user.name
+        if isinstance(recv, dict) and I.is_global(recv):
+            hit = ginst.get(recv["index"])
+            return hit is not None and (hit[0].species == user.species
+                                        or hit[0].super == user.species)
+        return False
+
+    out = {}
+    for s in ir.scripts.values():
+        for o in s.objects:
+            if not (o.species in species if o.is_class else o.super in species):
+                continue
+            for sel, body in o.methods.items():
+                vals = set()
+                for n in I.walk(body):
+                    if n.get("t") != "Send":
+                        continue
+                    try:
+                        recv, msgs = I.send_pairs(n)
+                    except Exception:                  # noqa: BLE001
+                        continue
+                    if not _user_recv(recv):
+                        continue
+                    for s2, ps in msgs:
+                        if s2 in uprops and ps and I.as_int(ps[0]) in (0, 1):
+                            vals.add(I.as_int(ps[0]))
+                if vals == {1}:
+                    out[sel] = "restore"
+                elif vals == {0}:
+                    out.setdefault(sel, "take")
+    return out
+
+
 def game_objects(ir):
     """Objects whose class is (or descends from) the engine `Game` class."""
     game = ir.find_class("Game")

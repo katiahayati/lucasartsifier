@@ -1322,7 +1322,7 @@ def _complementary(a, b):
             or (isinstance(y, GNot) and y.kid == x))
 
 
-def _survivable(info, unavoidable, handoff, start=None):
+def _survivable(info, unavoidable, handoff, start=None, preempt=frozenset()):
     """Is there ANY way through this machine, FROM STATE `start`, that does not end in death?
 
     Per ENTRY, not per machine, because one machine routinely serves both roles. KQ6's
@@ -1372,11 +1372,28 @@ def _survivable(info, unavoidable, handoff, start=None):
                 if m in unavoidable and not _ctr_contradicted(g, known)}
 
     hands_to_death = any(_lethal_handoff(K) for (a, K) in handoff if a == inst)
+    # A state that RESTORES PLAYER CONTROL and then waits is PRE-EMPTABLE: the machine occupies
+    # a `setScript:` slot, so arming any competitor into the same slot disposes it, pending death
+    # and all -- the same slot-race semantics `death_traps` is built on, seen from inside the
+    # machine. LB2's `sUnlockTrunk` is the case: state 6 does `handsOn:` + `(= seconds 6)`, and
+    # the player who uses the meat arms `sInsertMeat` (same slot, not doomed) before the ferrets
+    # wake -- so using the skeleton key is the SOLUTION, not a fatal use, and the meat's own cost
+    # rides sInsertMeat's entry like any other requirement. `preempt` is the competitor set the
+    # caller computed from `entry_recv`; membership in `unavoidable` is re-checked here because
+    # the caller's fixpoint grows it -- a competitor that turns out doomed pre-empts nothing.
+    # `restores_control` is derived (vocab.derive_control_selectors) and empty on SCI0, so this
+    # cannot move LSL2/KQ4; and a machine that never hands control back (KQ6's throwSkull) is
+    # exactly as condemned as before.
+    restored = info.get("restores_control") or set()
     safe, changed = set(), True
     while changed:
         changed = False
         for K, paths in states.items():
             if K in safe:
+                continue
+            if K in restored and (preempt - unavoidable):
+                safe.add(K)
+                changed = True
                 continue
             # A state that hands the room's script slot to a death is not safe by ANY path: the
             # `setScript:` replaces whatever this machine would have done next.
@@ -2823,8 +2840,20 @@ class IrSccReach(SccReach):
             if room not in self.reach_rooms:
                 continue
             _arms, _fatal, doomed, handoff = _trap_graph(infos)
+            # Same-slot competitors, for the pre-emption rule in `_survivable`: the slot a
+            # machine's arming wrote (`entry_recv`) is the slot a rival `setScript:` steals.
+            slots = defaultdict(set)
+            for i in infos:
+                for rc in (i.get("entry_recv") or ()):
+                    if rc is not None:
+                        slots[rc].add(i["inst"])
+
+            def _preempt(i):
+                return frozenset(m for rc in (i.get("entry_recv") or ()) if rc is not None
+                                 for m in slots[rc] if m != i["inst"])
             unavoidable = {i["inst"] for i in infos
-                           if i["inst"] in doomed and not _survivable(i, doomed, handoff)}
+                           if i["inst"] in doomed
+                           and not _survivable(i, doomed, handoff, preempt=_preempt(i))}
             # ...and settle the mutual dependency the same way `_trap_graph` settles `doomed`: a
             # state that hands off to a machine we have just condemned is not an escape either.
             changed = True
@@ -2833,7 +2862,7 @@ class IrSccReach(SccReach):
                 for i in infos:
                     if i["inst"] in unavoidable or i["inst"] not in doomed:
                         continue
-                    if not _survivable(i, unavoidable, handoff):
+                    if not _survivable(i, unavoidable, handoff, preempt=_preempt(i)):
                         unavoidable.add(i["inst"])
                         changed = True
             for info in infos:
@@ -2843,7 +2872,8 @@ class IrSccReach(SccReach):
                 # survivable: LSL2's bore talks you to death from state 0 and is SHUT UP by
                 # `(boreScript changeState: 10)`, which is what giving him the pamphlet does.
                 lethal = [(K, g) for K, g in (info.get("entries") or ())
-                          if not _survivable(info, unavoidable, handoff, start=K)]
+                          if not _survivable(info, unavoidable, handoff, start=K,
+                                             preempt=_preempt(info))]
                 if not lethal:
                     continue
                 # WHAT NO LETHAL ARMING AVOIDS -- `entry_musts` read over the fatal entries. An

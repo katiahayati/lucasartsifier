@@ -681,6 +681,7 @@ class OpEmitter:
                 "entry_armers": m.entry_armers, "entry_recv": m.entry_recv,
                 "entry_sources": m.entry_sources,
                 "local_regs": dict(getattr(m, "local_regs", None) or {}),
+                "restores_control": set(getattr(m, "restores_control", None) or ()),
                 "start": m.start, "delivered": delivered, "drops": drops}
 
     def edge_hit_registers(self):

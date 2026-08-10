@@ -337,12 +337,11 @@ modelled. That is recorded here, not gated on, pending §8.
 user's word (§8 item 1).** The four real act-boundary carries were PROMOTED into column A;
 eveningGown was RULED an act gate (§8 item 5) and is pinned `NEVER_STRANDABLE`; the former
 KNOWN_RED is promoted and deleted.
-⚠️ One open false positive: **`skeletonKey`** — flagged by `fatal_uses` at rm630 with an
-applied=True placement row and a `(not (gEgo has: 8))` action spec, i.e. a PROHIBITION at its real
-use site (Spinach_Dip shape if LB2 guards ever shipped — they do not). Needs §7u.2's blame fix
-("a state that waits on the clock can be pre-empted by a reachable arming of a non-doomed machine
-on the same receiver"); ⚠️ the naive form deletes KQ6's lingering-timer deaths — measure first.
-✅ **The empty-bottle death IS now caught** (2026-08-10, later): `register_value_strandings` —
+✅ **The `skeletonKey` FP IS DEAD** (2026-08-10, latest) — §7ad. The oracle test is **9 of 9
+GREEN**: every real softlock caught, zero false positives, zero declared reds. With it died the
+armed remedy it carried (the `(not (gEgo has: 8))` action spec and the rm630 applied placement —
+a prohibition at the key's real use site, the Spinach_Dip shape).
+✅ **The empty-bottle death IS caught** (2026-08-10, later): `register_value_strandings` —
 see §7ac. One row corpus-wide: `reg150==[0]@seal(12,123)→[730]`.
 Nothing safe is flagged, so the false-positive side is clean. The five misses turned out to be
 **three independent causes**, all diagnosed and measured:
@@ -461,6 +460,34 @@ to the "honest disjunction" row — measured, still acts 1–5 in the street blo
 arrival taxi being driven **off-screen** by `sTaxiLeave` (`MoveTo 369 125`, x beyond the 320-wide
 screen) under `handsOff:`, so it can never be verbed. That is a POSITION mechanism and is still
 unmodelled. **Do not re-read §7aa as if the store were the street's cure; it is the ACT GATE's.**
+
+### ⭐⭐ §7ad. THE skeletonKey FP IS DEAD — a hands-on wait is pre-emptable (2026-08-10, latest)
+
+**The FP**: `fatal_uses` condemned `skeletonKey@rm630/sUnlockTrunk` — every lifted path of the
+unlock reaches state 10's `global145 := 1` + `newRoom: 99` (the ferrets). **The truth**: state 6
+does `(global1 handsOn:)` + `(= seconds (if (HaveMouse) 6 else 12))` — control comes BACK with a
+clock running — and using the meat arms `sInsertMeat` into the same `('G', 2)` slot, disposing the
+pending death. Unlocking the trunk is the *solution*; the meat's cost rides sInsertMeat's own
+entry (`own(9)`), as a requirement should.
+
+**The rule, all three parts derived:**
+1. `vocab.derive_control_selectors` — the Game hierarchy's control switches, found as methods
+   writing constant 0/1 to names the USER class itself declares (property or method — SCI0 spells
+   `canInput` as a property, SCI1.1 makes both methods). LSL2/KQ4 derive no restore selector, so
+   the whole feature is inert on SCI0 by construction. KQ6/LB2: `handsOn → restore`.
+2. `machine._restores` marks a state ONLY when it pairs a restore send with a write to the
+   engine Script class's own cue clock (`seconds`/`ticks`/`cycles`… — read off `Script::doit`'s
+   countdowns, not listed). ⚠️ **The restore send alone was the warned naive form and it did
+   exactly what the warning said**: every SCI1.1 cutscene ends with a `handsOn:`, so marking
+   those made every doomed machine pre-emptable and KQ6's fatal_uses went to zero in one
+   measurement. Restore∧clock = "you are free, and something is coming" — the window is the fact.
+3. `_survivable(…, preempt=)` — a marked state is safe when a same-slot competitor
+   (`entry_recv`) is not itself in the evolving `unavoidable` set: the slot-race semantics
+   `death_traps` is already built on, seen from inside the machine. Only `fatal_uses` passes
+   `preempt`; `death_traps` is untouched, so the lingering-timer death class keeps its prices.
+
+**Measured**: LSL2/KQ4/KQ6 snapshots byte-identical (KQ6's `skull@rm420/throwSkull` survives —
+it never hands control back); LB2 loses exactly the skeletonKey rows. **The oracle is 9/9.**
 
 ### ⭐⭐ §7ac. THE EMPTY BOTTLE IS CAUGHT — `register_value_strandings`, the register twin of the item rows (2026-08-10, later)
 
