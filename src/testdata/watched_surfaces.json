@@ -152,10 +152,10 @@
     "joint": [],
     "placements": [
       "rm210: applied=True kind=setscript sites=1",
-      "rm26->rm330: applied=False kind=sole-exit why=no controllable trigger (sole-exit) and no room-property exit",
-      "rm26->rm355: applied=False kind=sole-exit why=no controllable trigger (sole-exit) and no room-property exit",
-      "rm26->rm420: applied=False kind=sole-exit why=no controllable trigger (sole-exit) and no room-property exit",
-      "rm26->rm750: applied=False kind=sole-exit why=no controllable trigger (sole-exit) and no room-property exit",
+      "rm26->rm330: applied=True kind=entry-deferral-PARTIAL sites=4 entry_sites=4",
+      "rm26->rm355: applied=True kind=entry-deferral-PARTIAL sites=4 entry_sites=4",
+      "rm26->rm420: applied=True kind=entry-deferral-PARTIAL sites=4 entry_sites=4",
+      "rm26->rm750: applied=True kind=entry-deferral-PARTIAL sites=4 entry_sites=4",
       "rm280: applied=True kind=setscript sites=1",
       "rmNone->rmNone: applied=False kind=None why=no free-running trap write found"
     ],

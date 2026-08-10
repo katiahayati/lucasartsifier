@@ -508,6 +508,111 @@ def commit_entry_frontier(s, room):
                   if room in bs and a != room and a in outside)
 
 
+def defer_to_entry(s, sp):
+    """A demand refused at a SOLE-EXIT pocket, re-sited: the register stage that discriminates
+    the spec's crossing, and the pocket's predecessor rooms where that stage is presentable AND
+    the demand is still satisfiable. None when the crossing cannot be discriminated -- a
+    stage-less deferral would gate EVERY entry to the pocket, including the crossings this
+    demand says nothing about.
+
+    The site list is ALL predecessors, deliberately NOT `commit_entry_frontier`: that frontier
+    is built for a one-visit pocket (rooms crossing in from `reach_avoiding`), and a game that
+    STARTS behind its own act-break card (LB2: the intro's 0->1 break) makes the whole game
+    "inside the pocket", leaving only the intro rooms. A sole-exit pocket is a different shape:
+    every entry is a fresh committed crossing, so every predecessor is a candidate refusal
+    site, and what protects the player is not the frontier but the two per-site filters --
+    the stage (a wrap at the wrong act is vacuous by the game's own register) and COMPLIANCE
+    (`unsatisfiable` at the site's own crossing: a site where the demanded items can no longer
+    be sourced is refused, because a demand you cannot meet is a wall, the failure this project
+    holds to be worse than the softlock).
+
+    LB2's act-break card is the shape this exists for: script 26 holds exactly one `newRoom:`,
+    inside the very cutscene an arm-event would decline to start, so a refusal in place leaves
+    the player on the title card with nothing left to run (docs/LB2-ORACLE.md §7i, measured by
+    reading the emitted source). The controllable moment is the crossing INTO the card -- the
+    same doctrine as the arrival-commit re-site -- and what distinguishes "the act-1 break" from
+    "the act-4 break" there is not position but register state: the out-edge's own `_emeta`
+    requirement (the act counter), the discriminator the landing propagation already spells as
+    `(or (not <stage>) <demand>)`.
+
+    Positional registers (previous-room, current-room) are dropped from the stage for the same
+    reason `_guard_arrival_entries` drops prev-room clause heads: at the frontier they name
+    where the player is standing NOW, which is never the pocket. Beyond that the reading is
+    STRICT in the refusing direction: every meta alternative must yield a non-empty stage of
+    single-valued, spellable registers, or the whole deferral returns None -- one stage-free or
+    unspellable way through means the demand cannot be scoped, and an under-stage gates
+    crossings the spec says nothing about."""
+    import extract as X
+    a, b = sp["from_room"], sp["to_room"]
+    positional = {M.prev_room_reg(s.em), getattr(X, "_CURROOM", None)}
+    alts, conds = [], []
+    for (req, _sets, _alt) in s._emeta.get((a, b), ()):
+        keep = {R: vs for R, vs in req.items() if R not in positional}
+        if not keep or any(len(vs) != 1 for vs in keep.values()):
+            return None
+        musts = {R: next(iter(vs)) for R, vs in keep.items()}
+        cond = _stage_spelling(s, musts)
+        if cond is None:
+            return None
+        if cond not in conds:
+            alts.append(musts)
+            conds.append(cond)
+    if not conds:
+        return None
+    stage = conds[0] if len(conds) == 1 else "(or %s)" % " ".join(conds)
+    rec = {"items": set(sp.get("items") or ()), "groups": [set(g) for g in sp.get("groups") or ()]}
+    rooms = []
+    for r in sorted(x for x, bs in s.edges.items() if a in bs and x != a):
+        # STAGE presentability: a site that can never stand at the stage would carry a dead
+        # guard (on LB2 this is what keeps act-break wraps out of the intro rooms, whose ESC
+        # skip crosses at act 0 only)...
+        if not any(all((r, v) in s._pstates.get(R, ()) for R, v in musts.items())
+                   for musts in alts):
+            continue
+        # ...and COMPLIANCE at the site's own crossing, the same question the spec itself was
+        # asked at its edge: refusing where the player can no longer comply is a wall.
+        if unsatisfiable(s, r, a, rec):
+            continue
+        rooms.append(r)
+    if not rooms:
+        return None
+    return {"stage": stage, "rooms": rooms}
+
+
+def _stage_spelling(s, musts):
+    """`_render_reg_equals` plus the ONE case a stage may add: a promoted PLAIN global.
+
+    `render_register` refuses real globals, and for a DEMAND that is right: a demand is the
+    game being made to test something, and only a store's own reversal proves the game reads
+    that register in that spelling. A STAGE is a weaker claim -- it scopes OUR refusal to the
+    crossing the spec means -- and for a promoted gating register the game's own tests are the
+    promotion evidence (LB2 reads global123 at 239 sites, by equality; that is why it is a
+    register at all). So a register no store lowering claims, below the synthetic base, promoted,
+    and demanded at a value the walk itself reaches, is spelled directly as `(== globalN v)`.
+    Everything else still refuses -- a guessed stage gates crossings the spec says nothing
+    about. Kept OUT of `render_register` on purpose: widening the demand spelling corpus-wide
+    is its own change with its own measurement, not a rider on the sole-exit deferral."""
+    got = _render_reg_equals(s, musts)
+    if got is not None:
+        return got
+    ir = getattr(s.em, "ir", None)
+    claimed = set()
+    for name in ("_obj_prop_index", "_room_local_index", "_prop_flag_index",
+                 "_mask_global_index"):
+        claimed |= set(getattr(ir, name, {}) or {})
+    base = getattr(ir, "flag_synth_base", None)
+    terms = []
+    for R, v in sorted(musts.items()):
+        t = render_register(s, R, v)
+        if t is None:
+            if (R in claimed or (base is not None and R >= base) or R not in s.regs
+                    or not any(vv == v for (_r, vv) in s._pstates.get(R, ()))):
+                return None
+            t = f"(== global{R} {v})"
+        terms.append(t)
+    return terms[0] if len(terms) == 1 else "(and " + " ".join(terms) + ")"
+
+
 def unholdable_at(s, a, b, items):
     """Of `items`, those you CANNOT be holding when you cross a->b -> `{item: why}`.
 

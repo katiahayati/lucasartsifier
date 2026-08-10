@@ -176,7 +176,8 @@ def main(argv=None):
     edits = P.apply_sink_remedies(dest, sinks, titles)
     gedits = P.apply_guards(dest, specs, titles, nums, s_drops=lambda it: s.drops.get(it, set()),
                             rooms=set(s.rooms),
-                            entry_frontier=lambda r: G.commit_entry_frontier(s, r))
+                            entry_frontier=lambda r: G.commit_entry_frontier(s, r),
+                            defer_info=lambda sp: G.defer_to_entry(s, sp))
     for e in edits + gedits:
         where = e.get("title") or (f"rm{e['from_room']}->rm{e['to_room']}" if "from_room" in e
                                    else f"script{e.get('script', '?')}")

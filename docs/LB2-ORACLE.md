@@ -345,6 +345,10 @@ a prohibition at the key's real use site, the Spinach_Dip shape).
 user's word; the oracle retrofitted to MECHANISM PINS (whole rows, per the 2026-08-09 ruling);
 and the STREET SEAL declared as the file's one deliberate red — so "zero declared reds" above is
 now, deliberately, one.
+✅ **Remediation round 1** (2026-08-10, later) — §7af: the SOLE-EXIT DEFERRAL lands and all four
+act-break demands PLACE (`entry-deferral-PARTIAL`, stage-scoped on the game's own act register).
+⚠️ Two of the four rest on the street-seal gap and would wall if shipped — they retract when the
+seal lands; nothing ships. Open: the register-write hold and the joint rows' specs.
 ✅ **The empty-bottle death IS caught** (2026-08-10, later): `register_value_strandings` —
 see §7ac. One row corpus-wide: `reg150==[0]@seal(12,123)→[730]`.
 Nothing safe is flagged, so the false-positive side is clean. The five misses turned out to be
@@ -492,6 +496,58 @@ entry (`own(9)`), as a requirement should.
 
 **Measured**: LSL2/KQ4/KQ6 snapshots byte-identical (KQ6's `skull@rm420/throwSkull` survives —
 it never hands control back); LB2 loses exactly the skeletonKey rows. **The oracle is 9/9.**
+
+### ⭐ §7af. REMEDIATION ROUND 1 — the SOLE-EXIT DEFERRAL: all four act-break demands now PLACE (2026-08-10, later)
+
+**The rule** (`guards.defer_to_entry` + `patcher.apply_guards(defer_info=)`): a demand whose
+trigger resolves to `sole-exit` — the pocket's one `newRoom:` lives inside the cutscene the wrap
+would refuse to arm, so refusing in place strands the player on the card (§7i) — is re-sited to
+the pocket's PREDECESSOR rooms as `(or (not <stage>) <demand>)`. This is the demand-side twin of
+the prohibition deferral (the Spinach_Dip raft) and reuses the arrival-commit re-site machinery
+(`_guard_arrival_entries`) with the stage passed in rather than read off proc-call heads.
+
+Three derivations, each refusing rather than guessing:
+- **The stage is the out-edge's own `_emeta` requirement** (positional registers dropped, exactly
+  as the KQ6 re-site drops prev-room clause heads): the act-break card's crossings are not
+  distinguishable by position at the entry sites, but the game's own register state names each
+  one — `rm26->rm330` is `(== global123 1)`. Any meta alternative that is stage-free,
+  multi-valued, or unspellable refuses the whole deferral: an under-stage gates crossings the
+  spec says nothing about.
+- **A promoted PLAIN global may spell its own stage** (`_stage_spelling`): `render_register`
+  refuses real globals for DEMANDS, rightly — only a store's reversal proves the game's reading —
+  but a promoted gating register's promotion IS the evidence (LB2 tests `global123` at 239
+  sites), so a register no lowering claims, below the synthetic base, at a walk-reached value,
+  spells directly. Deliberately NOT widened into `render_register`; that is its own measured
+  change.
+- **The site list is ALL predecessors, not `commit_entry_frontier`** — a game that STARTS behind
+  its own act-break card (the intro's 0→1 break) makes `reach_avoiding` call the entire game
+  "inside the pocket", leaving only the intro rooms. Every entry to a sole-exit pocket is a fresh
+  committed crossing; what protects the player is the per-site pair of filters: stage
+  presentability (`_pstates` — this is what keeps the wraps out of the intro rooms, which only
+  ever cross at act 0) and COMPLIANCE (`unsatisfiable` at the site's own crossing — a site where
+  the demand can no longer be met is refused, because a demand you cannot meet is a wall).
+
+**Measured**: LSL2/KQ4 goldens byte-identical, KQ6 watched surface unchanged (no sole-exit rows
+there), LB2 moved by exactly the four rows → `entry-deferral-PARTIAL sites=4` each, wraps read
+in the emitted source at rm250/rm454/rm480/rm620 (`sACTBREAK` / `sFinishIt` armings, silent
+no-else arm-gates, mode-off bypass intact). rm500/rm520 report `no wrappable site` — the PARTIAL
+is honest. One bug caught by READING the emitted source, again: the first cut embedded the
+`dest_test` discriminator — script 26's `local0` — in rooms where that name means something
+else; the deferral now uses the pre-dest_test condition (the stage discriminates instead).
+
+⚠️ **TWO OF THE FOUR PLACED DEMANDS REST ON THE STREET-SEAL GAP AND WOULD WALL IF SHIPPED.**
+The `rm26->rm355`/`rm26->rm420` pressPass demands (stages 2 and 4) exist because the unsealed
+model keeps rm250 "needing" the pass in acts 2–5; in truth the pass is surrendered at the act-2
+door and the street is sealed, so a stage-4 wrap demanding it would silently refuse the real
+4→5 break for every player. The compliance filter passed them because it walks the same unsealed
+model. **Nothing ships** (standing rule; §9 play pass gates that), and when the street seal
+lands (§7z red) those two specs retract on their own — which is the right dependency direction:
+fix the model, not the placement. STILL OPEN in this round: the `reg123=5` register-write hold
+(salts+grapes) does not place — `guard_prop_flag_owner_write` looks for a free-running writer
+and LB2's act write is player-committed (§7j: LB2 has no free-running clock); it needs this same
+deferral taught to register-write specs. And the joint rows (cheese/snakeOil/snakeLasso at the
+`(26,5)` seal) still emit NO spec at all — the seal's entering write is the act break, so their
+remedy is this same site once the joint→spec synthesis exists.
 
 ### ⭐ §7ae. THE HARDENING ROUND — re-bless, mechanism pins, and the street-seal RED (2026-08-10, closing)
 

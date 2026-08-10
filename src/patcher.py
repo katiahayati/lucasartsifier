@@ -1933,7 +1933,7 @@ def _guard_travel_dispatch(dest, sp, titles_by_num, seen_dispatch):
 
 
 def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), rooms=None,
-                 entry_frontier=None):
+                 entry_frontier=None, defer_info=None):
     """Place each EDGE guard at its CONTROLLABLE TRIGGER.
 
     A frontier `newRoom: N` usually sits at the last state of a changeState cutscene -- an
@@ -1945,7 +1945,15 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
 
     `entry_frontier(room)` -- MODEL knowledge for the arrival-commit re-site: the rooms that
     cross INTO `room` from outside its pocket (`guards.commit_entry_frontier`). Without it an
-    arrival commit stays honestly unplaced, exactly as before this parameter existed."""
+    arrival commit stays honestly unplaced, exactly as before this parameter existed.
+
+    `defer_info(sp)` -- MODEL knowledge for the SOLE-EXIT deferral (`guards.defer_to_entry`):
+    the register stage that discriminates the spec's crossing and the predecessor rooms where
+    it is presentable and satisfiable. A demand whose trigger resolves to sole-exit (LB2's act-break card: the one
+    `newRoom:` lives inside the cutscene the wrap would refuse to arm, so refusing in place
+    strands the player on the card) is re-sited to the pocket's entry frontier as
+    `(or (not <stage>) <demand>)` -- the demand deferral that prohibitions have had since the
+    Spinach_Dip raft, extended to demands. Without it a sole-exit row stays honestly unplaced."""
     _init_mode(dest)               # runtime stock/lite/full dispatch for everything placed below
     out_unplaced = []
     by_title = {}
@@ -2135,6 +2143,12 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             # every other destination passes untouched, and only the frontier is demanded. Applied
             # once, here, where the placement is settled -- every kind below reads `sp["condition"]`
             # and threading it through each of them would be the same rule in nine places.
+            # ...but keep the PRE-dest_test condition for the sole-exit deferral below: the
+            # dest_test names the pocket's OWN dispatch variable (LB2: script 26's `local0`),
+            # which does not exist at the entry rooms the demand is re-sited to -- there the
+            # model-derived stage does the same discriminating through a register that is in
+            # scope everywhere.
+            raw_cond = sp["condition"]
             if placement.get("dest_test"):
                 sp = {**sp, "condition": "(or (not %s) %s)"
                                          % (placement["dest_test"], sp["condition"])}
@@ -2223,6 +2237,33 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                 if got:
                     out.append({**sp, **got})
                     continue
+                # THE SOLE-EXIT DEFERRAL. Refusing in place is a wall (the pocket's one
+                # `newRoom:` is inside the cutscene being refused), so the demand moves to the
+                # controllable crossings INTO the pocket, scoped by the model-derived stage --
+                # without which the row stays honestly unplaced, exactly as before.
+                if placement["kind"] == "sole-exit" and defer_info is not None:
+                    dsp = {**sp, "condition": raw_cond}
+                    info = defer_info(dsp)
+                    if info:
+                        placed, _stg, unwrapped = _guard_arrival_entries(
+                            dest, dsp, titles_by_num, rooms, path, placement, seen_entry,
+                            info["rooms"], site=row_site, stage_override=info["stage"])
+                        if placed:
+                            kind = ("entry-deferral" if not unwrapped
+                                    else "entry-deferral-PARTIAL")
+                            # NO "title": the wraps span several files, and a single title would
+                            # make sibling rows (same pocket, different stages) freeze as
+                            # identical strings -- a set-diff collapses duplicates, so one of
+                            # them dropping would be invisible. Keyed by the edge instead.
+                            row = {**dsp, "applied": True,
+                                   "sites": sum(p["sites"] for p in placed),
+                                   "placement": {"kind": kind, "commit": placement,
+                                                 "stage": info["stage"]},
+                                   "entry_sites": placed}
+                            if unwrapped:
+                                row["frontier_unwrapped"] = unwrapped
+                            out.append(row)
+                            continue
                 out.append({**sp, "applied": False,
                             "why": "no controllable trigger (%s) and no room-property exit"
                                    % placement["kind"],
@@ -2373,7 +2414,7 @@ def _gate_notify_awards(dest, cond):
 
 
 def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, seen,
-                           entry_rooms, site=None):
+                           entry_rooms, site=None, stage_override=None):
     """An ARRIVAL COMMIT cannot be refused in place. Play-found (finding #5, the winged-guards
     capture): the proc-call wrap put a refusal inside `rm340::init`, and by then the seizure
     has begun -- the refusal left a half-armed scene and the game hung two rooms later. The
@@ -2402,40 +2443,51 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
 
     `seen` dedups across the sibling rows that share one commit (the capture rows would
     otherwise stack identical nested wraps on one crossing)."""
-    pris = globals().get("_PRISTINE_DIR")
-    ppath = os.path.join(pris, os.path.basename(own_path)) if pris else own_path
-    text = open(ppath if os.path.exists(ppath) else own_path, errors="replace").read()
-    # THE STAGE: the game's own test of when this room's arrival commits the player, read off
-    # the PRISTINE init. One placement names one proc-call, but a room can commit through
-    # several calls into the same helper script (rm340: proc342_0 -> the Celeste flight,
-    # proc342_1 -> seized returning from the spring, proc342_2 -> seized on arrival), so every
-    # same-script call contributes its clause head. A head that tests the PREVIOUS-ROOM
-    # register is dropped: it names an in-pocket arrival (`(== global12 440)` -- coming back
-    # out of the lair), which cannot hold at the frontier this guard is being re-sited to --
-    # keeping it would make the whole guard vacuously true there. What survives on rm340 is
-    # exactly the capture-arm test, `(and (not (proc913_0 1)) (proc913_0 2))`.
-    m_script = re.match(r"proc(\d+)_", placement.get("target_script") or "")
-    prev_g = None
-    if _IR is not None:
-        import extract as _X
-        prev_g = _X.prev_room_global(_IR)
-    heads = []
-    inst_span = _find_region(text, r"\(instance\s+%s\b" % re.escape(placement["trigger_instance"]))
-    if inst_span and m_script:
-        i0, i1 = inst_span
-        meth_rel = _find_region(text[i0:i1],
-                                r"\(method\s+\(%s\b" % re.escape(placement["trigger_method"]))
-        if meth_rel:
-            region = text[i0 + meth_rel[0]:i0 + meth_rel[1]]
-            for pm in re.finditer(r"\(proc%s_\d+\s*\)" % m_script.group(1), region):
-                head = enclosing_clause_head(region, pm.start())
-                if not head or not head.startswith("("):
-                    continue                   # an `else` arm or a switch case: no test to keep
-                if prev_g is not None and re.search(r"\bglobal%d\b" % prev_g, head):
-                    continue                   # an in-pocket arrival; meaningless at the frontier
-                if head not in heads:
-                    heads.append(head)
-    stage = heads[0] if len(heads) == 1 else ("(or %s)" % " ".join(heads) if heads else None)
+    if stage_override is not None:
+        # A SOLE-EXIT deferral arrives with its stage already derived from the MODEL (the
+        # out-edge's own `_emeta` requirement, `guards.defer_to_entry`) -- there is no proc-call
+        # arming to read clause heads off, and the pocket's own file has nothing to say about
+        # which crossing the demand scopes to. The dedup key carries the stage: sibling rows off
+        # one pocket share a CONDITION (LB2's three pressPass rows) while meaning different
+        # crossings, and keying on the condition alone would place the first act's guard and
+        # silently swallow the rest.
+        stage = stage_override
+    else:
+        pris = globals().get("_PRISTINE_DIR")
+        ppath = os.path.join(pris, os.path.basename(own_path)) if pris else own_path
+        text = open(ppath if os.path.exists(ppath) else own_path, errors="replace").read()
+        # THE STAGE: the game's own test of when this room's arrival commits the player, read off
+        # the PRISTINE init. One placement names one proc-call, but a room can commit through
+        # several calls into the same helper script (rm340: proc342_0 -> the Celeste flight,
+        # proc342_1 -> seized returning from the spring, proc342_2 -> seized on arrival), so every
+        # same-script call contributes its clause head. A head that tests the PREVIOUS-ROOM
+        # register is dropped: it names an in-pocket arrival (`(== global12 440)` -- coming back
+        # out of the lair), which cannot hold at the frontier this guard is being re-sited to --
+        # keeping it would make the whole guard vacuously true there. What survives on rm340 is
+        # exactly the capture-arm test, `(and (not (proc913_0 1)) (proc913_0 2))`.
+        m_script = re.match(r"proc(\d+)_", placement.get("target_script") or "")
+        prev_g = None
+        if _IR is not None:
+            import extract as _X
+            prev_g = _X.prev_room_global(_IR)
+        heads = []
+        inst_span = _find_region(text,
+                                 r"\(instance\s+%s\b" % re.escape(placement["trigger_instance"]))
+        if inst_span and m_script:
+            i0, i1 = inst_span
+            meth_rel = _find_region(text[i0:i1],
+                                    r"\(method\s+\(%s\b" % re.escape(placement["trigger_method"]))
+            if meth_rel:
+                region = text[i0 + meth_rel[0]:i0 + meth_rel[1]]
+                for pm in re.finditer(r"\(proc%s_\d+\s*\)" % m_script.group(1), region):
+                    head = enclosing_clause_head(region, pm.start())
+                    if not head or not head.startswith("("):
+                        continue               # an `else` arm or a switch case: no test to keep
+                    if prev_g is not None and re.search(r"\bglobal%d\b" % prev_g, head):
+                        continue               # an in-pocket arrival; meaningless at the frontier
+                    if head not in heads:
+                        heads.append(head)
+        stage = heads[0] if len(heads) == 1 else ("(or %s)" % " ".join(heads) if heads else None)
     cond = to_source_syntax(sp["condition"])
     guard = "(or (not %s) %s)" % (stage, cond) if stage else cond
     placed, unwrapped, siteless = [], [], []
@@ -2443,7 +2495,8 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
         ttl = titles_by_num.get(num)
         if ttl is None or (rooms and num not in rooms) or num == sp["from_room"]:
             continue
-        key = (ttl, sp["from_room"], sp["condition"])
+        key = ((ttl, sp["from_room"], guard) if stage_override is not None
+               else (ttl, sp["from_room"], sp["condition"]))
         if key in seen:
             continue
         p2 = os.path.join(dest, "src", ttl + ".sc")
@@ -2469,7 +2522,8 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
                 p3 = os.path.join(dest, "src", used + ".sc")
                 if not os.path.exists(p3):
                     continue
-                ckey = (used, sp["from_room"], sp["condition"], "chain")
+                ckey = ((used, sp["from_room"], guard, "chain") if stage_override is not None
+                        else (used, sp["from_room"], sp["condition"], "chain"))
                 if ckey in seen:
                     continue
                 t3 = open(p3, errors="replace").read()
