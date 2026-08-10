@@ -1287,6 +1287,20 @@ def _armer_knowns(info):
     return common or {}
 
 
+def _complementary(a, b):
+    """Are these two path guards `g` and `NOT g` -- i.e. is the state a real BRANCH?
+
+    Structural and deliberately narrow: one side is a single `GNot` whose kid IS the other side's
+    single guard. Anything cleverer would be inventing a satisfiability claim about conditions we
+    often cannot evaluate (LB2's arm turns on `(mummy cel:)`, object-property state we do not
+    model), and the whole point of the rule is that an UNEVALUABLE arm is still an arm."""
+    if len(a) != 1 or len(b) != 1:
+        return False
+    x, y = a[0], b[0]
+    return ((isinstance(x, GNot) and x.kid == y)
+            or (isinstance(y, GNot) and y.kid == x))
+
+
 def _survivable(info, unavoidable, handoff, start=None):
     """Is there ANY way through this machine, FROM STATE `start`, that does not end in death?
 
@@ -1345,9 +1359,27 @@ def _survivable(info, unavoidable, handoff, start=None):
                 continue
             # A state that hands the room's script slot to a death is not safe by ANY path: the
             # `setScript:` replaces whatever this machine would have done next.
-            if _lethal_handoff(K):
+            #
+            # ...UNLESS THE STATE IS A BRANCH (2026-08-09). `handoff` is keyed by state, not by
+            # path, so a death armed on ONE arm of a fork condemned the fork. LB2's `sExitRoom`
+            # state 1 is the case: `PARK` under `own(35) OR NOT <mummy cel>` hands off to
+            # `sKillRileyKill`, and `JUMP 3` under the exact NEGATION reaches `EXIT 710`. Taking
+            # the other arm survives, so blaming the item the ENTRY required (`snakeLasso`) was a
+            # false positive -- and its remedy, `(not (gEgo has: 19))`, forbids required progress:
+            # Spinach_Dip class, the shape that broke LSL2 in play.
+            #
+            # The test is COMPLEMENTARY GUARDS, not "more than one path": a fork whose arms are
+            # `g` and `NOT g` is a genuine choice the player's state decides, which is a claim
+            # about branching rather than about how many rows the state happens to have. Measured:
+            # kills exactly this row, keeps KQ6's `throwSkull` (the play-validated positive this
+            # detector exists for -- it does NOT branch, every path re-arms the ceiling), and
+            # leaves LSL2/KQ4 at zero rows.
+            lethal = _lethal_handoff(K)
+            if lethal and not any(_complementary(a, b) for a, *_x in paths for b, *_y in paths):
                 continue
             for (_g, _w, _gg, _c, tr) in paths:
+                if lethal and not any(_complementary(_g, b) for b, *_y in paths):
+                    continue          # this arm carries the handoff and nothing steers away
                 if tr and tr[0] == "DEATH":
                     continue
                 if tr and tr[0] == "EXIT":
