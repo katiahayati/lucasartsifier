@@ -125,19 +125,19 @@
   },
   "dagger": {
     "action_specs": [],
-    "dangerous": [
-      "pressPass@rm240->3 rooms",
-      "pressPass@rm240->3 rooms"
-    ],
+    "dangerous": [],
     "death_signal": [
       370,
       1
     ],
     "debug_globals": [],
     "edge_specs": [
+      "rm210->rm250: (gEgo has: 6)",
+      "rm26->rm330: (gEgo has: 6)",
+      "rm26->rm355: (gEgo has: 6)",
+      "rm26->rm420: (gEgo has: 6)",
       "rm26->rm750: (and (gEgo has: 10) (gEgo has: 11) (gEgo has: 26) (gEgo has: 27) (gEgo has: 31) (or (gEgo has: 10) (gEgo has: 11)))",
-      "rm440->rm435: (gEgo has: 6)",
-      "rm480->rm435: (gEgo has: 6)"
+      "rm280->rm250: (gEgo has: 6)"
     ],
     "exhaustion": [],
     "fatal_uses": [],
@@ -151,21 +151,45 @@
     "groups": [],
     "joint": [],
     "placements": [
-      "Main/pressPass: applied=True kind=None",
+      "rm210: applied=True kind=setscript sites=1",
+      "rm26->rm330: applied=False kind=sole-exit why=no controllable trigger (sole-exit) and no room-property exit",
+      "rm26->rm355: applied=False kind=sole-exit why=no controllable trigger (sole-exit) and no room-property exit",
+      "rm26->rm420: applied=False kind=sole-exit why=no controllable trigger (sole-exit) and no room-property exit",
       "rm26->rm750: applied=False kind=sole-exit why=no controllable trigger (sole-exit) and no room-property exit",
-      "rm440: applied=True kind=arm-event sites=1",
-      "rm480: applied=True kind=arm-event sites=1"
+      "rm280: applied=True kind=setscript sites=1",
+      "rmNone->rmNone: applied=False kind=None why=no free-running trap write found"
     ],
-    "register_strandings": [],
-    "register_write_specs": [],
-    "sinks": [
-      "pressPass@rm0 dest=0 refused=False",
-      "pressPass@rm0 dest=0 refused=False"
+    "register_strandings": [
+      "bifocals@reg(12, 123)=(250, 5)->[750]",
+      "cheese@reg(12, 123)=(26, 5)->[740]",
+      "daggerOfRa@reg(12, 123)=(250, 5)->[750]",
+      "daggerOfRa@reg(12, 123)=(26, 5)->[500, 750]",
+      "grapes@reg(12, 123)=(250, 5)->[750]",
+      "grapes@reg(12, 123)=(26, 5)->[750]",
+      "grapes@reg123=5->[520, 750]",
+      "redHair@reg(12, 123)=(250, 5)->[750]",
+      "smellingSalts@reg(12, 123)=(26, 5)->[720]",
+      "smellingSalts@reg123=5->[720]",
+      "snakeLasso@reg(12, 123)=(26, 5)->[700]",
+      "snakeOil@reg(12, 123)=(26, 5)->[730]",
+      "wireCutters@reg(12, 123)=(250, 5)->[750]",
+      "wireCutters@reg(12, 123)=(26, 5)->[500, 750]"
     ],
+    "register_value_strandings": [
+      "reg150==[0]@seal(12, 123)=(250, 4)->[730] via sRepelSnakes"
+    ],
+    "register_write_specs": [
+      "reg123=5: (and (gEgo has: 13) (gEgo has: 31))"
+    ],
+    "sinks": [],
     "softlock_items": [
       "pressPass",
       "wireCutters",
       "daggerOfRa",
+      "smellingSalts",
+      "snakeOil",
+      "cheese",
+      "snakeLasso",
       "bifocals",
       "redHair",
       "grapes"
