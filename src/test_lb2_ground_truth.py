@@ -21,12 +21,12 @@ precondition (see the wearingGown mechanism pins below), so it moved to NEVER_ST
 `skeletonKey` false positive that used to trip the suspicion check was closed the same day
 (§7ad: a hands-on wait with the Script clock running is pre-emptable).
 
-🔴 THE FILE NOW DECLARES ONE DELIBERATE RED: the STREET SEAL. Ground truth [user 2026-08-10,
-§7z]: *"the outside of the museum is not reachable once the museum acts start"* -- and the model
-walks the street block at acts 1-5. The real seal is POSITIONAL (`sTaxiLeave` drives the arrival
-taxi to x=369, off the 320-wide pic, under handsOff), which is census-#1 control-map territory
-and unmodelled today. Declared in tools/run_tests.py KNOWN_RED; see the check below for why the
-honest derivation cannot currently produce the seal.
+✅ THE STREET SEAL WAS DECLARED RED AND PROMOTED THE SAME DAY (2026-08-10). Ground truth [user,
+§7z]: *"the outside of the museum is not reachable once the museum acts start"* -- the model
+walked the street at acts 1-5, and the "positional, census-#1" diagnosis turned out to be only
+the last link of a chain whose other links were derivable: the departing-init rule, the
+dead-letter nav rule, and relational lowering over a register's own value universe (§7ag). The
+check below is now a permanent green pin; the file again declares NO red.
 
 ⚠️⚠️ THE EXPLANATION THAT USED TO SIT HERE WAS REFUTED. Read this before writing another one. It
 said: *the act counter is modelled and the act STRUCTURE is not; ordering the counter changed no
@@ -224,23 +224,28 @@ ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS | CONTESTED | ALLOWED_NOT_DEMANDED
 # from rm250. Source room 29 in the analyze rows is the inventory pseudo-room every item lists.
 MECHANISM_ROWS = {
     # The five ending items: rm750's own selector, rm26->rm750 the genuine one-way frontier.
+    # ⭐ RE-PINNED 2026-08-10 WITH THE STREET SEAL (§7ag): the joint-seal WITNESSES moved out of
+    # the sealed street -- `(250, 5)` was "standing in the street at act 5", a state the game
+    # never has, and the seal replaced it with real act-4/5 standing rooms (rm454, rm520) --
+    # and wireCutters' still-needed list gained rm435 (the wire-cut cutscene). Confirmed
+    # row-by-row against the game the day the seal landed.
     "wireCutters": {
         "analyze: need@rm750 sources=[29, 640] frontier=rm26->rm750",
-        "register_strandings: reg(12, 123)=(26, 5)->[500, 750]",
-        "register_strandings: reg(12, 123)=(250, 5)->[750]",
+        "register_strandings: reg(12, 123)=(26, 5)->[435, 500, 750]",
+        "register_strandings: reg(12, 123)=(520, 5)->[750]",
     },
     "daggerOfRa": {
         "analyze: need@rm750 sources=[29, 620] frontier=rm26->rm750",
         "register_strandings: reg(12, 123)=(26, 5)->[500, 750]",
-        "register_strandings: reg(12, 123)=(250, 5)->[750]",
+        "register_strandings: reg(12, 123)=(520, 5)->[750]",
     },
     "bifocals": {
         "analyze: need@rm750 sources=[29, 500] frontier=rm26->rm750",
-        "register_strandings: reg(12, 123)=(250, 5)->[750]",
+        "register_strandings: reg(12, 123)=(454, 5)->[750]",
     },
     "redHair": {
         "analyze: need@rm750 sources=[29, 500] frontier=rm26->rm750",
-        "register_strandings: reg(12, 123)=(250, 5)->[750]",
+        "register_strandings: reg(12, 123)=(454, 5)->[750]",
     },
     "grapes": {
         "analyze: need@rm750 sources=[29, 525] frontier=rm26->rm750",
@@ -248,14 +253,23 @@ MECHANISM_ROWS = {
         # (global0 has: 31))`), which is why the scalar 123=5 row exists for it too.
         "register_strandings: reg123=5->[520, 750]",
         "register_strandings: reg(12, 123)=(26, 5)->[750]",
-        "register_strandings: reg(12, 123)=(250, 5)->[750]",
+        "register_strandings: reg(12, 123)=(520, 5)->[750]",
     },
-    # pressPass: needed at rm250 (the act-2 side of the street) and the frontier is the whole
-    # act-1->2 crossing -- the five edges out of act 1. THE RIGHT REASON since 2026-08-10; the
-    # old dangerous_sinks catch is retired (see the column-A comment).
+    # pressPass: THE STREET SEAL GAVE IT ITS TRUE MECHANISM (2026-08-10, §7ag). The register
+    # rows are the act-1->2 carry itself: cross into act 2 without the pass and rm335 -- the
+    # fundraiser door, which still `has:`-checks it -- is sealed off from the pass's only
+    # source (rm235, act-1 street). The joint witnesses are the crossing states (the intro-skip
+    # room 110 and the break card at act 2; rm330 standing at act 3); the scalar 2 and 5 rows
+    # are the flat projection of the same stranding. The analyze row is the older, coarser
+    # spelling of the same fact and rides along.
     "pressPass": {
         "analyze: need@rm250 sources=[29, 235] "
         "frontier=rm210->rm250|rm26->rm330|rm26->rm355|rm26->rm420|rm280->rm250",
+        "register_strandings: reg(12, 123)=(110, 2)->[335]",
+        "register_strandings: reg(12, 123)=(26, 2)->[335]",
+        "register_strandings: reg(12, 123)=(330, 3)->[335]",
+        "register_strandings: reg123=2->[335]",
+        "register_strandings: reg123=5->[335]",
     },
     # The four act-boundary carries (§7s counter monotonicity + §7y joint projections).
     "snakeOil": {"register_strandings: reg(12, 123)=(26, 5)->[730]"},
@@ -411,29 +425,34 @@ def run():
           f"writers are act-4+ museum rooms re-asserting it after a cutscene, and Main's debug "
           f"proc, which no reachable room calls.")
 
-    # --- THE STREET SEAL: the file's ONE DELIBERATE RED [ground truth 2026-08-10, §7z] --------
-    # USER: *"the outside of the museum is not reachable once the museum acts start."* This check
-    # asserts that truth, and today it FAILS -- declared in tools/run_tests.py KNOWN_RED, because
-    # no passing test may assert known-wrong behaviour and silence is how §7h's wrong path lasted
-    # two sessions. What is known, measured (§7z/§7aa):
-    #   * rm330 (the museum steps) is the ONLY junction between the street block and the museum,
-    #     and its taxi -- the sole exit-arming actor -- is `init:`ed only while `global123 < 2`
-    #     (rm330:158). The `south 250` nav property is a dead letter (`sHitEdgeScreen` refuses).
-    #   * the model's conditional-init rule (machine.py:698) SEES that guard, but rm330:82 also
-    #     inits the ARRIVAL taxi under `wearingGown:` -- satisfiable in acts 2-5 -- so the owner
-    #     disjunction is open and no requirement falls out. Ignorance in the safe direction.
-    #   * the seal the game actually enforces is POSITIONAL: `sTaxiLeave` drives the arrival taxi
-    #     to x=369, off the 320-wide pic, under handsOff. Object position/animation state is the
-    #     control map's class (modeling-gap census #1) and is not modelled.
-    # So this goes green only when some DERIVED mechanism seals these rooms at act >= 2 -- and if
-    # that happens it must be promoted, with the mechanism checked, not silently accepted.
+    # --- THE STREET SEAL ✅ PROMOTED 2026-08-10, same day it was declared red (§7ag) ----------
+    # USER: *"the outside of the museum is not reachable once the museum acts start."* The check
+    # asserts that truth; it was declared red because the seal looked positional (`sTaxiLeave`
+    # drives the taxi to x=369, off the 320-wide pic) -- and the positional reading was only the
+    # last step of a chain every other link of which was derivable. THREE derivations closed it,
+    # each general, each measured byte-identical on LSL2/KQ4/KQ6:
+    #   * DEPARTING INIT (`extract._object_departures`): an init whose own branch arms a handsOff
+    #     script whose terminal literal MoveTo parks the object off-pic yields no interactive
+    #     presence -- the player never gets a click window. Drops the arrival-taxi arm, so the
+    #     taxi's owner reduces to the act gate `123 < 2` (rm330:158).
+    #   * DEAD-LETTER NAV (`polygons.dead_nav_exits`): rm330's `south 250` trigger zone lies
+    #     beyond the init polygon's lower boundary (y<=169 vs y~189), so the free nav edge is
+    #     removed by provenance. North is NEVER claimed -- the engine tests the ego's RECT
+    #     against the horizon and the ego's height is unmodelled; a horizon-band first cut
+    #     killed rm290's live north and five KQ6 norths, all false.
+    #   * RELATIONAL LOWERING (`guard_reqs` + edge_meta's domains): `(< global123 2)` over the
+    #     register's own value universe {0..6} is exactly {0, 1}, the same completeness the
+    #     `!=`-with-domain case already trusted -- the flat reading had dropped the literal
+    #     whole, which is the §NEXT engine debt's first bullet paid down.
     STREET = (250, 260, 270, 300, 310, 320)
     reach = s._walk(ACT, frozenset())
     leaks = {r: sorted(v for (rm, v) in reach if rm == r and v >= 2)
              for r in STREET if any(rm == r and v >= 2 for (rm, v) in reach)}
-    check("🔴 the street block is sealed from act 2 on (POSITIONAL taxi seal)", not leaks,
-          f"street rooms the act projection still reaches past act 1: {leaks}. If this list just "
-          f"got SHORTER, something landed -- re-measure §7aa's table before touching the red.")
+    check("the street block is sealed from act 2 on", not leaks,
+          f"street rooms the act projection reaches past act 1: {leaks}. The seal rests on the "
+          f"three derivations above -- losing any one reopens the street and, with it, the "
+          f"pressPass register rows and the (454/520, 5) joint witnesses pinned in "
+          f"MECHANISM_ROWS.")
 
     # --- THE FORMER DELIBERATE RED, ✅ PROMOTED 2026-08-10 --------------------------------------
     # "The act-boundary carries are caught" was declared in tools/run_tests.py KNOWN_RED from this

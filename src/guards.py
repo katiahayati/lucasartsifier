@@ -1317,11 +1317,16 @@ def guard_specs(s):
     # in hand. KQ4's nightfall (global100:=1) shuts the day-only doors to the Diamond_Pouch and
     # Fishing_Pole; gate that one write on holding both, so the sunset waits for the day list. One
     # spec per trap register, conjoining its sealed items. LSL2 has no trap -> nothing.
+    # Keyed by (register, FLIP VALUE), not register alone: the spec's own semantics is "hold
+    # THE FLIP to v until the items IT seals are in hand", and a register that strands
+    # different items at different values (LB2's act counter: the pressPass at the 1->2 break,
+    # the salts and grapes at 4->5) must not conjoin them into one demand -- the single-spec
+    # form emitted `reg123=2: (pass AND salts AND grapes)`, a wall (the salts do not exist
+    # until act 4). One register with one flip value (KQ6's letter, KQ4's nightfall) is
+    # byte-identical under either key.
     byreg = defaultdict(set)
-    trap_of = {}
     for r in s.register_flip_strandings():
-        byreg[r["register"]].add(r["item"])
-        trap_of[r["register"]] = r["trap"]
+        byreg[(r["register"], r["trap"])].add(r["item"])
     # ...and the CAUSAL flips (`register_strandings`): a plot register whose one-way flip cuts
     # off an item's source while a later room still demands it. Same remedy, same spec: hold the
     # flip until the item is in hand. KQ6's letter is the case -- flag 166 ("the wedding has
@@ -1338,13 +1343,12 @@ def guard_specs(s):
         # LSL2/KQ4/KQ6, which report no joint rows at all.
         if isinstance(r["register"], tuple):
             continue
-        byreg[r["register"]].add(r["item"])
-        trap_of.setdefault(r["register"], r["value"])
-    for R in sorted(byreg):
-        items = sorted(byreg[R])
+        byreg[(r["register"], r["value"])].add(r["item"])
+    for (R, trap) in sorted(byreg):
+        items = sorted(byreg[(R, trap)])
         cond = ("(and %s)" % " ".join(f"(gEgo has: {i})" for i in items)
                 if len(items) > 1 else f"(gEgo has: {items[0]})")
-        specs.append({"site": "register-write", "register": R, "trap": trap_of[R],
+        specs.append({"site": "register-write", "register": R, "trap": trap,
                       "condition": cond, "items": items, "refused": []})
     return specs
 

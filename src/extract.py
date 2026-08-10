@@ -476,6 +476,84 @@ def init_selectors(ir):
     return _INIT_SELECTORS[key]
 
 
+def _object_departures(script):
+    """`objname -> {Script-object names whose run PARKS that object off-pic}`.
+
+    The arrival-taxi shape (LB2 rm330, docs/LB2-ORACLE.md §7z): a branch `init:`s an Actor and
+    in the same breath arms a handsOff cutscene whose terminal motion is a literal `MoveTo`
+    beyond the pic bounds. The object survives -- no `dispose:`, no `hide:` -- but the player
+    never gets a click window: input is off for the whole drive and returns only after the
+    motion completes off-screen, and nothing moves it back without a fresh `init:`. So an
+    `init:` paired with such a script contributes NO interactive presence, and
+    `cast_conditions` must not let that site into the owner disjunction -- left in, it reads as
+    "the object is verbable whenever the arrival branch runs", which is what kept LB2's street
+    open at acts 2-5 (the taxi is rm330's only exit and its arrival init is gowned-satisfiable
+    in every act).
+
+    STRICT IN THE KEEPING DIRECTION -- all of the following, or the script departs nothing:
+      * every position write of the object in the script's changeState is literal (an unknown
+        destination keeps the object), and the LAST one (highest state) ends outside the pic.
+        320x190 are ENGINE constants: an SCI pic is that size and click dispatch is by screen
+        position, so an actor parked beyond it can never be verbed;
+      * the terminal motion carries a cue argument -- the machine advances only when the drive
+        has COMPLETED, so "after" really is after;
+      * a `handsOff:` fires at or before the departure's first position write and every
+        `handsOn:` comes strictly after the terminal one -- the input window reopens only once
+        the object is gone. A script that returns input mid-drive leaves a real click window
+        and keeps the object."""
+    W_PIC, H_PIC = 320, 190
+    out = {}
+    for S in script.objects:
+        cs = S.methods.get("changeState")
+        if cs is None:
+            continue
+        moves, hands_off, hands_on = {}, [], []
+        for n in I.walk(cs):
+            if I.t(n) != "Switch":
+                continue
+            for case in I.kids(n)[1:]:
+                if I.t(case) != "Case":
+                    continue
+                k = I.as_int(I.kids(case)[0])
+                if k is None:
+                    continue
+                for sn in I.walk(I.kids(case)[1]):
+                    if I.t(sn) != "Send":
+                        continue
+                    recv, msgs = I.send_pairs(sn)
+                    rname = recv.get("name") if isinstance(recv, dict) else None
+                    for sel, params in msgs:
+                        if sel == "handsOff":
+                            hands_off.append(k)
+                        elif sel == "handsOn":
+                            hands_on.append(k)
+                        elif sel == "setMotion" and rname:
+                            cls = (params[0].get("name")
+                                   if params and isinstance(params[0], dict) else None)
+                            if cls == "MoveTo" and len(params) >= 3:
+                                moves.setdefault(rname, []).append(
+                                    (k, I.as_int(params[1]), I.as_int(params[2]),
+                                     len(params) > 3))
+                            else:
+                                moves.setdefault(rname, []).append((k, None, None, False))
+                        elif sel == "posn" and rname and len(params) >= 2:
+                            moves.setdefault(rname, []).append(
+                                (k, I.as_int(params[0]), I.as_int(params[1]), True))
+        for O, evs in moves.items():
+            if any(x is None or y is None for (_k, x, y, _c) in evs):
+                continue
+            evs.sort(key=lambda e: e[0])
+            k_last, x, y, cued = evs[-1]
+            if (0 <= x < W_PIC and 0 <= y < H_PIC) or not cued:
+                continue
+            if not hands_off or min(hands_off) > evs[0][0]:
+                continue
+            if any(h <= k_last for h in hands_on):
+                continue
+            out.setdefault(O, set()).add(S.name)
+    return out
+
+
 def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None):
     """`objname -> [guard|None]`: the conditions under which this script puts an object IN THE CAST.
 
@@ -531,6 +609,12 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None)
     declared = {o.name: (init_sels or {}).get(o.species if o.is_class else o.super) or {"init"}
                 for o in script.objects}
     out = {}
+    # Init sites are COLLECTED, then filtered against `_object_departures`: a site whose OWN
+    # BRANCH (same path condition -- the id-key over the shared guard nodes) also arms a script
+    # that parks the object off-pic contributes no interactive presence and is dropped. The arm
+    # and the init must be siblings for the drop, which is what scopes it to the arrival-taxi
+    # shape rather than to any room that ever drives the object somewhere.
+    pend, armed = [], set()
 
     def leaf(n, pc):
         if n.get("t") != "Send":
@@ -541,14 +625,19 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None)
         # selector in another, so the selector is collected across the whole send.
         bulk = {p.get("name") for sel, params in msgs if sel == "eachElementDo" for p in params
                 if isinstance(p, dict) and p.get("t") == "Selector"}
+        key = tuple(map(id, pc))
         for sel, params in msgs:
             if sel in declared.get(rname, ()):
-                out.setdefault(rname, []).append(_conj(pc))
+                pend.append((rname, key, _conj(pc)))
+            if sel == "setScript":
+                for p in params:
+                    if isinstance(p, dict) and p.get("name") in declared:
+                        armed.add((p["name"], key))
             if bulk:
                 for p in params:
                     if (isinstance(p, dict) and p.get("t") == "Object"
                             and bulk & set(declared.get(p.get("name"), ()))):
-                        out.setdefault(p["name"], []).append(_conj(pc))
+                        pend.append((p["name"], key, _conj(pc)))
 
     for o in script.objects:
         for mn, body in o.methods.items():
@@ -556,6 +645,12 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None)
             walk_stream(body, seed, leaf)
     for pn, body in script.procs.items():
         walk_stream(body, [proc_guard(pn)] if proc_guard else [], leaf)
+    dep = _object_departures(script)
+    for rname, key, g in pend:
+        if any((S, key) in armed for S in dep.get(rname, ())):
+            continue                     # a departing init: the object exists but is never
+                                         # clickable from this site -- see _object_departures
+        out.setdefault(rname, []).append(g)
     return out
 
 
@@ -1936,7 +2031,10 @@ class Extractor:
             for sel in NAV_SELECTORS:
                 dst = obj.props.get(sel)
                 if dst and dst != 0xffff:
-                    self.ts.edges.append(Edge(room_num, dst))   # walk-off exit, free
+                    # `via` carries the PROVENANCE ("nav:south") so the dead-nav pass can remove
+                    # exactly this row and nothing else -- a scripted crossing to the same
+                    # destination is a different edge and must survive the removal.
+                    self.ts.edges.append(Edge(room_num, dst, via="nav:" + sel))
         # static entranceTo on any object (rooms + Doors): walking it goes to that room
         for o in script.objects:
             et = o.props.get("entranceTo", 0)

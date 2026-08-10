@@ -153,33 +153,40 @@
     "placements": [
       "rm210: applied=True kind=setscript sites=1",
       "rm26->rm330: applied=True kind=entry-deferral-PARTIAL sites=4 entry_sites=4",
-      "rm26->rm355: applied=True kind=entry-deferral-PARTIAL sites=4 entry_sites=4",
-      "rm26->rm420: applied=True kind=entry-deferral-PARTIAL sites=4 entry_sites=4",
-      "rm26->rm750: applied=True kind=entry-deferral-PARTIAL sites=4 entry_sites=4",
+      "rm26->rm355: applied=True kind=entry-deferral-PARTIAL sites=3 entry_sites=3",
+      "rm26->rm420: applied=True kind=entry-deferral-PARTIAL sites=3 entry_sites=3",
+      "rm26->rm750: applied=True kind=entry-deferral-PARTIAL sites=3 entry_sites=3",
       "rm280: applied=True kind=setscript sites=1",
+      "rmNone->rmNone: applied=False kind=None why=no free-running trap write found",
       "rmNone->rmNone: applied=False kind=None why=no free-running trap write found"
     ],
     "register_strandings": [
-      "bifocals@reg(12, 123)=(250, 5)->[750]",
+      "bifocals@reg(12, 123)=(454, 5)->[750]",
       "cheese@reg(12, 123)=(26, 5)->[740]",
-      "daggerOfRa@reg(12, 123)=(250, 5)->[750]",
       "daggerOfRa@reg(12, 123)=(26, 5)->[500, 750]",
-      "grapes@reg(12, 123)=(250, 5)->[750]",
+      "daggerOfRa@reg(12, 123)=(520, 5)->[750]",
       "grapes@reg(12, 123)=(26, 5)->[750]",
+      "grapes@reg(12, 123)=(520, 5)->[750]",
       "grapes@reg123=5->[520, 750]",
-      "redHair@reg(12, 123)=(250, 5)->[750]",
+      "pressPass@reg(12, 123)=(110, 2)->[335]",
+      "pressPass@reg(12, 123)=(26, 2)->[335]",
+      "pressPass@reg(12, 123)=(330, 3)->[335]",
+      "pressPass@reg123=2->[335]",
+      "pressPass@reg123=5->[335]",
+      "redHair@reg(12, 123)=(454, 5)->[750]",
       "smellingSalts@reg(12, 123)=(26, 5)->[720]",
       "smellingSalts@reg123=5->[720]",
       "snakeLasso@reg(12, 123)=(26, 5)->[700]",
       "snakeOil@reg(12, 123)=(26, 5)->[730]",
-      "wireCutters@reg(12, 123)=(250, 5)->[750]",
-      "wireCutters@reg(12, 123)=(26, 5)->[500, 750]"
+      "wireCutters@reg(12, 123)=(26, 5)->[435, 500, 750]",
+      "wireCutters@reg(12, 123)=(520, 5)->[750]"
     ],
     "register_value_strandings": [
-      "reg150==[0]@seal(12, 123)=(250, 4)->[730] via sRepelSnakes"
+      "reg150==[0]@seal(12, 123)=(26, 5)->[730] via sRepelSnakes"
     ],
     "register_write_specs": [
-      "reg123=5: (and (gEgo has: 13) (gEgo has: 31))"
+      "reg123=2: (gEgo has: 6)",
+      "reg123=5: (and (gEgo has: 6) (gEgo has: 13) (gEgo has: 31))"
     ],
     "sinks": [],
     "softlock_items": [

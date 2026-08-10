@@ -678,6 +678,11 @@ def asserts_eq(op, pol):
     return (op == "==" and pol) or (op == "!=" and not pol)
 
 
+_REL_INV = {"<": ">=", "<=": ">", ">": "<=", ">=": "<"}
+_REL_CMP = {"<": (lambda a, b: a < b), "<=": (lambda a, b: a <= b),
+            ">": (lambda a, b: a > b), ">=": (lambda a, b: a >= b)}
+
+
 def _must_hold(guard, out=None):
     """`(reg, value)` pairs the guard REQUIRES along its top-level AND spine.
 
@@ -696,6 +701,20 @@ def _must_hold(guard, out=None):
     elif isinstance(guard, Pred) and guard.kind == "CMP" and guard.op == "!=":
         try:
             out.add((guard.var, int(guard.value)))
+        except (TypeError, ValueError):
+            pass
+    elif isinstance(guard, Pred) and guard.kind == "CMP" and guard.op in _REL_INV:
+        # A RELATIONAL on the AND spine, keyed with its op so it can never collide with the
+        # `!=` pairs above. Same contract: only an atom that MUST hold may constrain.
+        try:
+            out.add((guard.var, int(guard.value), guard.op))
+        except (TypeError, ValueError):
+            pass
+    elif (isinstance(guard, GNot) and isinstance(guard.kid, Pred)
+          and guard.kid.kind == "CMP" and guard.kid.op in _REL_INV):
+        # `(not (< x v))` asserts `(>= x v)` -- a computable leaf flip, same as the `==` case.
+        try:
+            out.add((guard.kid.var, int(guard.kid.value), _REL_INV[guard.kid.op]))
         except (TypeError, ValueError):
             pass
     elif (isinstance(guard, GNot) and isinstance(guard.kid, Pred)
@@ -786,9 +805,15 @@ def guard_reqs(guard, regs, dom=None):
     gate constrained a machine entry and nothing at all on a room edge -- which is how KQ6's realm
     of the dead kept its doors open. See the same-shaped bug in `asserts_eq`'s docstring.
 
-    Only positive equalities are used. `!=` and the relational ops are deliberately ignored: they
-    would need the value-partition abstraction to stay exact, and ignoring them is the PERMISSIVE
-    direction (we never block movement the game allows).
+    Only positive equalities are used unconditionally. `!=` and the relational ops constrain
+    NOTHING without a complete domain: they would need the value-partition abstraction to stay
+    exact, and ignoring them is the PERMISSIVE direction (we never block movement the game
+    allows). WITH a complete domain both are exact -- "not v" is "one of the others", and
+    `< v` is "one of those below" -- so both lower when `dom` names the register, subject to
+    `_must_hold` (an atom inside an OR or under a negation still constrains nothing). The
+    relational case is what LB2's street seal needed (docs/LB2-ORACLE.md §7z): the taxi -- the
+    museum steps' only exit -- is init:ed under `(< global123 2)`, and the flat reading dropped
+    the whole literal, so the exit read free at every act.
 
     A NEGATED `!=` is a positive equality, though, and that is not a technicality: `(if (not gX)
     ...)` is how SCI writes "gX is 0", and `atom()` turns bare-global truthiness into
@@ -830,6 +855,18 @@ def guard_reqs(guard, regs, dom=None):
                 must = _must_hold(guard)        # only conjuncts that MUST hold -- see _must_hold
             if (r, v) in must:
                 out.setdefault(r, set()).update(full - {v})
+        elif op in _REL_INV:
+            full = (dom or {}).get(r)
+            if not full:
+                continue                        # no domain -> a relational constrains nothing
+            eff = op if pol else _REL_INV[op]
+            sat = {u for u in full if _REL_CMP[eff](u, v)}
+            if not sat or sat == set(full):
+                continue                        # a contradiction, or the test excludes nothing
+            if must is None:
+                must = _must_hold(guard)
+            if (r, v, eff) in must:
+                out.setdefault(r, set()).update(sat)
     return out
 
 
@@ -1638,7 +1675,15 @@ def edge_meta(em, regs):
     pdom = {r for e in em.ts.edges for r in (e.src,)} | \
            {r for e in em.ts.cs_edges for r in (e.src,)} | \
            {i["room"] for i in em.machines} | {0}
-    dom = {prev_room_reg(em): pdom} if prev_room_reg(em) in regset else {}
+    # ...and every promoted register's OWN value universe. `reg_vals` is the set of values the
+    # MODEL can ever produce -- the same completeness `compile._fan_globals` already commits to
+    # when it fans an increment over it -- so a `!=`/relational read against it is exact within
+    # the abstraction: a value outside the universe exists in no walk, so no movement is
+    # wrongly credited or blocked. This is what lets LB2's taxi guard `(< global123 2)` reach
+    # the exit row as {0, 1} instead of being dropped flat (docs/LB2-ORACLE.md §7z).
+    dom = {R: set(em.reg_vals[R]) for R in regset if em.reg_vals.get(R)}
+    if prev_room_reg(em) in regset:
+        dom[prev_room_reg(em)] = pdom
 
     def reqs(guard):
         return guard_reqs(guard, regset, dom)

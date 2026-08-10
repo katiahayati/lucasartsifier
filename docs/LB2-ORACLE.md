@@ -349,6 +349,10 @@ now, deliberately, one.
 act-break demands PLACE (`entry-deferral-PARTIAL`, stage-scoped on the game's own act register).
 ⚠️ Two of the four rest on the street-seal gap and would wall if shipped — they retract when the
 seal lands; nothing ships. Open: the register-write hold and the joint rows' specs.
+✅✅ **THE STREET IS SEALED** (2026-08-10, latest) — §7ag: three derivations (departing init,
+dead-letter nav, relational lowering over the register's own universe), all corpus-neutral
+outside LB2; the street collapses to acts [1], the RED promoted same-day, pressPass gains its
+true mechanism, and §7af's two wall-risk wraps retracted on their own, exactly as predicted.
 ✅ **The empty-bottle death IS caught** (2026-08-10, later): `register_value_strandings` —
 see §7ac. One row corpus-wide: `reg150==[0]@seal(12,123)→[730]`.
 Nothing safe is flagged, so the false-positive side is clean. The five misses turned out to be
@@ -496,6 +500,56 @@ entry (`own(9)`), as a requirement should.
 
 **Measured**: LSL2/KQ4/KQ6 snapshots byte-identical (KQ6's `skull@rm420/throwSkull` survives —
 it never hands control back); LB2 loses exactly the skeletonKey rows. **The oracle is 9/9.**
+
+### ⭐⭐ §7ag. THE STREET IS SEALED — declared red and promoted the same day (2026-08-10, latest)
+
+**USER ground truth (§7z): the street is unreachable once the museum acts start. MEASURED NOW:
+all six street rooms (250/260/270/300/310/320) reach act [1] and nothing else.** The §7z/§7aa
+diagnosis — "the seal is positional, census-#1 control-map class, unmodellable" — was true only
+of the LAST link in the chain. Three derivations closed it, each general, each measured
+byte-identical on LSL2/KQ4 (goldens) and KQ6 (watched surface):
+
+1. **DEPARTING INIT** (`extract._object_departures`, consumed by `cast_conditions`): an `init:`
+   whose own branch arms a handsOff script whose TERMINAL literal `MoveTo` parks the object
+   off-pic (320×190 — engine constants) yields no interactive presence: input is off for the
+   whole drive (the motion carries a cue; every `handsOn:` comes after) and nothing moves the
+   object back without a fresh init. The arrival-taxi arm drops; **the taxi's owner reduces to
+   `123 < 2`** — the position mattered only as the END of a derivable lifecycle, not as a
+   modelled coordinate. Strict in the keeping direction (any non-literal motion, uncued
+   terminal, or early handsOn keeps the object).
+2. **DEAD-LETTER NAV** (`polygons.dead_nav_exits` + `opmodel._apply_dead_nav`, removal by the
+   new `Edge.via="nav:<dir>"` provenance): a declared s/e/w prop whose engine trigger zone the
+   room's UNCONDITIONAL polygon layout seals off is a dead letter. rm330's `south 250`: polygon
+   bottom y≤169, south trigger at the ego's base row ~189. Corpus: **LB2 2 rows (rm330 south,
+   rm240 east), KQ6/LSL2/KQ4 zero.** ⛔ **NORTH IS NEVER CLAIMED** — the engine tests the ego's
+   bounding RECT against the horizon, so north fires at `base_y - ego_height <= horizon` and the
+   ego's scaled height is unmodelled. The first cut claimed it and killed SIX live exits (LB2
+   rm290/rm310, KQ6 rm640/650/680/710/840 — rm290's corridor tops at y~84 with horizon 15 and
+   fires through the ~70px ego); every one was a false removal, caught by auditing the census
+   before wiring the consumer.
+3. **RELATIONAL LOWERING** (`guard_reqs` + `edge_meta` domains): `(< global123 2)` over the
+   register's own value universe {0..6} is exactly {0,1} — the same completeness the
+   `!=`-with-domain case already trusted, extended to the relational ops under the same
+   `_must_hold` soundness gate, and `edge_meta` now passes every promoted register's
+   `reg_vals` universe as its domain (sound within the abstraction: a value outside the
+   universe exists in no walk). **This is the first bullet of the §NEXT engine-debt list paid
+   down** for the conjunctive case; the disjunctive arm (`(or (> act 3) …)`) still reads flat.
+
+**What moved (29 rows, blessed):** the joint-seal witnesses left the sealed street —
+`(250,5) → (454,5)/(520,5)`, real act-4/5 standing rooms; **pressPass gained its TRUE
+mechanism** (reg rows `123=2→[335]` + three joint crossing states: enter act 2 without the pass
+and the fundraiser door is sealed off from rm235, its only source); the empty-bottle seal
+witness sharpened to the act-break card `(26,5)`; the deferral placements retracted rm250 as an
+entry site (sites 4→3 — the street room is no longer standable past act 1, so §7af's two
+wall-risk wraps retracted exactly as predicted); and `register_write_specs` now split per
+(register, FLIP VALUE) — the single-spec form had emitted `reg123=2: (pass AND salts AND
+grapes)`, a wall (salts don't exist until act 4). ⚠️ The scalar `reg123=5` spec still conjoins
+the pass via the flat projection row `pressPass@reg123=5` — the joint rows know better; a
+projection-precision item for the register-write-deferral round.
+
+The street-seal RED went GREEN in the same session it was declared and is **promoted**: removed
+from KNOWN_RED, the check is a permanent pin naming its three load-bearing derivations, and all
+six moved mechanism pins were confirmed against the game and re-pinned.
 
 ### ⭐ §7af. REMEDIATION ROUND 1 — the SOLE-EXIT DEFERRAL: all four act-break demands now PLACE (2026-08-10, later)
 

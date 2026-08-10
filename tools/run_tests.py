@@ -150,18 +150,16 @@ KNOWN_RED = {
     # `skeletonKey` FP that was tripping the suspicion check -- kept out of this list on purpose,
     # as a defect rather than a limitation -- was closed the same day: a hands-on wait with the
     # Script clock running is pre-emptable, docs/LB2-ORACLE.md §7ad.)
-    "test_lb2_ground_truth.py": {
-        "🔴 the street block is sealed from act 2 on (POSITIONAL taxi seal)":
-            "Ground truth [user 2026-08-10]: 'the outside of the museum is not reachable once "
-            "the museum acts start.' The model walks the street block (250/260/270/300/310/320) "
-            "at acts 1-5. The one junction is rm330, whose taxi -- the sole exit-arming actor -- "
-            "is init:ed only while global123 < 2; the conditional-init rule sees that guard, but "
-            "the arrival taxi's second init site is guarded by wearingGown:, satisfiable in acts "
-            "2-5, so the owner disjunction yields no requirement -- ignorance in the safe "
-            "direction. The seal the game actually enforces is POSITIONAL (sTaxiLeave drives the "
-            "taxi to x=369, off the 320-wide pic, under handsOff) -- control-map class (census "
-            "#1), unmodelled. docs/LB2-ORACLE.md §7z/§7aa.",
-    },
+    # ✅ PROMOTED 2026-08-10, the same day it was declared -- "test_lb2_ground_truth.py: the
+    # street block is sealed from act 2 on (POSITIONAL taxi seal)" went green and is deleted.
+    # The "positional, control-map class, unmodellable" diagnosis was only the LAST link of the
+    # chain: the arrival taxi's init is consumed by its own departing handsOff cutscene
+    # (extract._object_departures -- no click window ever opens), the `south 250` nav prop is a
+    # polygon-proven dead letter (polygons.dead_nav_exits -- north deliberately never claimed,
+    # the ego's rect height is unmodelled), and the surviving act gate `(< global123 2)` lowers
+    # exactly over the register's own value universe (guard_reqs relational + edge_meta domains).
+    # All three measured byte-identical on LSL2/KQ4/KQ6; the street collapsed to acts [1] and
+    # the check is a permanent green pin. docs/LB2-ORACLE.md §7ag.
 }
 
 CHECK = re.compile(r"^\s*\[(PASS|FAIL)\]\s*(.*?)\s*$")

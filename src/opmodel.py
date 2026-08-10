@@ -565,6 +565,7 @@ class OpEmitter:
         #    inherits the disguise requirement, per-exit (does not over-gate the retreat).
         self._apply_control_gates()
         self._apply_polygon_gates()
+        self._apply_dead_nav()
 
         # finalize domains; single-value dims fold to constants (SMV rejects init on them)
         self.reg_dom, self.reg_const = {}, {}
@@ -719,6 +720,36 @@ class OpEmitter:
                             witnesses[gi].add(v)
         self._edge_regs = frozenset(gi for gi, vs in witnesses.items() if len(vs) >= 2)
         return self._edge_regs
+
+    def _apply_dead_nav(self):
+        """Consume polygons.dead_nav_exits: a declared s/e/w prop whose engine trigger zone the
+        room's own UNCONDITIONAL obstacle layout seals off is a dead letter, and the free flat
+        edge `_nav_edges` invented from it is REMOVED -- by its `via` provenance ("nav:<dir>"),
+        so a scripted crossing to the same destination is untouched. LB2's rm330 `south 250` is
+        the case (docs/LB2-ORACLE.md §7z): the only free way from the museum steps back into
+        the street, at every act, in a room whose polygon stops the ego 20px short of the south
+        trigger. Removal is the unsafe direction; every refusal lives in `dead_nav_exits`
+        (unconditional layouts only, no setRegions, base-geometry directions only -- north
+        needs the ego's rect height and is never claimed)."""
+        self.dead_nav = []
+        try:
+            import polygons as PG
+        except Exception as e:                              # noqa: BLE001
+            _degraded("dead-nav (whole game)", e)
+            return
+        for room in sorted({e.src for e in self.ts.edges if e.via.startswith("nav:")}):
+            try:
+                rows = PG.dead_nav_exits(self.ir, room)
+            except Exception as e:                          # noqa: BLE001
+                _degraded("dead-nav for rm%s" % room, e)
+                continue
+            for row in rows:
+                gone = [e for e in self.ts.edges
+                        if e.src == room and e.dst == row["declared_room"]
+                        and e.via == "nav:" + row["edge"]]
+                if gone:
+                    self.ts.edges = [e for e in self.ts.edges if not any(e is g for g in gone)]
+                    self.dead_nav.append(row)
 
     def _apply_polygon_gates(self):
         """Consume polygons.polygon_gates: a screen edge a room's obstacle layout only OPENS
