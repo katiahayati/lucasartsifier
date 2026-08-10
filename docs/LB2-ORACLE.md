@@ -381,6 +381,52 @@ to every room, so a confirmed finding vanished. §1a predicted this in 2026-08-0
 **It is reverted rather than shipped**, because a change that deletes a play-confirmed stranding is
 worse than the gap it closes — the standing rule is that a DROP is a regression.
 
+### ⭐ §7z. HOW THE MUSEUM SEALS THE STREET — and the refutation of "zero act-gated exits" (2026-08-10)
+
+**USER GROUND TRUTH:** *"the outside of the museum is not reachable once the museum acts start.
+So you need to figure out how that's enforced in the game before we proceed further."* Also:
+*"the notebook gets granted during a cutscene at the very beginning, there's no way to not have
+it"* — recorded as `NEVER_STRANDABLE` in the oracle test, because the variadic read newly flags it.
+
+This matters beyond eveningGown: the model says **`rm270` (Lo Fat's, the gown) is reachable at acts
+1–5**, and that is now known to be WRONG. Two mechanisms, found by reading `rm330` — the museum
+steps, which is the ONLY junction between the street block (250/260/270/300/310/320) and the museum:
+
+    rm330.sc:158   (if (< global123 2) (taxi init: stopUpd:))
+    rm330.sc:345   taxi doVerb 4 -> (setScript: sInTaxi) -> state 4 -> (newRoom: 250)
+    rm330.sc:170   doit: ((proc0_1 global0 256) (setScript: sHitEdgeScreen))
+    rm330.sc props  south 250
+
+1. **The taxi is the exit, and it is act-gated.** `sInTaxi` is the only script in the room that
+   reaches `newRoom: 250`, it is armed only by `taxi doVerb 4`, and **the taxi object is only
+   `init:`ed while `global123 < 2`.** From act 2 on the object does not exist, so the verb cannot
+   be dispatched and the exit cannot fire. *An object that is not initialised cannot be verbed* —
+   which is the "act-gated `init:`" shape §7h asked for, in a place §7q/§7r never looked.
+2. **`south 250` is a DEAD LETTER.** Stepping on control 256 arms `sHitEdgeScreen`, which says a
+   line, turns Laura around and walks her back (`MoveFwd 10`). The nav property is never consumed;
+   the room refuses the edge. Same class as LB2's `deathRoom north 350` (`extract.death_screen_rooms`)
+   and rm640's exits in KQ6 — **a declared exit the room's own `doit` intercepts**.
+
+⛔ **THIS REFUTES §7q/§7r's "ZERO act-gated exit sites corpus-wide", which is quoted in three
+places including the RED test.** That measurement asked for an `init:` **on an `ExitFeature` or
+`Door`** — and LB2 does not spell it that way. The real spellings, measured:
+
+| site | spelling | class |
+|---|---|---|
+| `rm330:158` | `(if (< global123 2) (taxi init:))` | **Actor** whose `doVerb` arms the exit |
+| `rm370:76` | `(if (> global123 2) (giftShoppeDoor locked: 1))` | **Door**, but `locked:` not `init:` |
+| `rm370:31` | `(if (== global123 2) (self setRegions: 93) ... else (setRegions: 90))` | the room's OBSTACLE SET |
+| `poly2360Code:42` | `(= points (if (> global123 2) @local0 else @local24))` | the walkable POLYGON itself |
+
+So the acts DO gate LB2's movement; they just never do it through the one idiom that was searched
+for. Two of these four are the control map (census #1) and are out of reach for now, but the first
+two are ordinary object state and are not.
+
+⚠️ **Do not re-run "grep for an act-gated ExitFeature/Door init".** It answers a question narrower
+than the one being asked, and answering it "zero" sent this project down the §7h/§8-item-4 path for
+two sessions. The question is *"what, if anything, makes this exit unavailable in this state"* —
+and the answer can be an actor's existence, a door's `locked:`, a region, or a polygon.
+
 ### ✅ §7y. CAUSE #2 IS CLOSED — `register_strandings` now walks the JOINTS (2026-08-09, later)
 
 §7w ended with "the load-bearing blocker for column B is now `{r for r, _ in back}`". It was not.

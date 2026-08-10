@@ -115,6 +115,24 @@ OUT_OF_SCOPE = {
     "warthogHairs", "carbonPaper", "yvette_sShoe",
 }
 
+# D'' -- CANNOT BE STRANDED, EVER. Flagging one of these is a FALSE POSITIVE, not a promotion
+# candidate, and the check below is a real assertion about the game rather than a scoring rule.
+#
+# [USER GROUND TRUTH 2026-08-10] *"the notebook gets granted during a cutscene at the very
+# beginning. There's no way to not have it in the game."* An item the opening cutscene hands you
+# on a path every player takes has no state in which you lack it, so no seal can strand it and no
+# remedy should ever demand it.
+#
+# ⚠️ THIS IS A LIVE TRAP, not a hypothetical: the variadic-`get:` read (§7o, simulated 2026-08-10,
+# NOT yet landed) newly flags `notebook` -- it gives the item sources at rm29/rm100/rm220, and
+# rm220's is the very cutscene above. So the check is written NOW, while it passes, so that
+# landing that read cannot quietly introduce the FP. See [[commit-rule-and-red-tests]]: a green
+# check that asserts something true is the point; what is banned is a green check asserting
+# something false.
+NEVER_STRANDABLE = {
+    "notebook",          # opening cutscene, rm220 `(global0 get: -1 2)` -- unavoidable
+}
+
 # D' -- IN SCOPE, BUT NOT DEMANDED [user ruling, 2026-08-09: "I don't mind catching it"].
 # waterGlass sat in OUT_OF_SCOPE on the stated ground that it had no `has:` use site. That reason
 # was FACTUALLY WRONG (docs/LB2-ORACLE.md §7u.5): LB2's use sites are VERB-DISPATCHED via the
@@ -179,6 +197,14 @@ def run():
           f"FLAGGED: {sorted(out_of_scope_hits)} -- the 2026-07-26 ruling puts the evidence layer "
           f"out of scope for the Laura Bow games. Their absence is correct; flagging one means a "
           f"requirement is leaking in through examination/dialogue state.")
+
+    unstrandable = caught & NEVER_STRANDABLE
+    check("nothing the game GIVES you unavoidably is flagged", not unstrandable,
+          f"FLAGGED: {sorted(unstrandable)} -- user ground truth 2026-08-10: the opening cutscene "
+          f"hands these over on the only path into the game, so there is no state in which you "
+          f"lack one and nothing can strand it. This is a FALSE POSITIVE, not a promotion "
+          f"candidate. The likely cause is a new source read that treats a cutscene grant as an "
+          f"acquisition you might miss (the variadic `get:` read does exactly this).")
 
     # --- the structural facts the whole diagnosis rests on ------------------------------------
     # Not verdicts about items: the measurements that explain the RED below, pinned so that
