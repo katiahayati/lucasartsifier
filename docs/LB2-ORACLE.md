@@ -427,6 +427,72 @@ than the one being asked, and answering it "zero" sent this project down the §7
 two sessions. The question is *"what, if anything, makes this exit unavailable in this state"* —
 and the answer can be an actor's existence, a door's `locked:`, a region, or a polygon.
 
+### ⭐ §7aa. THE CONDITIONAL-INIT RULE ALREADY EXISTS — the blocker is an EGO PROPERTY (2026-08-10)
+
+USER: *"the init condition should be more generic than just act boundaries. I can imagine lots of
+other mechanisms. Any condition, when that condition isn't met."* Right — and **the model already
+does exactly that, fully generically**, `machine.py:698`:
+
+    # ...and the arming cannot be freer than the object whose method it sits in: a method
+    # of an object the room only conditionally `init:`s only runs under that condition.
+    self._add_entry(m, 0, _conj(apc + [owner]), loc, ...)
+
+`owner` is whatever guards the object's `init:` — any condition, not just an act. Measured on the
+taxi: `sInTaxi`'s entry guard really is
+
+    GAnd([opaque, GOr([ GAnd([GNot(12==335), opaque]), 123<2 ])])
+
+so nothing needs building here. **Do not re-implement it.** Two things stop it from biting:
+
+**1. `rm330` has TWO `taxi init:` sites, so the owner condition is a DISJUNCTION.**
+
+    rm330:158  (if (< global123 2) (taxi init: stopUpd:))                    <- the act gate
+    rm330:82   (else ... (if (global0 wearingGown:) (taxi posn: init: ...)))  <- the arrival taxi
+
+and `wearingGown:` is an **ego property we do not model**, so it lowers to `opaque` and the OR
+cannot be reduced. A disjunction with an unknown arm correctly yields no requirement. **The model
+is not wrong here; it is ignorant, and in the safe direction.**
+
+**2. `south 250` is a free parallel row** from `_nav_edges` (a dead letter — control 256 arms
+`sHitEdgeScreen`, which turns Laura round). Two rows, both `({}, {12: 330}, ...)`.
+
+**MEASURED at the product level** (mutate `_emeta`, recompute the projections only — note
+`_build_product` REBUILDS `_emeta`, so editing it and calling that throws the edit away):
+
+| variant | outside rooms (250/260/270/300/320) |
+|---|---|
+| baseline | acts 1,2,3,4,5 |
+| drop the nav row | acts 1,2,3,4,5 — **not enough on its own** |
+| the honest disjunction `NOT(12==335 AND 123>=2)` | acts 1,2,3,4,5 — the act break arrives with `12==26`, so the `12!=335` arm is open |
+| `123<2` alone | **acts [1] — THE STREET IS SEALED** |
+
+So the seal is real and the model can express it; what it cannot do is *derive* it, because the
+gown disjunct is opaque. **And even sealed, `eveningGown` is still not flagged — it has no source
+until the variadic `get:` lands.** Closing the gown needs BOTH.
+
+**⭐ AND THE GOWN'S USE SITE IS THE SAME PROPERTY**, which is what makes this worth building rather
+than routing around: `rm270.sc:366` is `(or (global0 has: 32) (global0 wearingGown:))` — item 32
+IS the gown — and `rm320.sc:211` is the write, `wearingGown: 1`. The chain *get it → wear it →
+be admitted* runs through the property, not through `has:`.
+
+**THE PROPOSED STORE, with its pre-implementation census.** `vocab.item_property_registers`
+already discovers the fourth store by asking which properties the game both WRITES with a constant
+and READS back — but it is scoped to the inventory class via `item_of_receiver`. Generalise the
+same discovery to the EGO. Raw, that is noisy (LSL2 5, KQ4 5, KQ6 9, LB2 3 non-drawing properties);
+the discriminator is pure class-table derivation, the same principle as
+[[derived-vocabulary-not-catalogue]] — **a property the game's OWN ego subclass declares and its
+engine ancestors do not**:
+
+    dagger   class ego   (script 19)  declares wearingGown   <- game-specific, script < 900
+    ALL      classes Actor/Ego/View/Prop (988, 998), Talker/Narrator (928, 909), Body (914),
+             RandCycle (941)          declare looper, scaler, scaleSignal, maxScale, reset,
+                                      currentSpeed, ignoreHorizon, oldScaleSignal
+
+Applied, that yields **exactly one property in exactly one game: LB2's `wearingGown`** — the same
+profile as the fourth store (KQ4 three items, LSL2 none), which is the sign of a real store rather
+than a fitted one. It is also the store `snakeLasso`'s survival arm needs (`mummy cel:`), so one
+build closes two open items. Not started.
+
 ### ✅ §7y. CAUSE #2 IS CLOSED — `register_strandings` now walks the JOINTS (2026-08-09, later)
 
 §7w ended with "the load-bearing blocker for column B is now `{r for r, _ in back}`". It was not.
