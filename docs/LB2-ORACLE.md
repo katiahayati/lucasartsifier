@@ -338,9 +338,13 @@ user's word (§8 item 1).** The four real act-boundary carries were PROMOTED int
 eveningGown was RULED an act gate (§8 item 5) and is pinned `NEVER_STRANDABLE`; the former
 KNOWN_RED is promoted and deleted.
 ✅ **The `skeletonKey` FP IS DEAD** (2026-08-10, latest) — §7ad. The oracle test is **9 of 9
-GREEN**: every real softlock caught, zero false positives, zero declared reds. With it died the
+GREEN**: every real softlock caught, zero false positives. With it died the
 armed remedy it carried (the `(not (gEgo has: 8))` action spec and the rm630 applied placement —
 a prohibition at the key's real use site, the Spinach_Dip shape).
+✅ **The hardening round** (2026-08-10, closing) — §7ae: the watched surface RE-BLESSED on the
+user's word; the oracle retrofitted to MECHANISM PINS (whole rows, per the 2026-08-09 ruling);
+and the STREET SEAL declared as the file's one deliberate red — so "zero declared reds" above is
+now, deliberately, one.
 ✅ **The empty-bottle death IS caught** (2026-08-10, later): `register_value_strandings` —
 see §7ac. One row corpus-wide: `reg150==[0]@seal(12,123)→[730]`.
 Nothing safe is flagged, so the false-positive side is clean. The five misses turned out to be
@@ -488,6 +492,35 @@ entry (`own(9)`), as a requirement should.
 
 **Measured**: LSL2/KQ4/KQ6 snapshots byte-identical (KQ6's `skull@rm420/throwSkull` survives —
 it never hands control back); LB2 loses exactly the skeletonKey rows. **The oracle is 9/9.**
+
+### ⭐ §7ae. THE HARDENING ROUND — re-bless, mechanism pins, and the street-seal RED (2026-08-10, closing)
+
+Three closes in one pass, all in `src/test_lb2_ground_truth.py` + `tools/run_tests.py`:
+
+1. **The watched surface is RE-BLESSED** (user's word given). The 38-row diff was re-read before
+   refreshing — every row one of the day's intended changes — and both surfaces (KQ6, LB2) are
+   green again. One row of it deserves its own record: **pressPass moved detectors.** The
+   `dangerous_sinks` catch on the three `put: 6` sites retired, and `analyze` now flags it needed
+   at rm250 past the act-1→2 frontier — the catch is finally FOR the reason §5 gives (the act
+   1→2 span). A name-scored oracle could not have seen that move at all, which is point 2:
+
+2. **MECHANISM PINS** (the 2026-08-09 ruling, *"pin whole deserialized objects, not names"*,
+   applied — LB2 only, KQ4/LSL2 golden). Every column-A item now pins the FULL set of detector
+   rows that catch it (`MECHANISM_ROWS`), serialized in `snapshot.py`'s own shapes so a row can
+   be eyeballed against the watched surface; and an ATTRIBUTION TABLE (item → every detector row)
+   prints on every run, so "caught for the wrong reason" is visible in the run that does it.
+   A pinned row dropping or changing is a regression to confirm; a new row is suspicion. The
+   snakeLasso churn (two sessions planning on a `fatal_uses` FP that named the right item) is the
+   failure this makes automatic.
+
+3. **The STREET SEAL is a declared RED** (`tools/run_tests.py` KNOWN_RED). Ground truth §7z: the
+   street block (250/260/270/300/310/320) is unreachable once the museum acts start. Measured
+   today: the act projection walks all six rooms at acts 2–5 (the joint `(12,123)` at 2–4). The
+   check asserts the truth and fails, per the no-green-limitations rule — the honest derivation
+   cannot produce the seal because rm330's arrival-taxi init is `wearingGown:`-guarded
+   (satisfiable in acts 2–5, §7aa), and the real mechanism is POSITIONAL (`sTaxiLeave` drives
+   the taxi off the 320-wide pic under handsOff) — census-#1 control-map class, unmodelled.
+   Goes green only when a derived mechanism seals the street; promote it when it does.
 
 ### ⭐⭐ §7ac. THE EMPTY BOTTLE IS CAUGHT — `register_value_strandings`, the register twin of the item rows (2026-08-10, later)
 

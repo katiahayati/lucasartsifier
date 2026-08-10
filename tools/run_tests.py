@@ -146,10 +146,22 @@ KNOWN_RED = {
     # user -- "act 2 gate, not a softlock" -- once the model derived the whole mechanism (the
     # ACT 1 -> ACT 2 break itself demands `wearingGown`, whose only act-1 writer costs the gown;
     # docs/LB2-ORACLE.md §7ab). The four real carries now sit in EXPECTED_CAUGHT, where a drop is
-    # a loud regression; the gown sits in NEVER_STRANDABLE, where flagging it is an FP. LB2's one
-    # OUTSTANDING failure -- the `skeletonKey` FP tripping the suspicion check -- is deliberately
-    # NOT declared here: it is a defect being fixed, not a limitation being tracked, and declaring
-    # it red would stop the suite from reporting the day it silently changes shape.
+    # a loud regression; the gown sits in NEVER_STRANDABLE, where flagging it is an FP. (The
+    # `skeletonKey` FP that was tripping the suspicion check -- kept out of this list on purpose,
+    # as a defect rather than a limitation -- was closed the same day: a hands-on wait with the
+    # Script clock running is pre-emptable, docs/LB2-ORACLE.md §7ad.)
+    "test_lb2_ground_truth.py": {
+        "🔴 the street block is sealed from act 2 on (POSITIONAL taxi seal)":
+            "Ground truth [user 2026-08-10]: 'the outside of the museum is not reachable once "
+            "the museum acts start.' The model walks the street block (250/260/270/300/310/320) "
+            "at acts 1-5. The one junction is rm330, whose taxi -- the sole exit-arming actor -- "
+            "is init:ed only while global123 < 2; the conditional-init rule sees that guard, but "
+            "the arrival taxi's second init site is guarded by wearingGown:, satisfiable in acts "
+            "2-5, so the owner disjunction yields no requirement -- ignorance in the safe "
+            "direction. The seal the game actually enforces is POSITIONAL (sTaxiLeave drives the "
+            "taxi to x=369, off the 320-wide pic, under handsOff) -- control-map class (census "
+            "#1), unmodelled. docs/LB2-ORACLE.md §7z/§7aa.",
+    },
 }
 
 CHECK = re.compile(r"^\s*\[(PASS|FAIL)\]\s*(.*?)\s*$")

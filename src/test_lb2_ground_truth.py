@@ -17,9 +17,16 @@ we wanted.
 ✅ THE DELIBERATE RED THIS FILE CARRIED (`the act-boundary carries are caught`) WAS PROMOTED
 2026-08-10: all four real carries are caught and live in EXPECTED_CAUGHT, and the fifth row,
 eveningGown, was RULED *"act 2 gate, not a softlock"* -- the gown is the act-1 break's own
-precondition (see the wearingGown mechanism pins below), so it moved to NEVER_STRANDABLE. This
-file currently declares NO red; the outstanding false positive (`skeletonKey`) fails the
-suspicion check on purpose until its blame fix lands.
+precondition (see the wearingGown mechanism pins below), so it moved to NEVER_STRANDABLE. The
+`skeletonKey` false positive that used to trip the suspicion check was closed the same day
+(§7ad: a hands-on wait with the Script clock running is pre-emptable).
+
+🔴 THE FILE NOW DECLARES ONE DELIBERATE RED: the STREET SEAL. Ground truth [user 2026-08-10,
+§7z]: *"the outside of the museum is not reachable once the museum acts start"* -- and the model
+walks the street block at acts 1-5. The real seal is POSITIONAL (`sTaxiLeave` drives the arrival
+taxi to x=369, off the 320-wide pic, under handsOff), which is census-#1 control-map territory
+and unmodelled today. Declared in tools/run_tests.py KNOWN_RED; see the check below for why the
+honest derivation cannot currently produce the seal.
 
 ⚠️⚠️ THE EXPLANATION THAT USED TO SIT HERE WAS REFUTED. Read this before writing another one. It
 said: *the act counter is modelled and the act STRUCTURE is not; ordering the counter changed no
@@ -70,10 +77,11 @@ EXPECTED_CAUGHT = {
     "bifocals",          # has: 26
     "redHair",           # has: 27
     "grapes",            # has: 31
-    # Real for a DIFFERENT reason than we catch it by: pressPass spans acts 1->2 (that is the
-    # stranding), but what fires is `dangerous_sinks` on the three `put: 6` sites (Main, rm300,
-    # rm335) with the item still `has:`-checked at 250/300/335. Kept in this column because the
-    # verdict "pressPass is missable and matters" is right.
+    # pressPass spans acts 1->2, and since the 2026-08-10 surface (blessed row by row) it is
+    # caught FOR THAT REASON: `analyze` flags it needed at rm250 past the act-1->2 frontier
+    # edges. The `dangerous_sinks` row on the three `put: 6` sites -- the wrong-reason catch the
+    # old comment here described -- retired in the same blessed diff. The mechanism pin below
+    # holds the new, correct shape.
     "pressPass",
     # The four act-boundary carries, ⭐ PROMOTED FROM KNOWN_GAPS 2026-08-10 -- each was a declared
     # RED until its cause landed (§7s: the act register could run backwards; §7y: the act-5 walls
@@ -199,6 +207,83 @@ ALLOWED_NOT_DEMANDED = {
 # Anything the model may flag without the run counting as a surprise.
 ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS | CONTESTED | ALLOWED_NOT_DEMANDED
 
+# --- THE MECHANISM PINS [user ruling 2026-08-09: "pin whole deserialized objects, not names"] --
+# The name-set checks stay as the coarse gate; these rows are the churn-engine insurance. LB2
+# twice counted a false positive that happened to NAME an oracle item as a win (snakeLasso at
+# rm700 cost two sessions of planning -- memory `oracle-must-pin-the-mechanism`), because
+# `caught` is a flat union over eight detectors and the mechanism was never checked. So every
+# column-A item pins the FULL set of detector rows that catch it, in the shapes `snapshot.py`
+# freezes where one exists (a row here can be eyeballed against the watched surface). Two rules,
+# the oracle's own: a pinned row DROPPING or CHANGING is a regression -> STOP and confirm; a row
+# APPEARING is suspicion -> confirm, then re-pin with the user's OK.
+#
+# Provenance: hand-checked against the game 2026-08-10, the day the 38-row surface diff was
+# blessed row by row. The joint seal `(12, 123)=(26, 5)` is "standing on the act-break card with
+# the act counter at 5" -- act 5's street exits kill you on arrival, so the way out of the pair
+# is the disjunction neither scalar projection can see (§7y). `(250, 5)` is the same seal seen
+# from rm250. Source room 29 in the analyze rows is the inventory pseudo-room every item lists.
+MECHANISM_ROWS = {
+    # The five ending items: rm750's own selector, rm26->rm750 the genuine one-way frontier.
+    "wireCutters": {
+        "analyze: need@rm750 sources=[29, 640] frontier=rm26->rm750",
+        "register_strandings: reg(12, 123)=(26, 5)->[500, 750]",
+        "register_strandings: reg(12, 123)=(250, 5)->[750]",
+    },
+    "daggerOfRa": {
+        "analyze: need@rm750 sources=[29, 620] frontier=rm26->rm750",
+        "register_strandings: reg(12, 123)=(26, 5)->[500, 750]",
+        "register_strandings: reg(12, 123)=(250, 5)->[750]",
+    },
+    "bifocals": {
+        "analyze: need@rm750 sources=[29, 500] frontier=rm26->rm750",
+        "register_strandings: reg(12, 123)=(250, 5)->[750]",
+    },
+    "redHair": {
+        "analyze: need@rm750 sources=[29, 500] frontier=rm26->rm750",
+        "register_strandings: reg(12, 123)=(250, 5)->[750]",
+    },
+    "grapes": {
+        "analyze: need@rm750 sources=[29, 525] frontier=rm26->rm750",
+        # ...and the act-4->5 break itself demands the grapes (`(and (== global123 4)
+        # (global0 has: 31))`), which is why the scalar 123=5 row exists for it too.
+        "register_strandings: reg123=5->[520, 750]",
+        "register_strandings: reg(12, 123)=(26, 5)->[750]",
+        "register_strandings: reg(12, 123)=(250, 5)->[750]",
+    },
+    # pressPass: needed at rm250 (the act-2 side of the street) and the frontier is the whole
+    # act-1->2 crossing -- the five edges out of act 1. THE RIGHT REASON since 2026-08-10; the
+    # old dangerous_sinks catch is retired (see the column-A comment).
+    "pressPass": {
+        "analyze: need@rm250 sources=[29, 235] "
+        "frontier=rm210->rm250|rm26->rm330|rm26->rm355|rm26->rm420|rm280->rm250",
+    },
+    # The four act-boundary carries (§7s counter monotonicity + §7y joint projections).
+    "snakeOil": {"register_strandings: reg(12, 123)=(26, 5)->[730]"},
+    "cheese": {"register_strandings: reg(12, 123)=(26, 5)->[740]"},
+    "snakeLasso": {"register_strandings: reg(12, 123)=(26, 5)->[700]"},
+    "smellingSalts": {
+        "register_strandings: reg123=5->[720]",
+        "register_strandings: reg(12, 123)=(26, 5)->[720]",
+    },
+}
+
+# The eight detectors the flat `caught` union reads, and how each row serializes. analyze and
+# register_strandings carry every LB2 row today and get the snapshot shapes; the rest are empty
+# on LB2, so their serializer is the whole row -- a first row from one of them should show its
+# entire self, because a detector's first rows on a new game are unreviewed output, not results.
+DETECTORS = ("analyze", "joint_strandings", "resource_exhaustion", "dangerous_sinks",
+             "register_flip_strandings", "toll_strandings", "fatal_uses", "register_strandings")
+
+
+def _mech_row(det, r):
+    if det == "analyze":
+        return "analyze: need@rm%s sources=%s frontier=%s" % (
+            r["need_room"], r["source_rooms"], "|".join(r["frontier_edges"]))
+    if det == "register_strandings":
+        return "register_strandings: reg%s=%s->%s" % (
+            r["register"], r["value"], r["still_needed_at"])
+    return "%s: %r" % (det, {k: v for k, v in r.items() if k not in ("item", "item_name")})
+
 PASS, FAIL = [], []
 
 
@@ -214,11 +299,22 @@ def run():
         print("  (skip: no LB2 IR -- build/sweep/dagger)")
         return True
     s = M.load(cfg=cfg)
-    ids = ({c["item"] for c in s.analyze()} | {j["item"] for j in s.joint_strandings()}
-           | {r["item"] for r in s.resource_exhaustion()} | {d["item"] for d in s.dangerous_sinks()}
-           | {r["item"] for r in s.register_flip_strandings()} | {t["item"] for t in s.toll_strandings()}
-           | {f["item"] for f in s.fatal_uses()} | {r["item"] for r in s.register_strandings()})
-    caught = {s.g.item_name(i) for i in ids}
+    # One pass over the eight detectors, keeping WHOLE ROWS: `caught` (the flat name union the
+    # coarse checks read) and the attribution table both come from the same fetch, so "caught"
+    # and "caught for a visible reason" cannot drift apart again.
+    rows_by_item = {}
+    for det in DETECTORS:
+        for r in getattr(s, det)():
+            name = r.get("item_name") or s.g.item_name(r["item"])
+            rows_by_item.setdefault(name, set()).add(_mech_row(det, r))
+    caught = set(rows_by_item)
+
+    # THE ATTRIBUTION TABLE, printed on every run [memory `oracle-must-pin-the-mechanism`]:
+    # "caught for the wrong reason" must be visible in the run that does it, not archaeology.
+    print("  -- attribution: every detector row, by item --")
+    for name in sorted(rows_by_item):
+        for row in sorted(rows_by_item[name]):
+            print("    %-14s %s" % (name, row))
 
     missing = EXPECTED_CAUGHT - caught
     check("no confirmed softlock has DROPPED (regression)", not missing,
@@ -244,6 +340,18 @@ def run():
           f"lack one and nothing can strand it. This is a FALSE POSITIVE, not a promotion "
           f"candidate. The likely cause is a new source read that treats a cutscene grant as an "
           f"acquisition you might miss (the variadic `get:` read does exactly this).")
+
+    # --- THE MECHANISM PINS (MECHANISM_ROWS above) --------------------------------------------
+    # Row-level equality per column-A item. This is where a false positive that NAMES an oracle
+    # item stops scoring as a win: the name checks above cannot tell rm700's fatal_uses FP from
+    # the real rm700 carry row, and this can.
+    for name in sorted(EXPECTED_CAUGHT):
+        want, got = MECHANISM_ROWS.get(name, set()), rows_by_item.get(name, set())
+        check("mechanism pinned: %s" % name, want == got,
+              "PINNED ROW MISSING: %s | UNPINNED ROW PRESENT: %s. Either is a mechanism change: "
+              "confirm what moved against the game (an FP naming the right item is the churn "
+              "engine's exact shape), then re-pin with the user's OK."
+              % (sorted(want - got), sorted(got - want)))
 
     # --- the structural facts the whole diagnosis rests on ------------------------------------
     # Not verdicts about items: the measurements that explain the RED below, pinned so that
@@ -302,6 +410,30 @@ def run():
           f"rm320's `sLauraChanges` (the speakeasy restroom) to demand own({gown}). The other "
           f"writers are act-4+ museum rooms re-asserting it after a cutscene, and Main's debug "
           f"proc, which no reachable room calls.")
+
+    # --- THE STREET SEAL: the file's ONE DELIBERATE RED [ground truth 2026-08-10, §7z] --------
+    # USER: *"the outside of the museum is not reachable once the museum acts start."* This check
+    # asserts that truth, and today it FAILS -- declared in tools/run_tests.py KNOWN_RED, because
+    # no passing test may assert known-wrong behaviour and silence is how §7h's wrong path lasted
+    # two sessions. What is known, measured (§7z/§7aa):
+    #   * rm330 (the museum steps) is the ONLY junction between the street block and the museum,
+    #     and its taxi -- the sole exit-arming actor -- is `init:`ed only while `global123 < 2`
+    #     (rm330:158). The `south 250` nav property is a dead letter (`sHitEdgeScreen` refuses).
+    #   * the model's conditional-init rule (machine.py:698) SEES that guard, but rm330:82 also
+    #     inits the ARRIVAL taxi under `wearingGown:` -- satisfiable in acts 2-5 -- so the owner
+    #     disjunction is open and no requirement falls out. Ignorance in the safe direction.
+    #   * the seal the game actually enforces is POSITIONAL: `sTaxiLeave` drives the arrival taxi
+    #     to x=369, off the 320-wide pic, under handsOff. Object position/animation state is the
+    #     control map's class (modeling-gap census #1) and is not modelled.
+    # So this goes green only when some DERIVED mechanism seals these rooms at act >= 2 -- and if
+    # that happens it must be promoted, with the mechanism checked, not silently accepted.
+    STREET = (250, 260, 270, 300, 310, 320)
+    reach = s._walk(ACT, frozenset())
+    leaks = {r: sorted(v for (rm, v) in reach if rm == r and v >= 2)
+             for r in STREET if any(rm == r and v >= 2 for (rm, v) in reach)}
+    check("🔴 the street block is sealed from act 2 on (POSITIONAL taxi seal)", not leaks,
+          f"street rooms the act projection still reaches past act 1: {leaks}. If this list just "
+          f"got SHORTER, something landed -- re-measure §7aa's table before touching the red.")
 
     # --- THE FORMER DELIBERATE RED, ✅ PROMOTED 2026-08-10 --------------------------------------
     # "The act-boundary carries are caught" was declared in tools/run_tests.py KNOWN_RED from this
