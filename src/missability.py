@@ -3084,6 +3084,283 @@ class IrSccReach(SccReach):
                 r["value"] = r["values"][0]
         return [by[k] for k in order]
 
+    def _reg_entry_demands(self, S):
+        """room -> [(machine inst, frozenset(accepted values of S))] for machines whose EVERY way
+        of being armed presupposes S in that set -- the register twin of a `has:` use site.
+
+        Read per entry with `structural_reqs` (the NECESSARY reading; a value inside an OR-branch
+        is not presupposed), then across entries: an entry with no constraint accepts the whole
+        domain, and the machine's accepted set is the UNION over its entries -- every way in
+        vouches for the values it accepts, and a demand exists only if the union still excludes
+        something.
+
+        A CHAINED entry (armed from inside another machine's changeState -- `entry_armers`)
+        resolves through the ARMER's own demand rather than its guard. Its guard is the armer's
+        entry disjunction with the recursion cut at the arming floor, and that floor arm is
+        IGNORANCE, not an atom-free way in ([[arming-floor]]: ignorance is not evidence) -- read
+        flat it dissolves every demand it embeds. LB2's cobra pass is the case: `sSprinkleOil`'s
+        direct doVerb entries both presuppose `150 != 0`, and its third entry, armed from
+        `sRepelSnakes` (whose own entries presuppose the same), reduced the intersection to
+        nothing. Coinductively -- a back-edge on the armer chain contributes nothing new, because
+        entering the cycle at all passes some member's direct entry -- the group's direct entries
+        decide, which is the honest reading of a closed arming loop. An armer we cannot resolve
+        accepts the whole domain: that kills the demand, the safe direction.
+
+        A direct entry silent on S but gated on a LOWERED ROOM LOCAL (the fifth store) resolves
+        the same way, through the machines that RAISE the latch: `snake1::doit` arms
+        `sRepelSnakes` under `local3`, and `local3 := 1` is written in `sSprinkleOil` state 2, so
+        that arming is exactly as free as the sprinkle that precedes it. The hop is bounded to
+        this room's own lowered locals because their writer set is COMPLETE by construction (the
+        script reloads on entry, resetting the latch -- see vocab.derive_room_locals); a global
+        latch may be written anywhere, and resolving it through the writers we happen to see
+        would fabricate demands from ignorance. Any non-machine write of a satisfying value
+        bails to the whole domain, the safe direction again."""
+        dom = frozenset(self.em.reg_vals.get(S, ())) | {v for (_r, v) in
+                                                        self._pstates.get(S, ())}
+        if len(dom) < 2:
+            return {}
+        domd = {S: set(dom)}
+        by_name = {(i["room"], str(i.get("inst"))): i for i in self.em.machines}
+        # This room's lowered locals (reg -> home room), their machine writers, and every
+        # non-machine write -- the latch hop's whole evidence base.
+        local_home = dict(getattr(self.em.ir, "_room_local_index", None) or {})
+        latch_writers = {}                             # (room, reg) -> [(info, value)]
+        for i in self.em.machines:
+            for _K, paths in i["states"].items():
+                for (_g, wr, _gg, _c, _tr) in paths:
+                    for gi, v in wr:
+                        if local_home.get(gi, (None,))[0] == i["room"]:
+                            latch_writers.setdefault((i["room"], gi), []).append((i, v))
+        nonmachine = {}                                # (room, reg) -> {values written}
+        for room, _script, gi, v, _g in getattr(self.em, "handler_writes", ()):
+            if local_home.get(gi, (None,))[0] == room and isinstance(v, int):
+                nonmachine.setdefault((room, gi), set()).add(v)
+        memo, stack = {}, set()
+
+        def accepted(info):
+            key = id(info)
+            if key in memo:
+                return memo[key]
+            if key in stack:
+                return None                            # back-edge: the cycle's directs decide
+            stack.add(key)
+            ents = list(info.get("entries", ()))
+            armers = list(info.get("entry_armers", ()))
+            armers += [None] * (len(ents) - len(armers))
+            ents += list(info.get("init_entries", ()))  # init entries are direct by construction
+            armers += [None] * (len(ents) - len(armers))
+            acc = set()
+            for (K, eg), arm in zip(ents, armers):
+                if arm:
+                    tgt = by_name.get((info["room"], arm[0]))
+                    got = accepted(tgt) if tgt is not None else dom
+                    if got is None:
+                        continue
+                    acc |= got
+                else:
+                    sr = structural_reqs(eg, {S}, domd).get(S)
+                    acc |= frozenset(sr) if sr else _via_latch(info, eg)
+                if acc >= dom:
+                    break
+            stack.discard(key)
+            memo[key] = frozenset(acc) if ents else frozenset(dom)
+            return memo[key]
+
+        def _via_latch(info, eg):
+            room = info["room"]
+            regs = {gi for gi, home in local_home.items() if home[0] == room}
+            if not regs:
+                return dom
+            need = structural_reqs(eg, regs, {gi: set(self.em.reg_vals.get(gi, {0, 1}))
+                                              for gi in regs})
+            for R2, vals in sorted(need.items()):
+                if nonmachine.get((room, R2), set()) & set(vals):
+                    continue                           # a handler can raise it: no bound
+                raisers = [i2 for (i2, v2) in latch_writers.get((room, R2), ()) if v2 in vals]
+                got, resolved = set(), False
+                for i2 in raisers:
+                    g2 = accepted(i2)
+                    if g2 is None:
+                        continue                       # back-edge: bounded by the group's directs
+                    resolved = True
+                    got |= g2
+                    if got >= dom:
+                        break
+                if not raisers or not resolved:
+                    # No machine ever raises the latch, or every raiser is upstream on this very
+                    # chain (a pure cycle). Either way this entry opens no way in that the group's
+                    # direct entries do not already account for -- an unfirable entry vouches for
+                    # nothing, and returning `dom` here was how the cobra pass's whole demand
+                    # dissolved (sRepelSnakes' doit arming resolved through sSprinkleOil, which
+                    # was on the stack, and the empty union read as freedom).
+                    return frozenset()
+                return frozenset(got)
+            return dom
+
+        merged = {}
+        for info in self.em.machines:
+            if info.get("global_scope"):
+                continue                               # the icon bar has no place -- see opmodel
+            if any(info["room"] in self.required.get(it, ()) for it in info.get("drops", ())):
+                # A machine that CONSUMES an item still required where it stands is the loss,
+                # not the way past -- LB2's `sThrowBottle` (the 150 == 0 arm of the cobra pass)
+                # destroys the very bottle rm730 requires. Reading its arming condition as a
+                # demand inverts the finding: the detector would report "you can never throw
+                # the bottle away" as the softlock.
+                continue
+            acc = accepted(info)
+            if acc is not None and acc:
+                # UNION per (room, machine): a region-homed machine appears once per room COPY,
+                # each with the copy's own entry conditions, and the copies are alternative
+                # armings of the SAME machine -- exactly what the per-entry union already says.
+                # KQ6's `walkGuardsOnScreen` at rm850 is the case: one copy resolves to
+                # `{flag == 1}` and another to `{flag == 0}`, which is no demand at all, and read
+                # separately each copy fabricated a choreography "stranding".
+                key = (info["room"], str(info.get("inst")))
+                merged[key] = (merged.get(key, frozenset()) | acc)
+        out = {}
+        for (room, inst), acc in merged.items():
+            if acc and not (acc >= dom):
+                out.setdefault(room, []).append((inst, acc))
+        for room in out:
+            out[room].sort()
+        return out
+
+    def register_value_strandings(self):
+        """Crossing a SEAL while a register holds a value the far side rejects -- the REGISTER
+        twin of `register_strandings`' item rows, built on the same flips and the same walks.
+
+        The case that forced it [user rulings, 2026-08-09/10]: LB2's snake-oil bottle. The bottle
+        ITEM is already caught (the joint (12,123) row), but the bottle can be EMPTY -- global150,
+        spent by shakes at rm520/rm610, poured out whole by `sDumpIt` -- and entering act 5 with
+        `150 == 0` is its own stranding: rm730's cobra pass presupposes `150 != 0` in every arming
+        (`_reg_entry_demands`; the `== 0` arm throws the bottle away and passes nothing), the one
+        raise is rm610's vat (`= global150 4`, three refills metered by flags 105-107), and the
+        act-5 seal cuts rm610 off. The user ruled the spend ARITHMETIC out of scope -- "you should
+        have enough snake oil left before entering act 5" -- so the boundary value is the whole
+        question, which is exactly what the projections can answer.
+
+        Same conjuncts as the item rows, register-shaped:
+          1. the flip can happen while S == b -- `(flip_room, b)` is a reachable product state;
+          2. past the flip, some machine's every arming presupposes S in a set excluding b, at a
+             room the post-flip player reaches;
+          3. no write past the flip -- room write or edge write -- puts S into the accepted set,
+             and some pre-flip write could have (the causality half: what the pre-flip player
+             could not fix either, this flip did not break);
+          4. the goal is still reachable, or it is a dead end rather than a softlock.
+
+        prevRoom is excluded as the DEMANDED register outright: it is rewritten by movement
+        itself, so it is not state the player can HOLD across a seal -- a prevRoom demand the
+        sealed region cannot satisfy means a ROOM became unreachable, which is the flat graph's
+        fact (and the act partition's), not a value you failed to bring. Measured before the
+        exclusion: LB2's `sFinishIt` at rm454 demands `prev == 455` and rm455 is outside the
+        act-5 region, which is true, is not a register stranding, and is already the act seal's
+        own finding. Derived per game via `prev_room_reg`, not a number."""
+        out = []
+        goal = self.goal_rooms_set()
+        demand_cache = {}
+        prev = prev_room_reg(self.em)
+        for R in self.proj:
+            states = self._pstates[R]
+            vals = {v for (_r, v) in states}
+            if len(vals) < 2:
+                continue
+            comps = set(R) if isinstance(R, tuple) else {R}
+            for w in sorted(vals, key=repr):
+                seeds = self._flip_seeds(R, w, states)
+                if not seeds:
+                    continue
+                seed_rooms = {r for (r, _v) in seeds}
+                per_room = {}
+
+                def _flip_at(r, R=R, w=w, states=states, per_room=per_room):
+                    if r not in per_room:
+                        a = {q for (q, _v) in self._walk(R, frozenset(), starts={(r, w)})}
+                        b0 = {(r2, v) for (r2, v) in states if r2 == r and v != w}
+                        b = ({q for (q, _v) in self._walk(R, frozenset(), starts=b0)}
+                             if b0 else None)          # None: no pre-flip player -> an arrival
+                        per_room[r] = (a, b)
+                    return per_room[r]
+
+                for S in sorted(self.regs):
+                    if S in comps or S == prev:
+                        continue
+                    if S not in demand_cache:
+                        demand_cache[S] = self._reg_entry_demands(S)
+                    sites = demand_cache[S]
+                    if not sites:
+                        continue
+                    sst = self._pstates.get(S, set())
+                    dom = frozenset(self.em.reg_vals.get(S, ())) | {v for (_r, v) in sst}
+                    writes = {r2: set(v2) for r2, v2 in self._inroom.get(S, {}).items()}
+                    esets = [(x, m[1].get(S)) for (x, _y), ms in self._emeta.items()
+                             for m in ms if m[1].get(S) is not None]
+                    for r in sorted(seed_rooms):
+                        a, b = _flip_at(r)
+                        if b is None:
+                            continue                   # an arrival, owned by edge_strandings
+                        if goal and not (goal & a):
+                            continue                   # a dead end, not a softlock
+                        for room_d in sorted(set(sites) & a):
+                            for inst, acc in sites[room_d]:
+                                bad = dom - acc
+                                # attainable at THIS flip: S can hold a rejected value here
+                                bad_here = {v for v in bad if (r, v) in sst}
+                                if not bad_here:
+                                    continue
+                                # THE REGISTER MUST BE FROZEN PAST THE SEAL -- no reachable write
+                                # of ANY value, not merely none of an accepted one. If the sealed
+                                # region itself touches the register, its value there is the
+                                # region's working state and blaming what you carried across is
+                                # wrong attribution -- the same "the flip must be the cause"
+                                # conjunct the item rows carry. This is what separates the snake
+                                # oil (nothing in act 5 writes 150; what you bring is what you
+                                # have) from KQ6's guard choreography (the wedding-sealed castle
+                                # keeps toggling its own guard flags) and from LB2's flag 63 (a
+                                # set-in-the-inset / cleared-on-return handshake, rewritten by
+                                # the very room that reads it).
+                                if any(writes.get(q) for q in a) or any(x in a for x, _v in esets):
+                                    continue
+                                fix_in_b = (any(writes.get(q, set()) & acc for q in b)
+                                            or any(x in b and v in acc for x, v in esets))
+                                if not fix_in_b:
+                                    continue           # never fixable before: not this flip's doing
+                                out.append({"pattern": "register-value-at-seal",
+                                            "register": R, "value": w,
+                                            "reg": S, "bad": sorted(bad_here),
+                                            "accepted": sorted(acc),
+                                            "demanded_at": [room_d], "via": inst,
+                                            "raise_rooms": sorted(q for q in b
+                                                                  if writes.get(q, set()) & acc),
+                                            "flip_rooms": [r],
+                                            "_sealed": frozenset(a)})
+        return self._collapse_value_flips(out)
+
+    @staticmethod
+    def _collapse_value_flips(rows):
+        """One (register, rejected value, sealed region) is one finding -- `_collapse_flips` for
+        the register rows, keyed by the demanded register instead of the item."""
+        by, order = {}, []
+        for r in rows:
+            k = (r["reg"], tuple(r["bad"]), str(r["register"]), r.pop("_sealed"))
+            if k not in by:
+                by[k] = r
+                order.append(k)
+                continue
+            keep = by[k]
+            keep.setdefault("values", [keep["value"]])
+            if r["value"] not in keep["values"]:
+                keep["values"].append(r["value"])
+            keep["flip_rooms"] = sorted(set(keep["flip_rooms"]) | set(r["flip_rooms"]))
+            keep["demanded_at"] = sorted(set(keep["demanded_at"]) | set(r["demanded_at"]))
+            keep["raise_rooms"] = sorted(set(keep["raise_rooms"]) | set(r["raise_rooms"]))
+        for k in order:
+            r = by[k]
+            if "values" in r:
+                r["values"] = sorted(r["values"], key=repr)
+                r["value"] = r["values"][0]
+        return [by[k] for k in order]
+
     def resource_exhaustion(self):
         """Items you USE UP rather than throw away -- the fourth store's softlock shape.
 

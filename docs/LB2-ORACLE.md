@@ -271,8 +271,9 @@ precondition, unstrandable, now pinned in `NEVER_STRANDABLE`. ⚠️ The one col
 not an item: the ruled-in-scope **empty-bottle-at-act-5 death** (`global150 == 0` crossing into
 act 5) has no detector — §8.
 
-**C — CONTESTED: the source contradicts the walkthroughs. CHECKS DONE 2026-08-10, awaiting the
-user's final word** (§8 item 1; the user delegated the check: *"should be checked"*)
+**C — ✅ RULED SAFE 2026-08-10, pending the §9 play test** (formerly CONTESTED; the user delegated
+the check — *"should be checked"* — and then ruled on the findings: *"let's mark those safe, but
+let's remember to put them in a play test plan later… I suspect the act 5 chase is very tight"*)
 
 | item | user's play-side shape (2026-08-10) | what the source check found |
 |---|---|---|
@@ -341,8 +342,8 @@ applied=True placement row and a `(not (gEgo has: 8))` action spec, i.e. a PROHI
 use site (Spinach_Dip shape if LB2 guards ever shipped — they do not). Needs §7u.2's blame fix
 ("a state that waits on the clock can be pre-empted by a reachable arming of a non-doomed machine
 on the same receiver"); ⚠️ the naive form deletes KQ6's lingering-timer deaths — measure first.
-⚠️ One in-scope death with NO detector: **entering act 5 with `global150 == 0`** (the empty
-snake-oil bottle, ruled 2026-08-09) — the caught snakeOil row is the ITEM carry, not this.
+✅ **The empty-bottle death IS now caught** (2026-08-10, later): `register_value_strandings` —
+see §7ac. One row corpus-wide: `reg150==[0]@seal(12,123)→[730]`.
 Nothing safe is flagged, so the false-positive side is clean. The five misses turned out to be
 **three independent causes**, all diagnosed and measured:
 
@@ -460,6 +461,56 @@ to the "honest disjunction" row — measured, still acts 1–5 in the street blo
 arrival taxi being driven **off-screen** by `sTaxiLeave` (`MoveTo 369 125`, x beyond the 320-wide
 screen) under `handsOff:`, so it can never be verbed. That is a POSITION mechanism and is still
 unmodelled. **Do not re-read §7aa as if the store were the street's cure; it is the ACT GATE's.**
+
+### ⭐⭐ §7ac. THE EMPTY BOTTLE IS CAUGHT — `register_value_strandings`, the register twin of the item rows (2026-08-10, later)
+
+**The ruling it implements** [2026-08-09]: *"you should have enough snake oil left before entering
+act 5 to not die because of it in act 5"* — the boundary value is the stranding, the spend
+arithmetic is out of scope. **The mechanism, all source-verified this session:**
+
+    global150 = 4 at Main; -- per shake (rm520 cobraDoor, rm610 pipe/drain); sDumpIt pours it out
+    rm610 vat refill: (if (< cel 3) (++ cel) (= global150 4))   <- THREE refills, metered by
+                                                                    flags 105/106/107
+    rm730 verb 25 (the snake-oil verb): (== 150 0) -> sThrowBottle (put: 14, destroys the bottle,
+                                        passes NOTHING); else sSprinkleOil / sRepelSnakes
+    the (12,123) joint proves rm610 unreachable once act 5 begins
+
+**The detector** — same flips, same walks, same conjuncts as `register_strandings`' item rows,
+register-shaped: the flip is reachable with `S == b`; a machine past the seal demands `S ∈ acc`
+with `b ∉ acc` (through `_reg_entry_demands`); **the register is FROZEN past the seal** (no write
+of any value — the causality conjunct); a pre-flip write could have fixed it; the goal survives.
+**Corpus: LSL2 0 · KQ4 0 · KQ6 0 · LB2 1 — exactly the ruled softlock.** Pinned green in
+`test_lb2_ground_truth` ("the empty-bottle act-5 crossing is caught"). Snapshot key
+`register_value_strandings` appears only when rows exist, so the golden fixtures stay frozen and
+a first row on a golden game is a loud new key.
+
+**Three lessons paid for while building it, kept so they are not re-bought:**
+1. **The arming floor cuts both ways.** `sSprinkleOil`'s chained entry embeds its armer's whole
+   entry disjunction with the recursion cut at the floor, and the floor arm read flat dissolves
+   every demand it embeds. `_reg_entry_demands` resolves chained entries through the ARMER's
+   demand, coinductively (a back-edge vouches for nothing new — entering a cycle passes some
+   member's direct entry), and resolves a doit-arming gated on a room-local latch through the
+   latch's machine writers (`local3 := 1` lives in sSprinkleOil state 2; the fifth store's
+   writer set is complete by construction, which is what makes the hop sound).
+2. **A machine that consumes an item still required where it stands is the LOSS, not the way
+   past.** Read as a demand site, `sThrowBottle` inverted the finding into "you can never throw
+   the bottle away".
+3. **The freeze conjunct is what separates a carry from choreography.** KQ6's wedding-sealed
+   castle produced 4 rows about guard-march flags — registers the sealed region itself keeps
+   toggling — and LB2's flag 63 (wire handshake, set in the rm435 inset, CLEARED by rm430's cue)
+   produced 3 more. If the region can write the register, its value there is the region's working
+   state, and blaming what you carried across is wrong attribution. prevRoom is excluded as the
+   demanded register for the same reason one level up: movement itself rewrites it.
+
+⚠️ **A real upstream gap found and NOT yet fixed, recorded before the FP-rows it caused were
+cured for the right reason:** `_emeta[(430,435)] req = {123: {3}}`. The skewer's guard is
+`(or (> global123 3) (and (== global123 3) <stage>))`, and `guard_reqs` reads it FLAT — the
+relational arm is ignored, the `== 3` arm is kept — so an OR-arm's atom NARROWS the edge instead
+of widening it, and rm435 (Ziggy's-body close-up, the wire-cut enabler) reads act-3-only in the
+whole product while the game keeps it verbable in acts 4–5. This is the whale lesson
+(`structural_reqs`' docstring) sitting in `edge_meta`'s own req extraction. The cure — structural
+reqs on edges — moves every disjunctively-guarded edge corpus-wide and needs its own measured
+round. **Open item; do not let the freeze conjunct's success hide it.**
 
 ### ⭐ §7z. HOW THE MUSEUM SEALS THE STREET — and the refutation of "zero act-gated exits" (2026-08-10)
 
@@ -1542,17 +1593,13 @@ controllable crossing of act 5, not the act break itself.
 
 ## 8. OPEN — needs a user ruling
 
-1. **The three CONTESTED rows (§5 column C) — CHECKS DONE 2026-08-10, awaiting the final word.**
-   The user delegated the check (*"should be checked"*) with the play-side shape per item, and the
-   source was read end to end for all three (findings in the column-C table). All three resolve to
-   the SAME idiom: the respawn guard sits in (or beside) the very room that uses the item, with no
-   act test, and all three rooms carry the game's own act-5 chase costume (`view 426`) — the
-   designers handled the mid-chase case deliberately. Proposed: **all three → column E (safe)**;
-   the wire's strandable link is the wireCutters (already column A), and the act-5 jeopardy on all
-   three is the chase clock, i.e. the ruled-out-of-scope death class. ⚠️ The wire finding
-   CONTRADICTS the user's guess ("I'm guessing it's really a softlock"), so the rows stay
-   contested until the user says move them. Caveat stated plainly: this is a source reading, not a
-   play test.
+1. ✅ **RULED 2026-08-10 — the three contested rows are SAFE, pending the §9 play test.** The
+   source checks (column-C table) found all three re-obtainable at the point of use with the
+   game's own act-5 chase handling, and the user ruled: *"let's mark those safe, but let's
+   remember to put them in a play test plan later."* Applied: rows moved to `SAFE_RULED` in the
+   oracle test, where flagging one is now a false positive; the play-test obligation is §9. The
+   user's stated suspicion — the walkthroughs hoard these early **because the act-5 chase is very
+   tight** — is the exact claim the play test exists to check.
 2. ✅ **RULED 2026-08-09 — deaths ARE in scope, when unavoidable given earlier state.** User:
    *"this is analogous to the other games… yes they're in scope, if they're unavoidable given
    earlier state (the snake oil). The chase and looking both ways are not in scope."* The
@@ -1580,6 +1627,28 @@ controllable crossing of act 5, not the act break itself.
    register form of a rule the codebase already applies to the previous-room register — but on
    today's corpus it changes nothing, so it is groundwork for item 4 rather than a result. Keep it
    or revert it; either is defensible and it should be a decision, not a leftover.
+
+## 9. PLAY-TEST PLAN (recorded 2026-08-10, not yet run)
+
+The 2026-08-10 rulings rest on SOURCE readings; the user asked that these be play-verified later
+(*"let's remember to put them in a play test plan later"*). Per the standing method rules: play is
+the LAST resort, no console-SET state (reads fine, writes are not evidence), stream progress.
+
+1. **The trio under the chase clock.** For each of workBoot / wire / dinoBone: reach act 5
+   WITHOUT the item (skip it in its usual act), then attempt the re-acquisition at the point of
+   use during the chase — boot at rm720 (take, then use on Steve), wire at rm430 (use wireCutters
+   on the wire, then wire the east door), bone at rm480 (take it mid-chase if any act-5 use needs
+   it — note rm500's bone use self-limits to acts ≤4, so the act-5 leg may be vacuous for the
+   bone; check whether anything in act 5 demands it at all). The user's suspicion to test: *"the
+   act 5 chase is very tight"* — i.e. the source-level availability may not survive the clock.
+   If any re-acquisition is not realistically completable, the row moves BACK from SAFE_RULED
+   with the user's sign-off, and the walkthroughs were right for the right reason.
+2. **The empty-bottle boundary** (§5a): enter act 5 with `global150 == 0` (spend all four shakes
+   in act 4 — legitimate play, no console writes) and confirm the cobra nest is impassable, i.e.
+   the stranding the 2026-08-09 ruling names. Also confirm the refill really is unavailable in
+   act 5 (the vat at rm610, `cel < 3`).
+3. While in the file: the standing LB2 items not play-verified — the guard placements do NOT ship
+   (§7i), so nothing to verify there yet.
 
 Related: [[one-rule-death-is-in-scope]], [[dont-flip-enumerated-ground-truth]],
 [[kq6-softlock-ground-truth]], `docs/KQ6-SOFTLOCK-CANDIDATES.md`, `src/test_lb2_ground_truth.py`.

@@ -46,9 +46,10 @@ movement actually consults -- carries an act requirement on 35 of 193 edges, all
 destinations included. The structural check below reads `_emeta`, not `edge_demands`.
 
 Provenance is recorded per row, because it differs: the five ending items are read out of
-`rm750`'s own selector, the carries are cross-checked source-vs-walkthrough, and three rows are
-CONTESTED -- the source contradicts every walkthrough and the user has not ruled yet
-(docs/LB2-ORACLE.md §8).
+`rm750`'s own selector, the carries are cross-checked source-vs-walkthrough, and the three
+formerly-CONTESTED rows were source-checked at the user's request and RULED SAFE 2026-08-10 --
+pending the play test recorded in docs/LB2-ORACLE.md §9 (the act-5 chase may be tighter in play
+than in the scripts).
 """
 import os
 import sys
@@ -96,41 +97,29 @@ EXPECTED_CAUGHT = {
 # that stays listed as red is how a real fix gets landed, forgotten, and undone.
 KNOWN_GAPS = set()
 
-# C -- CONTESTED. The walkthroughs call these fatal carries; the game source shows a second source
-# in the act that needs them. Our own authority order says the source wins, which would move them
-# to SAFE -- but they are in the list this project has carried since 2026-07-26, so they are
-# reported and NOT reclassified until the user rules. docs/LB2-ORACLE.md §5 column C, §8 item 1.
+# C -- ✅ RULED SAFE 2026-08-10 (formerly CONTESTED since 2026-07-26). The walkthroughs called
+# these fatal carries; the user delegated a source check (*"should be checked"*), every one
+# resolved to the respawn idiom AT THE POINT OF USE with the game's own act-5 chase costume branch
+# (`view 426`) proving mid-chase re-acquisition is designed for, and the user then ruled: *"let's
+# mark those safe."* NOT in ALLOWED -- flagging one of these is now a false positive, which is the
+# whole point of the column move.
 #
-# [2026-08-10] The user delegated the check (*"should be checked"*) and gave the play-side shape
-# per item; the source was then read end to end for all three. EVERY one resolves to the same
-# idiom -- the respawn guard `(if (not (has: N)) (<thing> init:))` sitting in (or beside) the very
-# room that USES the item, with no act test, and all three rooms carry the game's own act-5 chase
-# costume branch (`view 426`), so the designers handled the chase case deliberately. The remaining
-# jeopardy in act 5 is the chase clock, which is the ruled-out-of-scope death class (preventable
-# from its own screen). Findings reported; awaiting the final word before any row moves.
-CONTESTED = {
-    "workBoot",          # [checked 2026-08-10] user: obtainable act 4, used act 5, "I don't know
-                         # if it's still available in act 5". Source: rm720:46 re-places the boot
-                         # with NO act test, rm720 IS the act-5 use room (verb 23 on steve ->
-                         # `put: 12` + sGetUp), and both sGetBoot armings are plain verb-4 takes.
-                         # Even entering act 5 bootless, it waits at the point of use -> SAFE by
-                         # the source reading.
-    "wire",              # [checked 2026-08-10] user: "same shape as the boot... I'm guessing it's
-                         # really a softlock". Source disagrees: the wire is sourced AND used at
-                         # rm430 -- wireEnd inits in acts 4 AND 5 (act 3 under its progress flag,
-                         # `not (proc0_2 44)` = not already taken), sGetThatWire even dresses the
-                         # ego in the act-5 running view 426, and the use (verb 44 -> sWireItShut)
-                         # is act-5-only. Arrive wireless: cut a fresh one on the spot -- IF you
-                         # hold the wireCutters. The strandable thing in this chain is the
-                         # CUTTERS, already column A.
-    "dinoBone",          # [checked 2026-08-10] user: obtained act 2, used later, availability
-                         # unknown. Source: rm480:79 respawn guard, NO act test; the bone is
-                         # NEVER consumed (zero `put: 18` sites); real uses are rm500
-                         # (sSmashPlaster, its own guard limits it to acts <=4), rm600
-                         # (sBreakGlass) and rm650 (sDisarmTrap), all museum rooms in the same
-                         # block as rm480 -> re-obtainable whenever any use site is -> SAFE by
-                         # the source reading.
+# ⚠️ [USER, same ruling] *"let's remember to put them in a play test plan later. The walkthroughs
+# I've seen have you get them in earlier acts and I suspect that's because the act 5 chase is very
+# tight."* So the safety of all three rests on a SOURCE reading of act-5 re-acquisition under the
+# chase clock, and that is exactly the kind of claim a play test settles. The plan is recorded in
+# docs/LB2-ORACLE.md §9 (PLAY-TEST PLAN); do not silently drop it.
+SAFE_RULED = {
+    "workBoot",          # rm720:46 re-places it, NO act test; rm720 IS the act-5 use room (verb
+                         # 23 on steve -> `put: 12` + sGetUp); both sGetBoot armings plain takes.
+    "wire",              # sourced AND used at rm430; wireEnd inits acts 4+5 (`not flag44` = not
+                         # already cut); sGetThatWire dresses the ego in the act-5 running view
+                         # 426; the use (verb 44 -> sWireItShut) is act-5-only. The strandable
+                         # link is the wireCutters, already column A.
+    "dinoBone",          # rm480:79 respawn guard, NO act test; NEVER consumed (zero `put: 18`);
+                         # uses rm500 (<=act4 by its own guard), rm600, rm650 -- same museum block.
 }
+CONTESTED = set()        # empty since 2026-08-10; kept because the checks below reference it
 
 # D -- OUT OF SCOPE by the user's 2026-07-26 "gate on ITEMS only" ruling. Flagging one is not
 # wrong exactly, but their ABSENCE is correct behaviour and must not be filed as a gap.
@@ -325,15 +314,35 @@ def run():
     # `init:` that measured to zero sites, the `_source_live` credit -- are preserved in
     # docs/LB2-ORACLE.md §7q/§7r/§7t and the git history of this file, not here.)
 
-    promoted = caught & CONTESTED
-    if promoted:
-        print(f"  [note] a CONTESTED item is now flagged: {sorted(promoted)} -- the source says it "
-              f"is re-obtainable in the act that needs it. Do not promote without the user's "
-              f"ruling (docs/LB2-ORACLE.md §8 item 1).")
+    # --- THE EMPTY BOTTLE AT THE ACT-5 BOUNDARY [ruled in scope 2026-08-09] -------------------
+    # "You should have enough snake oil left before entering act 5 to not die because of it in
+    # act 5" -- entering act 5 with `global150 == 0` IS the stranding, and it is NOT the caught
+    # snakeOil row (that is the ITEM carry; this is the register). Pinned as a MECHANISM per
+    # [[oracle-must-pin-the-mechanism]]: the demand is rm730's cobra pass (sSprinkleOil and
+    # sRepelSnakes both presuppose 150 != 0; the 150 == 0 arm throws the bottle away), the only
+    # raise is rm610's vat (`= global150 4`), and the joint (12,123) projection proves rm610
+    # unreachable once act 5 begins.
+    rows = (s.register_value_strandings() if hasattr(s, "register_value_strandings") else [])
+    oil = [r for r in rows
+           if r.get("reg") == 150 and 0 in r.get("bad", ())
+           and 730 in r.get("demanded_at", ()) and 610 in r.get("raise_rooms", ())
+           and 123 in (r["register"] if isinstance(r["register"], tuple) else (r["register"],))]
+    check("the empty-bottle act-5 crossing is caught (register-value stranding)", bool(oil),
+          f"rows={rows!r:.400}. The detector must derive: crossing the act seal with reg 150 == 0 "
+          f"strands, because a use site past the seal (rm730) accepts only 150 == 4, the sole "
+          f"raise (rm610) is sealed off, and 0 is attainable at the crossing (spends at "
+          f"rm520/rm610, the sDumpIt pour-out, wasteful shakes on the pipe/drain).")
+
+    safe_hits = caught & SAFE_RULED
+    check("nothing RULED SAFE (the 2026-08-10 trio) is flagged", not safe_hits,
+          f"FLAGGED: {sorted(safe_hits)} -- these were source-checked and ruled safe (respawn at "
+          f"the point of use, act-5 chase costume branches). Flagging one means a source was lost "
+          f"or a seal was fabricated. If a PLAY TEST (docs/LB2-ORACLE.md §9) refutes the source "
+          f"reading, move the row back with the user's sign-off; nothing else may.")
 
     print(f"\n  caught now: {sorted(caught)}")
     print(f"  still-missed ground truth: {sorted(KNOWN_GAPS - caught)}")
-    print(f"  contested, checks done, awaiting the user's word: {sorted(CONTESTED)}")
+    print(f"  ruled safe pending play test (§9): {sorted(SAFE_RULED)}")
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
 
