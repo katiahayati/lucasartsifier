@@ -141,21 +141,26 @@ KNOWN_RED = {
     },
     "test_lb2_ground_truth.py": {
         "🔴 KNOWN GAP (LB2): the act-boundary carries are caught":
-            "1 of 5 CLOSED, 4 to go, and the five turned out to be THREE INDEPENDENT CAUSES, all "
-            "diagnosed and measured (docs/LB2-ORACLE.md §7, the summary table). "
-            "✅ smellingSalts: the act register could run BACKWARDS -- `rm630`'s bare "
+            "4 of 5 CLOSED. The five were THREE INDEPENDENT CAUSES and two are now shut "
+            "(docs/LB2-ORACLE.md §7, the summary table). "
+            "✅ smellingSalts (§7s): the act register could run BACKWARDS -- `rm630`'s bare "
             "`(= global123 4)` had no recoverable from-value, so the model stood at act 5, wound "
             "the act back to 4 and walked to rm525. Cured by the counter-monotonicity pass in "
             "`_build_product`. "
-            "❌ cheese/snakeLasso/snakeOil: act 5 is an 11-room pursuit region whose only two "
-            "exits run `sLauraDies` on entry, conditioned on arrival direction -- so the edge is "
-            "not an edge in act-5 states. Both registers (`global123`, `global12`) are already "
-            "modelled; MEASURED that cutting those two edges strands all three. "
-            "❌ eveningGown: `get:` is VARIADIC and we read one argument -- `(global0 get: -1 32)` "
-            "has a silent-pickup sentinel with the items after it, losing 13 sites (28% of LB2's "
-            "acquisitions). Needs that AND the prologue->museum crossing modelled one-way. "
-            "⚠️ The variadic fix must EXCLUDE debug-only code: Main's proc0_13..proc0_17 hand over "
-            "nine items each and would give cheese and smellingSalts phantom sources.",
+            "✅ cheese/snakeOil, and snakeLasso for the right reason (§7y): act 5 is an 11-room "
+            "pursuit region whose only two exits run `sLauraDies` on entry, so the way out is the "
+            "DISJUNCTION `12 != 420 OR 123 != 5` -- and `register_strandings` walked the SCALAR "
+            "projections, in each of which the other alternative passes freely. It now walks "
+            "`self.proj`, the joints included. The joint `(12, 123)` was already being built and "
+            "nothing was reading it. "
+            "❌ eveningGown, the one left, and it is NOT an act gap: `get:` is VARIADIC and we read "
+            "one argument -- `(global0 get: -1 32)` has a silent-pickup sentinel with the items "
+            "after it, losing 13 sites (28% of LB2's acquisitions), so the item has no source at "
+            "all. BUILT AND REVERTED: it is a net regression until debug-only code is excluded, "
+            "because `whereTo` (script 29) is the only caller of Main's proc0_13..proc0_17, which "
+            "hand over nine items each and give cheese/smellingSalts phantom sources at rm0/rm29. "
+            "⚠️ RENAME THIS CHECK when that lands -- 'act-boundary carries' will have stopped "
+            "describing what is red.",
     },
 }
 

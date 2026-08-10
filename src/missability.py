@@ -1972,6 +1972,27 @@ class IrSccReach(SccReach):
                         dom[R].add(v)
         traps = death_traps(self.em, self.regs, dom)
         self._joints = self._trap_joints(traps, dom)
+        # ⭐ WHICH REGISTER VALUES MEAN "YOU ARE DEAD" (2026-08-09). A room's rows are ALTERNATIVE
+        # ways to survive, so death is "every alternative failed". Only when there is exactly ONE
+        # alternative naming exactly ONE register does a single value of a single register mean
+        # death by itself -- and then the excluded values are precisely the death signal.
+        #
+        # KQ6 is the case and the reason this exists: `proc0_1` is the imperative death procedure
+        # (`Main.sc:251` -- set global160, set flag 44, `newRoom: 640`) and `rm640` plays the death
+        # cartoon iff flag 44 is set, so reg216's survival condition is the lone `216 == 0` and
+        # `216 == 1` MEANS DEAD. `free_running_traps` was then classifying the death signal as an
+        # adversarial plot clock (see its guard). Deliberately NOT claiming LB2's `123 == 5`: act
+        # 5's rooms kill you only in conjunction with `12 == 420`, two alternatives, so no single
+        # value is death -- being in act 5 is a place you can stand, being dead is not.
+        self._death_values = defaultdict(set)
+        for room, rows in traps.items():
+            if len(rows) != 1:
+                continue
+            (treq, _talts) = rows[0]
+            if len(treq) != 1:
+                continue
+            (R, vals), = treq.items()
+            self._death_values[R] |= (set(dom.get(R, ())) - set(vals))
         for room, rows in traps.items():
             for b in self.edges.get(room, ()):
                 base = list(self._emeta.get((room, b)) or [self._FREE])
@@ -2851,25 +2872,30 @@ class IrSccReach(SccReach):
           3. every source of the item is outside the post-flip region, and a use is inside it.
 
         Runs on the projections `_build_product` already made, so it costs a walk per (register,
-        value) and no new model."""
+        value) and no new model.
+
+        ⭐ JOINT PROJECTIONS SINCE 2026-08-09. This iterated `self.regs` -- scalars only -- while
+        `self.proj` (scalars PLUS the joints the death traps ask for) is what the four reachability
+        walks use. So a seal expressed in TWO registers was invisible to the one detector that
+        reports seals, even when the joint it needed had already been built. LB2 is the case: act 5
+        is a chase whose only two exits kill you, `_apply_death_traps` correctly writes the way out
+        as the disjunction `12 != 420 OR 123 != 5`, and each alternative passes freely in the
+        projection that cannot see the other. Measured: LSL2 0->0, KQ4 0->0, KQ6 1->1 (its one
+        joint, `(12, 173)`, adds nothing), LB2 2 -> 9 findings including cheese and snakeOil, the
+        two act-5 carries this project has been chasing since 2026-08-06. Nothing is lost anywhere.
+
+        Three scalar assumptions had to be generalised, all of them "the flip landed on w":
+        component-wise, a joint flips into w when SOME register of the tuple is written to its
+        component of w. See `_flip_seeds`."""
         out = []
         goal = self.goal_rooms_set()
-        for R in self.regs:
+        for R in self.proj:
             states = self._pstates[R]
             vals = {v for (_r, v) in states}
             if len(vals) < 2:
                 continue
             for w in sorted(vals):
-                # Seed where the flip ITSELF can happen -- rooms that write w, and edges that set
-                # it on the way out -- not every room already seen at w. Seeding a room with its
-                # own post-flip state is how a first attempt at this "proved" that KQ4's start
-                # room was sealed by nightfall.
-                seeds = {(r, w) for r, vs in self._inroom[R].items() if w in vs}
-                for (_a, b), metas in self._emeta.items():
-                    for (_req, sets, _alts) in metas:
-                        if sets.get(R) == w:
-                            seeds.add((b, w))
-                seeds &= states
+                seeds = self._flip_seeds(R, w, states)
                 if not seeds:
                     continue
                 after = self._walk(R, frozenset(), starts=seeds)
@@ -2930,15 +2956,80 @@ class IrSccReach(SccReach):
                         if self.required[it] & a:
                             strand_at.append(r)
                     if strand_at:
-                        ahead = self.required[it] & set().union(
-                            *(_flip_at(r)[0] for r in strand_at))
+                        sealed = set().union(*(_flip_at(r)[0] for r in strand_at))
+                        ahead = self.required[it] & sealed
                         out.append({"pattern": "register-flip-point-of-no-return",
                                     "register": R, "value": w, "item": it,
                                     "item_name": self.g.item_name(it),
                                     "flip_rooms": strand_at,
                                     "source_rooms": sorted(srcs),
-                                    "still_needed_at": sorted(ahead)})
-        return out
+                                    "still_needed_at": sorted(ahead),
+                                    "_sealed": frozenset(sealed)})
+        return self._collapse_flips(out)
+
+    def _flip_seeds(self, R, w, states):
+        """The reachable states where the flip INTO `w` can itself happen.
+
+        Rooms that write `w`, plus edges that set it on the way out -- NOT every room already seen
+        at `w`. Seeding a room with its own post-flip state is how a first attempt at this "proved"
+        that KQ4's start room was sealed by nightfall.
+
+        Component-wise for a joint: a tuple value is entered when SOME register of the tuple is
+        written to its component. Requiring the whole tuple to be written at once would find
+        nothing, because no single write sets two registers -- which is exactly why a joint seal
+        was invisible here."""
+        if isinstance(R, tuple):
+            def writes(r):
+                return any(w[i] in self._inroom[Ri].get(r, ()) for i, Ri in enumerate(R))
+
+            def sets_it(sets):
+                return any(sets.get(Ri) == w[i] for i, Ri in enumerate(R))
+            seeds = {(r, v) for (r, v) in states if v == w and writes(r)}
+        else:
+            def sets_it(sets):
+                return sets.get(R) == w
+            seeds = {(r, w) for r, vs in self._inroom[R].items() if w in vs}
+        for (_a, b), metas in self._emeta.items():
+            for (_req, sets, _alts) in metas:
+                if sets_it(sets):
+                    seeds.add((b, w))
+        return seeds & states
+
+    @staticmethod
+    def _collapse_flips(rows):
+        """One SEAL of one item is one finding, however many states you can enter it from.
+
+        A joint that contains `prevRoom` inherits prevRoom's degeneracy in multiplied form: every
+        crossing writes reg 12, so a sealed region reports once per (room-you-came-from, value)
+        cell. Measured on LB2 before this: 163 rows carrying **9** distinct facts, the same item
+        repeated across 19 prevRoom values. That is the scalar detector's 2026-08-02 problem (323
+        junk rows on KQ6) wearing a tuple.
+
+        The collapse is derived from the model and names no register: rows for the same ITEM whose
+        SEALED REGION is identical are one row, and the flip rooms/values merge. Two rows that seal
+        genuinely different regions stay two. `value` keeps the lowest merged value so a row that
+        merged nothing is byte-identical to before; `values` appears only when a merge happened."""
+        by = {}
+        order = []
+        for r in rows:
+            k = (r["item"], str(r["register"]), r.pop("_sealed"))
+            if k not in by:
+                by[k] = r
+                order.append(k)
+                continue
+            keep = by[k]
+            keep.setdefault("values", [keep["value"]])
+            if r["value"] not in keep["values"]:
+                keep["values"].append(r["value"])
+            keep["flip_rooms"] = sorted(set(keep["flip_rooms"]) | set(r["flip_rooms"]))
+            keep["still_needed_at"] = sorted(set(keep["still_needed_at"])
+                                             | set(r["still_needed_at"]))
+        for k in order:
+            r = by[k]
+            if "values" in r:
+                r["values"] = sorted(r["values"])
+                r["value"] = r["values"][0]
+        return [by[k] for k in order]
 
     def resource_exhaustion(self):
         """Items you USE UP rather than throw away -- the fourth store's softlock shape.
@@ -3398,6 +3489,27 @@ class IrSccReach(SccReach):
             # code baked reset<=3 and trap>=10x; here it is a derived dominance, no magic constant.
             for T in sorted(loop_vals):
                 if T == SAFE:
+                    continue
+                if T in getattr(self, "_death_values", {}).get(R, ()):
+                    # ⭐ THE DEATH SIGNAL IS NOT A PLOT CLOCK (2026-08-09). A value that MEANS "you
+                    # are dead" cannot also be an adversarial state you get stranded in: you do not
+                    # recover from death, you restore. KQ6's flag 44 (reg216) is set by the death
+                    # procedure itself, and `death_traps` then makes every exit from the death room
+                    # require `216 == 0` -- which is exactly the "door gated on the trap's safe
+                    # value" shape `register_flip_strandings` hunts for. It produced a row blaming
+                    # flag 44 for sealing the `gauntlet`: a REDUNDANT REASON on an already-true
+                    # verdict (the gauntlet is genuinely caught by `toll_strandings`, the
+                    # deadMansCoin pocket carry-in) with an unplaceable `applied=False` spec. Wrong
+                    # reasons on right answers are invisible to a name-scored oracle, which is how
+                    # it reached a committed baseline.
+                    #
+                    # The dominance test below did not stop it because `1 > 0` passes VACUOUSLY:
+                    # reg216 is written in one place and reset nowhere. That is a real second
+                    # weakness, but it is NOT this defect -- flag 44 would still not be a plot
+                    # clock if the game set it in fifty rooms -- so it is left alone rather than
+                    # cured with a threshold. Measured: KQ4's nightfall g100 (set_in=111, the
+                    # play-validated positive) has NO death values and is untouched; LSL2 has no
+                    # traps; LB2's 18 trap registers name none.
                     continue
                 forced = byval.get(T, set())
                 reset = set().union(*(byval[v] for v in byval if v != T)) if byval else set()

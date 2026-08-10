@@ -324,13 +324,14 @@ modelled. That is recorded here, not gated on, pending §8.
 
 ## 7. WHERE WE ARE — the short version (2026-08-09)
 
-> ⛔ **CORRECTED BY §7u (re-measured 2026-08-09, later the same day). Read §7u first.** Column B is
-> **1 of 5**, not 2 — `snakeLasso` is caught by a `fatal_uses` false positive about the mummy room,
-> not by the act-5 confinement. The `skeletonKey` FP is that same detector and cause #3 does **not**
-> clear it. And the remaining act-5 work is **two edges**, not the control-map-class project item 4
-> of §8 assumes.
+> ⛔ **CORRECTED TWICE. Read §7u, then §7y.** §7u (re-measured 2026-08-09) put column B at **1 of
+> 5**, not 2 — `snakeLasso` was caught by a `fatal_uses` false positive about the mummy room, not by
+> the act-5 confinement — and established that the remaining act-5 work is **two edges**, not the
+> control-map-class project §8 item 4 assumes. §7y (later the same day) then closed cause #2 by
+> letting `register_strandings` walk the JOINT projections, taking column B to **3 of 5**. The
+> `skeletonKey` FP is untouched by both and needs §7u.2's blame fix.
 
-**Column A 6 of 6 · Column B 2 of 5 · Column C 0 of 3 (contested, awaiting a ruling).**
+**Column A 6 of 6 · Column B 3 of 5 · Column C 0 of 3 (contested, awaiting a ruling).**
 ⚠️ One open false positive: **`skeletonKey`**, which has NO source in the model (§5 already noted
 "no `get:` site extracted"). It is item 8, one of the 13 variadic-`get:` sites, so cause #3 clears
 it — and cause #3 is blocked, see below.
@@ -380,7 +381,61 @@ to every room, so a confirmed finding vanished. §1a predicted this in 2026-08-0
 **It is reverted rather than shipped**, because a change that deletes a play-confirmed stranding is
 worse than the gap it closes — the standing rule is that a DROP is a regression.
 
+### ✅ §7y. CAUSE #2 IS CLOSED — `register_strandings` now walks the JOINTS (2026-08-09, later)
+
+§7w ended with "the load-bearing blocker for column B is now `{r for r, _ in back}`". It was not.
+The blocker was one loop header, and §7w had already named it without following it: the joint
+`(12, 123)` **was being built and nothing was reading it.**
+
+    missability.py:2857   for R in self.regs:      <- scalars ONLY
+    missability.py:1926   self.proj = list(self.regs) + list(self._joints)
+                          "...only the four reachability walks look at `self.proj`"
+
+`register_strandings` is the detector that reports seals, and it was the one place that could not
+see a seal expressed in two registers. **Now it iterates `self.proj`.**
+
+**THE USER'S FRAME, which is what produced this** (2026-08-09): *"the stuff that in the previous
+game was static — where an item was, whether you could get to it — becomes changeable in LB2 …
+we need to parametrize edges, item provenance, item availability based on whatever register values
+the game is looking at. It's a generalization of the previous model."* The parametrization was
+mostly already there (`_emeta` per-edge reqs/sets, `_pstates` per projection, `source_guards`);
+what was missing is that **joint state was a special favour rather than the default**.
+
+    LSL2   0 -> 0 rows     KQ4   0 -> 0 rows
+    KQ6    1 -> 1 row      (its one joint (12,173) adds nothing; the row's KEY SET is unchanged)
+    LB2    2 -> 14 rows / 9 distinct items, INCLUDING cheese and snakeOil
+
+**Three scalar assumptions had to be generalised**, all of them "the flip landed on `w`": a joint
+is entered into `w` when SOME component register is written to its component of `w` (requiring the
+whole tuple at once finds nothing — no single write sets two registers, which is precisely why the
+seal was invisible). Factored out as `_flip_seeds`.
+
+**And the first cut produced 163 rows carrying 9 facts** — prevRoom's 2026-08-02 degeneracy (323
+junk rows on KQ6) wearing a tuple: reg 12 is written by every crossing, so a sealed region reports
+once per (room-you-came-from, act) cell, 19 prevRoom values deep. The cure is `_collapse_flips` and
+it is derived, naming no register: **rows for the same item whose SEALED REGION is identical are
+one row**; flip rooms and values merge, genuinely different regions stay separate. `value` keeps the
+lowest merged value and `values` appears only when a merge happened, so a row that merged nothing —
+KQ6's letter — is byte-identical to before.
+
+⚠️ **Joint rows are DETECTION-ONLY in `guards.guard_specs`.** The `register-write` remedy holds one
+register's write until the items are in hand, and a seal that exists only at `12 == 420 AND
+123 == 5` names no single write to hold — neither component's flip is by itself the point of no
+return. Emitting `register: (12, 123)` would hand the patcher a global that does not exist. Deriving
+the causal component per row is the next piece; until then the finding is reported without a remedy.
+
+**What this leaves.** Column B goes 1 of 5 → 3 of 5 (cheese, snakeOil join smellingSalts).
+`snakeLasso` now has a row for the RIGHT reason as well as its `fatal_uses` false positive — the FP
+is still a FP and still needs the blame fix of §7u.2. `eveningGown` remains, and it is cause #3
+(variadic `get:`), still blocked on debug-code exclusion.
+
 ### ⛔ §7w. CAUSE #2 DOES NOT CLOSE cheese/snakeOil — the "+2, validated" claim is WITHDRAWN
+
+> ⛔ **SUPERSEDED BY §7y.** The measurement below is correct — building A+B+C alone changed nothing
+> — but its conclusion ("the confinement is a disjunction and `register_strandings` walks scalars
+> only, so the blocker is `{r for r, _ in back}`") stopped one step short: the fix for "walks
+> scalars only" is to walk the joints, not to rewrite the scalar walk. Fourth instance of stating a
+> diagnosis and then not testing the cheapest cure it implies.
 
 Built A+B+C (below) and measured: `death_traps` now fires correctly on `rm350`/`rm500`, the joint
 `(12, 123)` projection is created — **and LB2's full surface is byte-identical. No new findings.**
@@ -447,6 +502,40 @@ OWN(waterGlass) on the 38 arm. That is a real extension, not a detail — scope 
 set. It is **not** thereby asserted to be a confirmed softlock — the user's words were "I don't mind
 catching it" — so it should be allowed, not expected. See [[dont-flip-enumerated-ground-truth]]:
 this is a user ruling, not a reclassification we made to flatter a change.
+
+### ✅ §7x. …AND IT DOES **NOT** GATE AN ACT TRANSITION — the question that settles the column
+
+USER, 2026-08-09, on reading §7v's "it advances the plot": *"if the waterGlass gates an act
+transition then it's required."* Correct as a principle, and it is the right question, because
+"advances a counter that gates room content" and "gates an act" are different claims and §7v only
+established the first. **Measured against the source — it does not.**
+
+    actBreak.sc:38-63   (switch global123 ...)          <- the act break reads global123 ALONE.
+                                                           global111 appears NOWHERE in its guards.
+    actBreak.sc:52      (= global111 11)                <- the act-3->4 arm OVERWRITES it, always
+    triggerAndClock:45  (300 ... (= global111 15))      <- and the 3:00 clock tick forces 15
+    rm520.sc:222        ((and (== global123 4) (global0 has: 31)) (= param1 26) ...)
+
+The traffic runs the *other* way: the act break and the clock **erase** listening progress rather
+than depend on it. `global111` has exactly one write outside listening-and-plot (`rm630:1151`) and
+its readers — `rm510`, `rm550`, `rm560` — gate room content and NPC positions.
+
+**The act-4→5 break is gated on `(global0 has: 31)` — the grapes**, which is already column A, read
+out of rm520's own `newRoom`. That is what an act-gating item looks like in this game, and
+`waterGlass` is not one. (The other five `newRoom: 26` sites — rm220, rm250, rm454, rm480, rm620 —
+are cutscene-terminal states; only rm620's carries a condition, `proc0_10 8512`.)
+
+**The one place listening touches MOVEMENT**, recorded because it is the strongest form of the
+user's concern and it survives: `rm510.sc:123` `(if (proc999_5 global111 0 6 10 14) (eastDoor
+locked: 1))` — `proc999_5` is OneOf (`System.sc:81`), and `eastDoor` is `entranceTo 550`,
+`listenVerb 38`, unlocked by default. So not listening *does* lock rm510's east door in act 3. It
+cannot strand: both forced writes above (11 and 15) land outside `{0,6,10,14}`, and the lock is
+re-evaluated in `init`, i.e. on every entry.
+
+**Verdict: ALLOWED, not EXPECTED** — the same column §7v landed on, now for a measured reason
+instead of a deferred one. If the class-method specialisation of §7v is ever built and `waterGlass`
+starts being flagged, that is a legitimate catch, not a false positive; but its absence is not a
+gap and must not be filed as one.
 
 ### ✅ §7t RESOLVED (2026-08-09, later) — ONE root cause: the fix deletes ACT 4
 
@@ -1267,16 +1356,23 @@ controllable crossing of act 5, not the act break itself.
    twelve-item list this project has been carrying since 2026-07-26, and
    [[dont-flip-enumerated-ground-truth]] says report and ask rather than reclassify. **Asking.**
    dinoBone is genuinely unresolved and needs the act partition either way.
-2. **Deaths in LB2.** The standing rule is that deaths are in scope; the 2026-07-26 LB2 ruling was
-   about the *evidence* layer and did not speak to them. LB2's act-5 chase is ten or so forced
-   deaths (§4). Do we gate on them for this game, or hold the line at items?
-3. **The snake-oil quantity (§5a).** The mechanism is source-verified; the arithmetic that decides
-   whether the refill is *mandatory* is not derived yet. Worth deriving, or enough to guard the
-   `global150 == 0` sink unconditionally?
-4. **Act-conditioned exits — is it worth it?** (New, from §7h.) It is the only route to column B,
-   and it is a control-map-class piece of work: an act-gated `init:` on a door has to mean the edge
-   is absent in that state. Bigger than everything in §7g. The alternative is to accept that LB2
-   detects its act-6 boundary and stop there. Worth knowing before anyone starts.
+2. ✅ **RULED 2026-08-09 — deaths ARE in scope, when unavoidable given earlier state.** User:
+   *"this is analogous to the other games… yes they're in scope, if they're unavoidable given
+   earlier state (the snake oil). The chase and looking both ways are not in scope."* The
+   items-only ruling was about the EVIDENCE layer and never covered deaths, so LB2 is not an
+   exception to the one rule: **preventable from its own screen ⇒ out**. IN: the act-5 cobras with
+   an empty bottle. OUT: every chase step (a wrong step, but the right one was available where you
+   stood) and act 1's look-both-ways. Not to be confused with LSL2's parked "dangerous ACTIONS"
+   class, which that oracle files as *hazards*, a separate report class — still parked.
+3. ✅ **RULED 2026-08-09 — the snake-oil arithmetic is NOT needed.** User: *"you should have enough
+   snake oil left before entering act 5 to not die because of it in act 5."* So the requirement is
+   the boundary condition, not the spend count: entering act 5 with `global150 == 0` is a
+   stranding, and the refill is mandatory rather than prudent. §5a's undelivered quantity stops
+   being a blocker.
+4. ⛔ **WITHDRAWN — the question was built on a refuted premise.** It asked whether act-conditioned
+   exits were worth a control-map-class effort. There are ZERO act-gated door inits corpus-wide
+   (§7q/§7r), so the work it proposed does not exist; and the actual remaining act-5 piece was two
+   edges, closed in §7y by walking the joint projections. Nothing to rule on.
 5. **`reobtainable_rooms._source_live` is inert on LB2** (§7h). It is correct, general, and the
    register form of a rule the codebase already applies to the previous-room register — but on
    today's corpus it changes nothing, so it is groundwork for item 4 rather than a result. Keep it

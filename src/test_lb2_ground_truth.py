@@ -15,15 +15,24 @@ the watched surface will report the change and THIS file will say whether the ch
 we wanted.
 
 ⚠️ ONE CHECK HERE IS DELIBERATELY RED and is declared in `tools/run_tests.py`'s KNOWN_RED:
-`the act-boundary carries are caught`. **The act counter is modelled; the act STRUCTURE is not.**
-The act break itself now reads exactly as the game writes it (`rm26->X req{k} sets{k+1}`, the
-ordering in `_rstep`, nothing free in `_inroom`) -- and that changed no item verdict, because LB2's
-act gates what rooms PUT IN THEMSELVES rather than their doors. rm650 (where the cheese is) and
-rm740 (where it is needed) are both reachable at acts 0-5; the cheese's pickup carries no act test,
-and what stops you fetching it during the chase is that the museum rooms do not initialise the
-objects and exits that would let you walk there. Until an act-gated `init:` on a door means "this
-edge is not there in this state", no act boundary can be a frontier. That is a limitation, so it
-gets a RED test rather than a KNOWN_GAPS row that quietly passes.
+`the act-boundary carries are caught`. **4 of the 5 are now closed, and the survivor is not an act
+gap at all**: `eveningGown` has no source in the model because `get:` is VARIADIC and we read one
+argument (§7o). It stays RED because a KNOWN_GAPS row that quietly passes is how a limitation gets
+forgotten -- and it will need RENAMING when the variadic read lands, because by then the name will
+describe nothing that is red.
+
+⚠️⚠️ THE EXPLANATION THAT USED TO SIT HERE WAS REFUTED. Read this before writing another one. It
+said: *the act counter is modelled and the act STRUCTURE is not; ordering the counter changed no
+verdict because the act gates what rooms PUT IN THEMSELVES rather than their doors; until an
+act-gated `init:` on a door means "this edge is not there in this state", no act boundary can be a
+frontier.* Every observation in it was true when written and the CONCLUSION was still wrong -- there
+are ZERO act-gated door inits corpus-wide (§7q/§7r), so the remedy it demanded does not exist to be
+built. What actually closed cheese and snakeOil was letting `register_strandings` walk the JOINT
+projections (§7y): act 5's two exits kill you on arrival, so the way out is the disjunction
+`12 != 420 OR 123 != 5`, and a detector iterating one register at a time lets each alternative
+through in the projection that cannot see the other. **This file's DIAGNOSIS has now been wrong
+three times while its VERDICT columns stayed right. That is the argument for the structure below:
+the columns come from the game, and the notes must come with the measurements they rest on.**
 
 THE STRUCTURAL NOTES BELOW ARE THE POINT OF THIS FILE AS MUCH AS THE ITEM COLUMNS. A red test can
 outlive its diagnosis -- this one's first version blamed the orphaned act write, which was true
@@ -97,17 +106,41 @@ CONTESTED = {
 
 # D -- OUT OF SCOPE by the user's 2026-07-26 "gate on ITEMS only" ruling. Flagging one is not
 # wrong exactly, but their ABSENCE is correct behaviour and must not be filed as a gap.
-# magnifier / pippin_sPad / waterGlass were in the old §5 carry list; measured 2026-08-06, none of
-# them has a downstream `has:` use site at all -- their need runs through evidence examination,
-# the riddle UI and eavesdropping respectively, which is the layer the ruling excludes.
+# magnifier / pippin_sPad were in the old §5 carry list; measured 2026-08-06, neither has a
+# downstream `has:` use site at all -- their need runs through evidence examination and the riddle
+# UI respectively, which is the layer the ruling excludes.
 OUT_OF_SCOPE = {
-    "magnifier", "pippin_sPad", "waterGlass",
+    "magnifier", "pippin_sPad",
     "pocketWatch", "garter", "ankhMedallion", "watney_sFile",
     "warthogHairs", "carbonPaper", "yvette_sShoe",
 }
 
+# D' -- IN SCOPE, BUT NOT DEMANDED [user ruling, 2026-08-09: "I don't mind catching it"].
+# waterGlass sat in OUT_OF_SCOPE on the stated ground that it had no `has:` use site. That reason
+# was FACTUALLY WRONG (docs/LB2-ORACLE.md §7u.5): LB2's use sites are VERB-DISPATCHED via the
+# inventory item's `message` property -- waterGlass is `message 38`, and rm510/560/600/610 declare
+# `listenVerb 38` on their doors -- so grepping `has: N` cannot see them. And eavesdropping is not
+# dialogue flavour: listening drives `global111`, a promoted counter that gates room content (§7v).
+#
+# ⚠️ BUT IT DOES NOT GATE AN ACT TRANSITION, which is the question that decides the column
+# [measured 2026-08-09, §7x -- do not restate this from the §7v summary, which only said "the act
+# break writes it"]. `actBreak.sc`'s switch is on `global123` ALONE; it never reads `global111`. The
+# traffic runs the other way and it ERASES listening progress: the act-3->4 arm does an
+# unconditional `(= global111 11)`, and `triggerAndClock.sc:45` forces `15` at 3:00. The act-4->5
+# break is gated on `(and (== global123 4) (global0 has: 31))` -- grapes, already column A. The one
+# place listening touches MOVEMENT is `rm510.sc:123` `(if (proc999_5 global111 0 6 10 14) (eastDoor
+# locked: 1))` -- `proc999_5` is OneOf (`System.sc:81`) -- and both of those forced writes land
+# outside that set, so the door cannot stay locked across an act.
+#
+# Hence ALLOWED, not EXPECTED: catching it is welcome, missing it is not a gap to chase. Anything
+# whose need runs through the excluded evidence layer but which the model may legitimately reach
+# through a real use site belongs here rather than in either column.
+ALLOWED_NOT_DEMANDED = {
+    "waterGlass",        # message 38; listenVerb on the rm510/560/600/610 doors -> global111
+}
+
 # Anything the model may flag without the run counting as a surprise.
-ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS | CONTESTED
+ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS | CONTESTED | ALLOWED_NOT_DEMANDED
 
 PASS, FAIL = [], []
 
@@ -175,17 +208,24 @@ def run():
     # Declared in tools/run_tests.py KNOWN_RED. Going green here is a PROMOTION, not a pass.
     still_missed = KNOWN_GAPS - caught
     check("🔴 KNOWN GAP (LB2): the act-boundary carries are caught", not still_missed,
-          f"MISSED: {sorted(still_missed)}. THE ACT COUNTER IS MODELLED; THE ACT STRUCTURE IS NOT. "
-          f"The act break reads correctly now -- rm26 ordered={ordered}, free={free}, and the five "
-          f"break edges carry req{{k}}/sets{{k+1}} -- but ordering the counter does NOT separate "
-          f"the acts, because the act gates what rooms PUT IN THEMSELVES, not their doors. rm650 "
-          f"(the cheese) and rm740 (the rats that need it) are both reachable at acts 0-5: the "
-          f"cheese's own pickup carries no act test at all, and what stops you fetching it during "
-          f"the chase is that the museum rooms do not initialise the objects and exits that would "
-          f"let you walk there. Goes green when an act-gated `init:` on a door means THIS EDGE IS "
-          f"NOT THERE IN THIS STATE (modelling-gap census #1, the control map). The source half is "
-          f"already built -- see reobtainable_rooms._source_live -- and is inert on LB2 because "
-          f"these items' acquisitions are unconditional. docs/LB2-ORACLE.md §7h.")
+          f"MISSED: {sorted(still_missed)}. 4 of 5 are CLOSED (docs/LB2-ORACLE.md §7s, §7y) and the "
+          f"one left is a DIFFERENT gap from the one this check was written about -- it is not an "
+          f"act gap at all. eveningGown's `get:` site is `(global0 get: -1 32)`: `get` is VARIADIC "
+          f"and the model reads one argument, so 13 sites (28% of LB2's acquisitions) are lost and "
+          f"this item has NO SOURCE to be stranded from. The rule is derived and was BUILT and "
+          f"REVERTED 2026-08-09 -- it is a net regression without a debug-code exclusion, because "
+          f"`whereTo` (script 29, the jump-to-act debug room) is the only caller of Main's "
+          f"proc0_13..proc0_17, which hand over nine items each and would give cheese and "
+          f"smellingSalts phantom sources at rooms 0/29. Needs derived debug-code detection first "
+          f"(config.debug_globals is empty for LB2). docs/LB2-ORACLE.md §7o.\n      "
+          f"⚠️ THE PREVIOUS TEXT HERE IS REFUTED, twice over, and is kept nowhere but this note so "
+          f"a stale diagnosis cannot outlive its fix. It said the gap 'goes green when an act-gated "
+          f"`init:` on a door means THIS EDGE IS NOT THERE' -- measured, there are ZERO such sites "
+          f"corpus-wide (§7q/§7r) -- and it credited `reobtainable_rooms._source_live`, which is "
+          f"inert here. What actually closed cheese and snakeOil was letting `register_strandings` "
+          f"walk the JOINT projections (§7y): act 5's two exits kill you on entry, so the way out "
+          f"is the disjunction `12 != 420 OR 123 != 5`, and each alternative passed freely in the "
+          f"scalar projection that could not see the other.")
 
     promoted = caught & CONTESTED
     if promoted:

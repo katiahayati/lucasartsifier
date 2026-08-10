@@ -1224,6 +1224,15 @@ def guard_specs(s):
     # vizier's letter -- and KQ4's nightfall is the shape's play-validated precedent. LSL2/KQ4
     # report zero causal rows, so this is KQ6-only today.
     for r in s.register_strandings():
+        # A JOINT row (register is a TUPLE, 2026-08-09) has no remedy of this shape and must not
+        # invent one: the spec holds ONE register's write until the items are in hand, and a seal
+        # that only exists at `12 == 420 AND 123 == 5` names no single write to hold -- neither
+        # component's flip is by itself the point of no return. Emitting `register: (12, 123)`
+        # would hand the patcher a global that does not exist. Detection-only until the causal
+        # component is derived per row (docs/LB2-ORACLE.md §7y); measured to change nothing on
+        # LSL2/KQ4/KQ6, which report no joint rows at all.
+        if isinstance(r["register"], tuple):
+            continue
         byreg[r["register"]].add(r["item"])
         trap_of.setdefault(r["register"], r["value"])
     for R in sorted(byreg):
