@@ -381,6 +381,78 @@ to every room, so a confirmed finding vanished. §1a predicted this in 2026-08-0
 **It is reverted rather than shipped**, because a change that deletes a play-confirmed stranding is
 worse than the gap it closes — the standing rule is that a DROP is a regression.
 
+### ⭐⭐ §7ab. BOTH BLOCKERS LANDED — and the evening gown turns out to be the act break's PRICE, not a carry (2026-08-10, later)
+
+Three changes shipped, each derived, each measured **byte-identical on LSL2, KQ4 and KQ6**.
+
+| # | change | where | corpus profile |
+|---|---|---|---|
+| 1 | **`get:` read as VARIADIC**, from the wrapper's own body: `Ego::get` is `(for ((= temp0 0)) (< temp0 argc) ((++ temp0)) ((global9 at: [param1 temp0]) moveTo: self))` — a `ComplexVariable` indexing the ARGUMENT LIST under an `argc`-bounded cursor. That shape, not "`dest_fixed` and no `dest_arg`", is what says "every argument is an item". | `vocab._argc_temps` / `_variadic_item_arg` / `Vocabulary.transfer` | `get` is variadic in ALL FOUR games (it is SCI's own `Ego::get`), but **multi-argument call sites: LSL2 0, KQ4 0, KQ6 0, LB2 16** — so it is inert elsewhere by construction |
+| 2 | **A PROCEDURE IS NOT A HANDLER.** `opmodel`'s handler pass walked every script-level procedure standalone in its scope's rooms. The engine dispatches methods; a procedure runs only where it is CALLED, and all three walkers already follow calls in the caller's own room. | `opmodel.py` (the `for pbody in s.procs.values()` walk, deleted) | this is what made `whereTo`'s debug hand-outs into room-0 sources, i.e. sources EVERYWHERE. Nothing to do with detecting debug code — it never asks what a script is for |
+| 3 | **The object-property store reached through a GLOBAL.** `_prop_receiver_script` resolved `ScriptID` exports and unique names; a global only ever assigned one object is just as static. Bounded, because those objects are usually the ENGINE's: only a property the class INTRODUCES and that no class introducing that name ever uses itself. | `vocab.derive_global_props` / `_introduced_unused` / `lower_obj_props(split_chains=)` | **LSL2 0, KQ4 0, KQ6 0, LB2 2** (`ego.wearingGown`, `IconBar.walkIconItem`) — the profile of a real store, not a fitted one |
+
+⚠️ **#3 needed `lower_obj_props` to SPLIT CHAINED SENDS**, and that is a rule, not a workaround:
+the one load-bearing write is `(global0 put: 32 wearingGown: 1 setMotion: …)`. Lowering the reads
+and skipping that write is not "missing a write", it is **half a store** — a register whose only
+setter is invisible reads 0 forever, and a permanent 0 *fabricates a seal*. `derive_room_locals`
+already refuses to half-lower for exactly this reason. The split is scoped to the new pairs;
+curing the same defect for the existing ones is 283 more sites in KQ6 and 90 in KQ4 and needs its
+own measurement. **Open item.**
+
+**AND ONE FALSE POSITIVE, WHICH TOOK TWO TRIES TO DIAGNOSE.** #1 gave `notebook` its sources and
+it was promptly flagged — the FP `NEVER_STRANDABLE` was written to catch. The model was RIGHT
+about the graph: `intro` (script 92, a `Rgn` live in rooms 100…220) claims ESC and runs
+`sFadeToBlack` → `newRoom: 26`, so the intro really is skippable and rm220's grant really is
+bypassable. The fault was the REQUIREMENT: rm300's bar door arms `sEnterBar` from verb 4, verb 6
+**and verb 14**, and 14 is the notebook's `message` — a synonym for "talk to the doorman".
+
+> **An item only SOME armings demand is not a gate.** `missability`'s `required` now reads a
+> machine's entry guards through the intersection of `_own_required` over every entry.
+
+The requirement-side twin of the rule `fatal_uses` already carries (*a death armed on one arm of a
+fork does not condemn the fork*) and of `_own_required`'s own OR-branch exclusion — the same
+disjunction, spelled as separate entries instead of a `GOr`. ⚠️ My first attempt used
+`entry_musts`, which reads each alternative with `_own_positive` ("a mention, not a proof") — and
+every one of `sAskEnterBar`'s entries conjoins the whole `GOr` of its armer's three cases, so
+own(2) is mentioned in all three and the intersection kept it. **The fix has to use the same
+reading as the consumer.** It also drops `daggerOfRa`/`wireCutters` from `required@460`, where
+`sCutRope` is armed by verb 21 (wireCutters) OR verb 22 (daggerOfRa); both stay caught on rm750.
+
+#### ✅ WHAT THE MODEL NOW DERIVES ABOUT THE GOWN — and why nothing was flagged
+
+    rm250 -> rm26   req {wearingGown: {1}, prevRoom: {300}}      <- the ACT 1 -> ACT 2 break
+    rm320  sLauraChanges  writes wearingGown := 1, entries [own(32), own(32)]
+
+`rm250.sc:71` is `(cond ((and (== global12 300) (global0 wearingGown:)) (self setScript: sACTBREAK)) …)`
+and `sACTBREAK` state 10 is `newRoom: 26`. So **the act-1 break is gated on an ego property, and
+the only act-1 writer of that property costs the evening gown.** This is the act-gated-movement
+shape §7h asked for and §7q/§7r looked for in the wrong idiom — a third spelling to add to §7z's
+table, and the first one that is an EGO property rather than a room's.
+
+**No verdict moved, and that is the finding.** The gown is not carried ACROSS the act boundary; it
+is the boundary's own precondition. Nor is it strandable:
+
+* `rm270` gives it **unconditionally** (`source_guards[32] = {270: [[]]}`);
+* `rm250` re-places the laundry ticket while you hold neither ticket, nor gown, nor gown-worn;
+* `rm250 / rm270 / rm320` are one strongly-connected act-1 block (measured: rm270 and rm250 are
+  both reachable from rm320), so no reachable state loses access.
+
+Sierra's own hint file settles it: *"Act 1 never seems to end… e) Pick up an evening gown at Lo
+Fat's Laundry then put it on at the speakeasy"* — listed among the five things that **END ACT 1**,
+not among the things you carry into act 2.
+
+⛔ **SO §5's eveningGown ROW ("spans 1→2; no entry to the fundraiser") IS THE SAME SHAPE AS THE
+THREE `CONTESTED` ROWS** — a walkthrough's "you need it in act 2" read as a carry, where the game
+gates the transition itself. **It is NOT reclassified here. Report and ask** (§8).
+
+⚠️ And note what did NOT happen: **the ego-property store does not seal the street**, exactly as
+§7aa's own table predicted and its prose then talked past. Once `wearingGown` is a real register
+it is *satisfiable* in acts 2–5 (you are wearing the gown), so `rm330`'s taxi disjunction reduces
+to the "honest disjunction" row — measured, still acts 1–5 in the street block. The seal is the
+arrival taxi being driven **off-screen** by `sTaxiLeave` (`MoveTo 369 125`, x beyond the 320-wide
+screen) under `handsOff:`, so it can never be verbed. That is a POSITION mechanism and is still
+unmodelled. **Do not re-read §7aa as if the store were the street's cure; it is the ACT GATE's.**
+
 ### ⭐ §7z. HOW THE MUSEUM SEALS THE STREET — and the refutation of "zero act-gated exits" (2026-08-10)
 
 **USER GROUND TRUTH:** *"the outside of the museum is not reachable once the museum acts start.
@@ -1485,7 +1557,19 @@ controllable crossing of act 5, not the act break itself.
    exits were worth a control-map-class effort. There are ZERO act-gated door inits corpus-wide
    (§7q/§7r), so the work it proposed does not exist; and the actual remaining act-5 piece was two
    edges, closed in §7y by walking the joint projections. Nothing to rule on.
-5. **`reobtainable_rooms._source_live` is inert on LB2** (§7h). It is correct, general, and the
+5. ⭐ **NEW 2026-08-10 — is `eveningGown` a softlock at all?** It sits in §5 column B ("real, and
+   we miss it"), on the walkthrough reading *"you need it in act 2, so missing it in act 1 strands
+   you"*. With the variadic `get:` and the ego-property store both landed, the model derives the
+   real mechanism and it is a different one (§7ab): **the act 1→2 break itself demands
+   `wearingGown`**, and the only act-1 writer of that property costs item 32. So the gown is the
+   boundary's precondition, not a carry across it — and nothing in act 1 can take it away from
+   you (unconditional source at rm270, the ticket re-places itself at rm250, and 250/270/320 are
+   one strongly-connected block). Sierra's own hint file lists putting it on among the five things
+   that END act 1. **Same shape as item 1's contested rows, so the same treatment: reported, not
+   reclassified.** If you agree it is safe, it moves to column E and the KNOWN_RED check goes with
+   it; if it is real, the mechanism that makes it real is not in the scripts I have read and I
+   need to know what it is. **Asking.**
+6. **`reobtainable_rooms._source_live` is inert on LB2** (§7h). It is correct, general, and the
    register form of a rule the codebase already applies to the previous-room register — but on
    today's corpus it changes nothing, so it is groundwork for item 4 rather than a result. Keep it
    or revert it; either is defensible and it should be a decision, not a leftover.

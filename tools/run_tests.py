@@ -153,14 +153,20 @@ KNOWN_RED = {
             "projections, in each of which the other alternative passes freely. It now walks "
             "`self.proj`, the joints included. The joint `(12, 123)` was already being built and "
             "nothing was reading it. "
-            "❌ eveningGown, the one left, and it is NOT an act gap: `get:` is VARIADIC and we read "
-            "one argument -- `(global0 get: -1 32)` has a silent-pickup sentinel with the items "
-            "after it, losing 13 sites (28% of LB2's acquisitions), so the item has no source at "
-            "all. BUILT AND REVERTED: it is a net regression until debug-only code is excluded, "
-            "because `whereTo` (script 29) is the only caller of Main's proc0_13..proc0_17, which "
-            "hand over nine items each and give cheese/smellingSalts phantom sources at rm0/rm29. "
-            "⚠️ RENAME THIS CHECK when that lands -- 'act-boundary carries' will have stopped "
-            "describing what is red.",
+            "❌ eveningGown, the one left, and it is NOT an act gap -- NOR, on the evidence now "
+            "in, a CARRY. Both blockers this entry used to name are gone (2026-08-10): the "
+            "variadic `get:` read landed, so the item has its real source rm270, and the "
+            "ego-property store landed, so `wearingGown` is a register. With both, the model "
+            "derives the whole mechanism: `rm250 -> rm26`, the ACT 1 -> ACT 2 break, DEMANDS "
+            "wearingGown == 1 (`rm250.sc:71`), and the only act-1 machine that writes it is "
+            "rm320's `sLauraChanges`, whose every entry demands own(32). So the gown is the act "
+            "boundary's own PRECONDITION, not something carried across it -- and it is not "
+            "strandable, because rm250/rm270/rm320 are one strongly-connected act-1 block and "
+            "both the gown and the laundry ticket re-place themselves. Sierra's hint file lists "
+            "putting it on as one of the five things that END act 1. "
+            "⚠️ THIS ROW IS THEREFORE A CANDIDATE FOR THE `CONTESTED` COLUMN and is deliberately "
+            "NOT reclassified: enumerated ground truth is reported, never flipped. It stays RED "
+            "until the user rules. docs/LB2-ORACLE.md §7ab.",
     },
 }
 

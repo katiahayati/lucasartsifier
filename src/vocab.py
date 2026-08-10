@@ -172,6 +172,17 @@ def _literal_items(node):
     return out
 
 
+class AllOf(tuple):
+    """Several items moved by ONE statement, ALL of them -- as opposed to a plain tuple, which
+    `_literal_items` uses for a run-time PICK of one (a shop counter's `(get: (switch slot ...))`).
+
+    The two shapes reach `item_transfers` identically -- one entry per item, which is the right
+    reading for "where can this come from" either way -- and part company at `item_menus`, whose
+    whole job is the fact that one statement hands over one item. A variadic `get:` is the exact
+    opposite claim, so it must not be filed as an exchange slot."""
+    __slots__ = ()
+
+
 def item_menus(ir, vocab, item_of_receiver):
     """Every transfer site whose ITEM is picked at run time -- `{frozenset(items), ...}`.
 
@@ -204,9 +215,59 @@ def item_menus(ir, vocab, item_of_receiver):
                     continue
                 for sel, params in msgs:
                     tr = vocab.transfer(recv, sel, params, item_of_receiver)
-                    if tr and isinstance(tr[0], tuple) and len(set(tr[0])) > 1:
+                    if (tr and isinstance(tr[0], tuple) and not isinstance(tr[0], AllOf)
+                            and len(set(tr[0])) > 1):
                         out.add((frozenset(tr[0]), tr[1]))
     return out
+
+
+def _argc_temps(body):
+    """The temps a method uses as an ARGUMENT-LIST cursor: those it compares against parameter 0.
+
+    SCI passes the argument COUNT as parameter 0 and lays the arguments out contiguously after it,
+    so `(for ((= temp0 0)) (< temp0 argc) ((++ temp0)) ... [param1 temp0] ...)` is the language's
+    one way to spell "for every argument I was given". Recognising the cursor is what tells a
+    VARIADIC wrapper from one that indexes an ARRAY it was handed -- both spell the access
+    `[param1 temp0]`, and only the first bounds the index by how many arguments there are."""
+    out = set()
+    for n in I.walk(body):
+        if n.get("t") not in ("Lt", "Le", "Gt", "Ge", "Ne", "Eq"):
+            continue
+        ks = n.get("kids") or []
+        for a, b in ((ks[0], ks[1]),) if len(ks) >= 2 else ():
+            for x, y in ((a, b), (b, a)):
+                if (isinstance(x, dict) and x.get("vtype") == "Temp"
+                        and isinstance(y, dict) and y.get("vtype") == "Parameter"
+                        and y.get("index") == 0):
+                    out.add(x.get("index"))
+    return out
+
+
+def _variadic_item_arg(recv, argc_temps):
+    """`[param<i> <argc cursor>]` inside the forwarding receiver -> i, else None.
+
+    The wrapper does not take ONE item and a destination; it takes as many items as it was
+    given. `Ego::get` in the Dagger of Amon Ra is exactly this --
+
+        (method (get param1 &tmp temp0)
+          (for ((= temp0 0)) (< temp0 argc) ((++ temp0))
+            ((global9 at: [param1 temp0]) moveTo: self)))
+
+    -- and read as a one-item wrapper it loses every argument but the first. That is not a corner
+    case there: 13 of the game's acquisition sites are written `(gEgo get: -1 32)`, the `-1`
+    being the "no sound" sentinel with the items after it."""
+    for k in I.walk(recv):
+        if not (isinstance(k, dict) and k.get("t") == "ComplexVariable"):
+            continue
+        ks = k.get("kids") or []
+        if len(ks) != 2:
+            continue
+        base, idx = ks
+        if (isinstance(base, dict) and base.get("vtype") == "Parameter"
+                and isinstance(idx, dict) and idx.get("vtype") == "Temp"
+                and idx.get("index") in argc_temps):
+            return base.get("index")
+    return None
 
 
 def _arg_roles(ir, wrapper_cls, selector, core):
@@ -215,11 +276,15 @@ def _arg_roles(ir, wrapper_cls, selector, core):
     Read off the forwarding send. `Ego::put param1 param2` forwards as
     `((global9 at: param1) moveTo: <param2 or -1>)`, so the item is argument 1 and the
     destination argument 2; `Ego::get param1` forwards as `(... moveTo: self)`, so the
-    destination is the ego itself and there is no destination argument at all."""
+    destination is the ego itself and there is no destination argument at all.
+
+    ...and `variadic` says the item argument is the FIRST of however many were passed, which the
+    same body says too -- see `_variadic_item_arg`."""
     cls = ir.find_class(wrapper_cls)
     body = cls.methods.get(selector) if cls else None
     if body is None:
         return None
+    argc_temps = _argc_temps(body)
     for n in I.walk(body):
         if n.get("t") != "Send":
             continue
@@ -230,11 +295,13 @@ def _arg_roles(ir, wrapper_cls, selector, core):
         for pair in msgs:
             if not pair or pair[0] not in core:
                 continue
-            item_arg = None
-            for k in I.walk(recv):                     # `(<inv> at: <Parameter i>)`
-                if isinstance(k, dict) and k.get("vtype") == "Parameter":
-                    item_arg = k.get("index")
-                    break
+            item_arg = _variadic_item_arg(recv, argc_temps)
+            variadic = item_arg is not None
+            if item_arg is None:
+                for k in I.walk(recv):                 # `(<inv> at: <Parameter i>)`
+                    if isinstance(k, dict) and k.get("vtype") == "Parameter":
+                        item_arg = k.get("index")
+                        break
             dest_arg, dest_fixed = None, None
             for p in pair[1]:
                 if not isinstance(p, dict):
@@ -252,7 +319,8 @@ def _arg_roles(ir, wrapper_cls, selector, core):
                             dest_arg = k.get("index")
                             break
             if item_arg is not None:
-                return {"item_arg": item_arg, "dest_arg": dest_arg, "dest_fixed": dest_fixed}
+                return {"item_arg": item_arg, "dest_arg": dest_arg, "dest_fixed": dest_fixed,
+                        "variadic": variadic}
     return None
 
 
@@ -418,10 +486,24 @@ class Vocabulary:
         i = roles["item_arg"] - 1
         if i < 0 or i >= len(params):
             return None
-        its = _literal_items(params[i])
-        if not its:
+        if roles.get("variadic"):
+            # EVERY argument from here on is an item. A negative number is not an inventory index:
+            # SCI spells "none" as -1 everywhere (the same sentinel `moveTo:` takes for NOWHERE),
+            # and LB2's `get:` sites lead with one.
+            per_arg = [[v for v in _literal_items(p) if v >= 0] for p in params[i:]]
+        else:
+            per_arg = [_literal_items(params[i])]
+        per_arg = [a for a in per_arg if a]
+        if not per_arg:
             return None
-        it = its[0] if len(its) == 1 else tuple(its)
+        # WHICH TUPLE THIS IS depends on the SITE, not on the wrapper. Several ARGUMENTS means
+        # several items handed over at once (`AllOf`); ONE argument with several possible values
+        # is still a run-time pick of one, i.e. an exchange slot -- KQ6's pawn counter is
+        # `(gEgo get: (switch register (0 48) (3 27) ...))` through the very same variadic `get:`,
+        # and reading it as "all four" is what `item_menus`/`exchange_slots` exist to prevent.
+        its = [v for a in per_arg for v in a]
+        it = (its[0] if len(its) == 1
+              else AllOf(its) if len(per_arg) > 1 else tuple(its))
         if roles["dest_fixed"] is not None:
             return (it, roles["dest_fixed"])
         j = (roles["dest_arg"] or 0) - 1
@@ -1607,6 +1689,185 @@ def _prop_receiver_script(ir, recv):
     return _singleton_scripts(ir).get(recv["name"])
 
 
+def _global_instances(ir):
+    """global index -> the object it holds, for globals only ever assigned ONE object.
+
+    The THIRD spelling of `_prop_receiver_script`'s "statically one object". A game keeps its
+    long-lived singletons in globals and addresses them there -- `(= global0 ego)` in Main, then
+    `(global0 wearingGown:)` in fourteen rooms -- and a global assigned exactly one object
+    throughout the game resolves as surely as a `ScriptID` export or a unique name. It is the
+    same derivation `_class_globals` already does for the item vocabulary, kept by GLOBAL rather
+    than by class because here the question is which object a receiver denotes."""
+    cache = getattr(ir, "_global_insts", None)
+    if cache is not None:
+        return cache
+    by_name = {o.name: o for s in ir.scripts.values() for o in s.objects}
+    scr = {o.name: s.number for s in ir.scripts.values() for o in s.objects}
+    assigned = collections.defaultdict(set)
+    for s in ir.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for n in I.walk(body):
+                if n.get("t") != "Assignment":
+                    continue
+                ks = n.get("kids") or []
+                if len(ks) < 2 or not I.is_global(ks[0]):
+                    continue
+                src = ks[1]
+                if (isinstance(src, dict) and src.get("t") in ("Object", "Class")
+                        and src.get("name") in by_name):
+                    assigned[ks[0]["index"]].add(src["name"])
+    cache = {g: (by_name[next(iter(v))], scr[next(iter(v))])
+             for g, v in assigned.items() if len(v) == 1}
+    try:
+        ir._global_insts = cache
+    except Exception:                                      # noqa: BLE001
+        pass
+    return cache
+
+
+def _introduced_unused(ir, obj):
+    """The properties `obj`'s own class INTRODUCES and never itself mentions.
+
+    The bound the global-receiver case needs, and the reason it needs one: a `ScriptID` receiver
+    is a script the game WROTE -- a region controller, a cutscene director -- so every property on
+    it is game state. A global-held singleton is usually the ENGINE's own instance (the ego, the
+    icon bar, User, a Sound), and its property surface is the class library's machinery: `view`,
+    `cel`, `loop`, `x`, `y`, `signal`, `scaler`. Lowering those would model the animation system.
+
+    ONE question separates them, asked of the class table alone: *was the property introduced
+    here, and does the class library leave it alone?* A property inherited from a more general
+    class belongs to that generality's machinery, so only what THIS class adds is a candidate --
+    that is what excludes `view`, `cel`, `loop`, `x`, `y`, `signal`, `scaler` in one stroke. And a
+    property name that ANY class introducing it also reads or writes in its own methods is that
+    library's vocabulary, whichever class you met it on -- which is what excludes `Ego::edgeHit`,
+    `Body::currentSpeed`, `User::prevDir`, `IconBar::curInvIcon`, `Narrator::talkWidth` and
+    `Sound::number` (Sound never touches it, but `Rgn` and `Locale` introduce the same name and
+    do). What is left is a slot introduced at the leaf for OTHER code to use -- a state variable.
+
+    MEASURED, whole corpus: LSL2 none, KQ4 none, KQ6 none, LB2 exactly two --
+    `ego.wearingGown` (script 19) and `IconBar.walkIconItem`. The Dagger of Amon Ra gates its
+    ACT 1 -> ACT 2 break on the first of them (`rm250.sc:71`, `(and (== global12 300) (global0
+    wearingGown:)) -> sACTBREAK -> newRoom: 26`), and the only thing that sets it is the speakeasy
+    restroom's `sLauraChanges`, which costs the evening gown. Three of the four games contribute
+    nothing, which is what a real store looks like rather than a fitted one."""
+    byspec = _class_index(ir)
+    cls = obj if obj.is_class else byspec.get(obj.super)
+    if cls is None:
+        return frozenset()
+    own = _class_introduces(ir).get(cls.species, frozenset())
+    used = _library_used_props(ir)
+    return frozenset(p for p in own if p not in used)
+
+
+def _class_introduces(ir):
+    """species -> the properties that class adds to what it inherits."""
+    cache = getattr(ir, "_class_new_props", None)
+    if cache is not None:
+        return cache
+    byspec = _class_index(ir)
+    cache = {}
+    for spec, o in byspec.items():
+        inherited, cur = set(), byspec.get(o.super)
+        while cur is not None and cur.species != o.species:
+            inherited |= set(cur.props)
+            nxt = byspec.get(cur.super)
+            if nxt is cur:
+                break
+            cur = nxt
+        cache[spec] = frozenset(set(o.props) - inherited)
+    try:
+        ir._class_new_props = cache
+    except Exception:                                      # noqa: BLE001
+        pass
+    return cache
+
+
+def _library_used_props(ir):
+    """Property NAMES some class that introduces them also uses in its own methods."""
+    cache = getattr(ir, "_lib_used_props", None)
+    if cache is not None:
+        return cache
+    intro = _class_introduces(ir)
+    byspec = _class_index(ir)
+    cache = frozenset(p for spec, props in intro.items() for p in props
+                      if _mentions_prop(byspec[spec], p))
+    try:
+        ir._lib_used_props = cache
+    except Exception:                                      # noqa: BLE001
+        pass
+    return cache
+
+
+def _class_index(ir):
+    """species -> class object."""
+    cache = getattr(ir, "_class_by_species", None)
+    if cache is None:
+        cache = {o.species: o for s in ir.scripts.values() for o in s.objects if o.is_class}
+        try:
+            ir._class_by_species = cache
+        except Exception:                                  # noqa: BLE001
+            pass
+    return cache
+
+
+def _mentions_prop(cls, prop):
+    """Does any method of `cls` name `prop` -- as its own property, or as a selector?"""
+    for body in cls.methods.values():
+        for n in I.walk(body):
+            if (isinstance(n, dict) and n.get("name") == prop
+                    and n.get("t") in ("Variable", "Property", "Selector")):
+                return True
+    return False
+
+
+def derive_global_props(ir):
+    """`{(script, selector)}` for the property store reached through a GLOBAL-held singleton.
+
+    Same store as `derive_obj_props` and the same discovery rule -- a property is state if the
+    game both WRITES it with a constant and READS it back -- with the receiver resolved one more
+    way (`_global_instances`) and the eligible properties bounded by `_introduced_unused`, which
+    is where the whole justification for that widening lives."""
+    reads, writes = collections.Counter(), collections.Counter()
+    ginst = _global_instances(ir)
+    if not ginst:
+        return set()
+    allowed = {g: (scr, _introduced_unused(ir, o)) for g, (o, scr) in ginst.items()}
+    for s in ir.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for n in I.walk(body):
+                if n.get("t") != "Send":
+                    continue
+                try:
+                    recv, msgs = I.send_pairs(n)
+                except Exception:                          # noqa: BLE001
+                    continue
+                hit = allowed.get(recv["index"]) if I.is_global(recv) else None
+                if hit is None:
+                    continue
+                scr, props = hit
+                for sel, ps in msgs:
+                    if sel not in props:
+                        continue
+                    if ps and I.as_int(ps[0]) is not None:
+                        writes[(scr, sel)] += 1
+                    elif not ps:
+                        reads[(scr, sel)] += 1
+    return set(reads) & set(writes)
+
+
+def _global_prop_key(ir, recv, sel):
+    """`(script, selector)` if this send addresses a global-held singleton's state property."""
+    if not (isinstance(recv, dict) and I.is_global(recv)):
+        return None
+    hit = _global_instances(ir).get(recv["index"])
+    if hit is None:
+        return None
+    obj, scr = hit
+    return (scr, sel) if sel in _introduced_unused(ir, obj) else None
+
+
 def _singleton_scripts(ir):
     """{name: script} for names that name exactly ONE object or class in the game."""
     cache = getattr(ir, "_singleton_objs", None)
@@ -1662,16 +1923,107 @@ def derive_obj_props(ir):
     return set(reads) & set(writes)
 
 
-def lower_obj_props(ir, pairs):
+def _split_chained_writes(ir, pairs, split_chains):
+    """Break `(recv a: 1 <prop>: 2 c: 3)` into `[(recv a: 1), <prop write>, (recv c: 3)]`, so a
+    property write buried in a chain can be lowered like any other.
+
+    Only in STATEMENT position -- a direct kid of a statement `List` -- which is the whole safety
+    argument. There the send's value is discarded, so splitting one send into several changes
+    nothing about what runs, in what order, or under what condition; in an EXPRESSION a `List`
+    where a value was expected would be a lie. That position test is also why this cannot be done
+    from inside the plain node walk: it is a fact about the parent, not the node.
+
+    Runs are preserved rather than reordered (`a:` before the write, `c:` after) because sibling
+    effects under one path condition are read as a sequence, and one of them may be a `newRoom:`
+    or a `put:` whose order against the write is the whole content of the statement."""
+    if not split_chains:
+        return 0
+    lists = []
+    for s in ir.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for node in I.walk(body):
+                if node.get("t") == "List" and node.get("kids"):
+                    lists.append(node)
+    n_split = 0
+    for lst in lists:
+        out, changed = [], False
+        for kid in lst["kids"]:
+            pieces = _split_one(ir, kid, pairs, split_chains) if isinstance(kid, dict) else None
+            if pieces is None:
+                out.append(kid)
+            else:
+                out.extend(pieces)
+                changed = True
+                n_split += 1
+        if changed:
+            lst["kids"] = out
+    return n_split
+
+
+def _split_one(ir, node, pairs, split_chains):
+    """One chained send -> the list it becomes, or None if there is nothing here to split."""
+    if node.get("t") != "Send":
+        return None
+    kids = node.get("kids") or []
+    if len(kids) < 3:                                      # receiver + one message: nothing to do
+        return None
+    recv = kids[0]
+    try:
+        msgs = I.send_pairs(node)[1]
+    except Exception:                                      # noqa: BLE001
+        return None
+    if len(msgs) != len(kids) - 1:
+        return None
+    def key_of(sel, ps):
+        if not ps or I.as_int(ps[0]) is None:              # only CONSTANT writes are lowerable
+            return None
+        k = _global_prop_key(ir, recv, sel)
+        if k is None:
+            rs = _prop_receiver_script(ir, recv)
+            k = (rs, sel) if rs is not None else None
+        return k if (k in pairs and k in split_chains) else None
+    if not any(key_of(sel, ps) for sel, ps in msgs):
+        return None
+    out, run = [], []
+    def flush():
+        if run:
+            out.append({"t": "Send", "kids": [copy.deepcopy(recv)] + run[:]})
+            run.clear()
+    for sm, (sel, ps) in zip(kids[1:], msgs):
+        k = key_of(sel, ps)
+        if k is None:
+            run.append(sm)
+            continue
+        flush()
+        # A one-message Send, not the final Assignment: the pass that follows resolves the key to
+        # a register index, and there must be exactly ONE place that does that.
+        out.append({"t": "Send", "kids": [copy.deepcopy(recv), sm]})
+    flush()
+    return out
+
+
+def lower_obj_props(ir, pairs, split_chains=()):
     """Rewrite resolved `(ScriptID s n) <prop>:` reads and constant writes into synthetic globals,
     so object-property state reaches the register machinery as ordinary registers.
 
     Same shape as `lower_flags` / `lower_prop_flags`, and deliberately so: every store we model
-    ends up as a global, and nothing downstream learns a new concept. Chained sends and
-    non-constant writes are left alone -- an unmodelled write can only miss a stranding, never
-    invent one."""
+    ends up as a global, and nothing downstream learns a new concept. Non-constant writes are
+    left alone -- an unmodelled write can only miss a stranding, never invent one.
+
+    ⚠️ CHAINED SENDS ARE THE EXCEPTION TO THAT REASSURANCE, and `split_chains` is why the
+    argument exists. `(global0 put: 32 wearingGown: 1 setMotion: ...)` cannot be rewritten in
+    place -- the node carries three messages and a Global node carries one -- so it used to be
+    skipped, which is not "missing a write" but HALF A STORE: a register whose reads are modelled
+    and whose only setter is not reads 0 forever, and a permanent 0 fabricates a seal. Exactly
+    what `derive_room_locals` refuses to do for the same reason. Keys listed in `split_chains`
+    are split instead (see `_split_chained_writes`), and the rest keep the old behaviour --
+    curing those is a change with its own blast radius (283 more sites in KQ6, 90 in KQ4) and
+    belongs to its own measurement, not to this one."""
     if not pairs:
         return 0, 0
+    # FIRST, so the pass below sees plain one-message sends where a chain used to be.
+    _split_chained_writes(ir, pairs, split_chains)
     max_gi, sites = 0, []
     for s in ir.scripts.values():
         bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
@@ -1688,12 +2040,13 @@ def lower_obj_props(ir, pairs):
                     continue
                 if len(msgs) != 1:
                     continue                               # chained: rewriting drops the rest
-                rs = _prop_receiver_script(ir, recv)
-                if rs is None:
-                    continue
                 sel, ps = msgs[0]
-                key = (rs, sel)
-                if key not in pairs:
+                rs = _prop_receiver_script(ir, recv)
+                # A `ScriptID`/named receiver keys on its script; a GLOBAL-held one resolves
+                # through `_global_prop_key`, which also applies that case's property bound.
+                # Never both: `_prop_receiver_script` only accepts Object/Class/ScriptID nodes.
+                key = (rs, sel) if rs is not None else _global_prop_key(ir, recv, sel)
+                if key is None or key not in pairs:
                     continue
                 if not ps:
                     sites.append((node, key, None))

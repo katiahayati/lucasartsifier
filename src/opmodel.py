@@ -481,8 +481,24 @@ class OpEmitter:
                         # needs no red scarf and the whole carry-IN class cannot strand.
                         with verb_param_scope(mn):
                             self._hwalk(room, rn, body, [], set())
-                for pbody in s.procs.values():
-                    self._hwalk(room, rn, pbody, [], set())
+                # ...AND A PROCEDURE IS NOT A HANDLER. The engine dispatches METHODS -- `doit`,
+                # `handleEvent`, `doVerb`, `changeState`; nothing ever dispatches a script-level
+                # procedure, which runs only where something CALLS it. `_hwalk` (and the machine
+                # lift, and `extract._walk`) already follow those calls in the caller's own room
+                # context, so walking every proc standalone here added nothing for a called one
+                # and FABRICATED a scope for an uncalled one.
+                #
+                # In MAIN that fabrication is the whole game: LB2's `proc0_13`..`proc0_17` are the
+                # debug jump-to-act setup, called only from `whereTo` (script 29, a room with no
+                # in-edges), and they hand over nine items each -- `(ego get: -1 25 16 17 30 27 26
+                # 12 31 13)`. Walked as Main handlers they became sources at room 0, which
+                # `_sink_rooms` widens to EVERY room, so half the inventory was obtainable
+                # anywhere. That is what made the variadic `get:` read a net regression when it
+                # was first built (docs/LB2-ORACLE.md §7o): the read is right, and this was the
+                # thing it was uncovering.
+                #
+                # Nothing here is a debug-detection rule -- it never asks what a script is FOR.
+                # `whereTo`'s own methods still walk these procs, in room 29, where they belong.
         self._walk_game_newroom(ir)
         for room, script, gi, v, g in self.handler_writes:
             self.reg_vals.setdefault(gi, {0}).add(v)

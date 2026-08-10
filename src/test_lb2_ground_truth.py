@@ -123,12 +123,27 @@ OUT_OF_SCOPE = {
 # on a path every player takes has no state in which you lack it, so no seal can strand it and no
 # remedy should ever demand it.
 #
-# ⚠️ THIS IS A LIVE TRAP, not a hypothetical: the variadic-`get:` read (§7o, simulated 2026-08-10,
-# NOT yet landed) newly flags `notebook` -- it gives the item sources at rm29/rm100/rm220, and
-# rm220's is the very cutscene above. So the check is written NOW, while it passes, so that
-# landing that read cannot quietly introduce the FP. See [[commit-rule-and-red-tests]]: a green
-# check that asserts something true is the point; what is banned is a green check asserting
-# something false.
+# ⚠️ THIS WAS A LIVE TRAP AND IT SPRANG. The variadic-`get:` read LANDED 2026-08-10 and did
+# exactly what this check was written to catch: `notebook` gained sources at rm29/rm100/rm220
+# (rm220's is the very cutscene above) and was flagged. Two things had to be true for that, and
+# only one of them was the source read:
+#
+#   * the intro is SKIPPABLE -- `intro::handleEvent` (script 92, a Rgn live in rooms 100..220)
+#     claims ESC and runs `sFadeToBlack` -> `newRoom: 26` -- so rm110..rm220 really do have edges
+#     to the act break that bypass rm220's grant. The model was right about that;
+#   * ...and the notebook looked REQUIRED at rm300, which it is not. `rm300`'s bar door arms
+#     `sEnterBar` from verb 4, verb 6 AND verb 14, and 14 is the notebook's `message` -- a
+#     SYNONYM for "talk to the doorman". Reading each machine entry on its own made one arm of
+#     that fork a requirement of the room.
+#
+# Cured at the second point, where the fault was: `missability`'s `required` now reads a
+# machine's entry guards through the intersection of `_own_required` over every entry, so an item
+# only SOME armings demand is not a gate. Corpus-neutral -- LSL2, KQ4 and KQ6 snapshots
+# byte-identical -- and on LB2 it also drops `daggerOfRa`/`wireCutters` from `required@460`, where
+# `sCutRope` is armed by verb 21 (wireCutters) OR verb 22 (daggerOfRa) and neither is individually
+# faced. Both items stay caught on rm750's ending selector.
+#
+# See [[commit-rule-and-red-tests]]: a green check that asserts something true is the point.
 NEVER_STRANDABLE = {
     "notebook",          # opening cutscene, rm220 `(global0 get: -1 2)` -- unavoidable
 }
@@ -230,20 +245,63 @@ def run():
     free = sorted(inroom.get(26, ()))
     print(f"  [note] act steps at the act-break card rm26: ordered={ordered} free={free}")
 
+    # --- THE ACT 1 -> ACT 2 GATE IS AN EGO PROPERTY, AND THE GOWN IS ITS PRICE -----------------
+    # Pinned as a MECHANISM, not as an item name (memory `oracle-must-pin-the-mechanism`): the
+    # register that stands for `ego.wearingGown`, the edge that demands it, and the machine whose
+    # arming pays for it. Every part is looked up structurally -- the synthetic register index is
+    # allocation-dependent and must never be written down as a number -- so this survives a
+    # renumbering and fails only if the modelling really goes.
+    #
+    # WHY IT IS HERE: this is what the ego-property store bought, and its worth is not an item
+    # verdict (nothing moved), so nothing else in this suite would notice it disappearing. It is
+    # also the counter-evidence for the RED below: the model can now see the whole chain
+    # gown -> wear -> cross, which is what lets it say, on the game's own terms, that the item is
+    # a precondition of the act break rather than a carry across it.
+    wg = next((gi for gi, key in (getattr(s.em.ir, "_obj_prop_index", None) or {}).items()
+               if key[1] == "wearingGown"), None)
+    check("the act-1 break is gated on the wearingGown ego property", wg is not None
+          and any(req.get(wg) == {1} for (req, _s, _a) in s._emeta.get((250, 26), ())),
+          f"wearingGown register = {wg}; rm250->rm26 metas = {s._emeta.get((250, 26))}. The game "
+          f"spells this `rm250.sc:71` -- `(and (== global12 300) (global0 wearingGown:))` picks "
+          f"`sACTBREAK`, whose state 10 is `newRoom: 26`. Losing it means the ego-property store "
+          f"(vocab.derive_global_props / _introduced_unused) stopped reaching the ego, or "
+          f"lower_obj_props stopped splitting the chained write that sets it.")
+    payers = [(i["room"], i.get("inst"), sorted(_o for K, eg in i.get("entries", ())
+                                                for _o in M._own_required(eg)))
+              for i in s.em.machines
+              for K, paths in i["states"].items()
+              for (g, w, gg, c, tr) in paths if any(x[0] == wg and x[1] == 1 for x in w)]
+    gown = next((i for i in range(64) if s.g.item_name(i) == "eveningGown"), None)
+    check("...and the only act-1 writer of it costs the evening gown",
+          any(room == 320 and gown in own for room, _inst, own in payers),
+          f"machines writing wearingGown:=1 and what their entries demand: {payers}. Expected "
+          f"rm320's `sLauraChanges` (the speakeasy restroom) to demand own({gown}). The other "
+          f"writers are act-4+ museum rooms re-asserting it after a cutscene, and Main's debug "
+          f"proc, which no reachable room calls.")
+
     # --- THE DELIBERATE RED -------------------------------------------------------------------
     # Declared in tools/run_tests.py KNOWN_RED. Going green here is a PROMOTION, not a pass.
     still_missed = KNOWN_GAPS - caught
     check("🔴 KNOWN GAP (LB2): the act-boundary carries are caught", not still_missed,
-          f"MISSED: {sorted(still_missed)}. 4 of 5 are CLOSED (docs/LB2-ORACLE.md §7s, §7y) and the "
-          f"one left is a DIFFERENT gap from the one this check was written about -- it is not an "
-          f"act gap at all. eveningGown's `get:` site is `(global0 get: -1 32)`: `get` is VARIADIC "
-          f"and the model reads one argument, so 13 sites (28% of LB2's acquisitions) are lost and "
-          f"this item has NO SOURCE to be stranded from. The rule is derived and was BUILT and "
-          f"REVERTED 2026-08-09 -- it is a net regression without a debug-code exclusion, because "
-          f"`whereTo` (script 29, the jump-to-act debug room) is the only caller of Main's "
-          f"proc0_13..proc0_17, which hand over nine items each and would give cheese and "
-          f"smellingSalts phantom sources at rooms 0/29. Needs derived debug-code detection first "
-          f"(config.debug_globals is empty for LB2). docs/LB2-ORACLE.md §7o.\n      "
+          f"MISSED: {sorted(still_missed)}. 4 of 5 are CLOSED (docs/LB2-ORACLE.md §7s, §7y). The "
+          f"survivor is `eveningGown`, and BOTH BLOCKERS THIS NOTE USED TO NAME ARE GONE -- the "
+          f"variadic `get:` read landed (it has its real source, rm270) and so did the ego-property "
+          f"store (`wearingGown`). What the model now says, derived end to end:\n      "
+          f"  * `rm250 -> rm26` (the ACT 1 -> ACT 2 break) demands the wearingGown register == 1, "
+          f"from `rm250.sc:71` `(and (== global12 300) (global0 wearingGown:)) -> sACTBREAK`;\n      "
+          f"  * the only act-1 writer of that register is `sLauraChanges` at rm320 (the speakeasy "
+          f"restroom), whose every entry demands own(32) -- the gown itself.\n      "
+          f"So the gown is not a CARRY across the act boundary at all: it is the boundary's own "
+          f"precondition, and the model is right that you cannot cross without it. It is also not "
+          f"strandable -- rm270 gives it unconditionally, rm250 re-places the laundry ticket while "
+          f"you hold neither ticket nor gown nor gown-worn, and rm250/rm270/rm320 are one "
+          f"strongly-connected act-1 block, so no reachable state loses access. Sierra's own hint "
+          f"file agrees: 'pick up an evening gown at Lo Fat's Laundry then put it on at the "
+          f"speakeasy' is listed as one of the five things that END ACT 1.\n      "
+          f"⚠️ THIS ROW THEREFORE LOOKS LIKE THE THREE `CONTESTED` ONES -- the source contradicts "
+          f"the walkthrough reading it came from -- and it is NOT reclassified here. Report and "
+          f"ask; enumerated ground truth is never flipped to make a change look good. "
+          f"docs/LB2-ORACLE.md §7ab.\n      "
           f"⚠️ THE PREVIOUS TEXT HERE IS REFUTED, twice over, and is kept nowhere but this note so "
           f"a stale diagnosis cannot outlive its fix. It said the gap 'goes green when an act-gated "
           f"`init:` on a door means THIS EDGE IS NOT THERE' -- measured, there are ZERO such sites "

@@ -454,11 +454,12 @@ def build_maps(em):
     # because their items live in script 0 -- so this test cannot move LSL2 or KQ4.
     globalsc = getattr(em, "global_homed", ())
 
-    def req(guard, room, script=None):
+    def req(guard, room, script=None, only=None):
         if script is not None and script in globalsc:
             return
         for it in _own_required(guard):     # OR-branch items are NOT required -- see _own_required
-            req_item(it, room)
+            if only is None or it in only:
+                req_item(it, room)
         for it in _loc_placed_required(guard, em.ts.placed):   # owner-gate on a PLACED room
             req_item(it, room)
     for e in em.ts.edges:
@@ -494,10 +495,30 @@ def build_maps(em):
                 req(g, info["room"])
         # machine ENTRY guards too: a `Said 'throw/beach'` success branch is captured as an
         # entry/changeState guarded by own(Sand) -- skipping entries lost Sand/Ash.
-        for K, eg in info.get("entries", ()):
-            req(eg, info["room"])
-        for K, eg in info.get("init_entries", ()):
-            req(eg, info["room"])
+        #
+        # ...BUT AN ITEM ONLY SOME ARMINGS DEMAND IS NOT A GATE. Facing own(X) on one arm of a
+        # fork while another arm is free is not facing it at all; you take the other arm. This is
+        # the requirement-side twin of the rule `fatal_uses` already carries ("a death armed on
+        # one arm of a fork does not condemn the fork") and of `_own_required`'s own OR-branch
+        # exclusion -- the same disjunction, spelled as separate entries instead of a `GOr`.
+        #
+        # LB2's rm300 is the case: the bar door's `doVerb` arms `sEnterBar` from verb 4, verb 6
+        # AND verb 14, and 14 is the notebook's `message` -- so a SYNONYM for "talk to the
+        # doorman" made the notebook a requirement of the room, and with it a stranding across
+        # the intro's ESC-skip edges. The item is one the opening cutscene hands you on every
+        # path (user ground truth 2026-08-10); the demand was never real.
+        #
+        # NOT `entry_musts`, deliberately, though it answers the same shape of question: it reads
+        # each alternative with `_own_positive` -- a mention ANYWHERE, "a mention, not a proof",
+        # which is the right conservatism for pricing an arming and the wrong one here. Every one
+        # of `sAskEnterBar`'s entries CONJOINS the whole `GOr` of its armer's three cases, so
+        # own(2) is mentioned in all three and the intersection keeps it. `_own_required` is the
+        # reading `req` itself uses, and it is the one that has to intersect.
+        ent_alts = defaultdict(list)
+        for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+            ent_alts[K].append(_own_required(eg))
+        for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+            req(eg, info["room"], only=set.intersection(*[set(a) for a in ent_alts[K]]))
         for it in info.get("drops", ()):
             consumed_at[it].add(info["room"])
 
@@ -4077,7 +4098,17 @@ def _build(cfg, ir_path):
     # region object outlives the rooms inside it -- KQ6's minotaur fight is decided entirely by
     # `(ScriptID 30 0) scarfOnMino:` / `seenByMino:`. Same "written with a constant AND read back"
     # rule as every other store, lowered to the same synthetic globals.
-    V.lower_obj_props(ir, V.derive_obj_props(ir))
+    # ...and the SAME container reached through a global. A game keeps its singletons in globals
+    # and addresses them there, which resolves as statically as a `ScriptID` export -- but the
+    # objects so held are usually the ENGINE's (the ego, the icon bar, User, a Sound), so the
+    # widening carries its own bound: only a property the class INTRODUCES and the class library
+    # never itself uses (`vocab._introduced_unused`). Measured corpus-wide that is LSL2 none,
+    # KQ4 none, KQ6 none, LB2 two -- so it cannot renumber a register in the other three, which
+    # matters here (see lower_prop_flags: allocation order IS register identity). Lowered in the
+    # SAME call as the ScriptID/singleton half so both spellings share one allocation, and it is
+    # the half allowed to split chained sends, because its one load-bearing write is inside one.
+    _gprops = V.derive_global_props(ir)
+    V.lower_obj_props(ir, V.derive_obj_props(ir) | _gprops, split_chains=_gprops)
     # FOURTH store, in the spelling item_property_registers cannot see: an item keeping its own
     # state as BIT FLAGS in its own property, written from inside its own methods via `self` and
     # read as a bare property. KQ6's skull gates the realm-of-the-dead cutscene on exactly that.
