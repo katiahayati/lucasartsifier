@@ -141,18 +141,21 @@ KNOWN_RED = {
     },
     "test_lb2_ground_truth.py": {
         "🔴 KNOWN GAP (LB2): the act-boundary carries are caught":
-            "THE ACT COUNTER IS MODELLED; THE ACT STRUCTURE IS NOT. The act break itself now "
-            "reads as the game writes it -- `rm26->X req{k} sets{k+1}`, the ordering in `_rstep`, "
-            "nothing free in `_inroom` -- and that moved no item verdict. LB2's act gates what "
-            "rooms PUT IN THEMSELVES, not their doors: rm650 (the cheese) and rm740 (the rats "
-            "that need it) are both reachable at acts 0-5, because the cheese's pickup carries no "
-            "act test and what stops you fetching it during the chase is that the museum rooms "
-            "never initialise the objects and exits that would let you walk there. So no act "
-            "boundary can be a frontier and snakeOil, cheese, snakeLasso, smellingSalts and "
-            "eveningGown stay invisible. Goes green when an act-gated `init:` on a door means "
-            "THIS EDGE IS NOT THERE IN THIS STATE (modelling-gap census #1, the control map). "
-            "The source half of the same question is already built (`_source_live`) and is inert "
-            "on LB2. docs/LB2-ORACLE.md §7g/§7h.",
+            "1 of 5 CLOSED, 4 to go, and the five turned out to be THREE INDEPENDENT CAUSES, all "
+            "diagnosed and measured (docs/LB2-ORACLE.md §7, the summary table). "
+            "✅ smellingSalts: the act register could run BACKWARDS -- `rm630`'s bare "
+            "`(= global123 4)` had no recoverable from-value, so the model stood at act 5, wound "
+            "the act back to 4 and walked to rm525. Cured by the counter-monotonicity pass in "
+            "`_build_product`. "
+            "❌ cheese/snakeLasso/snakeOil: act 5 is an 11-room pursuit region whose only two "
+            "exits run `sLauraDies` on entry, conditioned on arrival direction -- so the edge is "
+            "not an edge in act-5 states. Both registers (`global123`, `global12`) are already "
+            "modelled; MEASURED that cutting those two edges strands all three. "
+            "❌ eveningGown: `get:` is VARIADIC and we read one argument -- `(global0 get: -1 32)` "
+            "has a silent-pickup sentinel with the items after it, losing 13 sites (28% of LB2's "
+            "acquisitions). Needs that AND the prologue->museum crossing modelled one-way. "
+            "⚠️ The variadic fix must EXCLUDE debug-only code: Main's proc0_13..proc0_17 hand over "
+            "nine items each and would give cheese and smellingSalts phantom sources.",
     },
 }
 

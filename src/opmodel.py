@@ -144,6 +144,7 @@ class OpEmitter:
         self._loc_dec = set()       # counter keys with a dec op (need -1 headroom)
         self.init_writes = {}       # room -> {gi: val} UNCONDITIONAL entry writes (initial value)
         self.init_seq = {}          # room -> ordered [(gi, val, guard)] entry writes, source order.
+        self.init_deaths = set()    # rooms whose `init` writes DEATH -- arriving there kills you
         #   Conditional init writes (inside if/cond) keep their guard instead of being FORCED --
         #   the rm79 seal: `(NormalEgo)` g101:=0 unconditional, then `(= gCurrentStatus 11)` only
         #   `if gIslandStatus==2`; flattening forced g101=11 always -> every win edge (needs
@@ -955,6 +956,15 @@ class OpEmitter:
                                         ("dec",), _conj_atoms(pc)))
         if tp == "Assignment" and I.is_global(node["kids"][0]):
             gi, v = node["kids"][0]["index"], _int(node["kids"][1].get("value"))
+            # A DEATH written by a room's own `init` means ARRIVING HERE KILLS YOU, and it is not
+            # an ordinary entry write -- so it stays out of `init_seq`/`init_writes` (modelling it
+            # as "entering sets register R" would be nonsense) but it must not vanish either. It
+            # used to do exactly that: LB2's death screen is a ROOM, its death lives in `init`,
+            # and with no machine for it the game ended up with ZERO deaths. Nothing noticed until
+            # the room was made terminal and `discover_goal` -- "terminal, reachable, never fatal"
+            # -- promoted the Restore/Restart screen to a WINNING ENDING.
+            if v is not None and self.is_death(gi, v):
+                self.init_deaths.add(room)
             if v is not None and not self.is_death(gi, v):
                 g = _conj_atoms(pc)
                 self.init_seq.setdefault(room, []).append((gi, v, g))

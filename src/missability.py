@@ -1779,6 +1779,50 @@ class IrSccReach(SccReach):
                 if gi in regset:
                     self._inroom[gi][room].add(v)
                     cheapest((gi, room, v), ())
+        # ⭐ ...AND THE CONDITIONAL ONES, WHICH ARE *POSSIBLE* IN-ROOM WRITES.
+        #
+        # `init_writes` holds only the UNCONDITIONAL entry writes -- `opmodel._init_leaf` files a
+        # write there solely when its path condition is None -- and the loop above was the only
+        # thing seeding `_inroom` from room `init`. So a register a room writes under ANY
+        # condition was, for projection purposes, a register that room never wrote. That is the
+        # unsound direction: `_inroom` means "settable here, from a value we could not recover",
+        # which is exactly what we know about such a write. Dropping it instead asserts the game
+        # never makes it.
+        #
+        # It cost LB2 a third of its act structure. `rm630`'s `(= global123 4)` is the only
+        # reachable producer of act 4 (`rm26` has no `(3,4)` step -- act 3's destination is an
+        # `If`-valued `newRoom:` that `_fan_exit` cannot resolve, so `compile._contradicts` kills
+        # that branch and the write with it, docs/LB2-ORACLE.md §7b). The moment anything gives
+        # rm630's write a path condition, acts 4/5/6 become unreachable, rooms 521/525/750 leave
+        # the projection, and SIX findings vanish -- five of them play-confirmed. Two independent
+        # consumers absorb it in silence: `_need_rooms` drops need-room 750 while
+        # `required[bifocals]` still literally reads `[750]`, and `reobtainable_rooms` -- an
+        # INTERSECTION over every projection -- returns the empty set for anything sourced at
+        # rm525, which downstream is indistinguishable from "the item is safe".
+        #
+        # NOT a latent LB2 quirk waiting on a future change: `rm350.sc:81`'s `(= global123 2)`
+        # already sits in a `switch global12` else-arm with numeric labels, is already
+        # conditional, and is already missing from `_rstep` today. This is a present bug.
+        #
+        # A SEPARATE CHANNEL on purpose. `init_writes` is documented UNCONDITIONAL BY
+        # CONSTRUCTION and eight other places lean on that for COMMIT semantics (`_psucc`'s
+        # `commit=`, the placement walk, `guards`); widening it would quietly assert that
+        # entering the room FORCES the value, which is the rm79 seal bug in reverse.
+        #
+        # Set-valued and cost-carrying, both load-bearing. A room may write the same register to
+        # several values down different arms, so one value per (room, gi) -- what `init_writes`
+        # can hold -- would drop the rest (measured: 13 such collisions on LSL2, 7 KQ4, 4 KQ6,
+        # 5 LB2). And the write's guard may demand items, which `cheapest` is exactly there to
+        # record; seeding it free would make a gated entry write look like a free one.
+        #
+        # Measured inert on today's corpus -- LSL2, KQ4, KQ6 and LB2 all byte-identical on the
+        # full snapshot surface -- so it is groundwork that pays off under
+        # `vocab.lower_property_case_labels`, not a verdict change.
+        for room, seq in getattr(em, "init_seq", {}).items():
+            for (gi, v, g) in seq:
+                if gi in regset and g is not None:
+                    self._inroom[gi][room].add(v)
+                    cheapest((gi, room, v), _own_positive(g))
         self._rstep = {R: defaultdict(set) for R in self.regs}
         # ...and here, the one consumer an always-live scope is lifted FOR: what its action makes
         # true, and what that costs. `cheapest` below is where "mixing the paint costs the Styx
@@ -1836,6 +1880,43 @@ class IrSccReach(SccReach):
                         # started, so reading only that made every cutscene effect free.
                         cheapest((gi, info["room"], v),
                                  _own_positive(g) | emust.get(K, frozenset()))
+        # ⭐ A COUNTER MAY NOT BE WOUND BACKWARDS.
+        #
+        # A write whose from-value we could not recover lands in `_inroom`, which means "settable
+        # here from ANY value" -- and for a counter that is a claim the game never makes. LB2's act
+        # is the case: `rm630` does a bare `(= global123 4)` inside a `(switch global12 …)` on the
+        # arrival direction, with no act test anywhere near it, so no path condition supplies the
+        # from-value. Read permissively, the model may stand at act 5, step into `rm630`, wind the
+        # act back to 4, walk to `rm525` and collect the smelling salts -- so the item stops being
+        # stranded. `rm355`'s `(= global123 0)` resets it outright. Measured: this, and not the
+        # source condition or the room graph, is the whole reason that item is missed.
+        #
+        # The from-value IS recoverable -- from the STEP RELATION rather than the source. Every
+        # ordered step of such a register is `k -> k+1`, so the rule is read off `_rstep` itself
+        # and asserts nothing about any particular game:
+        #
+        #     a register that COUNTS -- two or more ordered steps, every one of them consecutive,
+        #     and more than two values in play -- may not be DECREASED by an unordered write.
+        #
+        # ALL THREE QUALIFIERS ARE LOAD-BEARING, and the first census without them was wrong. A
+        # boolean flag has exactly one step `(0, 1)`, and its `_inroom` writes of 0 are ordinary
+        # CLEARS; forbidding those would forbid every flag reset whose guard we failed to recover
+        # -- 20+ registers across KQ6 and LB2, a behaviour change with no evidence behind it. With
+        # the qualifiers, the corpus census is three registers: LB2's act, LB2's `111`, KQ6's
+        # `162`. LSL2 and KQ4 have none, so they cannot move [standing ruling, 2026-08-01].
+        #
+        # `<= v`, not `< v`: a write of the value it already holds is a harmless self-write, and
+        # refusing it would be a second unevidenced claim.
+        for gi in list(self._rstep):
+            steps = {st for room in self._rstep[gi].values() for st in room}
+            vals = ({v for st in steps for v in st}
+                    | {v for vs in self._inroom.get(gi, {}).values() for v in vs})
+            if len(steps) < 2 or len(vals) <= 2 or not all(t == f + 1 for (f, t) in steps):
+                continue
+            for room, wr in list(self._inroom.get(gi, {}).items()):
+                for v in sorted(wr):
+                    self._rstep[gi][room] |= {(u, v) for u in vals if u <= v}
+                    wr.discard(v)
         self._joints = []
         self._apply_death_traps()
         self._own_fixpoint()
@@ -3802,7 +3883,11 @@ def _build(cfg, ir_path):
         # (KQ6 proc0_1 -> rm640, called from the archer/minotaur/... hazards). See derive_death_sci11.
         dialogs, dprocs = V.derive_death_sci11(ir)
         if dialogs or dprocs:
-            synth, _n = V.lower_death_sci11(ir, dialogs, dprocs)
+            # the death SCREENS among those dialogs -- rooms that ARE the offer, so `newRoom:` into
+            # one is a death (see extract.death_screen_rooms and lower_death_sci11 mechanism 3)
+            import extract as _X
+            synth, _n = V.lower_death_sci11(ir, dialogs, dprocs,
+                                            screens=_X.death_screen_rooms(ir))
             sig = (synth, 1)
     if not sig and not V.is_sci11(ir):
         found = V.derive_death(ir)          # the global-flag shape (LSL2 gCurrentStatus, KQ4 g127)
@@ -3895,6 +3980,16 @@ def _build(cfg, ir_path):
     # item-bit registers (489/490) and test_scopes' pinned callback-scope check tripped on the
     # wrong store's writes.
     V.lower_mask_globals(ir, V.derive_mask_globals(ir))
+    # A `switch` case label that is a PROPERTY is a literal the model was throwing away -- see
+    # vocab.lower_property_case_labels. Runs LAST, after every store, deliberately: it allocates
+    # no register, but it DOES change path conditions, and the derivations above key their
+    # allocation order off what they see (see lower_mask_globals' note -- allocation order is
+    # register identity). Placing it here leaves every store's numbering exactly as it was.
+    _pcl = V.lower_property_case_labels(ir)
+    if _pcl:
+        _heads = sorted({h for *_x, h in _pcl})
+        print("  [lowered] %d property case label(s) in %d object(s), heads=%s"
+              % (len(_pcl), len({(s, o) for s, o, *_r in _pcl}), _heads), file=__import__("sys").stderr)
     d_gi, d_val = sig[0], (sig[1] if len(sig) > 1 else None)
     is_death = DeathSignal(d_gi, d_val)
     em = E.OpEmitter(ir, cfg, is_death)

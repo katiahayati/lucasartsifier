@@ -424,7 +424,8 @@ class MachineBuilder:
                         if k is None:
                             continue
                         self._scan_setscript(c["kids"][1], [], m, source=mn,
-                                             armer=(other.name, k), owner=owner)
+                                             armer=(other.name, k), owner=owner,
+                                             selfobj=other.name)
                     continue
                 # An arming inside another MACHINE's doit/cue is a continuation of that machine
                 # exactly as a changeState-case arming is, so it carries the same armer link and
@@ -437,7 +438,7 @@ class MachineBuilder:
                 armer = ((other.name, None)
                          if other.name != m.inst and "changeState" in other.methods else None)
                 self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn),
-                                     owner=owner, armer=armer)
+                                     owner=owner, armer=armer, selfobj=other.name)
         # ...and this script's own PROCEDURES, which were never scanned at all. A machine armed
         # from a proc in its own script had no entry whatever: KQ6's realm cutscene is armed by
         # `proc344_1`, and the item-state test guarding it went with it.
@@ -455,7 +456,8 @@ class MachineBuilder:
             seen.add(key)
             s2 = self.ir.scripts.get(arm_script)
             self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn),
-                                 owner=(X.cast_guard(self._cast(s2), oname) if s2 else None))
+                                 owner=(X.cast_guard(self._cast(s2), oname) if s2 else None),
+                                 selfobj=oname)
         self._drop_continuation_entries(m)
         self._inherit_local_continuations(m, script)
         return m
@@ -623,7 +625,7 @@ class MachineBuilder:
                 init_sels=X.init_selectors(self.ir))
         return c
 
-    def _scan_setscript(self, node, pc, m, source, armer=None, owner=None):
+    def _scan_setscript(self, node, pc, m, source, armer=None, owner=None, selfobj=None):
         """Find `(x setScript: <ref>)` where <ref> is m, record an entry to m at state 0 with the
         path condition, AND carry the LOCAL WRITES the arming context made before the setScript. A
         machine reads its own script's locals, so a local the arming branch set gates the machine's
@@ -655,6 +657,20 @@ class MachineBuilder:
                         slot = ("G", _r["index"])
                     elif _r.get("name"):
                         slot = ("O", _r["name"])
+                    elif _r.get("t") == "Self" and selfobj:
+                        # `(self setScript: X)` IS a slot arming -- `self` is the object whose
+                        # method we are standing in, and it holds the one Script slot exactly as a
+                        # named receiver does. Recorded as ("O", <that object>), the same key the
+                        # named spelling produces, so the two spellings compete correctly.
+                        #
+                        # It read as NO SLOT, and `death_traps` bails on `if not slots` -- so a
+                        # room that kills you by arming its own death script was not a trap at all.
+                        # LB2's act-5 walls are precisely that: `rm350`/`rm500`'s `init` do
+                        # `(self setScript: sLauraDies)` under `global12 == 420 AND global123 == 5`,
+                        # a fully-modelled arming whose negation is exactly "do not arrive from the
+                        # pursuit region during act 5" -- and it was discarded for want of a
+                        # receiver name.
+                        slot = ("O", selfobj)
                 for sel, params in msgs:
                     if sel != "setScript" or not params or not self._targets(params[0], m):
                         continue

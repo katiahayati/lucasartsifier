@@ -71,6 +71,9 @@ def death_rooms(em):
     for room, script, gi, v, g in em.handler_writes:
         if em.is_death(gi, v):
             out.add(room)
+    # ...and a room whose own `init` writes death: arriving IS the death, so there is no machine
+    # and no handler to carry it. LB2's `deathRoom` is the shape (see `opmodel._init_leaf`).
+    out |= getattr(em, "init_deaths", set())
     return out
 
 

@@ -1092,6 +1092,30 @@ def _room_object(script, ir=None):
     return None
 
 
+def death_screen_rooms(ir):
+    """Rooms that ARE a death dialog -- the Restore/Restart screen itself.
+
+    The distinction that matters: a death SCREEN is a room whose whole existence is the offer (LB2's
+    `deathRoom`, script 99: a picture and a `repeat` around a three-button Print that never
+    returns), while a death ROOM is an ordinary place you walk through where a hazard's cutscene
+    can kill you (KQ6's rm640/rm690/rm820). Only the first has no gameplay in it, and only the
+    first makes `newRoom:` into it a death rather than a journey.
+
+    Derived by shape -- the death dialog IS the script's room object -- and MEASURED: 1 of 1 on
+    LB2, 0 of 4 on KQ6, whose dialogs are `Script` objects living inside real rooms.
+
+    ONE definition, used by three callers (`_no_walk_rooms` for its vestigial exits,
+    `lower_death_sci11` for the `newRoom`-into-it deaths, and `anchors` through them), because
+    the same rule in two places is this codebase's most expensive recurring bug."""
+    out = set()
+    for (sn, name) in V.derive_death_send(ir):
+        sc = ir.scripts.get(sn)
+        ro = _room_object(sc, ir) if sc is not None else None
+        if ro is not None and ro.name == name:
+            out.add(sn)
+    return out
+
+
 class Extractor:
     def __init__(self, ir):
         self.ir = ir
@@ -1359,6 +1383,7 @@ class Extractor:
             self._cur_obj = ""
         for n, s in room_scripts.items():
             self._nav_edges(n, s)
+            self._newroom_override_edges(n, s)
             for o in s.objects:
                 self._cur_obj = o.name
                 for mname, meth_ast in o.methods.items():
@@ -1841,6 +1866,70 @@ class Extractor:
             # -- before that this room's edges were all guard-None and took the other branch.
             e.guard = _conj([e.guard, starter])
 
+    def _newroom_override_edges(self, room_num, script):
+        """A room that OVERRIDES `newRoom` rewrites its own destination -- read the rewrites.
+
+        `(gRoom newRoom: X)` is a send to the CURRENT ROOM, so a room that defines `newRoom`
+        intercepts every exit taken inside it and may substitute a different destination before
+        calling `super`. LB2's `rm666` -- the dark passage -- is the case, and it is a passage
+        precisely because of this method:
+
+            (method (newRoom param1)
+                (cond ((== param1 99) 0)                      ; a death passes through unchanged
+                      ((== global12 650) … (= param1 565) else (= param1 560))
+                      ((== global12 630) (= param1 454))
+                      ((== global12 520) (= param1 610)))
+                (super newRoom: param1))
+
+        Its entry scripts all walk you out with the placeholder `(gRoom newRoom: 0)`, and the real
+        destination is chosen HERE from `global12`, the previous room. Reading only the literal
+        left the passage with no exits at all, so the model believed you could never come back --
+        which made `lantern`, obtained in `rm600` and used in this room, look stranded. It is not:
+        the oracle's `act-local` was right, and the pocket was ours.
+
+        ADDS edges, never removes any: the destinations here are extra ways out that the literal
+        call site does not name, and adding movement is the safe direction (the walk-icon rule
+        above is the unsafe one, and says so). Each carries the branch's own path condition, so
+        `global12 == 650` really does mean "only when you came from rm650" -- the same prevRoom
+        register the realm seal already uses.
+
+        Inert unless a room overrides `newRoom` AND assigns its destination parameter a literal:
+        measured, `newRoom: 0` appears in exactly one room in LB2 and this fires on that one."""
+        obj = _room_object(script, self.ir)
+        meth = obj.methods.get("newRoom") if obj is not None else None
+        if meth is None:
+            return
+        dest_param = None                      # the parameter `super newRoom:` is finally handed
+        for n in I.walk(meth):
+            if n.get("t") != "Send":
+                continue
+            try:
+                _r, msgs = I.send_pairs(n)
+            except Exception:                  # noqa: BLE001
+                continue
+            for sel, params in msgs:
+                if sel == "newRoom" and params and isinstance(params[0], dict) \
+                        and params[0].get("vtype") == "Parameter":
+                    dest_param = params[0].get("index")
+        if dest_param is None:
+            return
+        seen = []
+
+        def leaf(node, pc):
+            if node.get("t") != "Assignment":
+                return
+            ks = node.get("kids") or []
+            if len(ks) < 2 or not isinstance(ks[0], dict):
+                return
+            if ks[0].get("vtype") != "Parameter" or ks[0].get("index") != dest_param:
+                return
+            dst = I.as_int(ks[1])
+            if dst and dst != 0xffff:
+                seen.append(Edge(room_num, dst, guard=_conj(pc)))
+
+        walk_stream(meth, [], leaf)
+        self.ts.edges.extend(seen)
+
     def _nav_edges(self, room_num, script):
         obj = _room_object(script, self.ir)
         if obj is not None and room_num not in self._no_walk_rooms():
@@ -1886,6 +1975,26 @@ class Extractor:
         if self._nowalk is not None:
             return self._nowalk
         self._nowalk = set()
+        # ⭐ A DEATH SCREEN IS NOT A ROOM, and its declared exits are dead letters.
+        #
+        # LB2's `deathRoom` (script 99) is a picture and a `repeat` around a three-button Print --
+        # Restore / Restart / Quit -- whose `init` NEVER RETURNS. It also declares `north 350` in
+        # its properties, which the game therefore never reads. We took that at face value and
+        # invented a walk out of the death screen: the model could travel by dying (rm99 -> rm350,
+        # 60 rooms beyond), and rm99 became eligible as a dangerous-sink witness and a guard
+        # target, which is where `pressPass@rm99` and `rm210->rm99: (gEgo has: 6)` came from.
+        #
+        # The discriminator is that the death dialog IS its script's room object. That separates a
+        # death SCREEN from a death CUTSCENE: KQ6's four dialogs are `Script` objects that play
+        # inside real rooms you walk through (rm640/rm690/rm820), so none of them is a room object
+        # and none loses an exit. MEASURED before writing this -- 0 of 4 on KQ6, 1 of 1 on LB2.
+        #
+        # This sits with the walk-icon rule below rather than with the death machinery on purpose:
+        # both say the same thing, that a declared n/s/e/w is not an exit the player can use, and
+        # both are removing movement, which the docstring above rightly calls the unsafe direction.
+        # Note it must come BEFORE the walk-icon early-return, which bails on games with no icon
+        # bar -- a death screen is a death screen in SCI0 too.
+        self._nowalk |= death_screen_rooms(self.ir)
         found = V.derive_walk_icon(self.ir)
         if not found:
             return self._nowalk

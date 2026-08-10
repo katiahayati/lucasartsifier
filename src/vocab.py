@@ -687,7 +687,10 @@ def derive_death_sci11(ir):
     return dialogs, death_procs
 
 
-def lower_death_sci11(ir, dialogs, death_procs, death_value=1):
+_skipped_deaths = []          # dialogs with no reachable entry -- reported, never swallowed
+
+
+def lower_death_sci11(ir, dialogs, death_procs, death_value=1, screens=()):
     """Both SCI1.1 death mechanisms lowered onto ONE synthetic death global (computed once, before
     any injection so the two passes agree): a death write into each inline dialog's state 0, and a
     death write in place of each call to a death proc."""
@@ -706,13 +709,33 @@ def lower_death_sci11(ir, dialogs, death_procs, death_value=1):
             {"t": "Number", "value": death_value}]}
 
     n = 0
-    for (sn, obj_name) in dialogs:                     # (1) inline dialogs -> death write at state 0
+    for (sn, obj_name) in dialogs:                     # (1) inline dialogs -> death write at ENTRY
         obj = ir.scripts[sn].by_name.get(obj_name)
-        cs = obj.methods.get("changeState") if obj else None
-        if cs is None:
+        # ⭐ THE OBJECT'S ENTRY -- which is what "reaching the death dialog" means. NOT where the
+        # buttons are: the offer sits two Switch/Case levels deep in KQ6's dialogs, and injecting
+        # there would put the death on the button-press path condition. Arriving at the dialog IS
+        # the death; Restore/Restart is epilogue.
+        #
+        # `init` IS the SCI entry point, and `Script` overrides it to dispatch to `changeState(0)`
+        # -- so case 0 is not a second rule, it is where `init` GOES for a Script that does not
+        # define its own. One concept, two spellings, and the fallback is read off the class
+        # protocol rather than asserted.
+        #
+        # MEASURED before writing this: KQ6's four dialogs (egoBeastScript, deathCartoonScr,
+        # deadInHereScript, noWayOut) define no `init`, so every one keeps the case-0 path exactly
+        # as before -- 66 DEATH transitions across 34 rooms, unchanged. LB2's `deathRoom` is a
+        # ROOM whose offer lives in `init`, and it used to fall out of this loop SILENTLY: the
+        # game ended up with zero deaths, `rm99` stayed an ordinary room with an exit to `rm350`,
+        # and the model could travel by dying.
+        own_init = obj.methods.get("init") if obj else None
+        entry = own_init or (obj.methods.get("changeState") if obj else None)
+        if entry is None:
+            _skipped_deaths.append((sn, obj_name))
             continue
         injected = False
-        for node in I.walk(cs):
+        # A state dispatcher hides its entry in case 0; a plain `init` runs top to bottom, and
+        # searching IT for a "case 0" would land in whichever branch the buttons happen to be in.
+        for node in (I.walk(entry) if own_init is None else ()):
             if node.get("t") != "Switch":
                 continue
             for c in (node.get("kids") or [])[1:]:
@@ -726,7 +749,7 @@ def lower_death_sci11(ir, dialogs, death_procs, death_value=1):
                     injected = True
             break
         if not injected:
-            old = dict(cs); cs.clear(); cs["t"] = "List"; cs["kids"] = [write(), old]
+            old = dict(entry); entry.clear(); entry["t"] = "List"; entry["kids"] = [write(), old]
         n += 1
     for s in ir.scripts.values():                      # (2) death-proc calls -> death write
         bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
@@ -738,6 +761,44 @@ def lower_death_sci11(ir, dialogs, death_procs, death_value=1):
                     node["kids"] = [{"t": "Variable", "vtype": "Global", "index": synth},
                                     {"t": "Number", "value": death_value}]
                     n += 1
+    # (3) `newRoom:` INTO A DEATH SCREEN is a death, not a journey. A screen is a room that IS the
+    # Restore/Restart offer (`extract.death_screen_rooms`), so arriving is dying and there is
+    # nothing on the other side to walk to. LB2 writes its deaths this way -- `sLauraDies` and 33
+    # siblings end `(gRoom newRoom: 99)` -- and with only mechanisms (1) and (2) every one of them
+    # was invisible: the game modelled ZERO deaths.
+    #
+    # Deliberately NOT "newRoom into a death ROOM": KQ6 has 34 of those, and they are ordinary
+    # places you walk through where a hazard's cutscene may kill you. Marking every entrance to
+    # them as a death would wall off a third of the game. Measured: 0 screens and 0 sites on KQ6,
+    # so this is inert there by construction; 34 sites on LB2.
+    if screens:
+        for s in ir.scripts.values():
+            bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
+            for body in bodies:
+                for node in I.walk(body):
+                    if node.get("t") != "Send":
+                        continue
+                    try:
+                        _r, msgs = I.send_pairs(node)
+                    except Exception:                  # noqa: BLE001
+                        continue
+                    # only a send whose SOLE message is the fatal `newRoom:` -- a chained send
+                    # does other work we would silently discard by replacing the whole node
+                    if len(msgs) == 1 and msgs[0][0] == "newRoom" and msgs[0][1] \
+                            and I.as_int(msgs[0][1][0]) in screens:
+                        node.clear()
+                        node["t"] = "Assignment"
+                        node["kids"] = [{"t": "Variable", "vtype": "Global", "index": synth},
+                                        {"t": "Number", "value": death_value}]
+                        n += 1
+    # LOUDLY. A death dialog we cannot lower is a whole game's worth of deaths going missing, and
+    # deaths are in scope by the project's central rule -- LB2 lost every one of them to a silent
+    # `continue` here and nobody knew until an unrelated change happened to expose it.
+    if _skipped_deaths:
+        import sys as _sys
+        print("  [degraded] death dialog(s) with neither an own `init` nor a `changeState` -- NO "
+              "death is modelled for them: %s" % (_skipped_deaths,), file=_sys.stderr)
+        _skipped_deaths.clear()
     return synth, n
 
 
@@ -2642,3 +2703,101 @@ def doverb_item_messages(ir):
                 if m is not None and m != 65535:
                     base_verbs.add(m)
     return {m: i for m, i in msg_idx.items() if counts[m] == 1 and m not in base_verbs}
+
+
+def lower_property_case_labels(ir):
+    """A `switch` case label that is a PROPERTY, resolved to the literal it holds.
+
+        (switch global12                 ; global12 = the previous room
+            (north  <arrived from the north neighbour>)
+            (south  <arrived from the south neighbour>)
+            (330    <arrived from rm330>))
+
+    `north` here is the ROOM OBJECT'S OWN `north` property -- a room number -- so the arm means
+    `global12 == <that number>`, exactly as the numeric arms do. But `ir.control_shape` builds an
+    `Eq` guard only for a `Number` label and hands a `Property` label back as an UNGUARDED arm, so
+    the model reads every arrival-direction branch as taken unconditionally, all at once. LB2 mixes
+    the two spellings inside a single switch (`rm350::init` has four Property arms and two numeric
+    ones), which is how the asymmetry hid: the numeric arms ordered, the property arms did not.
+
+    Rewriting the label is the whole fix -- `control_shape` then treats it like any other numeric
+    case, including the `priors` accumulation that makes the arms mutually exclusive and gives the
+    `else` its real condition.
+
+    FOUR RESTRICTIONS, each one a claim about what a property label can be trusted to mean:
+
+    * **INSTANCE methods only** (`not o.is_class`). In a CLASS method the label names whatever the
+      RECEIVING INSTANCE holds, and the class's own value is only a default. LB2's `Door` is the
+      case and it is not hypothetical: `Door.sc:20` declares `listenVerb 0` while `rm510`, `rm560`,
+      `rm600` and `rm610` each override it to `38` (the water glass), and `Door::doVerb`'s
+      `(listenVerb (self listen:))` is exactly this idiom. Resolving against the class would assert
+      the wrong number for all four. That arm therefore stays unguarded and the eavesdrop mechanic
+      stays free -- a KNOWN REMAINING GAP, and closing it needs per-instance specialisation of a
+      class method, not this pass. See docs/LB2-ORACLE.md §7v.
+    * **A property the object ASSIGNS is not a literal.** If anything writes that selector the
+      declared value is an initial value, not an invariant.
+    * **0 and $ffff are sentinels, never destinations.** `Door`'s `listenVerb 0` means "this door
+      cannot be listened at"; a room's `north 0` means "no exit north". Resolving either would
+      manufacture a guard on a value the game uses to mean ABSENT -- and on a `param1` dispatch
+      head, where `_cmp_atom` turns `param1 == N` into OWN(N), `0` would invent a requirement to
+      hold item 0.
+    * **Only under a head `control_shape` treats as VALUED** -- a global, or a parameter/selected-
+      item dispatch. Anywhere else the label yields no guard whether or not we resolve it, so
+      rewriting would be noise in the IR with no consumer.
+
+    Returns the census as `[(script, object, method, name, value, head)]` so the caller can print
+    what it did; the IR is mutated in place."""
+    sites = []
+    for sn, sc in ir.scripts.items():
+        for o in sc.objects:
+            if o.is_class:                      # the value belongs to the instance, not the class
+                continue
+            props = o.props or {}
+            if not props:
+                continue
+            written = _assigned_selectors(o)
+            for mname, meth in o.methods.items():
+                for node in I.walk(meth):
+                    if node.get("t") != "Switch":
+                        continue
+                    ks = node.get("kids") or []
+                    head = ks[0] if ks else None
+                    if not isinstance(head, dict):
+                        continue
+                    glob = (head.get("t") == "Variable" and head.get("vtype") == "Global")
+                    disp = (head.get("t") == "Variable" and head.get("vtype") == "Parameter") \
+                        or I.is_selected_item(head)
+                    if not (glob or disp):
+                        continue
+                    for c in ks[1:]:
+                        ck = c.get("kids") or []
+                        lbl = ck[0] if ck else None
+                        if not (isinstance(lbl, dict) and lbl.get("t") == "Property"):
+                            continue
+                        name = lbl.get("name")
+                        v = props.get(name)
+                        if v is None or v in (0, 0xffff) or name in written:
+                            continue
+                        lbl.clear()
+                        lbl["t"] = "Number"
+                        lbl["value"] = v
+                        sites.append((sn, o.name, mname, name, v,
+                                      head.get("index") if glob else "dispatch"))
+    return sites
+
+
+def _assigned_selectors(obj):
+    """Selectors this object writes -- as a property assignment or as a one-argument send to
+    itself. Their declared value is an initial value, not a constant."""
+    out = set()
+    for m in obj.methods.values():
+        for n in I.walk(m):
+            t = n.get("t")
+            ks = n.get("kids") or []
+            if t == "Assignment" and ks and isinstance(ks[0], dict) \
+                    and ks[0].get("t") == "Property":
+                out.add(ks[0].get("name"))
+            if t == "SendMessage" and ks and isinstance(ks[0], dict) \
+                    and ks[0].get("t") == "Selector" and len(ks) > 1:
+                out.add(ks[0].get("name"))
+    return out
