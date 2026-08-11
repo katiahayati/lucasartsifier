@@ -710,7 +710,15 @@ def register_flip_frontier(s):
     because `prev := 26` is what leaving rm26 means -- and only the value-CHANGING component
     needs a flip edge. A joint row whose prev component does not match any flip edge's from-room
     contributes nothing (the (110,2)/(330,3) pressPass witnesses: the same stranding seen from
-    non-causal states; the (26,2) row carries the demand)."""
+    non-causal states; the (26,2) row carries the demand).
+
+    AND THE SAME RETIREMENT FILTER AS THE EDGE ROWS (`crossing_retires_need`): a row whose
+    `still_needed_at` rooms are all unreachable past the flip edge's own commit puts no demand
+    there -- the scalar `reg123=5` pressPass row is the case (the flat projection of an act-2
+    stranding; its rm335 need is sealed from act 3 on, so demanding the pass at the 4->5 break
+    would wall it). The joint rows, whose needs live inside the post-flip region, keep their
+    demands untouched. Rows without a `still_needed_at` (the flip-trap mapping below) are never
+    retired -- no need set, no evidence."""
     prev = M.prev_room_reg(s.em)
 
     def flip_edges(R, v, from_room=None):
@@ -739,7 +747,10 @@ def register_flip_frontier(s):
                     sites |= flip_edges(Ri, vi, from_room=from_room)
         else:
             sites = flip_edges(R, V)
+        need = set(r.get("still_needed_at") or ())
         for (a, b) in sites:
+            if need and s.crossing_retires_need(a, b, need):
+                continue
             out[(a, b)]["items"].add(r["item"])
     return dict(out)
 

@@ -262,9 +262,15 @@ MECHANISM_ROWS = {
     # room 110 and the break card at act 2; rm330 standing at act 3); the scalar 2 and 5 rows
     # are the flat projection of the same stranding. The analyze row is the older, coarser
     # spelling of the same fact and rides along.
+    # 2026-08-10 (need retirement): rm26->rm420 LEFT the analyze frontier -- the crossing's own
+    # `123:=5` commit leaves both need rooms (250, 335) unreachable, so a demand there would
+    # have walled the 4->5 break (`crossing_retires_need`; the drop is recorded in
+    # `_stranding_drops`). rm26->rm355 REMAINS deliberately: the model still believes the pass
+    # deliverable at rm335 in acts 3-4 (the doorman's `123==2` init condition has not reached
+    # the sGiveInvite arming -- the actions-delegate gap), so that edge is the next cure's job.
     "pressPass": {
         "analyze: need@rm250 sources=[29, 235] "
-        "frontier=rm210->rm250|rm26->rm330|rm26->rm355|rm26->rm420|rm280->rm250",
+        "frontier=rm210->rm250|rm26->rm330|rm26->rm355|rm280->rm250",
         "register_strandings: reg(12, 123)=(110, 2)->[335]",
         "register_strandings: reg(12, 123)=(26, 2)->[335]",
         "register_strandings: reg(12, 123)=(330, 3)->[335]",

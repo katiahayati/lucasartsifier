@@ -1815,7 +1815,7 @@ class IrSccReach(SccReach):
         self.reach_rooms = reachable(self.edges, {em.cfg.start_room})
         self.members, self.room_region, self.controllers = {}, {}, set()   # no regions in IR
         self.goal_comps = {self.comp_of[r] for r in em.cfg.goal_rooms if r in self.comp_of}
-        self._reob, self._rw, self._after, self._avoid = {}, {}, {}, {}
+        self._reob, self._rw, self._after, self._avoid, self._xreach = {}, {}, {}, {}, {}
         self._build_product()
 
     # ---- gate-aware movement ------------------------------------------------
@@ -2387,8 +2387,114 @@ class IrSccReach(SccReach):
         self._avoid[key] = out if out is not None else set(self.reach_rooms)
         return self._avoid[key]
 
+    def _crossing_reach(self, a, b):
+        """Per `_emeta` row of a->b: {projection: rooms reachable AFTER the crossing, or None}.
+
+        The post-crossing walk for the NEED-RETIREMENT question (`crossing_retires_need`). For
+        each way of making the move (each meta row), each candidate projection starts from the
+        states the crossing itself produces: every value the walk believes at `a` that passes the
+        row's requirement, with the row's writes applied -- the same arrival rule as `_psucc`'s
+        edge clause, restricted to this one edge. Deliberately a mirror of that clause rather than
+        a call: `_psucc` enumerates all edges on a hot path every corpus baseline is pinned to.
+
+        Candidate projections are the ones the meta itself touches (a register in its req or
+        sets; a joint qualifies through any component) -- the question is what the crossing's OWN
+        register commit seals, so a projection the edge neither tests nor writes is not evidence
+        about this crossing. Positional registers (previous-room, current-room) are dropped the
+        same way `defer_to_entry` drops them from stages: they name where the player stands, not
+        which crossing this is.
+
+        `None` for a projection means NO EVIDENCE -- the walk believes no value at `a` that
+        passes the row -- and the consumer must treat it as "keep" ([[arming-floor]]: falling off
+        the end of a walk is ignorance, not evidence). Detection semantics throughout (empty
+        `commit`, no ban): the walk over-approximates movement, so a room absent from it is
+        genuinely unreachable within the abstraction, which is the only direction a retirement
+        may rest on."""
+        got = self._xreach.get((a, b))
+        if got is not None:
+            return got
+        metas = self._emeta.get((a, b))
+        if not metas:
+            self._xreach[(a, b)] = []
+            return []
+        import extract as X
+        positional = {prev_room_reg(self.em), getattr(X, "_CURROOM", None)}
+        out = []
+        for (req, sets, _alts) in metas:
+            touched = (set(req) | set(sets)) - positional
+            cands = [R for R in self.proj
+                     if (any(Ri in touched for Ri in R) if isinstance(R, tuple)
+                         else R in touched)]
+            per = {}
+            for R in cands:
+                vals = {v for (r, v) in self._pstates[R] if r == a}
+                starts = set()
+                if isinstance(R, tuple):
+                    for v in vals:
+                        if any(req.get(Ri) is not None and v[i] not in req[Ri]
+                               for i, Ri in enumerate(R)):
+                            continue
+                        starts.add((b, tuple(sets.get(Ri, v[i]) for i, Ri in enumerate(R))))
+                else:
+                    for v in vals:
+                        need = req.get(R)
+                        if need is not None and v not in need:
+                            continue
+                        starts.add((b, sets.get(R, v)))
+                per[R] = ({r for (r, _v) in self._walk(R, frozenset(), starts=starts)}
+                          if starts else None)
+            out.append(per)
+        self._xreach[(a, b)] = out
+        return out
+
+    def crossing_retires_need(self, a, b, need_rooms):
+        """A why-string when crossing a->b's own register commit leaves EVERY room in
+        `need_rooms` unreachable -- an unreachable need is a RETIRED need -- else None (keep).
+
+        The register half of `edge_strandings`' "still needed past the edge" conjunct. The flat
+        walk answers it with `rooms_after(b)`, which is register-blind, so LB2's act-break edges
+        kept demanding the pressPass at the 4->5 break (`rm26->rm420`) to protect a need at
+        rm250/rm335 -- rooms the act projection proves sealed from act 2/3 on. A demand
+        protecting a need no post-crossing player can ever face does not close a softlock; it
+        WALLS the crossing (the pass is surrendered at the act-2 door, a required story step),
+        the failure this project holds to be worse than the bug.
+
+        Quantifiers, each in the strict direction: retired only when EVERY way of making the
+        move (every meta row) has SOME projection with positive evidence (`_crossing_reach`
+        returned a walk, not None) excluding every need room. One row with no candidate
+        register, or whose every candidate projection lacks evidence, keeps the demand whole.
+        The detection row itself is NOT touched -- detection deliberately over-approximates
+        ("in-room writes are optional successors so it can never miss a stranding"); this is a
+        demand-side filter in the same family as `unholdable_at`, and the drop is recorded in
+        `_stranding_drops` where specs surface it as dropped_why.
+
+        MEASURED 2026-08-10 at 8386eb1: LSL2 0 of 16, KQ4 0 of 3, KQ6 0 of 24 (edge rows) and 0
+        register-frontier demands anywhere -- inert by construction outside LB2, where it
+        retires exactly the pressPass at rm26->rm420 (both feeds: the analyze row and the
+        scalar `reg123=5` register-frontier row) and keeps rm26->rm330, whose post-state (act
+        2) still reaches the rm335 need. ⚠️ rm26->rm355 is NOT retired at this level: the model
+        still believes the pass deliverable at rm335 in acts 3-4 because the doorman's
+        `(== global123 2)` init condition never reached the sGiveInvite arming (an
+        `actions:`-delegate ownership gap) -- the need-SITE condition cure, not this room-level
+        one."""
+        need = set(need_rooms)
+        if not need:
+            return None
+        per_meta = self._crossing_reach(a, b)
+        if not per_meta:
+            return None
+        evidence = []
+        for per in per_meta:
+            got = [R for R, reach in per.items()
+                   if reach is not None and not (need & reach)]
+            if not got:
+                return None
+            evidence.append(got[0])
+        return ("need %s unreachable past the crossing's own register commit "
+                "(projections %s)" % (sorted(need), evidence))
+
     def edge_strandings(self):
-        """The shared core, minus the rows two existing rules already refute.
+        """The shared core, minus the rows three existing rules already refute.
 
         FORCED, NOT MISSABLE -- the crossing ITSELF demands the unit, so nobody crosses without
         it and the crossing cannot strand it. The toll carry-in detector has stated this rule
@@ -2402,6 +2508,12 @@ class IrSccReach(SccReach):
         handkerchief and skeleton key cannot be in hand there), and the long door's route rides
         the pawn chain (so the nightingale IS the brush). Their real boundaries -- the Realm exit
         for the carry-outs, the short door for the nightingale -- carry the real guards.
+
+        RETIRED -- the crossing's own register commit leaves every need room unreachable
+        (`crossing_retires_need`), so the row's "still needed past the edge" conjunct fails in
+        the register view even though the flat `rooms_after` passes it. LB2's act breaks are the
+        case: `rm26->rm420` writes act 5, the pass's need rooms cap at acts 1-2, and the demand
+        would have walled the break for every player (the pass is surrendered at the act-2 door).
 
         GROUPS pass through untouched, twice over. `edge_demands` is the intersection over DNF
         alternatives, so a demanded group's members distribute across alternatives and never
@@ -2421,6 +2533,14 @@ class IrSccReach(SccReach):
                    for it in e["items"] if it in dem}
             rest = set(e["items"]) - set(why)
             why.update(_G.unholdable_at(self, a, b, rest) if rest else {})
+            # RETIRED -- the crossing's own register commit leaves every need room unreachable,
+            # so the demand would protect a need no post-crossing player can face. Items only:
+            # groups pass through untouched here for the same measured reason as the FORCED
+            # filter above.
+            for it in set(e["items"]) - set(why):
+                w = self.crossing_retires_need(a, b, self._unit_need_rooms(frozenset({it})))
+                if w:
+                    why[it] = w
             if why:
                 drops.setdefault((a, b), {}).update(why)
             items = [it for it in e["items"] if it not in why]
