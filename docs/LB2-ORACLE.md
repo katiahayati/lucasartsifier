@@ -520,14 +520,20 @@ path), while a player-committed flip has no free-running writer (LB2's holds nev
 Holds whose flip edges took the demand are now REFUSED "superseded" instead of reading as open
 gaps. Measured: LSL2/KQ4 byte-identical, KQ6 unchanged, LB2 moved by 7 rows, oracle 20/0.
 
-⚠️ **ONE ROW EXPOSES THE NEXT PRECISION GAP.** The `(gEgo has: 6)` (pressPass) demand at
-`rm26->rm420` survived `unholdable_at` because the model can keep the pass to act 4 via a path
-that skips acts 2–3 entirely: **`_rstep[123][26]` lets the walk PUMP the act counter several
-steps in one rm26 visit** — the `++` write exists both as edge sets (`Step.vexit`/`_fan_exit`,
-each visit one break) and as free in-room ordered steps ([[same-rule-two-places]] as a value
-pump). The game runs actBreak state 9 once and leaves. Whether the pass demand is a wall or
-truth is exactly this gap's question; nothing ships meanwhile. NEXT precision item: a machine
-register write consumed by `vexit` must not double as an in-room `_rstep` step.
+⚠️ **THE PASS DEMAND AT `rm26->rm420` IS THE PRICE OF THE PERMISSIVE WALK — and the "fix" for
+it was BUILT, MEASURED, AND REVERTED the same hour.** The demand survives `unholdable_at`
+because `_rstep[123][26]` lets the walk pump the act counter several steps in one rm26 visit,
+finding a pass-keeping path that skips acts 2–3. Read as [[same-rule-two-places]] (the `++`
+write existing both as edge sets and as in-room steps), the cure looked like "an EXIT-path
+write is not an in-room step" — and applied, it DROPPED FOUR CONFIRMED SOFTLOCKS (cheese,
+salts, snakeOil, snakeLasso), the empty bottle, and pressPass's true rows. The oracle's DROP
+check caught it in one run. The diagnosis was wrong: **`_rstep` is not a duplicate of the edge
+sets — it is the FLIP INVENTORY the stranding detectors walk**, while the edge sets feed
+movement; the in-room steps are the deliberate detection over-approximation ("in-room writes
+are optional successors so it can never miss a stranding"). Two consumers, not two copies. If
+the pass demand ever needs curing, the cure lives in the FILTER's walk (`unholdable_at` with
+commit semantics for edge-committed writes), never in the recording. Nothing ships meanwhile,
+so the row costs nothing today.
 
 ### ⭐⭐ §7ag. THE STREET IS SEALED — declared red and promoted the same day (2026-08-10, latest)
 
