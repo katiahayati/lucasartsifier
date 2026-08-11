@@ -1889,6 +1889,20 @@ controllable crossing of act 5, not the act break itself.
 
 ## 8. OPEN — needs a user ruling
 
+0. ⭐ **NEW 2026-08-11 (from the user's OWN play test of the shipped guard): is the pressPass
+   act-1→2 carry VACUOUS?** User, verbatim: *"there's no way to even operate the taxi without
+   the press pass, so there's no way to not have it at the act boundary."* The claim: the
+   boundary itself already implies the pass (some upstream gate — the rm250 cab cond's own
+   passless branches arm `sNoPressPassC/D`, the driver's refusal; what gates the gowned/cab
+   path upstream is NOT yet derived). If ruled: pressPass is the eveningGown shape — the
+   boundary's own precondition, not a carry — the EXPECTED_CAUGHT row is wrong, the rm26->rm330
+   spec retires, and the shipped wrap disappears. NOT reclassified here (dont-flip); needs the
+   ruling AND the upstream-gate derivation. Same session's finding either way: the wrap at
+   rm250 is MIS-SITED (see §7ak addendum / handoff) — the commit is rm300's `sHailCab`
+   (handsOff cab ride, ego hidden at state 9), so a refusal on arrival strands a hidden ego
+   with no script — the §7i/KQ6-corral arrival-commit class, reachable only if the vacuity
+   claim is false.
+
 1. ✅ **RULED 2026-08-10 — the three contested rows are SAFE, pending the §9 play test.** The
    source checks (column-C table) found all three re-obtainable at the point of use with the
    game's own act-5 chase handling, and the user ruled: *"let's mark those safe, but let's
