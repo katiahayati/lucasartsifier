@@ -122,16 +122,17 @@ KNOWN_RED = {
         # I D)`, while LB2's Main spells the receiver `(ego put: ...)` and carries nine trailing
         # arguments the engine ignores (`patcher.ego_spellings` derives the names from the game's
         # own `(= global0 ego)`).
-        "🔴 KNOWN GAP (dagger): every non-refused spec places":
-            "PHASE 4, and the one left is a DESIGN gap, not a search gap. rm26->rm750 (the act "
-            "break into the inquest) is now FOUND -- `analyze_room` learned the third destination "
-            "shape, a variable-valued `newRoom:` -- and is then deliberately refused as "
-            "`sole-exit`: script 26 holds exactly one `newRoom:`, inside the very cutscene the "
-            "arm-event would decline to start, so gating it leaves the player on the title card "
-            "with nothing left to run. Measured by reading the emitted source, not inferred. The "
-            "real placement is a DEFERRAL to the last controllable commit before an unavoidable "
-            "crossing -- `apply_guards` already does exactly that for prohibitions (the "
-            "Spinach_Dip raft) and the same treatment has to be extended to demands.",
+        # ✅ PROMOTED 2026-08-10 -- "every non-refused spec places (dagger)" is GREEN and no
+        # longer listed. The entry's own last sentence named the cure and it was built exactly
+        # there: the SOLE-EXIT DEFERRAL (`patcher.apply_guards(defer_info=)`) re-sites an
+        # act-break demand to the pocket's entry armings as `(or (not <stage>) <demand>)`, the
+        # demand-side twin of the prohibition deferral; the REGISTER-FLIP FRONTIER
+        # (`guards.register_flip_frontier`) puts every register stranding's demand on the edge
+        # that performs its seal's write, so the register-write HOLDS -- which have no
+        # free-running writer on LB2 to land on -- are superseded-refused instead of reading as
+        # open gaps. All four act-break edges place (`entry-deferral-PARTIAL`, stage-scoped on
+        # the game's own act register), measured against the emitted source, corpus goldens
+        # byte-identical.
         # ✅ PHASE 5 LANDED 2026-08-02 -- "every KQ6 finding is closed by a guard" is GREEN and no
         # longer listed. The last three: handkerchief + skeletonKey placed at the Realm's exit
         # frontier (pocket_carryout_frontier, rm640->rm650), and the wrong-door stranding rows

@@ -689,6 +689,61 @@ def unholdable_at(s, a, b, items):
     return out
 
 
+def register_flip_frontier(s):
+    """{(a, b): rec} -- register strandings whose SEAL IS ENTERED BY AN EDGE WRITE, demanded at
+    those edges. What is committed COMMITS (the teacup rule, applied to remedies): when the flip
+    that seals an item rides a room crossing -- LB2's act break, where `rm26->rm420` itself
+    writes `123 := 5` -- the crossing IS the seal's entering write, and the demand belongs on it
+    exactly as a carry-in demand belongs on a pocket's entry. Merged into `guard_specs`' frontier
+    union, so the standard filters (unholdable_at, unsatisfiable) and placements (including the
+    sole-exit deferral, which is how an act-break edge places at all) apply unchanged.
+
+    THE MECHANISM SELECTS ITSELF against the register-write HOLD (`site: register-write`): a
+    free-running trap's write lives in a `doit`, not on an edge (KQ4's nightfall, KQ6's wedding
+    fuse), so it has NO flip edges and keeps the hold path -- while a player-committed flip has
+    no free-running writer, which is why LB2's holds never placed ("no free-running trap write
+    found"). A flip edge is an edge whose meta WRITES the value from a state that excludes it
+    (`sets[R] == v`, `v not in req[R]`) -- arriving already at v is not entering the seal.
+
+    JOINT rows reduce to the same rule: the positional component (previous-room) names the
+    from-room -- `(12,123) = (26,5)` is entered exactly by the rm26 edges that write `123:=5`,
+    because `prev := 26` is what leaving rm26 means -- and only the value-CHANGING component
+    needs a flip edge. A joint row whose prev component does not match any flip edge's from-room
+    contributes nothing (the (110,2)/(330,3) pressPass witnesses: the same stranding seen from
+    non-causal states; the (26,2) row carries the demand)."""
+    prev = M.prev_room_reg(s.em)
+
+    def flip_edges(R, v, from_room=None):
+        sites = set()
+        for (a, b), metas in s._emeta.items():
+            if from_room is not None and a != from_room:
+                continue
+            for (req, sets, _alts) in metas:
+                if sets.get(R) == v and req.get(R) and v not in req[R]:
+                    sites.add((a, b))
+                    break
+        return sites
+
+    out = defaultdict(lambda: {"items": set(), "groups": []})
+    rows = list(s.register_strandings()) + [
+        {"register": r["register"], "value": r["trap"], "item": r["item"]}
+        for r in s.register_flip_strandings()]
+    for r in rows:
+        R, V = r["register"], r["value"]
+        if isinstance(R, tuple):
+            comps = dict(zip(R, V))
+            from_room = comps.get(prev)
+            sites = set()
+            for Ri, vi in comps.items():
+                if Ri != prev:
+                    sites |= flip_edges(Ri, vi, from_room=from_room)
+        else:
+            sites = flip_edges(R, V)
+        for (a, b) in sites:
+            out[(a, b)]["items"].add(r["item"])
+    return dict(out)
+
+
 def joint_frontier(s):
     """Commit edges for the JOINT-window strandings -- the grid / one-time-flag softlocks that
     `edge_strandings` structurally cannot see, so `frontier_guards` misses them.
@@ -1230,7 +1285,8 @@ def guard_specs(s):
     # items on a shared commit -- KQ4's whale swallow rm31->44 gets the feather (edge) AND the fish
     # (joint), so one guard demands both before you are swallowed.
     frontier = frontier_guards(s)
-    for src in (joint_frontier(s), pocket_frontier(s), pocket_carryout_frontier(s)):
+    rff = register_flip_frontier(s)
+    for src in (joint_frontier(s), pocket_frontier(s), pocket_carryout_frontier(s), rff):
         for (a, b), rec in src.items():
             if (a, b) in frontier:
                 frontier[(a, b)] = {"items": set(frontier[(a, b)]["items"]) | rec["items"],
@@ -1348,8 +1404,20 @@ def guard_specs(s):
         items = sorted(byreg[(R, trap)])
         cond = ("(and %s)" % " ".join(f"(gEgo has: {i})" for i in items)
                 if len(items) > 1 else f"(gEgo has: {items[0]})")
+        # A flip with ENTERING EDGES is player-committed, and its demand already rides those
+        # edges (`register_flip_frontier` -- see its docstring for why the two mechanisms are
+        # mutually exclusive by construction). The hold spec is superseded, not emitted as
+        # placeable: the free-running placer would find nothing anyway ("no free-running trap
+        # write found" was LB2's permanent row), and an unplaced spec that another spec already
+        # covers reads as an open gap when it is a closed one.
+        edge_carried = sorted((a, b) for (a, b), rec in rff.items()
+                              if set(items) & rec["items"])
         specs.append({"site": "register-write", "register": R, "trap": trap,
-                      "condition": cond, "items": items, "refused": []})
+                      "condition": cond, "items": items,
+                      "refused": ([f"superseded: the flip is edge-committed and the demand "
+                                   f"rides the flip edge specs "
+                                   f"({', '.join(f'rm{a}->rm{b}' for a, b in edge_carried)})"]
+                                  if edge_carried else [])})
     return specs
 
 

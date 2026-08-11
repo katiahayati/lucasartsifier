@@ -135,7 +135,7 @@
       "rm210->rm250: (gEgo has: 6)",
       "rm26->rm330: (gEgo has: 6)",
       "rm26->rm355: (gEgo has: 6)",
-      "rm26->rm420: (gEgo has: 6)",
+      "rm26->rm420: (and (gEgo has: 6) (gEgo has: 10) (gEgo has: 11) (gEgo has: 13) (gEgo has: 14) (gEgo has: 16) (gEgo has: 19) (gEgo has: 31))",
       "rm26->rm750: (and (gEgo has: 10) (gEgo has: 11) (gEgo has: 26) (gEgo has: 27) (gEgo has: 31) (or (gEgo has: 10) (gEgo has: 11)))",
       "rm280->rm250: (gEgo has: 6)"
     ],
@@ -156,9 +156,7 @@
       "rm26->rm355: applied=True kind=entry-deferral-PARTIAL sites=3 entry_sites=3",
       "rm26->rm420: applied=True kind=entry-deferral-PARTIAL sites=3 entry_sites=3",
       "rm26->rm750: applied=True kind=entry-deferral-PARTIAL sites=3 entry_sites=3",
-      "rm280: applied=True kind=setscript sites=1",
-      "rmNone->rmNone: applied=False kind=None why=no free-running trap write found",
-      "rmNone->rmNone: applied=False kind=None why=no free-running trap write found"
+      "rm280: applied=True kind=setscript sites=1"
     ],
     "register_strandings": [
       "bifocals@reg(12, 123)=(454, 5)->[750]",
@@ -185,8 +183,8 @@
       "reg150==[0]@seal(12, 123)=(26, 5)->[730] via sRepelSnakes"
     ],
     "register_write_specs": [
-      "reg123=2: (gEgo has: 6)",
-      "reg123=5: (and (gEgo has: 6) (gEgo has: 13) (gEgo has: 31))"
+      "reg123=2: (gEgo has: 6) [REFUSED]",
+      "reg123=5: (and (gEgo has: 6) (gEgo has: 13) (gEgo has: 31)) [REFUSED]"
     ],
     "sinks": [],
     "softlock_items": [

@@ -501,6 +501,34 @@ entry (`own(9)`), as a requirement should.
 **Measured**: LSL2/KQ4/KQ6 snapshots byte-identical (KQ6's `skull@rm420/throwSkull` survives —
 it never hands control back); LB2 loses exactly the skeletonKey rows. **The oracle is 9/9.**
 
+### ⭐ §7ah. REMEDIATION ROUND 2 — the REGISTER-FLIP FRONTIER: every stranded item's demand rides its flip edge (2026-08-10, after the seal)
+
+**The rule** (`guards.register_flip_frontier`, merged into `guard_specs`' frontier union): a
+register stranding whose seal is ENTERED BY AN EDGE WRITE — an edge whose meta writes the value
+from a state that excludes it — puts its demand on those entering edges, where the standard
+filters (`unholdable_at`, `unsatisfiable`) and placements (including the sole-exit deferral)
+apply unchanged. "What is committed COMMITS", applied to remedies: LB2's `rm26->rm420` *is* the
+`123 := 5` write, so it now demands all eight items that flip strands (the four carries + the
+four ending items whose joint rows witness the same seal), and `rm26->rm330` carries the
+pressPass. JOINT rows reduce to the same rule: the prev-room component names the from-room, and
+only the value-changing component needs a flip edge — so the 9 detection-only joint rows now
+have their remedy site, closing §7af's "the cure direction" item.
+
+**The mechanism selects itself**: a free-running trap's write lives in a `doit`, not on an edge
+(KQ4's nightfall, KQ6's wedding fuse — zero flip edges, they keep the register-write HOLD
+path), while a player-committed flip has no free-running writer (LB2's holds never placed).
+Holds whose flip edges took the demand are now REFUSED "superseded" instead of reading as open
+gaps. Measured: LSL2/KQ4 byte-identical, KQ6 unchanged, LB2 moved by 7 rows, oracle 20/0.
+
+⚠️ **ONE ROW EXPOSES THE NEXT PRECISION GAP.** The `(gEgo has: 6)` (pressPass) demand at
+`rm26->rm420` survived `unholdable_at` because the model can keep the pass to act 4 via a path
+that skips acts 2–3 entirely: **`_rstep[123][26]` lets the walk PUMP the act counter several
+steps in one rm26 visit** — the `++` write exists both as edge sets (`Step.vexit`/`_fan_exit`,
+each visit one break) and as free in-room ordered steps ([[same-rule-two-places]] as a value
+pump). The game runs actBreak state 9 once and leaves. Whether the pass demand is a wall or
+truth is exactly this gap's question; nothing ships meanwhile. NEXT precision item: a machine
+register write consumed by `vexit` must not double as an in-room `_rstep` step.
+
 ### ⭐⭐ §7ag. THE STREET IS SEALED — declared red and promoted the same day (2026-08-10, latest)
 
 **USER ground truth (§7z): the street is unreachable once the museum acts start. MEASURED NOW:
