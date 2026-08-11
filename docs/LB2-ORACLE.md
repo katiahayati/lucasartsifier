@@ -352,7 +352,8 @@ seal lands; nothing ships. Open: the register-write hold and the joint rows' spe
 ✅✅ **THE STREET IS SEALED** (2026-08-10, latest) — §7ag: three derivations (departing init,
 dead-letter nav, relational lowering over the register's own universe), all corpus-neutral
 outside LB2; the street collapses to acts [1], the RED promoted same-day, pressPass gains its
-true mechanism, and §7af's two wall-risk wraps retracted on their own, exactly as predicted.
+true mechanism. ⚠️ The seal retracted rm250 as a deferral SITE only — §7af's two wall-risk
+`has: 6` specs (rm26->rm355/rm26->rm420) still place and still wall; see §7ag's end and §NEXT ①.
 ✅ **The empty-bottle death IS caught** (2026-08-10, later): `register_value_strandings` —
 see §7ac. One row corpus-wide: `reg150==[0]@seal(12,123)→[730]`.
 Nothing safe is flagged, so the false-positive side is clean. The five misses turned out to be
@@ -574,8 +575,11 @@ byte-identical on LSL2/KQ4 (goldens) and KQ6 (watched surface):
 mechanism** (reg rows `123=2→[335]` + three joint crossing states: enter act 2 without the pass
 and the fundraiser door is sealed off from rm235, its only source); the empty-bottle seal
 witness sharpened to the act-break card `(26,5)`; the deferral placements retracted rm250 as an
-entry site (sites 4→3 — the street room is no longer standable past act 1, so §7af's two
-wall-risk wraps retracted exactly as predicted); and `register_write_specs` now split per
+entry site (sites 4→3 — the street room is no longer standable past act 1). ⚠️ That retraction
+is the SITE only, NOT §7af's two wall-risk wraps: the `rm26->rm355`/`rm26->rm420` `has: 6`
+specs still exist and still place at their remaining 3 sites (`applied=True` in the blessed
+surface) — the wall stands until the demand itself is retired (§NEXT ①); and
+`register_write_specs` now split per
 (register, FLIP VALUE) — the single-spec form had emitted `reg123=2: (pass AND salts AND
 grapes)`, a wall (salts don't exist until act 4). ⚠️ The scalar `reg123=5` spec still conjoins
 the pass via the flat projection row `pressPass@reg123=5` — the joint rows know better; a
