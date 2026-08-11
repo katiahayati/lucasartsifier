@@ -1064,8 +1064,61 @@ def _mode_button(i):
     return "  %s  " % MODE_NAMES[i].center(max(len(n) for n in MODE_NAMES))
 
 
+def install_mode_chooser(dest, titles_by_num):
+    """The CHOOSER half of the mode feature -- run BEFORE any wrap is emitted, because it is
+    also the mode's own FEASIBILITY GATE: a mode nobody can switch is not a mode. If neither
+    dialect shape hosts a chooser (SCI0 menu bar / SCI1.1 control panel), the mode is
+    RETRACTED (`T.MODE = None`, `_MODE_DEST` left pinned so `_init_mode` cannot re-arm) and
+    every later emitter takes the classic always-refuse path: no mode conjunct in any wrap, no
+    mode/warned globals, and -- on a game whose stock declarations already cover its reads --
+    no Main in the patch at all.
+
+    LB2 is the case that forced the gate (docs/LB2-ORACLE.md §7ak): its GameControls panel has
+    no `(= nsTop (.. X else Y ..))` row ladder to clone, so v1 shipped mode plumbing with no
+    picker -- and shipping the plumbing meant shipping a recompiled Main, whose `WrapMusic`
+    class (a game class declared in script 0, stock species 134) came back numbered 46,
+    colliding with `Actions` (46, script 950): `LB2::init`'s `(WrapMusic add:)` resolved to a
+    class with no `add` and the game crashed at boot. The species drift is a real compiler gap
+    (scicompile numbers classes by its own enumeration, not the game's table) -- but the mode
+    plumbing was the only reason Main shipped, and a chooser-less mode was dead weight anyway.
+    The gate removes the exposure for every game whose script 0 declares a class; the species
+    gap itself stays open and documented for the day a patch NEEDS to edit such a script."""
+    _init_mode(dest)
+    if T.MODE is None:
+        return []
+    src_dir = os.path.join(dest, "src")
+    row = _install_menu_chooser(src_dir, T.MODE["g"])
+    if row is None:
+        row = _install_panel_chooser(src_dir, T.MODE["g"])
+    if row is None or not row.get("applied"):
+        T.MODE = None
+        row = row if row is not None else {"applied": False, "ui": None, "why": ""}
+        row["why"] = ((row.get("why") or "no menu bar or control panel shape found to host "
+                       "the chooser") + " -- MODE RETRACTED, wraps emit modeless")
+        return [row]
+    return [row]
+
+
+def declare_mode_globals(dest):
+    """The DECLARATION half: `_declare_missing_globals` re-run AFTER every apply pass, because
+    the mode/warned globals exist only in emitted text -- `assemble()`'s early run cannot see
+    them. Nothing to do on a modeless run (the wraps then reference no new global)."""
+    if T.MODE is None:
+        return []
+    if _declare_missing_globals(os.path.join(dest, "src")):
+        return [{"applied": True, "title": "Main", "ui": "globals",
+                 "why": "mode/warned globals declared"}]
+    return []
+
+
 def install_mode_ui(dest, titles_by_num):
     """Install the in-game guard-mode chooser and declare the mode/warned globals.
+
+    ⚠️ LEGACY COMPOSITION -- both halves at once, which is only correct when called BEFORE any
+    wrap emission or on a game whose chooser lands. The pipeline calls the halves separately
+    (`install_mode_chooser` right after `assemble`, `declare_mode_globals` after the applies);
+    a late composed call on a chooser-less game retracts the mode after wraps already
+    referenced it, and the compile then fails loudly on the undeclared mode global.
 
     The player-facing half of the mode feature: an entry in each game's own settings surface
     that sets the mode global (0 full / 1 lite / 2 stock). The SURFACE is derived by shape,
@@ -1087,27 +1140,10 @@ def install_mode_ui(dest, titles_by_num):
         existing button loop. Its doit runs a 3-button `Print` chooser (the font spelled as
         the host file spells it).
 
-    Also the one place the NEW globals get declared: `_declare_missing_globals` re-runs here,
-    AFTER every apply pass, because the mode/warned globals exist only in emitted text --
-    `assemble()`'s early run cannot see them. Returns edit rows (never merged into the
-    apply_* returns -- those are a frozen snapshot surface); `title`s must join the emission
-    set, `Main` included when the declaration pass touched it."""
-    _init_mode(dest)
-    if T.MODE is None:
-        return []
-    g = T.MODE["g"]
-    src_dir = os.path.join(dest, "src")
-    out = []
-    row = _install_menu_chooser(src_dir, g)
-    if row is None:
-        row = _install_panel_chooser(src_dir, g)
-    out.append(row if row is not None else
-               {"applied": False, "ui": None,
-                "why": "no menu bar or control panel shape found to host the chooser"})
-    if _declare_missing_globals(src_dir):
-        out.append({"applied": True, "title": "Main", "ui": "globals",
-                    "why": "mode/warned globals declared"})
-    return out
+    Returns edit rows (never merged into the apply_* returns -- those are a frozen snapshot
+    surface); `title`s must join the emission set, `Main` included when the declaration pass
+    touched it."""
+    return install_mode_chooser(dest, titles_by_num) + declare_mode_globals(dest)
 
 
 def _install_menu_chooser(src_dir, g):
@@ -2796,6 +2832,10 @@ def main():
     print("assembling project from %s" % config.ACTIVE.src_dir)
     nums = assemble(dest)
     titles_by_num = {n: t for t, n in nums.items()}
+    cedits = install_mode_chooser(dest, titles_by_num)   # feasibility gate BEFORE any wrap
+    for e in cedits:
+        print("  [%s] mode-ui %-10s %s" % ("ok " if e["applied"] else "SKIP",
+                                           e.get("title", "?"), e.get("why", "")))
 
     print("\napplying %d sink remedies:" % len(sinks))
     edits = apply_sink_remedies(dest, sinks, titles_by_num)
@@ -2826,8 +2866,8 @@ def main():
         print("  [%s] %-16s %s" % (mark, loc, how))
         if e["applied"]:
             print("        %s" % to_source_syntax(e["condition"]))
-    uedits = install_mode_ui(dest, titles_by_num)
-    for e in uedits:
+    uedits = cedits + declare_mode_globals(dest)
+    for e in uedits[len(cedits):]:
         print("  [%s] mode-ui %-10s %s" % ("ok " if e["applied"] else "SKIP",
                                            e.get("title", "?"), e.get("why", "")))
     touched = sorted({e["title"] for e in edits + resedits + gedits + uedits

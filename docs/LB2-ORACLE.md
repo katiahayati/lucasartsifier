@@ -507,6 +507,36 @@ entry (`own(9)`), as a requirement should.
 **Measured**: LSL2/KQ4/KQ6 snapshots byte-identical (KQ6's `skull@rm420/throwSkull` survives —
 it never hands control back); LB2 loses exactly the skeletonKey rows. **The oracle is 9/9.**
 
+### ⭐ §7ak. THE v1 BOOT CRASH — a mode nobody can switch is not a mode (2026-08-11)
+
+**dagger_patch_v1 crashed at boot**: `[LB2::init @ 0af0]: Send to invalid selector 0x76 (add)
+of object at 0019:05b5`. The chain, diagnosed with the ScummVM debugger (`vo` on the receiver)
+plus a compile→decompile round-trip diff:
+
+1. The receiver was the **`Actions` class** (script 950, super `Code`, lone `doVerb`).
+2. The send was `(WrapMusic add:)` — **`WrapMusic` is a game class declared in script 0
+   itself**, stock species **134**. Our recompiled Main numbered it **46** = `Actions`' slot
+   (the ONE drifted class in a 149-class table; scicompile numbers classes by its own
+   enumeration, not the game's table). Every WrapMusic reference in our Main resolved to
+   Actions → no `add` → crash. The round-trip source diff could not see it — decompiling our
+   own binary maps 46 back through our own wrong heap, a fixed point.
+3. Main shipped ONLY to declare the mode/warned globals — and LB2's mode UI had been SKIPPED
+   (`no nsTop row idiom to clone` in its GameControls), so the plumbing had no picker anyway.
+   Stock LB2 declares 400 globals and references ≤399, so without the mode globals Main is
+   untouched.
+
+**The cure** (`patcher.install_mode_chooser`, the rule the feature's own docstring almost
+stated): the chooser install runs FIRST and is the mode's feasibility gate — no hostable
+chooser ⇒ `T.MODE = None` ⇒ classic modeless wraps, no new globals, no Main in the patch.
+KQ6/LSL2/KQ4 keep their modes (their choosers land); LB2 v2 ships 6 files, no Main, wraps
+without the `(== global400 2)` bypass. Guard modes for LB2 = delete-the-files, until either
+an LB2 panel idiom is derived or the species gap is fixed.
+
+⚠️ **OPEN ENGINE DEBT — the species drift itself**: any future patch that must edit a script
+declaring a game class will hit it. The fix belongs in scicompile (species for a same-named
+class from the game's own compiled resources — `LoadClassFromCompiled` exists) or a classdef
+`class#` pin generated from the IR, which knows every species.
+
 ### ⭐⭐ §7ai. THE PASS WALLS ARE RETIRED — an unreachable need is a retired need (2026-08-10, latest; commits `61817b7` + the delegate-rule follow-up)
 
 **THE SHIP-BLOCKER IS CLOSED.** The two act-blind `has: 6` demands (`rm26->rm355` at stage 2,
