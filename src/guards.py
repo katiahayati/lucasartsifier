@@ -749,7 +749,7 @@ def register_flip_frontier(s):
             sites = flip_edges(R, V)
         need = set(r.get("still_needed_at") or ())
         for (a, b) in sites:
-            if need and s.crossing_retires_need(a, b, need):
+            if need and s.crossing_retires_need(a, b, r["item"], need):
                 continue
             out[(a, b)]["items"].add(r["item"])
     return dict(out)

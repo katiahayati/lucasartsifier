@@ -420,6 +420,7 @@ def walk_stream(node, pc, on_leaf, on_loop=None, undecided=None):
 
 
 _INIT_SELECTORS = {}        # ir id -> selectors that put an object in the cast
+_DELEGATE_SLOTS = {}        # ir id -> property names the game dispatches doVerb through
 
 
 def init_selectors(ir):
@@ -474,6 +475,48 @@ def init_selectors(ir):
 
     _INIT_SELECTORS[key] = {sp: resolve(sp) for sp in classes}
     return _INIT_SELECTORS[key]
+
+
+def delegate_slots(ir):
+    """Property names the game DISPATCHES a verb through: `((<x> P:) doVerb: ...)` -- a send
+    whose RECEIVER is itself a property read. SCI1.1's approach system is the shape's home:
+    LB2/KQ6's `CueObj` completes an approach with `((client actions:) doVerb: theVerb)`, so an
+    object assigned as an `actions:` VALUE runs its `doVerb` only when that read finds it --
+    which makes the ASSIGNMENT a cast event with the assignment site's own path condition
+    (`cast_conditions` consumes this via `delegate_sels`).
+
+    Why it matters: LB2's rm335 doorman is init:ed under `(and (== global123 2) (not (proc0_2
+    25)))` and armed `actions: doorActions` in the same send -- and `doorActions` itself is
+    never init:ed, so without this rule its verb-11 arming of `sGiveInvite` (give the press
+    pass) read as ALWAYS live, keeping a phantom act-3 use of the pass alive at the fundraiser
+    door. The condition was always derivable; only this spelling of "whose method is this
+    really" was missing (docs/LB2-ORACLE.md §7ai).
+
+    Derived from the forwarding shape itself, not a selector catalogue (the discipline
+    `init_selectors` states): a property qualifies only because the game's own code visibly
+    dispatches through it. CENSUS 2026-08-10: LSL2 {}, KQ4 {} (SCI0 has no Actions layer --
+    inert by construction), KQ6 {actions, curIcon}, LB2 {actions}; measured on KQ6, the three
+    conditionally-assigned delegates move nothing in the detector surface."""
+    key = id(ir)
+    if key in _DELEGATE_SLOTS:
+        return _DELEGATE_SLOTS[key]
+    slots = set()
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for body in o.methods.values():
+                for n in I.walk(body):
+                    if n.get("t") != "Send":
+                        continue
+                    recv, msgs = I.send_pairs(n)
+                    if not any(sel == "doVerb" for sel, _p in msgs):
+                        continue
+                    if isinstance(recv, dict) and recv.get("t") == "Send":
+                        _r2, m2 = I.send_pairs(recv)
+                        props = [sel for sel, p in m2 if not p]
+                        if len(props) == 1:
+                            slots.add(props[0])
+    _DELEGATE_SLOTS[key] = frozenset(slots)
+    return _DELEGATE_SLOTS[key]
 
 
 def _object_departures(script):
@@ -554,7 +597,8 @@ def _object_departures(script):
     return out
 
 
-def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None):
+def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None,
+                    delegate_sels=None):
     """`objname -> [guard|None]`: the conditions under which this script puts an object IN THE CAST.
 
     An object that is not `init:`ed does not exist for the player -- it cannot be clicked, cued or
@@ -585,6 +629,15 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None)
     path condition of its own -- it runs because something called it. KQ6 redraws the
     hole-in-the-wall that way: `proc404_1` inits the hole actor, and every one of its three call
     sites is `(if (== (rLab holeCoords:) <this cell>) (proc404_1))`.
+
+    `delegate_sels` (see `delegate_slots`) adds the third cast event: being ASSIGNED as a
+    dispatch delegate. An `Actions` instance is never `init:`ed -- it exists for the player only
+    while some host carries it in a property the engine dispatches through (`(<host> actions:
+    doorActions)`), so the assignment site's path condition is its presence condition, exactly as
+    an `init:` site's is. Both spellings are read: the property message itself, and the bulk
+    `(<list> eachElementDo: #actions <obj>)`. LB2's rm335 doorman is the case this was built
+    for (docs/LB2-ORACLE.md §7ai): `doorActions` is assigned inside the doorman's own
+    `(== global123 2)`-guarded init send, and without this event its armings read always-live.
 
     `machine_guard(objname)` is the SAME rule for a `changeState` body, which likewise has no path
     condition of its own -- it runs because the machine was armed and reached that state, so its
@@ -633,10 +686,18 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None)
                 for p in params:
                     if isinstance(p, dict) and p.get("name") in declared:
                         armed.add((p["name"], key))
+            if delegate_sels and sel in delegate_sels:
+                # assigned as a dispatch delegate -- a cast event for the VALUE object
+                for p in params:
+                    if isinstance(p, dict) and p.get("name") in declared:
+                        pend.append((p["name"], key, _conj(pc)))
             if bulk:
                 for p in params:
                     if (isinstance(p, dict) and p.get("t") == "Object"
                             and bulk & set(declared.get(p.get("name"), ()))):
+                        pend.append((p["name"], key, _conj(pc)))
+                    if (delegate_sels and isinstance(p, dict) and p.get("t") == "Object"
+                            and bulk & set(delegate_sels) and p.get("name") in declared):
                         pend.append((p["name"], key, _conj(pc)))
 
     for o in script.objects:

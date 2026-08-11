@@ -680,7 +680,8 @@ class MachineBuilder:
             c = self._cast_cache[script.number] = X.cast_conditions(
                 script, proc_guard=lambda pn: X.any_guard(self.proc_calls.get(pn)),
                 machine_guard=lambda on: self._entry_guard.get((script.number, on)),
-                init_sels=X.init_selectors(self.ir))
+                init_sels=X.init_selectors(self.ir),
+                delegate_sels=X.delegate_slots(self.ir))
         return c
 
     def _scan_setscript(self, node, pc, m, source, armer=None, owner=None, selfobj=None):

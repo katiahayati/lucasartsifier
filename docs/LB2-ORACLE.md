@@ -352,8 +352,13 @@ seal lands; nothing ships. Open: the register-write hold and the joint rows' spe
 ✅✅ **THE STREET IS SEALED** (2026-08-10, latest) — §7ag: three derivations (departing init,
 dead-letter nav, relational lowering over the register's own universe), all corpus-neutral
 outside LB2; the street collapses to acts [1], the RED promoted same-day, pressPass gains its
-true mechanism. ⚠️ The seal retracted rm250 as a deferral SITE only — §7af's two wall-risk
-`has: 6` specs (rm26->rm355/rm26->rm420) still place and still wall; see §7ag's end and §NEXT ①.
+true mechanism. (The seal retracted rm250 as a deferral SITE only — §7af's two wall-risk
+`has: 6` specs still placed until §7ai retired them.)
+✅✅ **THE PASS WALLS ARE RETIRED** (2026-08-10, latest) — §7ai: need retirement
+(`crossing_retires_need`, the third edge-drop rule), delegate-slot cast conditions
+(`extract.delegate_slots` — the doorman's `123==2` finally reaches the sGiveInvite arming) and
+need-site conditions (`required_guards`). Both act-blind `has: 6` demands gone, `rm26->rm330`
+keeps the real act-1→2 carry, corpus byte-identical elsewhere. THE SHIP-BLOCKER IS CLOSED.
 ✅ **The empty-bottle death IS caught** (2026-08-10, later): `register_value_strandings` —
 see §7ac. One row corpus-wide: `reg150==[0]@seal(12,123)→[730]`.
 Nothing safe is flagged, so the false-positive side is clean. The five misses turned out to be
@@ -502,6 +507,57 @@ entry (`own(9)`), as a requirement should.
 **Measured**: LSL2/KQ4/KQ6 snapshots byte-identical (KQ6's `skull@rm420/throwSkull` survives —
 it never hands control back); LB2 loses exactly the skeletonKey rows. **The oracle is 9/9.**
 
+### ⭐⭐ §7ai. THE PASS WALLS ARE RETIRED — an unreachable need is a retired need (2026-08-10, latest; commits `61817b7` + the delegate-rule follow-up)
+
+**THE SHIP-BLOCKER IS CLOSED.** The two act-blind `has: 6` demands (`rm26->rm355` at stage 2,
+`rm26->rm420` at stage 4) are gone from the spec surface; `rm26->rm330` keeps its demand, which
+is the real act-1→2 carry. GAME TRUTH (source-read, `rm335.sc:144`): `sGiveInvite` state 5 does
+`(proc0_3 23)` + `(global0 put: 6)` and fires `((ScriptID 22 0) doit: 28673)` — surrendering
+the pass IS the 7:00 story tick, so demanding it at any later break walls every player. ⚠️ That
+the surrender is *required* rides the unmodelled trigger store (§7j); the §9 play pass should
+confirm the act-2→3 break does not fire without the fundraiser tick.
+
+Three derivations, in two commits, each measured corpus-wide:
+
+1. **NEED RETIREMENT** (`missability.crossing_retires_need`, the third `edge_strandings` drop
+   rule beside FORCED and UNHOLDABLE, also filtering `register_flip_frontier`'s per-row
+   demands): a demand at a crossing is retired when the crossing's own register commit leaves
+   every need site dead. Post-crossing states per meta row via `_crossing_reach` — the same
+   arrival rule as `_psucc`'s edge clause, walked with detection semantics (permissive, so
+   absence IS unreachability within the abstraction). Quantifiers strict: EVERY meta row needs
+   SOME projection with positive evidence; no meta, no candidate register, or a walk that never
+   crosses ⇒ keep ([[arming-floor]]: ignorance is not evidence — the Knife lesson carried in
+   from day one). Detection rows untouched; drops land in `dropped_why`.
+2. **DELEGATE SLOTS** (`extract.delegate_slots` + `cast_conditions(delegate_sels=)`): a
+   property the game dispatches through — derived from the forwarding shape `((client actions:)
+   doVerb: theVerb)` in `CueObj`, not a name catalogue — makes ASSIGNMENT as a delegate value a
+   cast event with the site's path condition. The rm335 doorman inits under `(and (== global123
+   2) (not (proc0_2 25)))` and takes `actions: doorActions` in the same send; `doorActions` is
+   never init:ed, so its verb-11 arming of `sGiveInvite` read always-live. Now the arming is
+   `own(6) ∧ 123==2 ∧ ¬(396≠0)`. CENSUS before the consumer: LSL2 {}, KQ4 {} (no Actions
+   layer — inert by construction), KQ6 {actions, curIcon} with three conditionally-assigned
+   delegates that move NOTHING (detector rows and full watched surface both), LB2 {actions}.
+3. **NEED-SITE CONDITIONS** (`build_maps` → `required_guards`, the need-side twin of
+   `source_guards`; consumed via `_need_live`/`_site_musts`): `required` stays a room-level
+   union, but each (item, room) keeps its evidence sites' guards, `None` poisoning the room
+   permissive. `_site_musts` reads liveness from `_must_equal`/`_must_hold` ONLY — deliberately
+   NOT `guard_reqs`, whose flat positive-equality pass would import OR-branch constraints and
+   read sites dead that another branch keeps alive, the unsafe direction for a demand-deleting
+   filter. So rm335 walkable at acts 3-4 keeps no pass-need alive: (335, act 2) is the only
+   live shape, and only `rm26->rm330`'s post-crossing walk contains it.
+
+**Measured**: LSL2/KQ4 goldens byte-identical, KQ6 full surface unmoved, suite 462/1-known-red
+both commits. LB2 moved by exactly FOUR rows across the two commits: `rm26->rm420` spec 8→7
+items (the pass out), `rm26->rm355` spec + placement REMOVED, and the analyze frontier
+`rm210->rm250|rm26->rm330|rm280->rm250`. Oracle 20/0, pressPass pin updated both times.
+
+⚠️ A cure that was CONSIDERED AND REJECTED, for the record: a register-aware "sourceable at the
+crossing's pre-state" reading (the edge twin of `register_strandings`' causality conjunct)
+retires rm355 but ALSO kills rm330 — the act-break card is a sole-exit pocket, so by the time
+you stand in it at act 1 the street is already behind you and no pre-state reaches a source.
+Reob-side readings are pocket-poisoned at rm26; the need-side reading has no such problem, and
+placement (the §7af deferral) is where the pre-commit moment is honestly represented.
+
 ### ⭐ §7ah. REMEDIATION ROUND 2 — the REGISTER-FLIP FRONTIER: every stranded item's demand rides its flip edge (2026-08-10, after the seal)
 
 **The rule** (`guards.register_flip_frontier`, merged into `guard_specs`' frontier union): a
@@ -534,7 +590,9 @@ movement; the in-room steps are the deliberate detection over-approximation ("in
 are optional successors so it can never miss a stranding"). Two consumers, not two copies. If
 the pass demand ever needs curing, the cure lives in the FILTER's walk (`unholdable_at` with
 commit semantics for edge-committed writes), never in the recording. Nothing ships meanwhile,
-so the row costs nothing today.
+so the row costs nothing today. ✅ RESOLVED BY §7ai exactly as prescribed: the cure landed in
+the demand layer (`crossing_retires_need` filters both the edge rows and this frontier's own
+per-row demands), never in the recording — `_rstep` untouched.
 
 ### ⭐⭐ §7ag. THE STREET IS SEALED — declared red and promoted the same day (2026-08-10, latest)
 
@@ -576,14 +634,14 @@ mechanism** (reg rows `123=2→[335]` + three joint crossing states: enter act 2
 and the fundraiser door is sealed off from rm235, its only source); the empty-bottle seal
 witness sharpened to the act-break card `(26,5)`; the deferral placements retracted rm250 as an
 entry site (sites 4→3 — the street room is no longer standable past act 1). ⚠️ That retraction
-is the SITE only, NOT §7af's two wall-risk wraps: the `rm26->rm355`/`rm26->rm420` `has: 6`
-specs still exist and still place at their remaining 3 sites (`applied=True` in the blessed
-surface) — the wall stands until the demand itself is retired (§NEXT ①); and
+was the SITE only, NOT §7af's two wall-risk wraps: the `rm26->rm355`/`rm26->rm420` `has: 6`
+specs still existed and still placed at their remaining 3 sites — the wall stood until §7ai
+retired the demands themselves; and
 `register_write_specs` now split per
 (register, FLIP VALUE) — the single-spec form had emitted `reg123=2: (pass AND salts AND
-grapes)`, a wall (salts don't exist until act 4). ⚠️ The scalar `reg123=5` spec still conjoins
-the pass via the flat projection row `pressPass@reg123=5` — the joint rows know better; a
-projection-precision item for the register-write-deferral round.
+grapes)`, a wall (salts don't exist until act 4). The scalar `reg123=5` spec still conjoined
+the pass via the flat projection row `pressPass@reg123=5` — ✅ retired by §7ai's need
+retirement on the frontier's own rows.
 
 The street-seal RED went GREEN in the same session it was declared and is **promoted**: removed
 from KNOWN_RED, the check is a permanent pin naming its three load-bearing derivations, and all
@@ -1855,8 +1913,17 @@ the LAST resort, no console-SET state (reads fine, writes are not evidence), str
    in act 4 — legitimate play, no console writes) and confirm the cobra nest is impassable, i.e.
    the stranding the 2026-08-09 ruling names. Also confirm the refill really is unavailable in
    act 5 (the vat at rm610, `cel < 3`).
-3. While in the file: the standing LB2 items not play-verified — the guard placements do NOT ship
-   (§7i), so nothing to verify there yet.
+3. **The pass surrender is required for the act-2→3 break** (§7ai's one caveat, added
+   2026-08-10). Source says `sGiveInvite` fires the 7:00 tick (`triggerAndClock doit: 28673`)
+   and the retirement of the `rm26->rm355`/`rm26->rm420` demands leans on the surrender being a
+   REQUIRED story step — but requiredness rides the unmodelled trigger store (§7j). In act 2,
+   do everything EXCEPT hand the pass to the doorman and confirm the act never advances; then
+   hand it over and confirm it does. While there, the pressPass mechanism itself: enter act 2
+   WITHOUT the pass (skip rm235 in act 1) and confirm the fundraiser cannot be entered and act
+   2 cannot complete — the carry today's rm26->rm330 demand exists to close.
+4. While in the file: the standing LB2 items not play-verified — the guard placements do NOT
+   ship (§7i), so nothing to verify there yet; the patched-game pass is its own plan once the
+   §NEXT ship pipeline runs.
 
 Related: [[one-rule-death-is-in-scope]], [[dont-flip-enumerated-ground-truth]],
 [[kq6-softlock-ground-truth]], `docs/KQ6-SOFTLOCK-CANDIDATES.md`, `src/test_lb2_ground_truth.py`.

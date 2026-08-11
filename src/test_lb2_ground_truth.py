@@ -262,15 +262,17 @@ MECHANISM_ROWS = {
     # room 110 and the break card at act 2; rm330 standing at act 3); the scalar 2 and 5 rows
     # are the flat projection of the same stranding. The analyze row is the older, coarser
     # spelling of the same fact and rides along.
-    # 2026-08-10 (need retirement): rm26->rm420 LEFT the analyze frontier -- the crossing's own
-    # `123:=5` commit leaves both need rooms (250, 335) unreachable, so a demand there would
-    # have walled the 4->5 break (`crossing_retires_need`; the drop is recorded in
-    # `_stranding_drops`). rm26->rm355 REMAINS deliberately: the model still believes the pass
-    # deliverable at rm335 in acts 3-4 (the doorman's `123==2` init condition has not reached
-    # the sGiveInvite arming -- the actions-delegate gap), so that edge is the next cure's job.
+    # 2026-08-10 (need retirement, §7ai): rm26->rm420 AND rm26->rm355 LEFT the analyze
+    # frontier -- each crossing's own act commit leaves both need rooms dead
+    # (`crossing_retires_need`): rm250 is room-dead past act 1 (the street seal), and rm335's
+    # one need site is the sGiveInvite arming, whose `123==2` condition the delegate rule
+    # carries in from the doorman's guarded init (`extract.delegate_slots` +
+    # `required_guards`). Demanding the pass at either break would have WALLED it -- the pass
+    # is surrendered at the act-2 door, a required story step. rm26->rm330 stays: (335, act 2)
+    # is live past that crossing, and its wrap is how the real act-1->2 carry is enforced.
     "pressPass": {
         "analyze: need@rm250 sources=[29, 235] "
-        "frontier=rm210->rm250|rm26->rm330|rm26->rm355|rm280->rm250",
+        "frontier=rm210->rm250|rm26->rm330|rm280->rm250",
         "register_strandings: reg(12, 123)=(110, 2)->[335]",
         "register_strandings: reg(12, 123)=(26, 2)->[335]",
         "register_strandings: reg(12, 123)=(330, 3)->[335]",

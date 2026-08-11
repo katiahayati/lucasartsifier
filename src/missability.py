@@ -430,12 +430,23 @@ def build_maps(em):
     trap_items = hopeless - hopefuls
 
     required = defaultdict(set)
+    # THE GUARD BEHIND EACH NEED SITE -- the need-side twin of `source_guards`. `required` is a
+    # room-level union and that is right for the frontier walks, but the site a room's entry came
+    # from carries a register condition of its own (LB2's sGiveInvite arming is `own(6) AND
+    # global123==2` once the delegate rule lands the doorman's init guard), and
+    # `crossing_retires_need` must be allowed to see it: a need room whose EVERY site is
+    # register-dead at the post-crossing states is not a live need there. One list per (item,
+    # room), one entry per evidence site; `None` marks a site with no guard (the consumption
+    # fallback, or evidence read without one) and poisons the room PERMISSIVE -- unconditionally
+    # live -- which is the strict direction for a filter that deletes demands.
+    required_guards = defaultdict(dict)
     # CONSUMPTION is a FALLBACK evidence source, not an additive one -- see the note where it is
     # applied, below. Collected separately so it can be weighed after all guard evidence is in.
     consumed_at = defaultdict(set)
-    def req_item(it, room):
+    def req_item(it, room, guard=None):
         if it not in trap_items:
             required[it].add(room)
+            required_guards[it].setdefault(room, []).append(guard)
     # THE ALWAYS-LIVE SCOPES CONTRIBUTE EFFECTS, NOT REQUIREMENTS. `required[X]` means "own(X) is
     # FACED here, as a gate" -- it is the evidence a frontier is computed from, so it has to be a
     # claim about a PLACE. An SCI1 inventory `doVerb` is dispatched by the icon bar and so is
@@ -459,9 +470,9 @@ def build_maps(em):
             return
         for it in _own_required(guard):     # OR-branch items are NOT required -- see _own_required
             if only is None or it in only:
-                req_item(it, room)
+                req_item(it, room, guard)
         for it in _loc_placed_required(guard, em.ts.placed):   # owner-gate on a PLACED room
-            req_item(it, room)
+            req_item(it, room, guard)
     for e in em.ts.edges:
         req(e.guard, e.src)
     for e in em.ts.cs_edges:
@@ -553,7 +564,8 @@ def build_maps(em):
     # volcano to the island hub, hiding the Ashes/Sand stranding. The gate-aware product graph
     # subsumes it -- the ticket FP was really an unguarded duplicate edge shadowing the machine
     # EXIT's own(ticket) guard (see edge_meta's machine_delivered filter).
-    return edges, edge_kind, sources, drops, required, guard_required, source_guards
+    return (edges, edge_kind, sources, drops, required, guard_required, source_guards,
+            {it: dict(rooms) for it, rooms in required_guards.items()})
 
 
 def _cmp_atoms(guard, out):
@@ -1798,7 +1810,7 @@ class IrSccReach(SccReach):
         self.em = em
         self.g = _ItemNames(vocab.item_names(em.ir))
         (self.edges, self.edge_kind, self.sources, self.drops, self.required,
-         self.guard_required, self.source_guards) = build_maps(em)
+         self.guard_required, self.source_guards, self.required_guards) = build_maps(em)
         self.rooms = list(em.rooms)
         self.comps, self.comp_of = tarjan_scc(self.rooms, self.edges)
         self.cedges = defaultdict(set)
@@ -2388,7 +2400,7 @@ class IrSccReach(SccReach):
         return self._avoid[key]
 
     def _crossing_reach(self, a, b):
-        """Per `_emeta` row of a->b: {projection: rooms reachable AFTER the crossing, or None}.
+        """Per `_emeta` row of a->b: {projection: STATES reachable AFTER the crossing, or None}.
 
         The post-crossing walk for the NEED-RETIREMENT question (`crossing_retires_need`). For
         each way of making the move (each meta row), each candidate projection starts from the
@@ -2441,42 +2453,94 @@ class IrSccReach(SccReach):
                         if need is not None and v not in need:
                             continue
                         starts.add((b, sets.get(R, v)))
-                per[R] = ({r for (r, _v) in self._walk(R, frozenset(), starts=starts)}
-                          if starts else None)
+                per[R] = self._walk(R, frozenset(), starts=starts) if starts else None
             out.append(per)
         self._xreach[(a, b)] = out
         return out
 
-    def crossing_retires_need(self, a, b, need_rooms):
-        """A why-string when crossing a->b's own register commit leaves EVERY room in
-        `need_rooms` unreachable -- an unreachable need is a RETIRED need -- else None (keep).
+    def _site_musts(self, guard, regs):
+        """{reg: allowed values} a need SITE's guard requires of `regs` -- the LIVENESS reading.
+
+        Deliberately NOT `guard_reqs`: its positive-equality pass reads `_cmp_atoms` FLAT, so a
+        `(== reg v)` inside an OR would constrain here too -- and for liveness that is the unsafe
+        direction (an OR-branch constraint would read a site dead that another branch keeps
+        alive, and a dead site is what lets `crossing_retires_need` delete a demand). Only
+        conjuncts that MUST hold may narrow a site, so this is built on `_must_equal` and
+        `_must_hold` alone. A `!=` constrains nothing without a domain except the boolean
+        globals ({0,1} -- the same special case `guard_reqs` carries); relationals constrain
+        nothing (no domain is threaded here; permissive = live = the strict direction).
+        Contradictory musts yield an empty allowed set -- a site that can never fire, honestly
+        dead."""
+        out = {}
+        for (r, v) in _must_equal(guard):
+            if r in regs:
+                out[r] = (out[r] & {v}) if r in out else {v}
+        for t in _must_hold(guard):
+            if len(t) != 2:
+                continue                        # relational: no domain -> constrains nothing
+            r, v = t
+            if r in regs and v == 0 and r in vocab.BOOL_GLOBALS:
+                allowed = {1}                   # "must be != 0" on a boolean IS "== 1"
+                out[r] = (out[r] & allowed) if r in out else allowed
+        return out
+
+    def _need_live(self, item, room, R, states):
+        """Is the need for `item` at `room` live at any of these projection-R states?
+
+        Room-level first: a room the walk never stands in is dead outright. Then per SITE
+        (`required_guards`, one guard per evidence site): a site with no guard (`None`) or
+        no musts over R's registers is live wherever the room is reached -- the permissive
+        poison -- and a conditioned site is live only at a state consistent with its musts.
+        LB2's rm335 is the case the distinction exists for: the pass's one site there is the
+        sGiveInvite arming, `own(6) AND global123==2 AND trigger-25-unfired`, so the room being
+        walkable at acts 3-5 keeps no need alive -- (335, act 2) is the only live shape, and
+        whether the post-crossing walk contains it is exactly the retirement question."""
+        hit = [v for (r, v) in states if r == room]
+        if not hit:
+            return False
+        alts = self.required_guards.get(item, {}).get(room)
+        if not alts or any(g is None for g in alts):
+            return True
+        regs = set(R) if isinstance(R, tuple) else {R}
+        for g in alts:
+            musts = self._site_musts(g, regs)
+            if not musts:
+                return True
+            for v in hit:
+                vals = dict(zip(R, v)) if isinstance(R, tuple) else {R: v}
+                if all(vals[r] in allowed for r, allowed in musts.items() if r in vals):
+                    return True
+        return False
+
+    def crossing_retires_need(self, a, b, item, need_rooms):
+        """A why-string when crossing a->b's own register commit leaves EVERY need site of
+        `item` in `need_rooms` dead -- an unreachable need is a RETIRED need -- else None (keep).
 
         The register half of `edge_strandings`' "still needed past the edge" conjunct. The flat
         walk answers it with `rooms_after(b)`, which is register-blind, so LB2's act-break edges
-        kept demanding the pressPass at the 4->5 break (`rm26->rm420`) to protect a need at
-        rm250/rm335 -- rooms the act projection proves sealed from act 2/3 on. A demand
-        protecting a need no post-crossing player can ever face does not close a softlock; it
-        WALLS the crossing (the pass is surrendered at the act-2 door, a required story step),
-        the failure this project holds to be worse than the bug.
+        kept demanding the pressPass at the 2->3 and 4->5 breaks (`rm26->rm355`/`rm26->rm420`)
+        to protect needs at rm250/rm335 -- and the pass is surrendered at the act-2 door, a
+        required story step, so either demand would have WALLED the break for every player, the
+        failure this project holds to be worse than the bug. Two register facts close them, one
+        each: rm250 is room-dead past act 1 (the street seal), and rm335's one need site is the
+        sGiveInvite arming, condition `global123==2` (the doorman's init guard, carried by the
+        delegate rule + `required_guards`), so the room being walkable at acts 3-4 keeps no
+        need alive. `rm26->rm330` keeps its demand: (335, act 2) is in its post-crossing walk.
 
         Quantifiers, each in the strict direction: retired only when EVERY way of making the
         move (every meta row) has SOME projection with positive evidence (`_crossing_reach`
-        returned a walk, not None) excluding every need room. One row with no candidate
-        register, or whose every candidate projection lacks evidence, keeps the demand whole.
-        The detection row itself is NOT touched -- detection deliberately over-approximates
-        ("in-room writes are optional successors so it can never miss a stranding"); this is a
-        demand-side filter in the same family as `unholdable_at`, and the drop is recorded in
-        `_stranding_drops` where specs surface it as dropped_why.
+        returned a walk, not None) in which every need room is dead (`_need_live`). One row with
+        no candidate register, or whose every candidate projection lacks evidence, keeps the
+        demand whole. The detection rows are NOT touched -- detection deliberately
+        over-approximates ("in-room writes are optional successors so it can never miss a
+        stranding"); this is a demand-side filter in the same family as `unholdable_at`, and
+        the drop is recorded in `_stranding_drops` where specs surface it as dropped_why.
 
-        MEASURED 2026-08-10 at 8386eb1: LSL2 0 of 16, KQ4 0 of 3, KQ6 0 of 24 (edge rows) and 0
-        register-frontier demands anywhere -- inert by construction outside LB2, where it
-        retires exactly the pressPass at rm26->rm420 (both feeds: the analyze row and the
-        scalar `reg123=5` register-frontier row) and keeps rm26->rm330, whose post-state (act
-        2) still reaches the rm335 need. ⚠️ rm26->rm355 is NOT retired at this level: the model
-        still believes the pass deliverable at rm335 in acts 3-4 because the doorman's
-        `(== global123 2)` init condition never reached the sGiveInvite arming (an
-        `actions:`-delegate ownership gap) -- the need-SITE condition cure, not this room-level
-        one."""
+        MEASURED 2026-08-10 (room-level half, at 61817b7): LSL2 0 of 16, KQ4 0 of 3, KQ6 0 of
+        24 edge rows retired and 0 register-frontier demands anywhere -- the mechanism
+        self-selects for edges that commit a register against a sealed need, which outside LB2's
+        act breaks none does. The site-condition half is measured in the same session's
+        follow-up commit (docs/LB2-ORACLE.md §7ai)."""
         need = set(need_rooms)
         if not need:
             return None
@@ -2485,8 +2549,9 @@ class IrSccReach(SccReach):
             return None
         evidence = []
         for per in per_meta:
-            got = [R for R, reach in per.items()
-                   if reach is not None and not (need & reach)]
+            got = [R for R, states in per.items()
+                   if states is not None
+                   and not any(self._need_live(item, r, R, states) for r in need)]
             if not got:
                 return None
             evidence.append(got[0])
@@ -2538,7 +2603,8 @@ class IrSccReach(SccReach):
             # groups pass through untouched here for the same measured reason as the FORCED
             # filter above.
             for it in set(e["items"]) - set(why):
-                w = self.crossing_retires_need(a, b, self._unit_need_rooms(frozenset({it})))
+                w = self.crossing_retires_need(a, b, it,
+                                               self._unit_need_rooms(frozenset({it})))
                 if w:
                     why[it] = w
             if why:
