@@ -507,6 +507,34 @@ entry (`own(9)`), as a requirement should.
 **Measured**: LSL2/KQ4/KQ6 snapshots byte-identical (KQ6's `skull@rm420/throwSkull` survives —
 it never hands control back); LB2 loses exactly the skeletonKey rows. **The oracle is 9/9.**
 
+### ⭐⭐ §7an. THE 4→5 ACT FLIP HOLDS AT ITS OWN COMMIT CLAUSE — the night-guard shape lands (2026-08-11, night)
+
+**The user's §7al follow-up ("guards should condition the STATE CHANGE, like KQ4's night
+guard, not depend on rooms") is BUILT for the boundary that has the shape.** The commit census
+(memory `lb2-act-flip-hold-sites`): rm520::newRoom is an EXIT INTERCEPTOR — its cond arm
+`((and (== global123 4) (global0 has: 31)) (= param1 26) …)` diverts any exit into the
+act-break card, and its else arm is the stock plain exit. That is `guard_register_write`'s
+site one generalization over: the flip is by POCKET-DIVERT rather than a literal register
+write, in the same always-retested method pair (`newRoom`/`doit`).
+
+`patcher.guard_flip_interceptor` + a first-priority branch in `_guard_arrival_entries` (under
+`stage_override` only — the sole-exit deferral context, LB2-only by construction): an entry
+room whose interceptor arm CONTAINS the spec's own stage test and routes into the pocket gets
+the demand conjoined INTO that arm. Held = the stock else exit, hands on, nothing consumed,
+retry free on every exit; the demand reads at exit time (no state-born heads). rm520's own
+`cue` (the post-commit delivery) is untouched by construction (`cue` is not a retested method).
+
+**Measured**: suite 460+1-intended / 2 known-red / 0 other; the LB2 surface moved by EXACTLY
+two rows — `rm26->rm420` REFUSED → `applied=True` (sites=1, the flip-interceptor-hold at
+rm520) — re-blessed after reading both; KQ6/goldens byte-still. `rm26->rm750` stays honestly
+REFUSED (the 5→end commit is rm480's mid-chase capture — no interceptor exists; the likely
+cure is SUBSUMPTION by this 4→5 hold, unmeasured). **v4 patch** built
+(`build/dagger_patch_v4`, --skip-decompile on v3's ir): 210/280/300 byte-identical to v3 +
+new 520 (the hold, demand = the spec's 7 items); guarded-model verify "no NEW softlocks";
+INSTALLED to the live game with cmp (Sierra's own 100/450, lost in the v2 cleanup, restored
+too). **Play-confirm owed (§9)**: at act 4 carrying the murder dagger but missing a carry,
+exit the office → a plain exit, act stays 4; re-enter, exit with all seven → the break fires.
+
 ### ⭐ §7am. THE TICK STORE IS LOWERED — and the pass-vacuity detection is PARKED at three named hops (2026-08-11, evening)
 
 **USER ruling (this session): *"we don't actually need a guard between act 1 and 2 because the

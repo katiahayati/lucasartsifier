@@ -1838,6 +1838,59 @@ def guard_prop_flag_owner_write(text, prop_name, mask, cond):
     return text, 0
 
 
+def guard_flip_interceptor(text, pocket, stage_src, cond):
+    """Hold a player-committed register flip at its EXIT-INTERCEPTOR commit clause -- the
+    night-guard shape for a flip whose write lives in a sole-exit pocket room.
+
+    KQ4's nightfall holds a free-running writer's clock clause (`guard_register_write`); a
+    player-committed flip has no free-running writer to hold, but a game may spell the commit
+    as a clause in an always-retested method that ROUTES into the pocket -- LB2's
+    rm520::newRoom: `((and (== global123 4) (global0 has: 31)) (= param1 26) ...)` diverts
+    every exit into the act-break card. Conjoining the demand into that arm gives the KQ4
+    semantics exactly: a held exit falls through to the arm below it (the stock plain exit,
+    hands on), the demand is read at exit time (no state-born heads, no cross-file spelling),
+    nothing inside the arm is consumed while held (the retracted-consumption rule satisfied
+    by construction), and retry is free because the interceptor re-tests on every exit.
+
+    The arm must CONTAIN the spec's own stage test -- the flip this demand scopes to; an arm
+    that does not pin the stage is somebody else's crossing -- and its body must route into
+    the pocket (`(= param<N> <pocket>)` or `newRoom: <pocket>`). Only the retested methods
+    `newRoom`/`doit` are searched: the same pair as `guard_register_write`, for the same
+    reason (a `cue` fires once when cued -- refusing there would never retry; rm520's own
+    `cue` performs the post-commit delivery and must not be touched)."""
+    norm = lambda s: re.sub(r"\s+", " ", s).strip()          # noqa: E731
+    want_stage = norm(stage_src)
+    route = re.compile(r"\(=\s*param\d+\s+%d\s*\)|newRoom:\s*%d\b" % (pocket, pocket))
+    for meth in ("newRoom", "doit"):
+        for mm in re.finditer(r"\(method\s+\(%s\b" % meth, text):
+            ms, me = _block_span(text, mm.start())
+            region = text[ms:me]
+            for cm in re.finditer(r"\(cond\b", region):
+                cs, ce = _block_span(region, cm.start())
+                i = cs + len("(cond")
+                while i < ce:
+                    while i < ce and region[i] in " \t\r\n":
+                        i += 1
+                    if i >= ce or region[i] != "(":
+                        break
+                    as_, ae = _block_span(region, i)
+                    arm = region[as_:ae]
+                    j = as_ + 1
+                    while j < ae and region[j] in " \t\r\n":
+                        j += 1
+                    if j < ae and region[j] == "(":
+                        hs, he = _block_span(region, j)
+                        head = region[hs:he]
+                        if want_stage in norm(head) and route.search(region[he:ae]):
+                            new_head = ("(and %s %s)  ; softlock-guard: hold the act flip "
+                                        "until its carries are obtainable"
+                                        % (head, stock_or(cond)))
+                            new_region = region[:hs] + new_head + region[he:]
+                            return text[:ms] + new_region + text[me:], 1
+                    i = ae
+    return text, 0
+
+
 _SOURCE_CACHE = {}
 
 
@@ -2880,6 +2933,19 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
         except Exception:                              # noqa: BLE001
             unwrapped.append({"room": num, "why": "unparseable"})
             continue
+        if stage_override is not None:
+            # THE NIGHT-GUARD SHAPE FIRST (user ruling 2026-08-11: guards condition the STATE
+            # CHANGE, not rooms): if this entry room spells the commit as an exit-interceptor
+            # clause pinning the spec's own stage, conjoin the demand INTO that clause -- one
+            # site, re-tested every exit, held = the stock else arm. Every boundary without an
+            # interceptor falls through to the triage below unchanged.
+            it2 = open(p2, errors="replace").read()
+            nt2, n2 = guard_flip_interceptor(it2, sp["from_room"], stage_override, cond)
+            if n2:
+                open(p2, "w").write(nt2)
+                seen.add(key)
+                placed.append({"title": ttl, "kind": "flip-interceptor-hold", "sites": n2})
+                continue
         trig = find_trigger(forms2, sp["from_room"])
         if (stage_override is not None and defer_ctx is not None
                 and trig["kind"] in ("arm-event", "sole-exit", "setscript")):
