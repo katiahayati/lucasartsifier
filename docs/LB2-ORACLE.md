@@ -532,7 +532,9 @@ cure is SUBSUMPTION by this 4→5 hold, unmeasured). **v4 patch** built
 (`build/dagger_patch_v4`, --skip-decompile on v3's ir): 210/280/300 byte-identical to v3 +
 new 520 (the hold, demand = the spec's 7 items); guarded-model verify "no NEW softlocks";
 INSTALLED to the live game with cmp (Sierra's own 100/450, lost in the v2 cleanup, restored
-too). **Play-confirm owed (§9)**: at act 4 carrying the murder dagger but missing a carry,
+too). **DEMAND FORWARDING landed the same night (user vote: option 2):** the rm26->rm750 demand (bifocals+redHair uncovered; wireCutters/daggerOfRa/grapes and the [10,11] any-of group already in the hold) FORWARDS into the same rm520 arm — `guards.defer_to_entry` proves the sole producing flip + satisfiability, `patcher._forward_demand_to_hold` conjoins the delta. Row: REFUSED → `demand-forwarded-to-hold`. THE DAGGER KNOWN_RED IS PROMOTED (user's word; run_tests.py records it). ⚠️ item 31 is the GRAPES (not the dagger) — the 4→5 break fires on exiting rm520 with the grapes.
+
+**Play-confirm owed (§9)**: at act 4 carrying the grapes but missing a carry,
 exit the office → a plain exit, act stays 4; re-enter, exit with all seven → the break fires.
 
 ### ⭐ §7am. THE TICK STORE IS LOWERED — and the pass-vacuity detection is PARKED at three named hops (2026-08-11, evening)

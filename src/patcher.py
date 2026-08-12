@@ -1838,6 +1838,62 @@ def guard_prop_flag_owner_write(text, prop_name, mask, cond):
     return text, 0
 
 
+def _forward_demand_to_hold(dest, dsp, fwd, stage, out):
+    """Conjoin a refused-everywhere demand into the placed interceptor hold of its sole
+    producing flip, or report it covered when the host already demands everything.
+
+    The demand half of the deferral principle the prohibition side has had all along: a
+    demand with NO survivable site at its own crossing rides the last controllable commit
+    on the only path there. The model's proof obligations (sole producer, one host edge,
+    satisfiable at the host) were discharged by `guards.defer_to_entry`; here the host row
+    must actually carry a `flip-interceptor-hold` site, the delta items must all spell as
+    plain `has:` predicates of this spec's own rendered condition, and the re-wrap must
+    land -- any miss returns None and the refusal stands unchanged."""
+    hx, hy = fwd["host"]
+    host = next((r for r in out if r.get("from_room") == hx and r.get("to_room") == hy
+                 and r.get("applied")
+                 and any(e.get("kind") == "flip-interceptor-hold"
+                         for e in r.get("entry_sites") or ())), None)
+    if host is None:
+        return None
+    hitems = set(host.get("items") or ())
+    delta = sorted(set(dsp.get("items") or ()) - hitems)
+    # a demand GROUP (any-of) is covered when the host already demands SOME member;
+    # an uncovered group forwards as its own (or ...) clause
+    dgroups = [sorted(g) for g in (dsp.get("groups") or ()) if not (set(g) & hitems)]
+    base = {**dsp, "applied": True,
+            "placement": {"kind": "demand-forwarded-to-hold", "stage": stage,
+                          "host": "rm%d->rm%d" % (hx, hy), "forwarded": delta}}
+    base["placement"]["forwarded_groups"] = dgroups
+    if not delta and not dgroups:
+        base["placement"]["kind"] = "covered-by-host-hold"
+        base["sites"] = 0
+        return base
+    preds = {}
+    for m in re.finditer(r"\(\S+\s+has:\s*(\d+)\)", to_source_syntax(dsp["condition"])):
+        preds[int(m.group(1))] = m.group(0)
+    if not all(i in preds for i in delta) \
+            or not all(i in preds for g in dgroups for i in g):
+        return None
+    clauses = [preds[i] for i in delta] \
+        + ["(or %s)" % " ".join(preds[i] for i in g) for g in dgroups]
+    delta_cond = clauses[0] if len(clauses) == 1 else "(and %s)" % " ".join(clauses)
+    title = next(e["title"] for e in host["entry_sites"]
+                 if e.get("kind") == "flip-interceptor-hold")
+    p = os.path.join(dest, "src", title + ".sc")
+    try:
+        text = open(p, errors="replace").read()
+    except Exception:                                  # noqa: BLE001
+        return None
+    nt, n = guard_flip_interceptor(text, dsp["from_room"], fwd["host_stage"], delta_cond)
+    if not n:
+        return None
+    open(p, "w").write(nt)
+    base["sites"] = n
+    base["placement"]["title"] = title
+    return base
+
+
 def guard_flip_interceptor(text, pocket, stage_src, cond):
     """Hold a player-committed register flip at its EXIT-INTERCEPTOR commit clause -- the
     night-guard shape for a flip whose write lives in a sole-exit pocket room.
@@ -2349,6 +2405,18 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                             dest, dsp, titles_by_num, rooms, path, placement, seen_entry,
                             info["rooms"], site=row_site, stage_override=info["stage"],
                             defer_ctx=dctx)
+                        if not placed and unwrapped and info.get("fwd"):
+                            # DEMAND FORWARDING: every site refused, but the model proved a
+                            # sole producing flip one stage earlier (guards.defer_to_entry
+                            # "fwd"). If THAT crossing carries a placed interceptor hold, the
+                            # part of this demand it does not already carry is conjoined into
+                            # the same arm -- the player meets the whole later demand at the
+                            # last controllable moment on its only path.
+                            frow = _forward_demand_to_hold(dest, dsp, info["fwd"],
+                                                           info["stage"], out)
+                            if frow is not None:
+                                out.append(frow)
+                                continue
                         if not placed and unwrapped:
                             # every deferral site refused -- the row stays unplaced, but the
                             # PER-SITE reasons are the measurement (a wrap that would have been

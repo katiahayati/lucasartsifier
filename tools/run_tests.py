@@ -122,23 +122,18 @@ KNOWN_RED = {
         # I D)`, while LB2's Main spells the receiver `(ego put: ...)` and carries nine trailing
         # arguments the engine ignores (`patcher.ego_spellings` derives the names from the game's
         # own `(= global0 ego)`).
-        # ⚠️ The 2026-08-10 promotion of this check ("every non-refused spec places (dagger)")
-        # was REVERSED 2026-08-11 and the check is red again below -- the promotion's coverage
-        # was partly FAKE. The sole-exit deferral had placed all four act-break edges, but the
-        # user's play test found the rm250 wrap INSIDE the commit (rm300's sHailCab hands-off
-        # cab ride delivers a hidden ego; the arm-gate refused after the ride), and the
-        # arrival-commit triage that fixed it (docs/LB2-ORACLE.md §7al) then measured the
-        # rm454/480/620 wraps as vacuous or mid-commit too.
-        "🔴 KNOWN GAP (dagger): every non-refused spec places":
-            "The arrival-commit triage (§7al) re-sited the stage-1 pressPass demand to rm300 "
-            "(both sHailCab armings, pre-commit) and REFUSED every candidate site for the "
-            "stage-4/5 specs (rm26->rm420, rm26->rm750): rm454's only deliverer rm455 stands "
-            "at act 2 only, rm480's chain carries the state-born `local0`, rm620 is "
-            "stage-vacuous (`== global123 3`), rm500/rm520 have no wrappable site. The wraps "
-            "that used to 'place' there were vacuous or would strand a hands-off ego -- not "
-            "coverage. Goes green when a controllable pre-commit site for the real act-4->5 "
-            "and act-5->end crossings is derivable (the rm500/520 seam, or a corridor climb "
-            "that survives the state-born-head wall).",
+        # ✅ PROMOTED 2026-08-11 (the user's word, same session as the fix) -- "every
+        # non-refused dagger spec places" is GREEN again, this time on real coverage. Its
+        # 2026-08-10 promotion had been REVERSED next day (the sole-exit wraps sat inside
+        # commits -- the user's play test caught rm250's; §7al). What closed it honestly:
+        # the NIGHT-GUARD SHAPE (§7an, guard_flip_interceptor) placed the act-4->5 demand
+        # inside rm520::newRoom's own exit-interceptor arm -- the flip's commit clause,
+        # re-tested every exit, held = the stock else exit -- and DEMAND FORWARDING
+        # (guards.defer_to_entry "fwd" + patcher._forward_demand_to_hold) carried the
+        # act-5->end demand's uncovered remainder (bifocals + redHair, sourceable through
+        # act 4, zero loss sites) into the same arm, its own crossing having no survivable
+        # site (the commit is rm480's mid-chase capture). The user chose the forwarding over
+        # narrowing the red: "i vote 2. i think it's the practical right answer too".
         # ✅ PHASE 5 LANDED 2026-08-02 -- "every KQ6 finding is closed by a guard" is GREEN and no
         # longer listed. The last three: handkerchief + skeletonKey placed at the Realm's exit
         # frontier (pocket_carryout_frontier, rm640->rm650), and the wrong-door stranding rows

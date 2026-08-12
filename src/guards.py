@@ -30,6 +30,7 @@ This module only DERIVES and reports specs. It writes no game files.
 """
 from __future__ import annotations
 
+import re
 import sys
 
 from collections import defaultdict
@@ -595,7 +596,29 @@ def defer_to_entry(s, sp):
             return "demand unsourceable at the hop (%s)" % ", ".join(bad)
         return None
 
-    return {"stage": stage, "rooms": rooms, "alts": alts,
+    # DEMAND FORWARDING (the §7c debt, demand half): when the arrival-commit triage later
+    # refuses every site, this demand may still ride the register's SOLE PRODUCING FLIP one
+    # stage earlier -- the nearest controllable commit on the only path to this crossing.
+    # Provable only when (a) the stage is one scalar test, (b) no in-room step anywhere else
+    # writes that value (the pocket's own flip is the sole producer), (c) exactly one sibling
+    # edge out of the pocket commits the write, with a single from-value to spell the host's
+    # stage, and (d) the demand is satisfiable before the HOST crossing (the same
+    # `unsatisfiable` wall-test every placement owes). Anything short of all four -> None,
+    # and the refusal stands as before.
+    fwd = None
+    m_st = re.match(r"^\(==\s*global(\d+)\s+(-?\d+)\)$", stage.strip())
+    if m_st:
+        reg, w = int(m_st.group(1)), int(m_st.group(2))
+        others = [r for r, vs in s._inroom.get(reg, {}).items() if w in vs and r != a]
+        hosts = [(x, y, mrow) for (x, y), rows_ in s._emeta.items() if x == a
+                 for mrow in rows_ if mrow[1].get(reg) == w]
+        if not others and len(hosts) == 1:
+            hx, hy, hrow = hosts[0]
+            hreq = hrow[0].get(reg) or set()
+            if len(hreq) == 1 and not unsatisfiable(s, hx, hy, rec):
+                fwd = {"host": (hx, hy),
+                       "host_stage": "(== global%d %d)" % (reg, next(iter(hreq)))}
+    return {"stage": stage, "rooms": rooms, "alts": alts, "fwd": fwd,
             "positional": {g for g in positional if g is not None},
             "prev_g": M.prev_room_reg(s.em),
             "preds": lambda r: sorted(x for x, bs in s.edges.items() if r in bs and x != r),
