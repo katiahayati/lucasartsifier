@@ -507,6 +507,70 @@ entry (`own(9)`), as a requirement should.
 **Measured**: LSL2/KQ4/KQ6 snapshots byte-identical (KQ6's `skull@rm420/throwSkull` survives —
 it never hands control back); LB2 loses exactly the skeletonKey rows. **The oracle is 9/9.**
 
+### ⭐ §7am. THE TICK STORE IS LOWERED — and the pass-vacuity detection is PARKED at three named hops (2026-08-11, evening)
+
+**USER ruling (this session): *"we don't actually need a guard between act 1 and 2 because the
+press pass is actually necessary for act 1 to end"* — "it's needed to operate the cab."*
+SOURCE-VERIFIED the same hour, two legs (full cites in the `lb2-pass-necessary-for-act1`
+memory): rm250 IS the cab interior and its init cond BOUNCES passless riders back
+(`sNoPressPass{C,D}` state 6 → `newRoom: prevRoom`); and the gown chain's root — the laundry
+ticket in rm250's trash — inits only under `(proc0_10 16 1)` = `(& global124 15) == 15`, where
+mask 1's only live writers are rm235's two pass-pickup handlers (`doit: 1` beside `get: 6`).
+Possession is stable: the only live `put: 6` is rm335's act-2 surrender; rm300's `sGivePass`
+dead-ends in deathRoom (99); Main's proc0_16 strip is whereTo-debug-only.
+
+**What LANDED (all green, all corpus-neutral -- suite 461/2/0, LSL2/KQ4 goldens intact, KQ6 and
+LB2 watched surfaces byte-unchanged across all keys):**
+1. **The SEVENTH container** (`vocab.derive_mask_accessors` + `lower_mask_accessors`, wired in
+   missability before the sixth store): a mask word reached through an ACCESSOR — write
+   `(+= global124 (&= param $00ff))` in `triggerAndClock::doit` behind
+   `((ScriptID 22 0) doit: <literal>)`, reads through `proc0_10`'s single/cumulative modes.
+   The pre-pass inlines every resolvable literal call site into the sixth store's own direct
+   idioms and husks the accessor/reader bodies; the sixth store derives and lowers from there
+   (registers 624-635). Allocates nothing itself. 26 write sites + 93 reader calls lowered;
+   one skip (script 90's `meetingTimer::cue`, a computed arg — unarmed at act 1). Census
+   (tools/probe_mask_accessor.py, all ten titles): global124 is the ONLY both-sides instance;
+   the score (g15) refuses on the reader requirement everywhere, the icon mask (g116) on its
+   computed reader masks. One relaxation in `_mask_site`: a non-literal `|=`/`&=` write is a
+   recorded SKIP, not a condemnation (the abstraction is still bits; only the values are
+   unknown — lower_flags' own gap). KQ6's g161 verdict unchanged under it.
+2. **The LB2 IR RE-EMITTED** with the current frontend (the shipped IR predated the ScriptID
+   export index; script 22's exports were empty). Recipe: copy the live game dir, drop OUR
+   210/280/300 patch files, RESTORE Sierra's own 100/450 from
+   `build/dagger_patch_v2/retired_from_live` (the v2 cleanup had pulled Sierra's originals from
+   the live dir — they are ALSO restored to the live game now, cmp-verified), run Snuffer
+   (~2s). Verified two ways: decompiled src tree byte-identical to the committed one; the
+   oracle 20/0 with all mechanism pins on the new IR BEFORE the store change.
+
+**And the measurement verdict: the pressPass rows did NOT retire — structurally.**
+`register_strandings` is a source-reachability claim ("after the flip you can no longer go GET
+it") with no inventory notion; retiring the row and the rm26->rm330 spec needs proving "every
+reachable act-1→2 flip implies own(6)", which no walker performs. The chain is now fully
+VISIBLE in the model — the ticket's cast condition reads `And(g624..g627)` in the lowered IR,
+`_inroom[624]` = {235:{1}, 26:{0}, …}, `sGetDress` entries `own(1)`, `sLauraChanges` entries
+`own(32)` — and exactly three consumers are missing:
+  * **Hop A**: cast conditions never conjoin into acquisition guards (`Acq.guard` is the take
+    site's own opaque verb pc; the KQ6-hole principle covers edges and machine entries but not
+    plain handler takes) — so `source_guards[1][250]` reads opaque/permissive. Independent
+    merit beyond this question.
+  * **Hop C**: no record couples a handler's register write to its co-sited `get:` —
+    `handler_writes` has `(235,235,624,1,opaque)`, `handler_gets` the adjacent `get: 6`, same
+    guard, uncoupled.
+  * **Hop D**: the filter itself — `crossing_implies_possession`, the possession-proof sibling
+    of §7ai's `crossing_retires_need` (same strict-quantifier template): flip req g545=1 → its
+    only pre-flip-reachable writer (rm320) costs own(32) [the rm600 sMeanwhile writer is
+    act-4-scoped away] → own(32)'s sole source (rm270) costs own(1) → own(1)'s sole source
+    needs bits 0-3 (hop A) → bit0's writers co-grant own(6) (hop C) → no live pre-flip
+    `put: 6` ⇒ held at the flip. Conservative: any opaque link keeps the row. Retire-side
+    only, so the no-necessity doctrine is untouched.
+
+**PARKED HERE by the user's word (same evening): the store ships as-is (green, self-contained);
+hops A/C/D are the recorded restart point if the 1→2 guard ever needs to retire by derivation.
+Until then the rm300 wrap stands (correctly sited per §7al; vacuous per this section's game
+truth, which the user ruled acceptable). Focus moved to the KQ4-night-SHAPED act holds (§7al's
+KNOWN_RED cure): rm520::newRoom's exit-interceptor arm is the 4→5 hold site — see the
+`lb2-act-flip-hold-sites` memory.**
+
 ### ⭐⭐ §7al. THE ACT GUARDS SIT OUTSIDE THE ACT COMMITS — the arrival-commit triage for deferral sites (2026-08-11, after the play find)
 
 **USER ruling (same day, on §8.0's placement half): vacuity does not excuse a mis-sited wrap.**

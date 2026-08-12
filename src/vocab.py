@@ -2560,6 +2560,273 @@ def lower_item_bit_flags(ir, flags, item_of_receiver):
     return n_read, n_write
 
 
+def _param_derived(n):
+    """True when some leaf of `n` is a Parameter of the enclosing callable."""
+    return any(isinstance(k, dict) and k.get("t") == "Variable"
+               and k.get("vtype") == "Parameter"
+               for k in I.walk(n) if isinstance(k, dict))
+
+
+def _accessor_callables(ir):
+    for snum, s in ir.scripts.items():
+        for o in s.objects:
+            for mn, b in o.methods.items():
+                yield snum, o, mn, b
+        for pn, b in s.procs.items():
+            yield snum, None, pn, b
+
+
+def derive_mask_accessors(ir):
+    """Mask-bit stores reached through an ACCESSOR: `{global: spec}` for globals whose
+    literal masks arrive one call-frame away.
+
+    The SEVENTH container -- the sixth (`derive_mask_globals`, a plain mask-word global)
+    with the same relationship to its call sites that the flag word-array has to
+    `derive_flags`' procs: the WRITE is an owner method accumulating a byte-masked
+    parameter (`(+= gN (&= param $00ff))`, reached as `((ScriptID s x) doit: <literal>)`),
+    and the READ is a proc bit-testing the global against its OWN parameter
+    (`(& gN param)`), optionally with a cumulative arm
+    (`(== (- param k) (& gN (- param k)))` -- "every beat below mine has fired").
+    The accumulate is modelled as a bit SET, which is what the reader's pure bit-tests
+    say the store means; `+=` vs `|=` is the owner's spelling, not its semantics.
+
+    MEASURED (2026-08-11, tools/probe_mask_accessor.py over all ten decompiled titles):
+    exactly ONE global matches -- LB2's global124, the per-act story-beat word whose
+    cumulative test gates the act-1 gown chain (`(proc0_10 16 1)` at the rm250 trash =
+    beats 1+2+4+8, and mask 1's only writers sit beside the pressPass `get: 6`). The
+    score (g15, `changeScore`) is parameterised on the write side in every title and
+    refused everywhere by the reader requirement; LB2's icon mask (g116) is refused
+    because its reader's masks are computed (`(>> $8000 temp0)`), not parameters.
+
+    Derived by SHAPE, refusing what it cannot rewrite exactly:
+      * exactly ONE accumulate site for the global, in a named owner;
+      * a reader's test operand must derive from its own parameter;
+      * >=1 owner call site with a literal argument, resolved through the script export
+        table, and >=1 reader call with literal arguments -- a store nobody reads or
+        writes through resolvable literals lowers to nothing;
+      * non-literal call sites are skipped and reported, never guessed at (the
+        lower_flags gap: an unmodelled write cannot invent a stranding, only miss one).
+        A send that reaches the owner through a VARIABLE rather than a `ScriptID` is
+        invisible to this derivation entirely -- the same aliasing bound every store
+        carries."""
+    # 1. accumulate sites: augmented global writes whose value derives from a parameter
+    accums = {}
+    for snum, o, mn, b in _accessor_callables(ir):
+        for n in I.walk(b):
+            if not isinstance(n, dict) or n.get("t") not in ("AssignmentAdd",
+                                                             "AssignmentBinOr"):
+                continue
+            ks = n.get("kids") or []
+            if not (ks and I.is_global(ks[0]) and len(ks) > 1 and _param_derived(ks[1])):
+                continue
+            accums.setdefault(ks[0]["index"], []).append((snum, o, mn, n, b))
+    out = {}
+    for gi, sites in accums.items():
+        if len(sites) != 1 or sites[0][1] is None:      # one site, and it must be a METHOD
+            continue                                    # (call sites resolve via exports)
+        snum, o, mn, accnode, obody = sites[0]
+        wmask = 0xFFFF
+        for n in I.walk(obody):
+            if isinstance(n, dict) and n.get("t") == "AssignmentBinAnd":
+                ks = n.get("kids") or []
+                if ks and isinstance(ks[0], dict) and ks[0].get("vtype") == "Parameter":
+                    v = I.as_int(ks[1]) if len(ks) > 1 else None
+                    if v is not None:
+                        wmask = v & 0xFFFF
+        # 2. reader procs: bit-test the global against their own parameter
+        readers, reader_nodes = {}, []
+        for rsnum, ro, rpn, rb in _accessor_callables(ir):
+            if ro is not None:
+                continue
+            hits = []
+            for n in I.walk(rb):
+                if not (isinstance(n, dict) and n.get("t") == "BinAnd"):
+                    continue
+                rks = n.get("kids") or []
+                if not any(I.is_global(k, gi) for k in rks if isinstance(k, dict)):
+                    continue
+                other = [k for k in rks if not (isinstance(k, dict) and I.is_global(k, gi))]
+                if other and _param_derived(other[0]):
+                    hits.append(n)
+            if not hits:
+                continue
+            pmask = 0xFFFF
+            for n in I.walk(rb):
+                if isinstance(n, dict) and n.get("t") == "AssignmentBinAnd":
+                    ks = n.get("kids") or []
+                    if ks and isinstance(ks[0], dict) and ks[0].get("vtype") == "Parameter":
+                        v = I.as_int(ks[1]) if len(ks) > 1 else None
+                        if v is not None:
+                            pmask = v & 0xFFFF
+            cum_k = None
+            for n in I.walk(rb):
+                if not (isinstance(n, dict) and n.get("t") == "Eq"):
+                    continue
+                ks = n.get("kids") or []
+                if len(ks) != 2:
+                    continue
+                for e, other in ((ks[0], ks[1]), (ks[1], ks[0])):
+                    if isinstance(other, dict) and other.get("t") == "BinAnd" \
+                            and any(I.is_global(k, gi) for k in (other.get("kids") or [])
+                                    if isinstance(k, dict)) \
+                            and isinstance(e, dict) and e.get("t") == "Sub":
+                        sk = e.get("kids") or []
+                        kk = I.as_int(sk[1]) if len(sk) > 1 else None
+                        if kk is not None and _param_derived(sk[0] if sk else {}):
+                            cum_k = kk
+            readers[(rsnum, rpn)] = {"pmask": pmask, "cum_k": cum_k}
+            reader_nodes.extend(hits)
+        if not readers:
+            continue
+        # 3. acceptance needs >=1 literal writer call site and >=1 literal reader call
+        wlit = rlit = 0
+        for csnum, co, cmn, cb in _accessor_callables(ir):
+            for n in I.walk(cb):
+                if not isinstance(n, dict):
+                    continue
+                if n.get("t") == "Send":
+                    ks = n.get("kids") or []
+                    if ks and isinstance(ks[0], dict) and ks[0].get("t") == "KernelCall" \
+                            and ks[0].get("name") == "ScriptID":
+                        ra = [I.as_int(k) for k in (ks[0].get("kids") or [])]
+                        tgt = ir.export_target(ra[0], ra[1] if len(ra) > 1
+                                               and ra[1] is not None else 0) \
+                            if ra and ra[0] is not None else None
+                        if tgt == (snum, o.name):
+                            msgs = [m for m in ks[1:] if isinstance(m, dict)
+                                    and m.get("t") == "SendMessage"]
+                            if len(msgs) == 1:
+                                mk = msgs[0].get("kids") or []
+                                sel = mk[0].get("name") if mk and isinstance(mk[0], dict) \
+                                    else None
+                                if sel == mn and len(mk) > 1 \
+                                        and I.as_int(mk[1]) is not None:
+                                    wlit += 1
+                elif n.get("t") in ("PublicCall", "LocalCall"):
+                    for (rs, rp) in readers:
+                        if n.get("name") == rp and (n.get("t") == "LocalCall"
+                                                    and csnum == rs
+                                                    or n.get("script") == rs):
+                            a = [I.as_int(k) for k in (n.get("kids") or [])]
+                            if a and a[0] is not None:
+                                rlit += 1
+        if wlit and rlit:
+            out[gi] = {"owner": (snum, o.name, mn), "wmask": wmask, "readers": readers,
+                       "acc_node": accnode, "reader_nodes": reader_nodes}
+    return out
+
+
+def lower_mask_accessors(ir, accs):
+    """Rewrite every resolvable accessor call into the sixth store's own direct idioms,
+    IN PLACE, so `derive_mask_globals`/`lower_mask_globals` take the store from there.
+
+      * owner call `((ScriptID s x) <m>: N)`  ->  `(|= gG (N & wmask))`; a zero payload
+        (a pure clock tick) becomes a no-op literal;
+      * reader call `(proc N)`                ->  `(& gG (N & pmask))`;
+      * reader call `(proc N truthy)`         ->  And over per-bit `(& gG bit)` for the
+        bits of `(N & pmask) - k` (the body's own cumulative offset), constant-true when
+        no bits remain, refused when the offset underflows;
+      * the owner's accumulate and the reader bodies' tests are HUSKED to literals:
+        every semantic site now lives at a rewritten call site, and a husk left readable
+        would re-condemn the global for exactly the non-literal shapes the rewrite just
+        retired.
+
+    Allocates NOTHING -- the sixth store owns allocation, so register identity for every
+    other store is untouched by construction. Returns (lowered_writes, lowered_reads,
+    [(reason, script, where) skips])."""
+    wlow = rlow = 0
+    skips = []
+    for gi, spec in sorted(accs.items()):
+        ownum, oname, omn = spec["owner"]
+        wmask, readers = spec["wmask"], spec["readers"]
+        for csnum, co, cmn, cb in _accessor_callables(ir):
+            plan = []
+            for n in I.walk(cb):
+                if not isinstance(n, dict):
+                    continue
+                if n.get("t") == "Send":
+                    ks = n.get("kids") or []
+                    if not (ks and isinstance(ks[0], dict)
+                            and ks[0].get("t") == "KernelCall"
+                            and ks[0].get("name") == "ScriptID"):
+                        continue
+                    ra = [I.as_int(k) for k in (ks[0].get("kids") or [])]
+                    tgt = ir.export_target(ra[0], ra[1] if len(ra) > 1
+                                           and ra[1] is not None else 0) \
+                        if ra and ra[0] is not None else None
+                    if tgt != (ownum, oname):
+                        continue
+                    msgs = [m for m in ks[1:] if isinstance(m, dict)
+                            and m.get("t") == "SendMessage"]
+                    if len(msgs) != 1:
+                        skips.append(("chained-send", csnum, cmn))
+                        continue
+                    mk = msgs[0].get("kids") or []
+                    sel = mk[0].get("name") if mk and isinstance(mk[0], dict) else None
+                    if sel != omn:
+                        continue
+                    arg = I.as_int(mk[1]) if len(mk) > 1 else None
+                    if arg is None:
+                        skips.append(("non-literal-write", csnum, cmn))
+                        continue
+                    bits = arg & wmask
+                    rep = {"t": "AssignmentBinOr",
+                           "kids": [{"t": "Variable", "vtype": "Global", "index": gi},
+                                    {"t": "Number", "value": bits}]} if bits \
+                        else {"t": "Number", "value": 0}
+                    plan.append((n, rep, "w"))
+                elif n.get("t") in ("PublicCall", "LocalCall"):
+                    info = None
+                    for (rs, rp), ri in readers.items():
+                        if n.get("name") == rp and (n.get("t") == "LocalCall"
+                                                    and csnum == rs
+                                                    or n.get("script") == rs):
+                            info = ri
+                    if info is None:
+                        continue
+                    a = [I.as_int(k) for k in (n.get("kids") or [])]
+                    nargs = len(n.get("kids") or [])
+                    if not a or a[0] is None:
+                        skips.append(("non-literal-read", csnum, cmn))
+                        continue
+                    m = a[0] & info["pmask"]
+                    if nargs > 1 and a[1] is None:
+                        skips.append(("non-literal-mode", csnum, cmn))
+                        continue
+                    if nargs > 1 and a[1] and info["cum_k"] is not None:
+                        mm = m - info["cum_k"]
+                        if mm < 0:
+                            skips.append(("cumulative-underflow", csnum, cmn))
+                            continue
+                        terms = [{"t": "BinAnd",
+                                  "kids": [{"t": "Variable", "vtype": "Global",
+                                            "index": gi},
+                                           {"t": "Number", "value": 1 << b}]}
+                                 for b in range(16) if (mm >> b) & 1]
+                        rep = ({"t": "Number", "value": 1} if not terms else
+                               terms[0] if len(terms) == 1 else
+                               {"t": "And", "kids": terms})
+                    else:
+                        rep = {"t": "BinAnd",
+                               "kids": [{"t": "Variable", "vtype": "Global", "index": gi},
+                                        {"t": "Number", "value": m}]} if m \
+                            else {"t": "Number", "value": 0}
+                    plan.append((n, rep, "r"))
+            for n, rep, kind in plan:
+                n.clear()
+                n.update(rep)
+                if kind == "w":
+                    wlow += 1
+                else:
+                    rlow += 1
+        spec["acc_node"].clear()
+        spec["acc_node"].update({"t": "Number", "value": 0})
+        for n in spec["reader_nodes"]:
+            n.clear()
+            n.update({"t": "Number", "value": 0})
+    return wlow, rlow, skips
+
+
 def derive_mask_globals(ir):
     """`{global: universe-of-bits}` for plain globals used ONLY as bit-mask words.
 
@@ -2663,8 +2930,15 @@ def _mask_site(n):
     if t in ("AssignmentBinOr", "AssignmentBinAnd") and ks and g_of(ks[0]) is not None:
         m = _const_or(ks[1]) if len(ks) > 1 else None
         gi = g_of(ks[0])
+        # A non-literal MASK write is a SKIP, not a condemnation: `|=`/`&=` still say the
+        # global is bits -- the abstraction per-bit lowering expresses -- only the values are
+        # unknown, so the site is left standing and its writes go unmodelled (the lower_flags
+        # gap: an unmodelled write cannot invent a stranding, only miss one). Arithmetic
+        # writes and value reads still refuse, because there the ABSTRACTION is wrong. LB2's
+        # debug console (`(|= global124 (ReadNumber @temp162))`) is the site class this
+        # admits -- and its effects are scope-dropped anyway (no room ever arms debugHandler).
         return ("or" if t == "AssignmentBinOr" else "and", gi, m) if m is not None \
-            else ("bad", gi, None)
+            else ("mask_skip", gi, None)
     if t == "Assignment" and ks and g_of(ks[0]) is not None:
         v = I.as_int(ks[1]) if len(ks) > 1 else None
         # a non-literal store is only 'bad' for a global OTHER shapes made a candidate;

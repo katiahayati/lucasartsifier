@@ -4692,6 +4692,19 @@ def _build(cfg, ir_path):
     # allocates mid-sequence renumbers every store after it -- measured: it took the skull's
     # item-bit registers (489/490) and test_scopes' pinned callback-scope check tripped on the
     # wrong store's writes.
+    # SEVENTH container, a PRE-PASS to the sixth: the same mask word reached through an
+    # ACCESSOR whose call sites carry the literal masks (LB2's global124, the per-act
+    # story-beat word -- writes ride `((ScriptID 22 0) doit: <tick>)`, reads ride
+    # `proc0_10`). The pre-pass inlines the accessor at every resolvable call site so the
+    # sixth store below derives and lowers the store as if the game had spelled it
+    # directly; it allocates nothing itself, so register identity elsewhere is untouched.
+    # Corpus-measured single instance (see derive_mask_accessors' docstring).
+    _macc = V.derive_mask_accessors(ir)
+    if _macc:
+        _mw, _mr, _mskips = V.lower_mask_accessors(ir, _macc)
+        print("  [lowered] mask accessor store(s) %s: %d write site(s), %d read call(s)"
+              "%s" % (sorted(_macc), _mw, _mr,
+                      "" if not _mskips else ", skipped %s" % _mskips))
     V.lower_mask_globals(ir, V.derive_mask_globals(ir))
     # A `switch` case label that is a PROPERTY is a literal the model was throwing away -- see
     # vocab.lower_property_case_labels. Runs LAST, after every store, deliberately: it allocates
