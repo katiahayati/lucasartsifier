@@ -122,17 +122,23 @@ KNOWN_RED = {
         # I D)`, while LB2's Main spells the receiver `(ego put: ...)` and carries nine trailing
         # arguments the engine ignores (`patcher.ego_spellings` derives the names from the game's
         # own `(= global0 ego)`).
-        # ✅ PROMOTED 2026-08-10 -- "every non-refused spec places (dagger)" is GREEN and no
-        # longer listed. The entry's own last sentence named the cure and it was built exactly
-        # there: the SOLE-EXIT DEFERRAL (`patcher.apply_guards(defer_info=)`) re-sites an
-        # act-break demand to the pocket's entry armings as `(or (not <stage>) <demand>)`, the
-        # demand-side twin of the prohibition deferral; the REGISTER-FLIP FRONTIER
-        # (`guards.register_flip_frontier`) puts every register stranding's demand on the edge
-        # that performs its seal's write, so the register-write HOLDS -- which have no
-        # free-running writer on LB2 to land on -- are superseded-refused instead of reading as
-        # open gaps. All four act-break edges place (`entry-deferral-PARTIAL`, stage-scoped on
-        # the game's own act register), measured against the emitted source, corpus goldens
-        # byte-identical.
+        # ⚠️ The 2026-08-10 promotion of this check ("every non-refused spec places (dagger)")
+        # was REVERSED 2026-08-11 and the check is red again below -- the promotion's coverage
+        # was partly FAKE. The sole-exit deferral had placed all four act-break edges, but the
+        # user's play test found the rm250 wrap INSIDE the commit (rm300's sHailCab hands-off
+        # cab ride delivers a hidden ego; the arm-gate refused after the ride), and the
+        # arrival-commit triage that fixed it (docs/LB2-ORACLE.md §7al) then measured the
+        # rm454/480/620 wraps as vacuous or mid-commit too.
+        "🔴 KNOWN GAP (dagger): every non-refused spec places":
+            "The arrival-commit triage (§7al) re-sited the stage-1 pressPass demand to rm300 "
+            "(both sHailCab armings, pre-commit) and REFUSED every candidate site for the "
+            "stage-4/5 specs (rm26->rm420, rm26->rm750): rm454's only deliverer rm455 stands "
+            "at act 2 only, rm480's chain carries the state-born `local0`, rm620 is "
+            "stage-vacuous (`== global123 3`), rm500/rm520 have no wrappable site. The wraps "
+            "that used to 'place' there were vacuous or would strand a hands-off ego -- not "
+            "coverage. Goes green when a controllable pre-commit site for the real act-4->5 "
+            "and act-5->end crossings is derivable (the rm500/520 seam, or a corridor climb "
+            "that survives the state-born-head wall).",
         # ✅ PHASE 5 LANDED 2026-08-02 -- "every KQ6 finding is closed by a guard" is GREEN and no
         # longer listed. The last three: handkerchief + skeletonKey placed at the Realm's exit
         # frontier (pocket_carryout_frontier, rm640->rm650), and the wrong-door stranding rows

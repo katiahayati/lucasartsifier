@@ -524,6 +524,167 @@ def find_cue_chain_armings(room_text, cand_text, room_global, target_script):
     return out
 
 
+def _immediate_children(text, s, e):
+    """(kind, start, end) for every top-level element of text[s:e]: 'form' for a balanced
+    `(...)`, 'tok' for a bare token -- skipping `{..}` strings, `'..'` Said specs and `;`
+    comments, the same skip set as `_block_span`. The structural primitive `arming_contexts`
+    descends with."""
+    out, i = [], s
+    while i < e:
+        c = text[i]
+        if c == "{":
+            j = text.find("}", i)
+            i = (j + 1) if 0 <= j < e else e
+            continue
+        if c == "'":
+            j = text.find("'", i + 1)
+            i = (j + 1) if 0 <= j < e else e
+            continue
+        if c == ";":
+            j = text.find("\n", i)
+            i = (j + 1) if 0 <= j < e else e
+            continue
+        if c == "(":
+            fs, fe = _block_span(text, i)
+            out.append(("form", fs, min(fe, e)))
+            i = fe
+            continue
+        if c.isspace() or c == ")":
+            i += 1
+            continue
+        j = i
+        while j < e and not text[j].isspace() and text[j] not in "(){;')":
+            j += 1
+        out.append(("tok", i, j))
+        i = j
+    return out
+
+
+def arming_contexts(text, target_script, ego=None):
+    """Every `setScript: <target_script>` site in this file, with the CONDITION PATH the game
+    itself runs before arming -- what the sole-exit deferral's arrival-commit triage reads.
+
+    Play-found (LB2, 2026-08-11): the deferral's arm-gate at rm250 sat INSIDE the commit -- the
+    hands-off cab ride from rm300 had already hidden the ego when `rm250::init` declined to arm
+    `sACTBREAK`, leaving a hidden ego with no script. Whether a site is such a commit is written
+    in the arming's own context: the method it runs in, the tests on the path to it, and whether
+    the game takes the controls away first. This returns that context; classifying it is the
+    caller's job (it needs model knowledge this file does not have).
+
+    Per arming: `instance`/`method` that perform it; `heads` = the positive-branch tests
+    enclosing it, innermost last (`if` tests, `cond` clause heads); `cases` = (discriminator
+    text, value) for enclosing `switch` cases; `poisoned` = True when the path runs through an
+    `else` arm, whose condition is only spelled as the negation of its siblings -- a path this
+    reader refuses to reconstruct; `handsoff_before` = a `handsOff:` send or an ego `hide:` on
+    the straight-line path from the method entry to the arming, the game taking the controls
+    before the arming runs; `state_case` = the enclosing changeState state number, when the
+    method dispatches on one. Head/case text is whitespace-normalized source syntax."""
+    _ANY = r"(?:[^()]|\([^()]*\))*"
+    pat = re.compile(r"\(%ssetScript:\s*%s\b%s\)" % (_ANY, re.escape(target_script), _ANY))
+    regions = _named_regions(text)
+    out = []
+    for am in pat.finditer(text):
+        p = am.start()
+        inst = span = None
+        for (name, s0, e0) in regions:
+            if s0 <= p < e0:
+                inst, span = name, (s0, e0)
+        if span is None:
+            continue
+        meth = meth_span = None
+        for mm in re.finditer(r"\(method\s+\((\w+)", text[span[0]:span[1]]):
+            ms, me = _block_span(text, span[0] + mm.start())
+            if ms <= p < me:
+                meth, meth_span = mm.group(1), (ms, me)
+        if meth_span is None:
+            continue
+        heads, cases, poisoned, state_case = [], [], False, None
+        segments = []                      # straight-line spans executed before the arming
+        cur = meth_span
+        seg_start = None
+        branch = None                      # innermost enclosing branch span (for -_branch tests)
+        while True:
+            kids = _immediate_children(text, cur[0] + 1, cur[1] - 1)
+            if seg_start is not None:
+                nxt = next(((a, b) for (k, a, b) in kids if a <= p < b), None)
+                if nxt:
+                    segments.append((seg_start, nxt[0]))
+            toks = [(a, b) for (k, a, b) in kids if k == "tok"]
+            headsym = text[toks[0][0]:toks[0][1]] if toks else ""
+            child = next(((a, b) for (k, a, b) in kids if k == "form" and a <= p < b), None)
+            if child is None:
+                break
+            first_form = next(((a, b) for (k, a, b) in kids if k == "form"), None)
+            if headsym == "if":
+                test = kids[1] if len(kids) > 1 else None
+                else_tok = next(((a, b) for (k, a, b) in kids if k == "tok"
+                                 and text[a:b] == "else"), None)
+                if test and not (test[1] <= p < test[2]):
+                    if else_tok and p >= else_tok[1]:
+                        poisoned = True
+                        seg_start = else_tok[1]
+                        branch = (else_tok[1], cur[1] - 1)
+                    else:
+                        heads.append(re.sub(r"\s+", " ", text[test[1]:test[2]]).strip())
+                        seg_start = test[2]
+                        branch = (test[2], else_tok[0] if else_tok else cur[1] - 1)
+            elif headsym in ("cond",):
+                # child is the clause; its own first element is the test (or `else`)
+                ck = _immediate_children(text, child[0] + 1, child[1] - 1)
+                if ck:
+                    (k0, a0, b0) = ck[0]
+                    if k0 == "tok" and text[a0:b0] == "else":
+                        poisoned = True
+                    elif not (a0 <= p < b0):
+                        heads.append(re.sub(r"\s+", " ", text[a0:b0]).strip())
+                    seg_start = b0
+                    branch = (b0, child[1] - 1)
+            elif headsym in ("switch", "switchto"):
+                disc = kids[1] if len(kids) > 1 else None
+                ck = _immediate_children(text, child[0] + 1, child[1] - 1)
+                if ck and disc:
+                    (k0, a0, b0) = ck[0]
+                    v = text[a0:b0]
+                    dtxt = re.sub(r"\s+", " ", text[disc[1]:disc[2]]).strip()
+                    if k0 == "tok" and v == "else":
+                        poisoned = True
+                    elif k0 == "tok" and re.fullmatch(r"-?\d+", v):
+                        if meth == "changeState" and "state" in dtxt:
+                            state_case = int(v)
+                        else:
+                            cases.append((dtxt, int(v)))
+                    else:
+                        poisoned = True    # a symbolic case: value unresolved here
+                    seg_start = b0
+                    branch = (b0, child[1] - 1)
+            else:
+                if seg_start is None and headsym == "method":
+                    seg_start = first_form[1] if first_form else cur[0] + 1
+            if child[0] == am.start():
+                break
+            cur = child
+        segments.append((seg_start if seg_start is not None else meth_span[0], p))
+        hide_pat = (re.compile(r"\(%s\b%shide:" % (re.escape(ego), _ANY))
+                    if ego else None)
+
+        def _taken(a, b):
+            return (re.search(r"handsOff:", text[a:b]) is not None
+                    or bool(hide_pat and hide_pat.search(text[a:b])))
+        handsoff = any(_taken(a, b) for (a, b) in segments if a is not None and a < b)
+        # ...and branch-wide: a branch that takes the controls AFTER the arming (rm480's
+        # case-740 hides the ego two statements later) is just as much a commit -- refusing
+        # the arming lets the rest of the branch run against a scene that never starts.
+        handsoff_branch = handsoff
+        if not handsoff_branch and branch is not None and am.end() < branch[1]:
+            handsoff_branch = _taken(am.end(), branch[1])
+        out.append({"instance": inst, "method": meth, "pos": p,
+                    "heads": heads, "cases": cases, "poisoned": poisoned,
+                    "state_case": state_case, "handsoff_before": handsoff,
+                    "handsoff_branch": handsoff_branch,
+                    "target_script": target_script})
+    return out
+
+
 def wrap_all_armings_in_source(text, placement, guard_sexpr, refuse, site=None):
     """Wrap EVERY `setScript: <target>` clause in the placement's method -- the multi-site twin
     of `wrap_trigger_in_source`'s setscript branch, which wraps only the first match. KQ6's

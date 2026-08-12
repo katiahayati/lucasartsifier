@@ -561,13 +561,17 @@ def defer_to_entry(s, sp):
         return None
     stage = conds[0] if len(conds) == 1 else "(or %s)" % " ".join(conds)
     rec = {"items": set(sp.get("items") or ()), "groups": [set(g) for g in sp.get("groups") or ()]}
+
+    def _presentable(r):
+        return any(all((r, v) in s._pstates.get(R, ()) for R, v in musts.items())
+                   for musts in alts)
+
     rooms = []
     for r in sorted(x for x, bs in s.edges.items() if a in bs and x != a):
         # STAGE presentability: a site that can never stand at the stage would carry a dead
         # guard (on LB2 this is what keeps act-break wraps out of the intro rooms, whose ESC
         # skip crosses at act 0 only)...
-        if not any(all((r, v) in s._pstates.get(R, ()) for R, v in musts.items())
-                   for musts in alts):
+        if not _presentable(r):
             continue
         # ...and COMPLIANCE at the site's own crossing, the same question the spec itself was
         # asked at its edge: refusing where the player can no longer comply is a wall.
@@ -576,7 +580,26 @@ def defer_to_entry(s, sp):
         rooms.append(r)
     if not rooms:
         return None
-    return {"stage": stage, "rooms": rooms}
+
+    # Model knowledge the placement's arrival-commit triage consumes (patcher._defer_triage_site):
+    # a deferral site that is itself inside a commit re-sites up its delivering chain, and every
+    # hop owes the same two per-site filters the rooms above just passed. `alts` carries the
+    # stage's register alternatives for the vacuity check; `positional`/`prev_g` name the
+    # registers whose tests mean "where the player stands NOW" and the one that names the
+    # delivering room.
+    def _site_ok(x, target):
+        if not _presentable(x):
+            return "stage not presentable"
+        bad = unsatisfiable(s, x, target, rec)
+        if bad:
+            return "demand unsourceable at the hop (%s)" % ", ".join(bad)
+        return None
+
+    return {"stage": stage, "rooms": rooms, "alts": alts,
+            "positional": {g for g in positional if g is not None},
+            "prev_g": M.prev_room_reg(s.em),
+            "preds": lambda r: sorted(x for x, bs in s.edges.items() if r in bs and x != r),
+            "site_ok": _site_ok}
 
 
 def _stage_spelling(s, musts):

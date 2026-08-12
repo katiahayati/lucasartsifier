@@ -151,9 +151,9 @@
     "joint": [],
     "placements": [
       "rm210: applied=True kind=setscript sites=1",
-      "rm26->rm330: applied=True kind=entry-deferral-PARTIAL sites=4 entry_sites=4",
-      "rm26->rm420: applied=True kind=entry-deferral-PARTIAL sites=3 entry_sites=3",
-      "rm26->rm750: applied=True kind=entry-deferral-PARTIAL sites=3 entry_sites=3",
+      "rm26->rm330: applied=True kind=entry-deferral-PARTIAL sites=2 entry_sites=2",
+      "rm26->rm420: applied=False kind=entry-deferral-REFUSED why=entry-deferral refused at every site",
+      "rm26->rm750: applied=False kind=entry-deferral-REFUSED why=entry-deferral refused at every site",
       "rm280: applied=True kind=setscript sites=1"
     ],
     "register_strandings": [

@@ -507,6 +507,61 @@ entry (`own(9)`), as a requirement should.
 **Measured**: LSL2/KQ4/KQ6 snapshots byte-identical (KQ6's `skull@rm420/throwSkull` survives —
 it never hands control back); LB2 loses exactly the skeletonKey rows. **The oracle is 9/9.**
 
+### ⭐⭐ §7al. THE ACT GUARDS SIT OUTSIDE THE ACT COMMITS — the arrival-commit triage for deferral sites (2026-08-11, after the play find)
+
+**USER ruling (same day, on §8.0's placement half): vacuity does not excuse a mis-sited wrap.**
+*"I'm not sure we really care about the fact that the press pass is always going to be available
+at the end of act 1... as long as the guard is properly placed, it just won't fire, which is
+fine."* So the pressPass spec STAYS (its vacuity question remains §8.0), and the placement moved
+to where a refusal is survivable.
+
+**The rule** (`patcher._defer_triage_site`, fed by `trigger.arming_contexts` +
+`guards.defer_to_entry`'s new model callbacks): a sole-exit deferral site is not a refusal point
+just because it precedes the pocket — its own arming may sit INSIDE a commit. Every arming of the
+site's trigger script is classified from the game's own context:
+
+  * **STAGE-VACUOUS** — the arming's own path pins a register against every stage alternative
+    (rm620: `sFoundDagger` arms under `(== global123 3)`; a stage-1/4/5 wrap there guards a
+    crossing that cannot happen): **no wrap at all**, reason recorded on the row.
+  * **COMMITTED** — mid-changeState, or the branch takes the controls (`handsOff:`/ego `hide:`
+    anywhere in the arming's branch — rm480's case-740 hides the ego AFTER the arming), or an
+    `init` arrival delivered by a cutscene (`_cutscene_delivers` reads the delivering room's
+    performers, nav-property destinations resolved): the demand RE-SITES up the chain —
+    in-file to the enclosing Script's own armings, cross-file to the delivering rooms via
+    `_guard_arrival_entries` rebased on the site (recursive, depth-capped, visited-set), each
+    hop owing the same presentability + compliance filters the original site owed
+    (`defer_to_entry`'s `site_ok`). The arming path's own non-positional heads ride the carried
+    stage (`(and <stage> <heads>)`), positional and stage-implied conjuncts stripped.
+  * **BENIGN** — a hands-on arming: in-place gate/refusal as before, and a target with BOTH a
+    controllable arming and an uncontrollable sibling gets both covered (the finding-#4 rule:
+    one wrapped door of an N-door commitment is a bypass).
+
+Two honesty walls inside the climb: a head that cannot cross files (`local0`) refuses the hop,
+and a head born in a changeState (its value at the landing's earlier moment is not the value the
+game tests — rm480's `local0` is 0 through all of init) refuses even in-file unless the stage
+already implies it.
+
+**What moved (measured in the product, no compile needed for the dry run):**
+
+    rm26->rm330 (stage 1, pressPass): rm250's init arm-gate REMOVED (it sat past rm300's
+        sHailCab commit — hidden ego, §7i strand, the play find). Re-sited to rm300, BOTH
+        armings of sHailCab: taxiSign::doVerb -> spoken refusal, frontDoor::cue (the automatic
+        gowned-exit taxi, the path the user actually played) -> silent arm-gate. Guard:
+        (or (not (and (== global123 1) (global0 wearingGown:))) (global0 has: 6)) — the
+        wearingGown head carried from rm250's own arming clause, so an ungowned passless taxi
+        ride (the driver-refusal flavor path) stays exactly stock.
+    rm26->rm420 / rm26->rm750 (stages 4/5): ALL sites refused, rows now
+        entry-deferral-REFUSED with per-site reasons (454: the only deliverer rm455 stands at
+        act 2 only; 480: state-born `local0`; 620: stage-vacuous; 500/520: no wrappable site).
+        The v2 wraps at rm454/480/620 were all either provably vacuous or mid-commit — what
+        looked like coverage was a strand or a dead guard. ⚠️ the "every non-refused dagger
+        spec places" check goes back to KNOWN_RED, honestly: the real act-4→5/5→end
+        pre-commit sites are not yet derivable (rm500/520 have no wrappable site; the séance
+        and chase corridors dead-end in state-born heads).
+
+LSL2/KQ4 goldens and KQ6 untouched by construction (the triage runs only under the sole-exit
+deferral, which only LB2 has).
+
 ### ⭐ §7ak. THE v1 BOOT CRASH — a mode nobody can switch is not a mode (2026-08-11)
 
 **dagger_patch_v1 crashed at boot**: `[LB2::init @ 0af0]: Send to invalid selector 0x76 (add)
@@ -1902,6 +1957,11 @@ controllable crossing of act 5, not the act break itself.
    (handsOff cab ride, ego hidden at state 9), so a refusal on arrival strands a hidden ego
    with no script — the §7i/KQ6-corral arrival-commit class, reachable only if the vacuity
    claim is false.
+   ✅ **THE PLACEMENT HALF IS RESOLVED 2026-08-11 (§7al): the user ruled vacuity does not
+   matter as long as the guard is properly placed, and the wrap now sits at rm300, before
+   `sHailCab` arms.** The VACUITY question itself (is the carry the eveningGown shape?) stays
+   open here — it decides whether the rm26->rm330 spec should one day retire, not whether the
+   shipped guard is safe.
 
 1. ✅ **RULED 2026-08-10 — the three contested rows are SAFE, pending the §9 play test.** The
    source checks (column-C table) found all three re-obtainable at the point of use with the
