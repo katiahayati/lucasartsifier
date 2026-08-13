@@ -1061,6 +1061,91 @@ std::vector<uint16_t> GlobalClassTable::GetSubclassesOf(uint16_t baseClass)
     return subclasses;
 }
 
+// scicompile fix (class-numbering): vocab.996 states only species -> script. The
+// per-script ORDER in which _Create accumulates species is the table's numeric
+// order, but SpeciesTable's positional contract (GetSpeciesIndex(script, indexInScript),
+// used by CompileContext::EnsureSpeciesTableEntry during compilation) is "index of
+// the class within the script". Nothing guarantees those two orders agree: in the
+// shipped Laura Bow 2, script 0's physical class order is WrapMusic(134),
+// Actions(46), LB2(135) while numeric order is 46,134,135 -- so recompiling Main
+// assigned WrapMusic species 46 and Actions species 134, and every recompiled
+// script referencing WrapMusic sent to the wrong class. The ground truth for the
+// in-script order is the game's own compiled script resources: each compiled
+// class object carries its species in its header. Re-derive each script's species
+// list in that physical order (same resource walk as GlobalClassTable::_Create).
+// A script whose compiled class set disagrees with the table (e.g. leftover
+// classes not in the class table) keeps the vocab-derived order.
+static void _AlignSpeciesOrderToCompiledScripts(std::unordered_map<uint16_t, std::vector<uint16_t>> &map)
+{
+    // Collect the heap/script pairs first. Patch files win out.
+    unordered_map<uint16_t, pair<unique_ptr<ResourceBlob>, unique_ptr<ResourceBlob>>> heapScriptPairs;
+    auto scriptContainer = appState->GetResourceMap().Resources(ResourceTypeFlags::Script | ResourceTypeFlags::Heap, ResourceEnumFlags::MostRecentOnly | ResourceEnumFlags::AddInDefaultEnumFlags);
+    for (auto scriptResource : *scriptContainer)
+    {
+        uint16_t scriptNumber = (uint16_t)scriptResource->GetNumber();
+        pair<unique_ptr<ResourceBlob>, unique_ptr<ResourceBlob>> &scriptAndHeap = heapScriptPairs[scriptNumber];
+        if (scriptResource->GetType() == ResourceType::Script)
+        {
+            scriptAndHeap.first = move(scriptResource);
+        }
+        else
+        {
+            scriptAndHeap.second = move(scriptResource); // Heap
+        }
+    }
+
+    for (auto &numberToPair : heapScriptPairs)
+    {
+        uint16_t scriptNumber = numberToPair.first;
+        auto tableIt = map.find(scriptNumber);
+        if (tableIt == map.end())
+        {
+            continue;   // The class table assigns no species to this script.
+        }
+        pair<unique_ptr<ResourceBlob>, unique_ptr<ResourceBlob>> &scriptAndHeap = numberToPair.second;
+        if (!scriptAndHeap.first ||
+            (appState->GetVersion().SeparateHeapResources && !scriptAndHeap.second))
+        {
+            continue;   // Can't load; keep the vocab-derived order.
+        }
+
+        unique_ptr<CompiledScript> compiledScript = make_unique<CompiledScript>(scriptNumber);
+        std::unique_ptr<sci::istream> heapStream;
+        if (scriptAndHeap.second)
+        {
+            heapStream.reset(new sci::istream(scriptAndHeap.second->GetData(), scriptAndHeap.second->GetLength()));
+        }
+        sci::istream __scriptRs = scriptAndHeap.first->GetReadStream();
+        if (!compiledScript->Load(appState->GetResourceMap().Helper(), appState->GetVersion(), scriptNumber, __scriptRs, heapStream.get()))
+        {
+            continue;   // Can't load; keep the vocab-derived order.
+        }
+
+        // The physical class order, filtered to species the table assigns to this
+        // script (mirrors GlobalClassTable::_Create's leftover-class filtering).
+        unordered_set<uint16_t> tableSet(tableIt->second.begin(), tableIt->second.end());
+        vector<uint16_t> physicalOrder;
+        for (auto &compiledObject : compiledScript->GetObjects())
+        {
+            if (!compiledObject->IsInstance() && tableSet.count(compiledObject->GetSpecies()))
+            {
+                physicalOrder.push_back(compiledObject->GetSpecies());
+            }
+        }
+
+        // Adopt it only if it is a permutation of the vocab-derived list -- i.e. the
+        // compiled resources and the class table agree on WHICH species live here.
+        vector<uint16_t> sortedPhysical = physicalOrder;
+        vector<uint16_t> sortedTable = tableIt->second;
+        sort(sortedPhysical.begin(), sortedPhysical.end());
+        sort(sortedTable.begin(), sortedTable.end());
+        if (!physicalOrder.empty() && (sortedPhysical == sortedTable))
+        {
+            tableIt->second = physicalOrder;
+        }
+    }
+}
+
 bool SpeciesTable::Load(const GameFolderHelper &helper)
 {
     bool fRet = false;
@@ -1068,6 +1153,12 @@ bool SpeciesTable::Load(const GameFolderHelper &helper)
     if (blob)
     {
         { sci::istream __rs = blob->GetReadStream(); fRet = _Create(__rs); }
+    }
+    if (fRet)
+    {
+        // Species for classes that exist in the game's compiled resources come from
+        // the game's own class data, never from re-enumeration in numeric order.
+        _AlignSpeciesOrderToCompiledScripts(_map);
     }
     if (!fRet)
     {
