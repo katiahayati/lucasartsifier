@@ -128,3 +128,51 @@ the text-rewrite patcher layer is accumulating fragility faster than its tests.
 None of these is an oracle leak — the doctrine's cardinal sin is genuinely absent —
 but the deletion-side soundness holes (Correctness #1-#4) deserve RED TESTS before
 the next game exercises them, because each one fails silent and green.
+
+---
+
+## Disposition, 2026-08-14 (all items worked; commits named)
+
+CLOSED, each with a red test first where it was a defect and a corpus measurement either way:
+
+| § | item | commit | measured effect |
+|---|---|---|---|
+| 4.1 | forwarding's sole-producer proof missed non-pocket flip edges | `54f5000` | inert (LB2 is the sole producer) |
+| 4.2 | mask-accessor husking made an unresolvable read constant-FALSE | `54f5000` | inert (LB2's one skip is a write) |
+| 4.3 | pre-emption accepted an escape the player cannot arm | `54f5000` | inert (LB2's trunk keeps all seven) |
+| 4.4 | entry intersection dissolved on entries that cannot fire | `54f5000` | inert |
+| 2.1, 2.2 | two "MEASURED" censuses that no longer reproduced | `54f5000` | docstrings corrected |
+| 2.3 | snapshot's golden-protecting key clause | `e8b31b7` | goldens re-blessed, +1 line each, user sign-off |
+| 3.1 | interceptor wrapped only the FIRST matching arm | `0475325` | inert; caught a real coverage loss mid-fix |
+| 3.2 | stage matched by substring, not structurally | `0475325` | inert |
+| 4.6 | departure claimed from one arm of a branch | `0c3a148` | KQ6 6→4 departures, no surface movement |
+| 4.5 | fork escape could be the lethal arm itself | `008b121` | inert |
+| 5.1 | `_crossing_reach`/`_psucc` twins unpinned | `a55d83b` | 151 crossings compared, agree |
+| 5.4 | dead `handled` branch | `a55d83b` | removed |
+| 3.3 | forwarding order-dependent | `0635697` | second pass; LB2 unchanged |
+| 3.5 | handsOff matched inside comments/strings | `0635697` | `trigger.code_only` |
+| 4.7 | `_cutscene_delivers` failed toward the play-caught gate | `0635697` | third answer: unclassified |
+| 1.1 | hand-picked 40/6 pixel margins | `7b8d674` | bands derived from the ego's own `edgeHit`; rows unchanged |
+| 2.4 | `_death_values` single-instance calibration | `7b8d674` | instance had MOVED (flag 44 → flag 1); pinned |
+| 5.5 | `_room_object` / collapse near-duplicates | `1ef3ab7` | collapsed; rows byte-identical |
+| 4.7 | `derive_control_selectors` restore-overwrite asymmetry | `d37bb4e` | symmetric; output identical |
+| 4.7 | `_global_instances` permissive on int-assigned globals | `d37bb4e` | KQ6 22→18, LB2 20→16 resolved; no surface movement |
+| 1.2 | interceptor census lived in a memory note | `8371ed3` | now a check: LSL2/KQ4/KQ6 0, LB2 6 |
+| 1.4 | `"state" in dtxt` spelling assumption | `8371ed3` | structural; 1712 sites agree |
+| 3.6 | "allocation order IS register identity" unchecked | `f3eb051` | **found a live collision**: KQ6 386-396 claimed by two stores |
+
+Also fixed along the way: the pipeline CLI under-reported its own findings
+(three of seven detectors), and a build log printed to stdout, corrupting the
+JSON the documented regression command writes on a cold cache.
+
+DECLINED, with reasons:
+
+* **5.6** `register_flip_frontier`'s empty `groups` is the shared frontier record shape every
+  producer allocates and every consumer reads, not a stray allocation.
+* **1.5** the depth caps (`range(6)`, `depth>=4`) fail toward refusal, as the review itself notes.
+* **3.7** `SpeciesTable::Load` reloading script resources is a build-time cost in the C++ compiler;
+  touching it risks the species fix that closed the §7ak boot crash.
+* **5.7** `_skipped_deaths` is module-global but cleared per build, like `BOOL_GLOBALS`.
+* **3.6, the deeper half** — making the allocators disjoint would RENUMBER a store, and the last
+  renumbering dissolved a user-confirmed finding. That moves a watched surface and wants a human;
+  the ambiguity is refused meanwhile, and pinned so a move is loud.
