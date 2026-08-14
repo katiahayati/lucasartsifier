@@ -159,7 +159,7 @@ CLOSED, each with a red test first where it was a defect and a corpus measuremen
 | 4.7 | `_global_instances` permissive on int-assigned globals | `d37bb4e` | KQ6 22→18, LB2 20→16 resolved; no surface movement |
 | 1.2 | interceptor census lived in a memory note | `8371ed3` | now a check: LSL2/KQ4/KQ6 0, LB2 6 |
 | 1.4 | `"state" in dtxt` spelling assumption | `8371ed3` | structural; 1712 sites agree |
-| 3.6 | "allocation order IS register identity" unchecked | `f3eb051` | **found a live collision**: KQ6 386-396 claimed by two stores |
+| 3.6 | "allocation order IS register identity" unchecked | `f3eb051`, `46ecbea` | **found a live collision** (KQ6 386-396 claimed by two stores), then closed it at the root: the stores now share a high-water mark and are disjoint by construction. KQ6 renumbers (obj-prop 386→397); all four surfaces byte-identical |
 
 Also fixed along the way: the pipeline CLI under-reported its own findings
 (three of seven detectors), and a build log printed to stdout, corrupting the
@@ -173,6 +173,8 @@ DECLINED, with reasons:
 * **3.7** `SpeciesTable::Load` reloading script resources is a build-time cost in the C++ compiler;
   touching it risks the species fix that closed the §7ak boot crash.
 * **5.7** `_skipped_deaths` is module-global but cleared per build, like `BOOL_GLOBALS`.
-* **3.6, the deeper half** — making the allocators disjoint would RENUMBER a store, and the last
-  renumbering dissolved a user-confirmed finding. That moves a watched surface and wants a human;
-  the ambiguity is refused meanwhile, and pinned so a move is loud.
+* ~~**3.6, the deeper half**~~ — DONE after all (`46ecbea`), on the user's word to proceed
+  carefully. The fear was renumbering: the last time registers moved, a user-confirmed finding
+  dissolved into noise. Measured instead of assumed — only KQ6 renumbers, and no surface moves,
+  because the frozen surface spells conditions in the GAME's terms and the register numbers it
+  does print belong to the flag store, which allocates first and did not move.
