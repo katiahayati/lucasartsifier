@@ -302,12 +302,67 @@ def test_entry_intersection_ignores_unfirable_entries():
                  "the only way in: required[3]=%r" % (got.get(3),))
 
 
+# --- 5. a departure claimed from one arm of a branch ---------------------------------------------
+#
+# `extract._object_departures` says "this script parks that object off-pic, so its `init:`
+# yields no interactive presence" -- the rule that sealed LB2's street, and the only rule in the
+# codebase that DELETES a click window. Its docstring promises to be strict in the KEEPING
+# direction; the walk that implements it reads every send in a case body, including the ones
+# inside an `if`, so a departure that happens on one arm reads as a departure that always
+# happens. Fabricating a seal is worse than missing one: it deletes a way through that the
+# player really has.
+def _departure_script(conditional):
+    """LB2's `sTaxiLeave` (rm330), verbatim in shape, with the drive optionally under a branch."""
+    def send(recv, sel, *params):
+        return {"t": "Send", "kids": [recv, {"t": "SendMessage", "kids": [
+            {"t": "Selector", "name": sel, "value": 0}] + list(params)}]}
+
+    def moveto(x, y):
+        return send({"t": "Object", "name": "taxi"}, "setMotion",
+                    {"t": "Class", "name": "MoveTo", "number": 32},
+                    {"t": "Number", "value": x}, {"t": "Number", "value": y}, {"t": "Self"})
+
+    hands = lambda sel: send({"t": "Variable", "vtype": "Global", "index": 1}, sel)  # noqa: E731
+    drive = (moveto(369, 125) if not conditional else
+             # ON-pic if the branch is taken, off-pic otherwise: the object leaves on ONE arm.
+             {"t": "If", "kids": [{"t": "Variable", "vtype": "Global", "index": 9},
+                                  {"t": "List", "kids": [moveto(100, 100)]},
+                                  {"t": "List", "kids": [moveto(369, 125)]}]})
+    body = {"t": "List", "kids": [{"t": "Switch", "kids": [
+        {"t": "Assignment", "kids": [{"t": "Property", "name": "state", "index": 20},
+                                     {"t": "Variable", "vtype": "Parameter", "index": 1}]},
+        {"t": "Case", "kids": [{"t": "Number", "value": 0},
+                               {"t": "List", "kids": [hands("handsOff"), drive]}]},
+        {"t": "Case", "kids": [{"t": "Number", "value": 1},
+                               {"t": "List", "kids": [hands("handsOn")]}]}]}]}
+    return I.Script({"number": 330, "locals": [], "exports": [], "procedures": [],
+                     "objects": [{"name": "sTaxiLeave", "isClass": False, "species": 1,
+                                  "super": 0, "properties": [],
+                                  "methods": [{"name": "changeState", "sel": 1, "ast": body}]}]})
+
+
+def test_departure_is_not_claimed_from_one_arm():
+    print("\n-- extract._object_departures: a departure on ONE arm is not a departure --")
+    import extract as X                                                  # noqa: E402
+    check("the unconditional drive departs the taxi (LB2's rm330, the rule's own case)",
+          X._object_departures(_departure_script(False)) == {"taxi": {"sTaxiLeave"}},
+          detail="%r" % (X._object_departures(_departure_script(False)),))
+
+    got = X._object_departures(_departure_script(True))
+    check("a drive that only leaves the pic on ONE ARM departs nothing",
+          got == {},
+          detail="the taxi parks off-pic in the else branch and stays on-pic in the other, so "
+                 "the player's click window survives on one route -- and a seal claimed here "
+                 "deletes it: %r" % (got,))
+
+
 def run():
     print("=== test_deletion_soundness ===")
     test_forwarding_sole_producer()
     test_mask_accessor_refuses_unresolvable_reads()
     test_preempt_requires_an_armable_competitor()
     test_entry_intersection_ignores_unfirable_entries()
+    test_departure_is_not_claimed_from_one_arm()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL

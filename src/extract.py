@@ -549,9 +549,47 @@ def _object_departures(script):
       * a `handsOff:` fires at or before the departure's first position write and every
         `handsOn:` comes strictly after the terminal one -- the input window reopens only once
         the object is gone. A script that returns input mid-drive leaves a real click window
-        and keeps the object."""
+        and keeps the object;
+      * and every one of those position writes runs UNCONDITIONALLY within its state. A write
+        inside an `if` arm happens on one route and not the other, so reading it as the state's
+        outcome claims a departure the player can decline -- and this rule is the one place in
+        the codebase that DELETES a click window, so a fabricated seal here removes a way
+        through that really exists. The branch test is `ir.control_shape`, the same classifier
+        every other walker consumes, so `if`, `cond`, `switch` and a loop body all count as
+        conditional without this function knowing their spellings. (The state's own `case`
+        label is not a branch in this sense: `moves` is keyed by state already, and the whole
+        rule is a claim about what state K does.)"""
     W_PIC, H_PIC = 320, 190
     out = {}
+
+    def _conditional_nodes(body):
+        """ids of the nodes under a BRANCH arm (or a loop) inside one case body."""
+        marked = set()
+
+        def walk(node, under):
+            if not isinstance(node, dict):
+                return
+            if under:
+                marked.add(id(node))
+            shape = I.control_shape(node)
+            kind = shape[0]
+            if kind == "branch":
+                for conds, arm in shape[1]:
+                    for test, _pol in conds:
+                        walk(test, True)
+                    walk(arm, True)
+            elif kind == "loop":
+                for part in shape[1:]:
+                    walk(part, True)          # a loop may run zero times
+            elif kind == "seq":
+                for k in shape[1] or []:
+                    walk(k, under)
+            else:                             # leaf: descend structurally (a send in an operand)
+                for k in (node.get("kids") or []):
+                    walk(k, under)
+        walk(body, False)
+        return marked
+
     for S in script.objects:
         cs = S.methods.get("changeState")
         if cs is None:
@@ -566,6 +604,7 @@ def _object_departures(script):
                 k = I.as_int(I.kids(case)[0])
                 if k is None:
                     continue
+                branchy = _conditional_nodes(I.kids(case)[1])
                 for sn in I.walk(I.kids(case)[1]):
                     if I.t(sn) != "Send":
                         continue
@@ -577,22 +616,26 @@ def _object_departures(script):
                         elif sel == "handsOn":
                             hands_on.append(k)
                         elif sel == "setMotion" and rname:
+                            cond = id(sn) in branchy
                             cls = (params[0].get("name")
                                    if params and isinstance(params[0], dict) else None)
                             if cls == "MoveTo" and len(params) >= 3:
                                 moves.setdefault(rname, []).append(
                                     (k, I.as_int(params[1]), I.as_int(params[2]),
-                                     len(params) > 3))
+                                     len(params) > 3, cond))
                             else:
-                                moves.setdefault(rname, []).append((k, None, None, False))
+                                moves.setdefault(rname, []).append((k, None, None, False, cond))
                         elif sel == "posn" and rname and len(params) >= 2:
                             moves.setdefault(rname, []).append(
-                                (k, I.as_int(params[0]), I.as_int(params[1]), True))
+                                (k, I.as_int(params[0]), I.as_int(params[1]), True,
+                                 id(sn) in branchy))
         for O, evs in moves.items():
-            if any(x is None or y is None for (_k, x, y, _c) in evs):
+            if any(x is None or y is None for (_k, x, y, _c, _b) in evs):
                 continue
+            if any(b for (_k, _x, _y, _c, b) in evs):
+                continue                      # a write on one arm is not what the state DOES
             evs.sort(key=lambda e: e[0])
-            k_last, x, y, cued = evs[-1]
+            k_last, x, y, cued, _b = evs[-1]
             if (0 <= x < W_PIC and 0 <= y < H_PIC) or not cued:
                 continue
             if not hands_off or min(hands_off) > evs[0][0]:
