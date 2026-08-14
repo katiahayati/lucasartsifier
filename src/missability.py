@@ -1178,6 +1178,13 @@ def _entry_reach_walk(info, ents, carried, _ctr_ok, _apply, lregs=None):
     return per_entry
 
 
+# The musts walk explores (state, local-valuation) pairs to a fixpoint; the cap only exists so a
+# counter incremented in a loop cannot spin it forever. At 20000 it was low enough that ordinary
+# machines hit it (KQ5's walkThruBoy/walkThruW3, plain cutscene walkers) and shipped as UNKNOWN --
+# a silent model gap, not a safety win, since running out degrades to permissive anyway.
+_STATE_MUSTS_CAP = 200000
+
+
 def state_musts(info, regs):
     """State -> {register: allowed values} that hold on EVERY path reaching it from an entry.
 
@@ -1238,7 +1245,7 @@ def state_musts(info, regs):
     for i, (K, _eg) in enumerate(ients):
         seed(K, ilocs[i] if i < len(ilocs) else {})
     seen = 0
-    while work and seen < 20000:
+    while work and seen < _STATE_MUSTS_CAP:
         seen += 1
         K, loc, cur = work.pop()
         for (g, w, gg, c, tr) in info["states"].get(K, ()):
@@ -1283,7 +1290,7 @@ def state_musts(info, regs):
         # could not establish is a real gap in the model, not a normal result.
         _degraded_model("state_musts hit its %d-step cap for %s; treating its musts as "
                         "UNKNOWN (permissive) rather than shipping a partial intersection"
-                        % (20000, info.get("inst", "?")))
+                        % (_STATE_MUSTS_CAP, info.get("inst", "?")))
         return _Musts({})
     return _Musts(out)
 
