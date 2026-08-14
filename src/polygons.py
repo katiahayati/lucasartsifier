@@ -204,12 +204,24 @@ def reachable_edges(polys, seeds=None, step=4):
     return out
 
 
-def _room_object(script):
-    """The Rm instance: the object carrying a `picture` property (and the nav exits)."""
-    for o in script.objects:
-        if not o.is_class and "picture" in o.props:
-            return o
-    return None
+def _room_object(script, ir=None):
+    """The Rm instance -- `extract._room_object`, not a second answer to the same question.
+
+    This file used to identify the room as "the object carrying a `picture` property", which is
+    a different rule and gives different answers: measured across the four games it picks up
+    INSETS (LB2's `inNotebook` and `clockInset`, KQ6's `keyHole` and `lampSellerInset` all carry
+    a picture and are not rooms) and misses rooms that carry none (ten of LSL2's). Reading nav
+    properties off an inset is how a dead-nav row -- an EDGE DELETION -- could be raised against
+    an object that has no exits at all.
+
+    Both answers agree on every row today (measured: LB2 keeps rm240-east and rm330-south, the
+    other three stay empty), so this is the duplicate collapsing while the answer is the same,
+    which is the only comfortable time to do it. `extract`'s version is the derived one: it
+    resolves the game's own Rm/Room class closure and falls back to the `rm<N>` name.
+    [[same-rule-two-places]] -- the same lookup living in two modules cost this project KQ4's
+    26 region scripts once already."""
+    from extract import _room_object as _canonical
+    return _canonical(script, ir)
 
 
 _EDGE_BANDS = {}
@@ -296,7 +308,7 @@ def dead_nav_exits(ir, room):
       * no arrival seed (no literal `gEgo posn:` in init), no polygons at all, or a layout
         that blocks every seed -> refuse."""
     script = ir.scripts.get(room)
-    rm = _room_object(script) if script else None
+    rm = _room_object(script, ir) if script else None
     if rm is None:
         return []
     from extract import NAV_SELECTORS

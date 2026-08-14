@@ -122,6 +122,40 @@ def _loc_placed_required(guard, placed):
     return walk(guard, True)
 
 
+def _collapse_by(rows, key, merge_fields, value_key=None):
+    """Merge rows that state the SAME FACT, keeping the first row's identity and unioning the
+    listed fields. The shared body of `_collapse_flips` and `_collapse_value_flips`.
+
+    They differ in exactly two ways -- what makes two rows the same fact (`key`) and which lists
+    union (`merge_fields`) -- and were otherwise the same twenty lines twice, which is this
+    codebase's most expensive shape ([[same-rule-two-places]]): the value-flip copy was written
+    by adapting the item copy, and a correction to either would have had to be remembered twice.
+
+    `value` keeps the first merged value, so a row that merged nothing is byte-identical to its
+    input, and `values` appears only where a merge happened -- the register rows sort those by
+    `repr` because a joint's value is a tuple."""
+    by, order = {}, []
+    for r in rows:
+        k = key(r)
+        if k not in by:
+            by[k] = r
+            order.append(k)
+            continue
+        keep = by[k]
+        keep.setdefault("values", [keep["value"]])
+        if r["value"] not in keep["values"]:
+            keep["values"].append(r["value"])
+        for f in merge_fields:
+            keep[f] = sorted(set(keep[f]) | set(r[f]))
+    for k in order:
+        r = by[k]
+        if "values" in r:
+            r["values"] = sorted(r["values"], key=value_key) if value_key \
+                else sorted(r["values"])
+            r["value"] = r["values"][0]
+    return [by[k] for k in order]
+
+
 def latch_evidence(em):
     """`(local_home, latch_writers, nonmachine)` -- everything that can RAISE a room's own
     lowered locals (the fifth store's registers).
@@ -3474,27 +3508,8 @@ class IrSccReach(SccReach):
         SEALED REGION is identical are one row, and the flip rooms/values merge. Two rows that seal
         genuinely different regions stay two. `value` keeps the lowest merged value so a row that
         merged nothing is byte-identical to before; `values` appears only when a merge happened."""
-        by = {}
-        order = []
-        for r in rows:
-            k = (r["item"], str(r["register"]), r.pop("_sealed"))
-            if k not in by:
-                by[k] = r
-                order.append(k)
-                continue
-            keep = by[k]
-            keep.setdefault("values", [keep["value"]])
-            if r["value"] not in keep["values"]:
-                keep["values"].append(r["value"])
-            keep["flip_rooms"] = sorted(set(keep["flip_rooms"]) | set(r["flip_rooms"]))
-            keep["still_needed_at"] = sorted(set(keep["still_needed_at"])
-                                             | set(r["still_needed_at"]))
-        for k in order:
-            r = by[k]
-            if "values" in r:
-                r["values"] = sorted(r["values"])
-                r["value"] = r["values"][0]
-        return [by[k] for k in order]
+        return _collapse_by(rows, lambda r: (r["item"], str(r["register"]), r.pop("_sealed")),
+                            ("flip_rooms", "still_needed_at"))
 
     def _reg_entry_demands(self, S):
         """room -> [(machine inst, frozenset(accepted values of S))] for machines whose EVERY way
@@ -3739,26 +3754,10 @@ class IrSccReach(SccReach):
     def _collapse_value_flips(rows):
         """One (register, rejected value, sealed region) is one finding -- `_collapse_flips` for
         the register rows, keyed by the demanded register instead of the item."""
-        by, order = {}, []
-        for r in rows:
-            k = (r["reg"], tuple(r["bad"]), str(r["register"]), r.pop("_sealed"))
-            if k not in by:
-                by[k] = r
-                order.append(k)
-                continue
-            keep = by[k]
-            keep.setdefault("values", [keep["value"]])
-            if r["value"] not in keep["values"]:
-                keep["values"].append(r["value"])
-            keep["flip_rooms"] = sorted(set(keep["flip_rooms"]) | set(r["flip_rooms"]))
-            keep["demanded_at"] = sorted(set(keep["demanded_at"]) | set(r["demanded_at"]))
-            keep["raise_rooms"] = sorted(set(keep["raise_rooms"]) | set(r["raise_rooms"]))
-        for k in order:
-            r = by[k]
-            if "values" in r:
-                r["values"] = sorted(r["values"], key=repr)
-                r["value"] = r["values"][0]
-        return [by[k] for k in order]
+        return _collapse_by(rows,
+                            lambda r: (r["reg"], tuple(r["bad"]), str(r["register"]),
+                                       r.pop("_sealed")),
+                            ("flip_rooms", "demanded_at", "raise_rooms"), value_key=repr)
 
     def resource_exhaustion(self):
         """Items you USE UP rather than throw away -- the fourth store's softlock shape.

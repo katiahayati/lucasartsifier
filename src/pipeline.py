@@ -144,13 +144,32 @@ def main(argv=None):
     cands = s.analyze()
     joints = s.joint_strandings()
     tolls = s.toll_strandings()
+    # EVERY DETECTOR, not the three stranding ones. This line used to union analyze/joint/toll
+    # and stop, so the run reported five findings where the frozen surface (`snapshot.py`, the
+    # thing the goldens freeze) had seven -- KQ4's Diamond Pouch and Fishing Pole are
+    # register-flip strandings, sealed behind a plot flag rather than behind a door, and the
+    # command in the README never mentioned them. A detector whose findings the tool's own
+    # report omits is a detector emitting into the dark, which is the argument `snapshot.py`
+    # makes for itself.
+    extra = {"sealed by a plot flag": s.register_flip_strandings(),
+             "wasted by a dangerous action": s.dangerous_sinks(),
+             "fatal to use here": s.fatal_uses(),
+             "sealed by a register flip": s.register_strandings()}
     items = sorted({c["item"] for c in cands} | {j["item"] for j in joints}
-                   | {t["item"] for t in tolls})
+                   | {t["item"] for t in tolls}
+                   | {r["item"] for rows in extra.values() for r in rows})
     groups = s.group_strandings()
     print(f"    softlocks: {len(items)} items"
           + (f" + {len(groups)} disjunctive group(s)" if groups else ""))
+    why = {}
+    for label, rows in extra.items():
+        for r in rows:
+            why.setdefault(r["item"], label)
+    stranding = {c["item"] for c in cands} | {j["item"] for j in joints} \
+        | {t["item"] for t in tolls}
     for i in items:
-        print(f"      - {s.g.item_name(i)}")
+        print(f"      - {s.g.item_name(i)}"
+              + ("" if i in stranding else f"  ({why.get(i, 'other detector')})"))
     for r in groups:
         print(f"      - {' or '.join(r['item_names'])}  (needed at rm{r['need_room']})")
     for j in joints:

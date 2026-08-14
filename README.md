@@ -19,13 +19,12 @@ the death signal and the debug flag are all derived from the game's own code.
 | **King's Quest VI** (1992) | SCI1.1 | 86 rooms, 15 components | 18 items + 1 group | 24 of 26 | ✅ in-game guard control confirmed in play |
 | **Laura Bow 2: The Dagger of Amon Ra** (1992) | SCI1.1 | 78 rooms, 26 components | 10 items | 5 of 5 | ✅ act-break guards confirmed in play |
 
-"Findings" is every detector's verdict unioned per item — the frozen surface `src/snapshot.py`
-writes. The `softlocks:` line a pipeline run prints is narrower: it counts three of the seven
-detectors, so KQ4 reports 5 there against the 7 here, the missing two (the Diamond Pouch and the
-Fishing Pole) being register-flip strandings — sealed behind a plot flag rather than behind a
-door. "Edits placed" counts the guard and sink sites the patcher actually landed. KQ6's missing
-two are the suite's one deliberate red — a shared-dispatcher seam and a trade-shaped sink, both
-with their reasons written down rather than quietly dropped.
+"Findings" is every detector's verdict unioned per item — the same seven a run prints and the
+frozen surface freezes; an item found by something other than the three stranding detectors is
+labelled with what found it (*sealed by a plot flag*, *fatal to use here*, …). "Edits placed"
+counts the guard and sink sites the patcher actually landed. KQ6's missing two are the suite's
+one deliberate red — a shared-dispatcher seam and a trade-shaped sink, both with their reasons
+written down rather than quietly dropped.
 
 LSL2 and KQ4 are **golden**: their full output surface is frozen byte-for-byte, and a change to it
 means the change is wrong until a human says otherwise. KQ6 and LB2 are **watched**: their surfaces
