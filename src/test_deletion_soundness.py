@@ -1,5 +1,5 @@
-"""The four DELETION-SIDE soundness holes the contextless v1.0-lb2 review found
-(docs/reviews/review-v1.0-lb2.md §4.1-§4.4), each as a synthetic unit test.
+"""The DELETION-SIDE soundness holes the contextless v1.0-lb2 review found
+(docs/reviews/review-v1.0-lb2.md §4), each as a synthetic unit test.
 
 WHY THIS FILE EXISTS, given every one of these is latent on today's corpus. Each hole is a
 filter that DELETES -- a coverage claim, a modelled read, a death finding, a requirement -- on
@@ -26,6 +26,14 @@ pre-emption that closed the skeletonKey false positive, the LB2 rm300 notebook).
      without asking whether the player can ARM it.
   4. `missability.build_maps`' entry intersection -- an entry that can never fire still
      dissolves the requirement its siblings carry.
+  5. `extract._object_departures` (§4.6) -- a drive that leaves the pic on ONE ARM of a branch
+     reads as a departure that always happens, and this is the one rule that DELETES a click
+     window: a seal fabricated here removes a way through the player really has.
+  6. `missability._survivable`'s fork rule (§4.5) -- `handoff` is keyed by state, so an arm
+     that both hands off to the death and exits stood as the escape from it.
+  7. ...and §5.1's DEBT, which is not a hole but the condition for one: `_crossing_reach` is a
+     declared hand-mirror of `_psucc`'s edge clause, kept separate for speed, with nothing
+     checking the copies still agree. It is checked here, against a real game's every crossing.
 """
 import copy
 import os
@@ -392,6 +400,47 @@ def test_fork_escape_is_not_the_lethal_arm():
                  "condition -- taking it arms the death, and the sibling merely parks")
 
 
+# --- 7. the two copies of the arrival rule, pinned in step ---------------------------------------
+def test_crossing_reach_mirrors_psucc():
+    """`_crossing_reach` says in its own docstring that it is a MIRROR of `_psucc`'s edge clause,
+    kept separate because `_psucc` is the hot path every corpus baseline is pinned to. That is a
+    defensible trade and an undefended one: nothing checked the copies still agree, and "the same
+    rule in two places, fixed in one" is where three of this project's bugs came from
+    (`asserts_eq`, `_room_object`, `Increment`). This walks a real game's every edge and asserts
+    the arrival value each copy computes is the same one."""
+    print("\n-- _crossing_reach mirrors _psucc's edge clause (both copies of one rule) --")
+    import config                                                        # noqa: E402
+    import extract as X                                                  # noqa: E402
+    if not os.path.exists(config.LSL2.ir_path):
+        check("the two copies of the arrival rule agree", False,
+              "NO IR at %s -- the mirror was NOT compared" % config.LSL2.ir_path)
+        return
+    s = M.load(cfg=config.LSL2)
+    positional = {M.prev_room_reg(s.em), getattr(X, "_CURROOM", None)}
+    bad, checked = [], 0
+    for (a, b), metas in sorted(s._emeta.items()):
+        if b not in s.edges.get(a, ()):
+            continue
+        for (req, sets, _alts) in metas:
+            touched = (set(req) | set(sets)) - positional
+            for R in s.proj:
+                if isinstance(R, tuple) or R not in touched:
+                    continue
+                for (r, v) in sorted(s._pstates[R]):
+                    if r != a or (req.get(R) is not None and v not in req[R]):
+                        continue
+                    checked += 1
+                    # the mirror's rule, spelled as `_crossing_reach` spells it...
+                    mirror = (b, sets.get(R, v))
+                    # ...and the same crossing as `_psucc` produces it
+                    if mirror not in s._psucc(R, (a, v), frozenset()) \
+                            and not s._reg_unreachable(req, frozenset()):
+                        bad.append(((a, b), R, v, mirror))
+    check("the two copies of the arrival rule agree on every crossing (%d checked)" % checked,
+          checked > 0 and not bad,
+          detail="disagreements: %r" % (bad[:5],))
+
+
 def run():
     print("=== test_deletion_soundness ===")
     test_forwarding_sole_producer()
@@ -400,6 +449,7 @@ def run():
     test_entry_intersection_ignores_unfirable_entries()
     test_departure_is_not_claimed_from_one_arm()
     test_fork_escape_is_not_the_lethal_arm()
+    test_crossing_reach_mirrors_psucc()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL

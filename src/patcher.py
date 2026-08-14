@@ -2820,7 +2820,10 @@ def _defer_triage_site(dest, num, ttl, sp, trig, cond, stage_override, titles_by
         return False, [], []
     placed, unwrapped = [], []
     benign = []                                    # (ctx, heads_carried, land_controllable)
-    handled = True                                 # ctxs found: the triage owns this site
+    # NOTE: once `ctxs` is non-empty the triage owns this site unconditionally -- the two early
+    # returns above are the only `handled=False` exits. There used to be a `handled` flag and an
+    # `if not handled: return False, [], []` down below; the flag was never reassigned, so the
+    # branch could not run. Removed rather than left as a hedge that reads like a live path.
     prev_g = dctx.get("prev_g")
     frontier = [(c, [], trig["target_script"]) for c in ctxs]
     for _depth in range(6):
@@ -2919,8 +2922,6 @@ def _defer_triage_site(dest, num, ttl, sp, trig, cond, stage_override, titles_by
         if not nxt:
             break
         frontier = nxt
-    if not handled:
-        return False, [], []
     # The benign armings still need their cover -- the legacy flow will not run for this site.
     t2_path = os.path.join(dest, "src", ttl + ".sc")
     for (c, hs, tgt, controllable) in benign:
