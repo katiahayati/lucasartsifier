@@ -593,6 +593,7 @@ def derive_control_selectors(ir):
                     species.add(o.species)
                     changed = True
     ginst = _global_instances(ir)
+    by_sel = {}                                        # selector -> every polarity it is given
 
     def _user_recv(recv):
         if isinstance(recv, dict) and recv.get("t") in ("Object", "Class"):
@@ -622,10 +623,19 @@ def derive_control_selectors(ir):
                     for s2, ps in msgs:
                         if s2 in uprops and ps and I.as_int(ps[0]) in (0, 1):
                             vals.add(I.as_int(ps[0]))
-                if vals == {1}:
-                    out[sel] = "restore"
-                elif vals == {0}:
-                    out.setdefault(sel, "take")
+                by_sel.setdefault(sel, set()).update(vals)
+    # CLASSIFIED ONCE, AFTER EVERY DEFINING CLASS HAS SPOKEN. This used to decide per class,
+    # writing "restore" unconditionally and "take" only via setdefault -- so a selector two
+    # subclasses spell with opposite polarities came out "restore" purely because that branch
+    # overwrote and the other did not (review §4.7). The asymmetry mattered in the deleting
+    # direction: `machine._restore_sels` keeps the 'restore' names, and a state marked as
+    # handing control back is a state `fatal_uses` will call pre-emptable. A selector the
+    # hierarchy uses BOTH ways is not a switch we can name, so it is refused outright.
+    for sel, vals in sorted(by_sel.items()):
+        if vals == {1}:
+            out[sel] = "restore"
+        elif vals == {0}:
+            out[sel] = "take"
     return out
 
 
@@ -1777,13 +1787,17 @@ def _global_instances(ir):
     `(global0 wearingGown:)` in fourteen rooms -- and a global assigned exactly one object
     throughout the game resolves as surely as a `ScriptID` export or a unique name. It is the
     same derivation `_class_globals` already does for the item vocabulary, kept by GLOBAL rather
-    than by class because here the question is which object a receiver denotes."""
+    than by class because here the question is which object a receiver denotes.
+
+    ONE OBJECT AND NOTHING ELSE: a global that is also assigned a computed value somewhere is
+    refused, because "the object it holds" is then a claim about only some of the program."""
     cache = getattr(ir, "_global_insts", None)
     if cache is not None:
         return cache
     by_name = {o.name: o for s in ir.scripts.values() for o in s.objects}
     scr = {o.name: s.number for s in ir.scripts.values() for o in s.objects}
     assigned = collections.defaultdict(set)
+    other = set()                                      # globals also given something else
     for s in ir.scripts.values():
         bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
         for body in bodies:
@@ -1797,8 +1811,16 @@ def _global_instances(ir):
                 if (isinstance(src, dict) and src.get("t") in ("Object", "Class")
                         and src.get("name") in by_name):
                     assigned[ks[0]["index"]].add(src["name"])
+                else:
+                    # ...AND WHAT ELSE IT IS EVER GIVEN. Collecting only the object assignments
+                    # made "assigned exactly one object" true of a global that also holds a
+                    # computed value -- `(= global5 (send ...))` -- which is not the same claim
+                    # at all, and this map is used to say what a RECEIVER denotes. Measured
+                    # 2026-08-14 (review §4.7): four such globals on KQ6 and four on LB2, none
+                    # on the SCI0 pair; refusing them moves no output on any of the four.
+                    other.add(ks[0]["index"])
     cache = {g: (by_name[next(iter(v))], scr[next(iter(v))])
-             for g, v in assigned.items() if len(v) == 1}
+             for g, v in assigned.items() if len(v) == 1 and g not in other}
     try:
         ir._global_insts = cache
     except Exception:                                      # noqa: BLE001
