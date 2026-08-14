@@ -516,6 +516,34 @@ def test_death_values_are_measured():
                      "protected by a different row (or by none)" % (expect, got))
 
 
+# --- 11. two stores claiming one register --------------------------------------------------------
+def test_ambiguous_registers_are_refused():
+    """"Allocation order IS register identity" is the invariant seven lowerings rest on, and
+    nothing checked it. KQ6's 386-396 are claimed by the object-property store AND the
+    property-flag store: reg393 is `(rgLair cliffFace:)` to one and word 709 bit 12 to the
+    other, and two of the eleven are modelled. `render_register` tries the stores in a fixed
+    order, so an ambiguous register would be written back as whichever store is checked first --
+    the phantom-spelling bug this codebase has already shipped twice. Refused instead."""
+    print("\n-- guards.ambiguous_registers: a register two stores claim is unspellable --")
+    import config                                                        # noqa: E402
+    want = {"LSL2": 0, "KQ4": 0, "KQ6": 11, "dagger": 0}
+    for name, n in want.items():
+        cfg = config.by_name(name)
+        if cfg is None or not os.path.exists(cfg.ir_path):
+            check("%s: ambiguous registers" % name, False, "NO IR -- not measured")
+            continue
+        s = M.load(cfg=cfg)
+        amb = G.ambiguous_registers(s.em.ir)
+        check("%s: %d register(s) claimed by two stores" % (name, n), len(amb) == n,
+              detail="measured %r" % (sorted(amb),))
+        if amb:
+            R = sorted(amb)[0]
+            check("%s: an ambiguous register has no spelling" % name,
+                  G.render_register(s, R, 1) is None,
+                  detail="reg%d spelled as %r -- one store's reading, asserted over the "
+                         "other's" % (R, G.render_register(s, R, 1)))
+
+
 def run():
     print("=== test_deletion_soundness ===")
     test_forwarding_sole_producer()
@@ -528,6 +556,7 @@ def run():
     test_store_index_enumeration_is_complete()
     test_edge_bands_are_derived()
     test_death_values_are_measured()
+    test_ambiguous_registers_are_refused()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL

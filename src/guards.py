@@ -649,6 +649,41 @@ def defer_to_entry(s, sp):
 STORE_INDEX_ATTRS = ("_obj_prop_index", "_room_local_index", "_prop_flag_index",
                      "_mask_global_index")
 
+_AMBIGUOUS = {}
+
+
+def ambiguous_registers(ir):
+    """Registers claimed by MORE THAN ONE store -- which must not be spelled at all.
+
+    "Allocation order IS register identity" is the invariant the seven lowerings rest on, and
+    nothing was checking it. MEASURED 2026-08-14 (review §3.6): KQ6's registers 386-396 are
+    claimed by both the object-property store and the property-flag store -- reg393 is
+    `(rgLair cliffFace:)` to one and word 709 bit 12 to the other -- because each allocator
+    starts above the highest global it can SEE, and the flag store's last eleven registers are
+    allocated for bits with no rewritten site, so the property store's scan never saw them.
+    LSL2, KQ4 and LB2 have no overlap.
+
+    Two of the eleven (386, 393) are modelled, so this is live rather than theoretical, and the
+    consequence is the phantom-spelling bug this codebase has shipped twice: `render_register`
+    tries the stores in a fixed order, so an ambiguous register would be written back as
+    whichever store happens to be checked first -- a guard testing something the game does not
+    mean there.
+
+    REFUSED, NOT RESOLVED. Making the allocators disjoint would renumber a store, and the last
+    time registers were renumbered a user-confirmed finding dissolved into noise (see
+    `lower_prop_flags`' own note) -- that is a change that moves a watched surface and wants a
+    human. Refusing to spell the ambiguous ones costs nothing today (no shipped spec names one)
+    and cannot mis-spell tomorrow."""
+    hit = _AMBIGUOUS.get(id(ir))
+    if hit is not None and hit[0] is ir:
+        return hit[1]
+    seen, dup = set(), set()
+    for name in STORE_INDEX_ATTRS:
+        for R in (getattr(ir, name, None) or {}):
+            (dup if R in seen else seen).add(R)
+    _AMBIGUOUS[id(ir)] = (ir, dup)
+    return dup
+
 
 def _stage_spelling(s, musts):
     """`_render_reg_equals` plus the ONE case a stage may add: a promoted PLAIN global.
@@ -992,6 +1027,8 @@ def render_register(s, R, value):
     conditions against the stores' own maps; the spelling below is the game's, via the owner's
     export (`((ScriptID 70 0) stateOf690:)`), so the guard needs no `use` header."""
     ir = getattr(s.em, "ir", None)
+    if ir is not None and R in ambiguous_registers(ir):
+        return None                        # two stores claim it: no spelling is provably right
     op = getattr(ir, "_obj_prop_index", {}) if ir is not None else {}
     if R in op:
         sn, sel = op[R]
