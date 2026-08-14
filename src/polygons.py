@@ -212,6 +212,61 @@ def _room_object(script):
     return None
 
 
+_EDGE_BANDS = {}
+
+
+def edge_bands(ir):
+    """`{"south": y, "east": x, "west": x}` -- the coordinates at which THIS GAME hands the ego
+    off at a screen edge, read from its own ego class. None when the game does not spell them.
+
+    The rule is the game's, not the engine's, and it is written down in one place: the ego's
+    `doit` assigns `edgeHit` from a cond over its own position. All four titles here spell it
+    identically --
+
+        (= edgeHit (cond ((<= x 0) 4) ((>= x 319) 2) ((>= y 189) 3)
+                         ((<= y (global2 horizon:)) 1) (else 0)))
+
+    -- which is exactly why it must be derived rather than pinned: agreement across four games
+    is what a hardcoded 320x190 assumption looks like right up until the game that disagrees,
+    and this rule DELETES edges, so a band that is wrong in the small direction seals a room
+    the player can leave. Found as a hand-picked `H - 6` / `W - 40` by the v1.0-lb2 review
+    (§1.1) and re-derived here.
+
+    NORTH IS NOT RETURNED even though the cond carries it: its bound is `(global2 horizon:)`, a
+    property read rather than a literal -- the game itself declines to state a number -- and the
+    ego's height would be needed on top of it. The refusal `dead_nav_exits` documents is thus
+    the game's own, not a modelling shortcut."""
+    hit = _EDGE_BANDS.get(id(ir))
+    if hit is not None:
+        return hit[1]
+    out = {}
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for body in o.methods.values():
+                for n in I.walk(body):
+                    if not (isinstance(n, dict) and n.get("t") == "Assignment"):
+                        continue
+                    ks = n.get("kids") or []
+                    if not (ks and isinstance(ks[0], dict)
+                            and ks[0].get("name") == "edgeHit" and len(ks) > 1):
+                        continue
+                    for c in I.walk(ks[1]):
+                        if not (isinstance(c, dict) and c.get("t") in ("Le", "Ge")):
+                            continue
+                        kk = c.get("kids") or []
+                        var = kk[0].get("name") if kk and isinstance(kk[0], dict) else None
+                        lit = I.as_int(kk[1]) if len(kk) > 1 else None
+                        if lit is None or var not in ("x", "y"):
+                            continue
+                        key = ("west" if c["t"] == "Le" else "east") if var == "x" else \
+                              ("south" if c["t"] == "Ge" else None)
+                        if key and key not in out:
+                            out[key] = lit
+    got = out if {"south", "east", "west"} <= set(out) else None
+    _EDGE_BANDS[id(ir)] = (ir, got)
+    return got
+
+
 def dead_nav_exits(ir, room):
     """[{room, edge, declared_room}] -- declared s/e/w props whose engine trigger zone the
     room's own unconditional obstacle layout never lets the ego reach. A dead letter: the
@@ -287,17 +342,21 @@ def dead_nav_exits(ir, room):
                 seen.add((nx, ny))
                 q.append((nx, ny))
     # The trigger zones, in the ego's BASE coordinates (see the docstring for why north has
-    # none): south fires with the base row at the screen bottom; east/west with base x within
-    # half an ego of the side, over-approximated by a 40px margin so a wide scaled ego cannot
-    # out-reach the proof.
-    margin_ew, margin_s = 40, 6
+    # none). The BANDS come from the game (`edge_bands`, the ego's own `edgeHit` cond); the
+    # SLACK on top of them is ours, an over-approximation in the keeping direction -- the zone
+    # is made easier to reach than the engine makes it, so a room is called dead only when it
+    # falls well short. 40px stands in for a wide scaled ego's footprint on the sides.
+    bands = edge_bands(ir)
+    if bands is None:
+        return []                     # the game never spells its handoff: keep every edge
+    slack_ew, slack_s = 40, 6
     zones = {
         "south": [(gx, gy) for gx in range(gw) for gy in range(gh)
-                  if gy * step + step // 2 >= H - margin_s],
+                  if gy * step + step // 2 >= bands["south"] - slack_s],
         "east":  [(gx, gy) for gx in range(gw) for gy in range(gh)
-                  if gx * step + step // 2 >= W - margin_ew],
+                  if gx * step + step // 2 >= bands["east"] - slack_ew],
         "west":  [(gx, gy) for gx in range(gw) for gy in range(gh)
-                  if gx * step + step // 2 <= margin_ew],
+                  if gx * step + step // 2 <= bands["west"] + slack_ew],
     }
     out = []
     for d, dst in declared:

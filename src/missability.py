@@ -2221,13 +2221,23 @@ class IrSccReach(SccReach):
         # alternative naming exactly ONE register does a single value of a single register mean
         # death by itself -- and then the excluded values are precisely the death signal.
         #
-        # KQ6 is the case and the reason this exists: `proc0_1` is the imperative death procedure
-        # (`Main.sc:251` -- set global160, set flag 44, `newRoom: 640`) and `rm640` plays the death
-        # cartoon iff flag 44 is set, so reg216's survival condition is the lone `216 == 0` and
-        # `216 == 1` MEANS DEAD. `free_running_traps` was then classifying the death signal as an
-        # adversarial plot clock (see its guard). Deliberately NOT claiming LB2's `123 == 5`: act
-        # 5's rooms kill you only in conjunction with `12 == 420`, two alternatives, so no single
-        # value is death -- being in act 5 is a place you can stand, being dead is not.
+        # The rule came from KQ6's flag 44: `proc0_1` is the imperative death procedure (`Main.sc`
+        # -- set global160, set flag 44, `newRoom: 640`), `rm640` plays the death cartoon iff
+        # flag 44 is set, and `free_running_traps` was classifying that signal as an adversarial
+        # plot clock (see its guard). Deliberately NOT claiming LB2's `123 == 5`: act 5's rooms
+        # kill you only in conjunction with `12 == 420`, two alternatives, so no single value is
+        # death -- being in act 5 is a place you can stand, being dead is not.
+        #
+        # ⚠️ RE-MEASURED 2026-08-14 (review §2.4, "single-instance calibration"), and the recorded
+        # instance was no longer the instance: this now yields `{173: {0}}` on KQ6 and nothing on
+        # the other three. Register 173 is FLAG 1 (`flag_synth_base` 172), written by
+        # `minoTrigger` and demanded by the labyrinth's rm411 as its SOLE survival row -- so in
+        # rm411 flag 1 == 0 means dead, which is a truer instance of this rule than flag 44 ever
+        # was (a real hazard rather than the bookkeeping the death proc does on its way out).
+        # Flag 44's register is 216 and it no longer produces a single-row single-register trap.
+        # The claim above was written when it did; `test_deletion_soundness` now pins the
+        # measured set, because a rule whose applicability moves silently is the same defect as
+        # a census that no longer reproduces.
         self._death_values = defaultdict(set)
         for room, rows in traps.items():
             if len(rows) != 1:
@@ -4229,6 +4239,11 @@ class IrSccReach(SccReach):
                     # cured with a threshold. Measured: KQ4's nightfall g100 (set_in=111, the
                     # play-validated positive) has NO death values and is untouched; LSL2 has no
                     # traps; LB2's 18 trap registers name none.
+                    #
+                    # (RE-MEASURED 2026-08-14: the set this reads is now `{173: {0}}` -- flag 1,
+                    # rm411's sole survival row -- not flag 44's reg216, which no longer produces
+                    # a single-row single-register trap. The rule and its direction are unchanged;
+                    # only the instance moved. See `_apply_death_traps` for the measurement.)
                     continue
                 forced = byval.get(T, set())
                 reset = set().union(*(byval[v] for v in byval if v != T)) if byval else set()

@@ -470,6 +470,52 @@ def test_store_index_enumeration_is_complete():
                      "spelled as globals the game never reads" % (sorted(missing),))
 
 
+# --- 9. the screen-edge bands, read from the game instead of picked ------------------------------
+def test_edge_bands_are_derived():
+    """`dead_nav_exits` DELETES an edge, so the trigger band it proves unreachable had better be
+    the game's own. It used to be `H - 6` / `W - 40`, hand-picked pixel constants standing in
+    for the engine's handoff (review §1.1) -- and a band wrong in the small direction seals a
+    room the player can walk out of."""
+    print("\n-- polygons.edge_bands: the handoff comes from the ego's own edgeHit cond --")
+    import config                                                        # noqa: E402
+    import polygons as PG                                                # noqa: E402
+    for name in ("LSL2", "KQ4", "KQ6", "dagger"):
+        cfg = config.by_name(name)
+        if cfg is None or not os.path.exists(cfg.ir_path):
+            check("%s: the edge bands are derived" % name, False, "NO IR -- not compared")
+            continue
+        bands = PG.edge_bands(I.load_ir(cfg.ir_path))
+        check("%s: the edge bands are read from the game" % name,
+              bands == {"west": 0, "east": 319, "south": 189},
+              detail="%r -- all four titles spell `(cond ((<= x 0) 4) ((>= x 319) 2) "
+                     "((>= y 189) 3) ...)` in Ego::doit" % (bands,))
+    # ...and NORTH is absent because the game itself declines to state a number for it: its
+    # bound is `(global2 horizon:)`, a property read. The refusal is the game's, not ours.
+    check("north is not among them (the game's own bound is a property, not a literal)",
+          "north" not in (PG.edge_bands(I.load_ir(config.by_name("dagger").ir_path)) or {}))
+
+
+# --- 10. the death VALUES, whose applicability moved once already --------------------------------
+def test_death_values_are_measured():
+    """`_death_values` fires only where a room's SOLE survival row names ONE register, and that
+    is a claim about the games, not about the rule -- so when the shape stops occurring, the
+    protection it gives `free_running_traps` disappears with no failure anywhere (review §2.4).
+    Its docstring named KQ6 flag 44 / reg216; re-measured, it is flag 1 / reg173, rm411's sole
+    survival row. Pinned so the next move is loud rather than silent."""
+    print("\n-- missability._death_values: the measured set, pinned --")
+    import config                                                        # noqa: E402
+    want = {"KQ6": {173: {0}}, "dagger": {}, "LSL2": {}, "KQ4": {}}
+    for name, expect in want.items():
+        cfg = config.by_name(name)
+        if cfg is None or not os.path.exists(cfg.ir_path):
+            check("%s: death values are as measured" % name, False, "NO IR -- not compared")
+            continue
+        got = dict(M.load(cfg=cfg)._death_values)
+        check("%s: death values are as measured" % name, got == expect,
+              detail="expected %r, got %r -- if this MOVED, `free_running_traps` is now "
+                     "protected by a different row (or by none)" % (expect, got))
+
+
 def run():
     print("=== test_deletion_soundness ===")
     test_forwarding_sole_producer()
@@ -480,6 +526,8 @@ def run():
     test_fork_escape_is_not_the_lethal_arm()
     test_crossing_reach_mirrors_psucc()
     test_store_index_enumeration_is_complete()
+    test_edge_bands_are_derived()
+    test_death_values_are_measured()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
