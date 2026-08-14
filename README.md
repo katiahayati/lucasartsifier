@@ -7,6 +7,10 @@ Sierra games, unlike LucasArts ones, let you get stuck. Forget the sunscreen in 
 the cruise ship, and you die days later on the raft with no way back. This finds every such trap
 automatically and blocks the crossing that causes it.
 
+Several classes of softlocks are detected and caught: missing items (leaving or entering a sealed region
+without required items); random game events (the whale catching you off-guard in King's Quest 4); and game clock 
+advances (night-time in King's Quest 4; acts in Laura Bow 2).
+
 A patched game is playable normally, because the patch mechanism is how Sierra shipped its own bug fixes.
 You can set the guard behavior in-game: **Full** prevents every dangerous action; **Lite** prevents the action
 once, then allows it with a warning; and **Off** turns the guards off.
