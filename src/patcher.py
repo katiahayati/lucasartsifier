@@ -1908,15 +1908,69 @@ def guard_flip_interceptor(text, pocket, stage_src, cond):
     nothing inside the arm is consumed while held (the retracted-consumption rule satisfied
     by construction), and retry is free because the interceptor re-tests on every exit.
 
-    The arm must CONTAIN the spec's own stage test -- the flip this demand scopes to; an arm
-    that does not pin the stage is somebody else's crossing -- and its body must route into
-    the pocket (`(= param<N> <pocket>)` or `newRoom: <pocket>`). Only the retested methods
+    The arm must PIN the spec's own stage test -- the flip this demand scopes to; an arm that
+    does not pin the stage is somebody else's crossing -- and its body must route into the
+    pocket (`(= param<N> <pocket>)` or `newRoom: <pocket>`). Only the retested methods
     `newRoom`/`doit` are searched: the same pair as `guard_register_write`, for the same
     reason (a `cue` fires once when cued -- refusing there would never retry; rm520's own
-    `cue` performs the post-commit delivery and must not be touched)."""
+    `cue` performs the post-commit delivery and must not be touched).
+
+    EVERY MATCHING ARM, NOT THE FIRST. A commitment reached through N doors and guarded at one
+    of them is not guarded: the player takes another door and the surface, which freezes the
+    site count, reports the same `sites=1` it would have reported for a single-door commit.
+    That is finding #4 and finding #8 in this project's own history, and the count returned
+    here is what makes the difference visible from outside. Two arms of one `cond`, two `cond`s,
+    a `doit` twin of the `newRoom` commit -- all of them get the demand. Edits are applied
+    right-to-left so earlier spans stay valid as later text grows.
+
+    PINNING IS STRUCTURAL, NOT SUBSTRING. `want_stage in norm(head)` accepted any head the
+    stage's TEXT appeared in, which is two different mistakes: `(or (== global123 4) (== global123
+    9))` runs at act 9 as well, so conjoining the demand there refuses a crossing the spec never
+    scoped (the wall-shaped failure, the one this project holds to be worse than the bug), and
+    `(not (== global123 4))` means every act EXCEPT the one being scoped. So the head is parsed:
+    the stage must appear as a TOP-LEVEL CONJUNCT -- the head is the stage test itself, or an
+    `(and ...)` one of whose direct kids is. Anything else, including a stage buried under an
+    `or` or a `not`, is refused, and the demand falls back to whatever placement would have
+    happened without an interceptor."""
     norm = lambda s: re.sub(r"\s+", " ", s).strip()          # noqa: E731
     want_stage = norm(stage_src)
     route = re.compile(r"\(=\s*param\d+\s+%d\s*\)|newRoom:\s*%d\b" % (pocket, pocket))
+
+    def _pins_stage(head):
+        """Is `want_stage` a conjunct of this head -- at any depth of nested `and`s?
+
+        THROUGH the `and` nesting, because conjunction is associative and one of the heads this
+        has to recognise is OUR OWN previous rewrite. When a second demand forwards onto a hold
+        that is already wrapped, the arm reads `(and (and <stage> <game test>) <first demand>)`:
+        the stage sits one level down, and it is pinned exactly as hard as it was before we
+        touched it. Rejecting that spelling silently dropped LB2's forwarded act-5 demand from
+        the patch -- caught by the surface diff, not by reasoning, which is the argument for
+        diffing the surface at all. `or` and `not` are NOT walked through: those are the two
+        shapes that make an arm run when the stage does not hold."""
+        h = norm(head)
+        if h == want_stage:
+            return True
+        if not h.startswith("(and "):
+            return False                      # (or ...) / (not ...) / a call: not a pinning
+        i = len("(and")                       # walk the direct kids of the `and`
+        while i < len(h) - 1:
+            while i < len(h) - 1 and h[i] == " ":
+                i += 1
+            if i >= len(h) - 1:
+                break
+            if h[i] != "(":                   # a bare atom kid (a variable): skip the token
+                j = i
+                while j < len(h) - 1 and h[j] not in " )":
+                    j += 1
+                i = j
+                continue
+            ks, ke = _block_span(h, i)
+            if _pins_stage(h[ks:ke]):
+                return True
+            i = ke
+        return False
+
+    edits, n = [], 0
     for meth in ("newRoom", "doit"):
         for mm in re.finditer(r"\(method\s+\(%s\b" % meth, text):
             ms, me = _block_span(text, mm.start())
@@ -1930,21 +1984,22 @@ def guard_flip_interceptor(text, pocket, stage_src, cond):
                     if i >= ce or region[i] != "(":
                         break
                     as_, ae = _block_span(region, i)
-                    arm = region[as_:ae]
                     j = as_ + 1
                     while j < ae and region[j] in " \t\r\n":
                         j += 1
                     if j < ae and region[j] == "(":
                         hs, he = _block_span(region, j)
                         head = region[hs:he]
-                        if want_stage in norm(head) and route.search(region[he:ae]):
+                        if _pins_stage(head) and route.search(region[he:ae]):
                             new_head = ("(and %s %s)  ; softlock-guard: hold the act flip "
                                         "until its carries are obtainable"
                                         % (head, stock_or(cond)))
-                            new_region = region[:hs] + new_head + region[he:]
-                            return text[:ms] + new_region + text[me:], 1
+                            edits.append((ms + hs, ms + he, new_head))
+                            n += 1
                     i = ae
-    return text, 0
+    for s, e, rep in sorted(edits, reverse=True):
+        text = text[:s] + rep + text[e:]
+    return text, n
 
 
 _SOURCE_CACHE = {}

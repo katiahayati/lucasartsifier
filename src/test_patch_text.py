@@ -131,6 +131,17 @@ def test_stage_match_is_structural():
           P.guard_flip_interceptor(neg, 26, STAGE, COND)[1] == 0,
           detail="the arm runs at every act EXCEPT the one the spec scopes to")
 
+    # ...and the head this function has to recognise most often is ITS OWN PREVIOUS OUTPUT: a
+    # second demand forwarded onto the same hold arrives at an arm we already wrapped, where
+    # the stage sits one `and` deeper. It is pinned exactly as hard as before -- conjunction is
+    # associative -- and refusing it silently dropped LB2's forwarded act-5 demand from the
+    # emitted patch. The surface diff caught that; this check is so the next one does not need to.
+    once, n1 = P.guard_flip_interceptor(RM520, 26, STAGE, COND)
+    twice, n2 = P.guard_flip_interceptor(once, 26, STAGE, "(gEgo has: 30)")
+    check("an arm THIS function already wrapped is still pinned (forwarding re-matches it)",
+          n1 == 1 and n2 == 1 and _wrapped_arms(twice) == 2,
+          detail="second pass n=%r:\n%s" % (n2, twice))
+
 
 def run():
     print("=== test_patch_text ===")
