@@ -226,7 +226,10 @@ def run():
                  # register_strandings joined the caught set 2026-08-02, the day it turned causal
                  # and its one surviving row was USER-CONFIRMED (the letter). A detector carrying
                  # a confirmed verdict may not live outside the oracle.
-                 s.register_strandings()):
+                 s.register_strandings(),
+                 # ownedby_death_folds joined 2026-08-14 (the KQ5 phase-1 build): zero rows on
+                 # KQ6, watched here so one appearing is a suspicion, not a silent addition.
+                 s.ownedby_death_folds()):
         caught |= {_unit(s.g.item_name(r["item"])) for r in rows}
     caught_names = _names(caught)
 

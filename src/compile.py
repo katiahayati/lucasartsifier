@@ -107,7 +107,7 @@ def _count_cues_send(recv, msgs):
     return n
 
 
-def _interp(path, is_death):
+def _interp(path, is_death, state_k=None):
     st = Step()
     armed = False
     fixed = False   # an immediate transition already taken
@@ -173,7 +173,17 @@ def _interp(path, is_death):
         elif tp in ("Increment", "Decrement"):
             d = node["kids"][0]
             delta = 1 if tp == "Increment" else -1
-            if I.is_local_or_temp(d):
+            if d.get("t") == "Property" and d.get("name") == "state" \
+                    and state_k is not None and not fixed:
+                # `(++ state)` in state K's body is `(= state K+1)`: the pending cue's
+                # changeState(state+1) lands one state further on -- the skip-the-next-state
+                # idiom. Read as nothing (which it was), the cue advanced to the state the
+                # game skips and the state it lands on went unreachable: KQ5's rm42 keeps
+                # its death chain (states 8-11) behind exactly this bump, so the roc-nest
+                # fork read as survivable on both arms. Same rule as `(= state k)` above;
+                # relative, so it needs to know which state's body this is.
+                st.trans = ("SETSTATE", state_k + delta); fixed = True
+            elif I.is_local_or_temp(d):
                 st.counters.append(((d["vtype"][0], d["index"]),
                                     "inc" if delta > 0 else "dec", None))
             elif I.is_global(d):
@@ -540,7 +550,7 @@ def compile_machine(machine, is_death):
     gdom = getattr(machine, "glob_dom", {}) or {}
     dests = getattr(machine, "var_dests", None) or {}
     lregs = getattr(machine, "local_regs", None) or {}
-    steps = {k: [_interp(p, is_death) for p in _paths_of(body)]
+    steps = {k: [_interp(p, is_death, state_k=k) for p in _paths_of(body)]
              for k, body in machine.bodies.items()}
     carry_cues(steps, machine.start)      # SCI cross-state cue carry: PARK -> ADVANCE where covered
     _entry_states = {k for k, _ in machine.entries} | {k for k, _ in machine.init_entries}

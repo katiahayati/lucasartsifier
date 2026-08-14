@@ -122,6 +122,58 @@ def _loc_placed_required(guard, placed):
     return walk(guard, True)
 
 
+def _conj_spine(guard):
+    """Flatten a guard (tree or list) to its top-level conjunct list -- the atoms that MUST
+    hold. The same discipline as `_must_hold`: nothing under an OR or a negation is a
+    conjunct."""
+    if guard is None:
+        return []
+    if isinstance(guard, list):
+        out = []
+        for g in guard:
+            out.extend(_conj_spine(g))
+        return out
+    if isinstance(guard, GAnd):
+        out = []
+        for k in guard.kids:
+            out.extend(_conj_spine(k))
+        return out
+    return [guard]
+
+
+def _is_owner_atom(g):
+    return isinstance(g, Pred) and g.kind == "LOC" and g.op == "ownedBy"
+
+
+def _fold_demands(guard, placed):
+    """The negated owner-value conjuncts of a guard's top-level AND spine, as demand groups.
+
+    A conjunct `NOT LOC(i@X)` -- or `NOT (LOC(i1@X1) OR LOC(i2@X2) ...)` -- on a machine that
+    cannot be survived says: the machine arms UNLESS one of those owner values holds, so the
+    DISJUNCTION of them is demanded of whoever arrives. Only placements count
+    (`X in placed[i]`, the `_loc_placed_required` discipline): a negated is-it-still-there
+    check on an item's initial resting room is "already taken", not a value the player can
+    produce. A group with any non-placement member is dropped whole, because the demand we
+    would state for the rest is narrower than the game's.
+
+    Returns `(groups, context)`: each group a list of `(item, owner_room)`, and `context` the
+    remaining readable conjuncts (the fold's arming context -- rm86's `prev == 85`)."""
+    groups, ctx = [], []
+    for c in _conj_spine(guard):
+        got = None
+        if isinstance(c, GNot):
+            kid = c.kid
+            if _is_owner_atom(kid):
+                got = [(kid.var, kid.value)]
+            elif isinstance(kid, GOr) and kid.kids and all(_is_owner_atom(k) for k in kid.kids):
+                got = [(k.var, k.value) for k in kid.kids]
+        if got is None:
+            ctx.append(c)
+        elif all(isinstance(x, int) and x in placed.get(i, ()) for (i, x) in got):
+            groups.append(got)
+    return groups, ctx
+
+
 def _collapse_by(rows, key, merge_fields, value_key=None):
     """Merge rows that state the SAME FACT, keeping the first row's identity and unioning the
     listed fields. The shared body of `_collapse_flips` and `_collapse_value_flips`.
@@ -1639,6 +1691,66 @@ def _survivable(info, unavoidable, handoff, start=None, preempt=frozenset()):
                     break
     start = info.get("start", 0) if start is None else start
     return start not in states or start in safe
+
+
+def _room_unavoidable(infos, sources, reach_rooms):
+    """`(doomed, handoff, unavoidable, preempt)` for one room's machines -- the shared front
+    half of every detector that must tell a death the player can still dodge from one they
+    cannot. Lifted out of `fatal_uses` the day `ownedby_death_folds` needed the identical
+    twenty lines ([[same-rule-two-places]]); the corrections recorded below were paid for
+    once and must not fork.
+
+    Same-slot competitors, for the pre-emption rule in `_survivable`: the slot a machine's
+    arming wrote (`entry_recv`) is the slot a rival `setScript:` steals.
+
+    ...AND ONLY THE ONES THE PLAYER CAN ACTUALLY ARM. Stealing the slot is an ACTION, so a
+    competitor is an escape only while the player can perform it: `entry_musts` is the price
+    of arming a machine by any route, and a price that cannot be paid buys no escape. The
+    pre-emption rule was reading the slot map alone, which says who COULD hold the slot,
+    never who the player can PUT there -- so a rival gated on something unobtainable deleted
+    a death the player still dies of.
+
+    The test is deliberately the weakest one that is still a proof: an item with no reachable
+    source at all. LB2's trunk -- the case the rule exists for -- keeps every one of its
+    escapes, `sInsertMeat`'s meat included, because the meat has a source; what it cannot
+    keep is an escape whose price does not exist in the game."""
+    _arms, _fatal, doomed, handoff = _trap_graph(infos)
+    slots = defaultdict(set)
+    for i in infos:
+        for rc in (i.get("entry_recv") or ()):
+            if rc is not None:
+                slots[rc].add(i["inst"])
+    by_inst = {i["inst"]: i for i in infos}
+
+    def _armable(m):
+        i = by_inst.get(m)
+        ents = list((i or {}).get("entries") or ()) \
+            + list((i or {}).get("init_entries") or ())
+        if i is None or not ents:
+            return True                        # no arming we can read: not a proof of
+                                               # anything ([[arming-floor]]), so as before
+        musts = entry_musts(i)
+        return any(all(sources.get(it, set()) & reach_rooms
+                       for it in musts.get(K, ())) for K, _g in ents)
+
+    def preempt(i):
+        return frozenset(m for rc in (i.get("entry_recv") or ()) if rc is not None
+                         for m in slots[rc] if m != i["inst"] and _armable(m))
+    unavoidable = {i["inst"] for i in infos
+                   if i["inst"] in doomed
+                   and not _survivable(i, doomed, handoff, preempt=preempt(i))}
+    # ...and settle the mutual dependency the same way `_trap_graph` settles `doomed`: a
+    # state that hands off to a machine we have just condemned is not an escape either.
+    changed = True
+    while changed:
+        changed = False
+        for i in infos:
+            if i["inst"] in unavoidable or i["inst"] not in doomed:
+                continue
+            if not _survivable(i, unavoidable, handoff, preempt=preempt(i)):
+                unavoidable.add(i["inst"])
+                changed = True
+    return doomed, handoff, unavoidable, preempt
 
 
 def death_traps(em, regs, dom):
@@ -3238,56 +3350,8 @@ class IrSccReach(SccReach):
         for room, infos in _trap_rooms(self.em).items():
             if room not in self.reach_rooms:
                 continue
-            _arms, _fatal, doomed, handoff = _trap_graph(infos)
-            # Same-slot competitors, for the pre-emption rule in `_survivable`: the slot a
-            # machine's arming wrote (`entry_recv`) is the slot a rival `setScript:` steals.
-            #
-            # ...AND ONLY THE ONES THE PLAYER CAN ACTUALLY ARM. Stealing the slot is an ACTION,
-            # so a competitor is an escape only while the player can perform it: `entry_musts`
-            # is the price of arming a machine by any route, and a price that cannot be paid
-            # buys no escape. The pre-emption rule was reading the slot map alone, which says
-            # who COULD hold the slot, never who the player can PUT there -- so a rival gated
-            # on something unobtainable deleted a death the player still dies of.
-            #
-            # The test is deliberately the weakest one that is still a proof: an item with no
-            # reachable source at all. LB2's trunk -- the case the rule exists for -- keeps
-            # every one of its escapes, `sInsertMeat`'s meat included, because the meat has a
-            # source; what it cannot keep is an escape whose price does not exist in the game.
-            slots = defaultdict(set)
-            for i in infos:
-                for rc in (i.get("entry_recv") or ()):
-                    if rc is not None:
-                        slots[rc].add(i["inst"])
-            by_inst = {i["inst"]: i for i in infos}
-
-            def _armable(m):
-                i = by_inst.get(m)
-                ents = list((i or {}).get("entries") or ()) \
-                    + list((i or {}).get("init_entries") or ())
-                if i is None or not ents:
-                    return True                        # no arming we can read: not a proof of
-                                                       # anything ([[arming-floor]]), so as before
-                musts = entry_musts(i)
-                return any(all(self.sources.get(it, set()) & self.reach_rooms
-                               for it in musts.get(K, ())) for K, _g in ents)
-
-            def _preempt(i):
-                return frozenset(m for rc in (i.get("entry_recv") or ()) if rc is not None
-                                 for m in slots[rc] if m != i["inst"] and _armable(m))
-            unavoidable = {i["inst"] for i in infos
-                           if i["inst"] in doomed
-                           and not _survivable(i, doomed, handoff, preempt=_preempt(i))}
-            # ...and settle the mutual dependency the same way `_trap_graph` settles `doomed`: a
-            # state that hands off to a machine we have just condemned is not an escape either.
-            changed = True
-            while changed:
-                changed = False
-                for i in infos:
-                    if i["inst"] in unavoidable or i["inst"] not in doomed:
-                        continue
-                    if not _survivable(i, unavoidable, handoff, preempt=_preempt(i)):
-                        unavoidable.add(i["inst"])
-                        changed = True
+            doomed, handoff, unavoidable, _preempt = _room_unavoidable(
+                infos, self.sources, self.reach_rooms)
             for info in infos:
                 if info["inst"] not in doomed:
                     continue
@@ -3315,6 +3379,97 @@ class IrSccReach(SccReach):
                         seen.add((it, room))
                         out.append({"item": it, "room": room, "machine": info["inst"],
                                     "states": sorted(K for K, _g in lethal)})
+        return out
+
+    def ownedby_death_folds(self):
+        """Arrivals that fork on an OWNER VALUE, where the losing arm is a death the player
+        cannot dodge -- the value is therefore DEMANDED at the room's entry. KQ5 is the
+        specimen game; the class is the ownedBy store read much later than it is written:
+
+          * ENTRY fold: rm86 kidnapped-arrival runs `yourStuck` -- a pure-timer death --
+            unless some throwable's owner is 6 (the cat scene banked a throw). `yourStuck`'s
+            init-entry guard carries `NOT (LOC(8@6) OR ...)` on its AND spine, so the
+            disjunction is the demand and `prev == 85` is the context.
+          * STATE fork: rm42's `hatch` (one machine, the roc cutscene) branches state 6 on
+            `owner(19) == 34` -- lamb fed to the eagle -> EXIT 43; anything else ->
+            `(++ state)` into the death chain. One arm survives, its complement does not, so
+            the owner value is demanded by the arrival that runs the machine.
+
+        Three disciplines keep this honest:
+          * "cannot be survived" is `_room_unavoidable` -- `_survivable` with pre-emption,
+            the same classifier `fatal_uses` answers to, not `doomed` (death merely
+            reachable), which is the mistake that once condemned the items that SAVE you.
+          * a machine with a CHASE state makes no claim (`machine._chases`): its death
+            completes only by catching the moving player, a race the player can decline by
+            leaving -- KQ4's rm49 dog is escapable in play and must not condemn the Bone,
+            and KQ5's rm36 yeti is caught compositionally by rm35's entry fold instead
+            (arriving from 36 unfed is a scripted kill, no race).
+          * only PLACEMENT values are demanded (`_fold_demands`): a value the player cannot
+            produce is not advice.
+
+        Rows are demands, not yet windows: whether the value is still producible when you
+        get there is the window-closure question (phase 3), read over these rows'
+        `demand_group`/`context`."""
+        out, seen = [], set()
+        for room, infos in _trap_rooms(self.em).items():
+            if room not in self.reach_rooms:
+                continue
+            doomed, handoff, unavoidable, preempt = _room_unavoidable(
+                infos, self.sources, self.reach_rooms)
+
+            def _emit(info, groups, ctx, state=None):
+                for grp in groups:
+                    for (it, dst) in grp:
+                        key = (it, dst, room, info["inst"], state)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        out.append({
+                            "item": it, "item_name": self.g.item_name(it),
+                            "dest": dst, "need_room": room, "machine": info["inst"],
+                            "state": state,
+                            "pattern": "entry-fold" if state is None else "state-fork",
+                            "demand_group": sorted((i2, d2) for (i2, d2) in grp),
+                            "context": {r: v for (r, v) in _must_equal(ctx)}})
+
+            for info in infos:
+                states = info.get("states") or {}
+                if not states or not info.get("init_entries") or info.get("chase_states"):
+                    continue
+                # ---- ENTRY fold: the whole machine is the losing arm ----------------------
+                if info["inst"] in unavoidable:
+                    for (_k, g) in info["init_entries"]:
+                        groups, ctx = _fold_demands(g, self.em.ts.placed)
+                        _emit(info, groups, ctx)
+                # ---- STATE fork: the fork lives inside one machine ------------------------
+                surv = {K: _survivable(info, unavoidable, handoff, start=K,
+                                       preempt=preempt(info)) for K in states}
+                hands = any(m in unavoidable for (a, K) in handoff if a == info["inst"]
+                            for m in (handoff.get((a, K)) or {}))
+
+                def _cont_ok(K, tr):
+                    if tr and tr[0] == "DEATH":
+                        return False
+                    if tr and tr[0] == "EXIT":
+                        return True
+                    nxt = _succ_state(K, tr)
+                    return (surv[nxt] if (nxt is not None and nxt in states)
+                            else not hands)
+
+                for K, paths in states.items():
+                    for i, (g1, _w1, _gg1, _c1, tr1) in enumerate(paths):
+                        f1 = _conj_spine(g1)
+                        for a in [x for x in f1 if _is_owner_atom(x)]:
+                            n = GNot(kid=a)
+                            rest1 = [x for x in f1 if x != a]
+                            for (g2, _w2, _gg2, _c2, tr2) in paths:
+                                f2 = _conj_spine(g2)
+                                if n not in f2 or [x for x in f2 if x != n] != rest1:
+                                    continue
+                                if _cont_ok(K, tr1) and not _cont_ok(K, tr2) \
+                                        and isinstance(a.value, int) \
+                                        and a.value in self.em.ts.placed.get(a.var, ()):
+                                    _emit(info, [[(a.var, a.value)]], [], state=K)
         return out
 
     def dangerous_sinks(self):

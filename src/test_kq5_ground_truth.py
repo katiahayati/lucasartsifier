@@ -15,10 +15,15 @@ Mordack's machine) be carried across (both caught). The cat scene (rm6) and dog 
 exchange slots over one throwable pool {Shoe 8, Stick 16, Leg_of_Lamb 19, Fish 5}; a successful
 cat throw is recorded as `put: <item> 6` in the ownedBy store, read by rm86's kidnapped-arrival
 fork -- `rescue` (which still demands the Hammer) vs `yourStuck` (an unpreventable timed death).
-Flag 83 closes the cat window ON ARMING, not on success -- the one-shot-window class. The four
-deliberate REDs below are that complex plus the fortune teller's needle slot and the witch
-region's worn-amulet fold; each is a real assertion that flips green when its detector lands,
-per the promotion contract in tools/run_tests.py.
+Flag 83 closes the cat window ON ARMING, not on success -- the one-shot-window class.
+
+PHASE 1 LANDED 2026-08-14: `ownedby_death_folds` (arrival forks on an owner value; the losing
+arm is a death the player cannot dodge) flipped the kidnap-read, lamb-fold and pie reds green
+-- their rows are mechanism-pinned below. The deliberate REDs that remain: the Hammer walk
+(phase 2), the two window-closure halves (phase 3: flag 83 closes on arming; flag 36's writer
+needs the fish), the needle slot, the region-scope amulet fold, and the tambourine FP; each is
+a real assertion that flips green when its build lands, per the promotion contract in
+tools/run_tests.py.
 """
 import os
 import sys
@@ -42,6 +47,19 @@ EXPECTED_CAUGHT = {
     # Rope on the branch at rm30 kills you (the ledge is the survivable target; walkthrough-
     # confirmed "the branch is too weak"). fatal_uses' row names the machine.
     "Rope",
+    # ✅ PROMOTED 2026-08-14 (phase 1, `ownedby_death_folds`): arrivals that fork on an OWNER
+    # VALUE with an unpreventable death on the losing arm. Three softlocks flipped together:
+    #   * the POOL at the kidnap read -- rm86's `yourStuck` (pure-timer death) arms unless
+    #     some throwable's owner is 6, so all four pool items carry the rm86 demand under
+    #     prev == 85 (Shoe and Stick keep their sink rows too; Leg_of_Lamb and Fish join here);
+    #   * the roc's-nest lamb fold -- rm42 `hatch` state 6 forks on owner(19) == 34, the
+    #     losing arm hidden behind a `(++ state)` skip the transition model now reads;
+    #   * the pie at the yeti's door -- rm35 arriving from rm36 with the yeti unfed is the
+    #     scripted `killEgo` kill (the rm36 chase itself makes no claim: a `Chase` state is a
+    #     race the player can decline by leaving, which is what keeps KQ4's rm49 dog row out).
+    "Leg_of_Lamb",
+    "Fish",
+    "Pie",
 }
 
 # B -- REAL, PARTIALLY CAUGHT: the sink rows name the right sites (spending a pool item at the
@@ -81,20 +99,48 @@ MECHANISM_ROWS = {
     "Shell": {"analyze: need@rm46 sources=[49] frontier=rm49->rm650|rm49->rm654"},
     "Fishhook": {"analyze: need@rm67 sources=[90] frontier=rm49->rm650|rm49->rm654"},
     "Rope": {"fatal_uses: {'room': 30, 'machine': 'ropeOnBranch', 'states': [0]}"},
+    # The three phase-1 catches, pinned to their fold rows. The rm86 row is ONE fact stated
+    # for each pool member: the demand is the disjunction (`demand_group`), the context is
+    # the kidnap arrival (prev == 85).
+    "Leg_of_Lamb": {
+        "ownedby_death_folds: {'dest': 34, 'need_room': 42, 'machine': 'hatch', 'state': 6, "
+        "'pattern': 'state-fork', 'demand_group': [(19, 34)], 'context': {}}",
+        "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
+        "'state': None, 'pattern': 'entry-fold', "
+        "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
+    },
+    "Fish": {
+        "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
+        "'state': None, 'pattern': 'entry-fold', "
+        "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
+    },
+    "Pie": {
+        "ownedby_death_folds: {'dest': 36, 'need_room': 35, 'machine': 'killEgo', "
+        "'state': None, 'pattern': 'entry-fold', 'demand_group': [(2, 36)], "
+        "'context': {12: 36}}",
+    },
     # The partial catches are pinned too -- if the disjunction-aware cure changes their shape,
-    # that is a mechanism change to confirm, not silent churn.
+    # that is a mechanism change to confirm, not silent churn. Since phase 1 they also carry
+    # their rm86 fold rows.
     "Shoe": {
         "dangerous_sinks: {'room': 12, 'script': 12, 'dest': 12, 'at_room': 12, "
         "'still_needed_at': [6]}",
+        "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
+        "'state': None, 'pattern': 'entry-fold', "
+        "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
     },
     "Stick": {
         "dangerous_sinks: {'room': 12, 'script': 12, 'dest': 12, 'at_room': 12, "
         "'still_needed_at': [6]}",
+        "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
+        "'state': None, 'pattern': 'entry-fold', "
+        "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
     },
 }
 
 DETECTORS = ("analyze", "joint_strandings", "resource_exhaustion", "dangerous_sinks",
-             "register_flip_strandings", "toll_strandings", "fatal_uses", "register_strandings")
+             "register_flip_strandings", "toll_strandings", "fatal_uses", "register_strandings",
+             "ownedby_death_folds")
 
 # The throwable pool (rm6's cat handlers and rm86's rescue fork agree on exactly these four).
 POOL = {"Shoe", "Stick", "Leg_of_Lamb", "Fish"}
@@ -187,10 +233,17 @@ def run():
             out.add(r["need_room"])
         return out
 
-    window_rows = [n for (n, _d, r) in raw_rows if n in POOL and 86 in _rooms_mentioned(r)]
-    check("🔴 KNOWN GAP (KQ5): the cat-scene window reaches the kidnap read", bool(window_rows),
-          "No row ties a pool item to rm86's rescue fork. The one-shot window (flag 83 set on "
-          "ARMING; producers `put: <item> 6` all guarded on the window) is the class -- "
+    # ✅ PROMOTED 2026-08-14 (phase 1) -- "the cat-scene window reaches the kidnap read",
+    # "the roc's-nest lamb fold is caught" and "the eagle's pie swallow strands the yeti's
+    # counter-item" are GREEN: `ownedby_death_folds` states the demand at each fold site and
+    # the mechanism pins above freeze the rows. The rm86 rows must keep their full pool
+    # disjunction and the kidnap context -- that is the fact patch B consumes.
+    window_rows = [r for (n, _d, r) in raw_rows if n in POOL and 86 in _rooms_mentioned(r)]
+    check("the cat-scene bank is demanded at the kidnap read (all four pool items, prev==85)",
+          {n for (n, _d, r) in raw_rows if n in POOL and 86 in _rooms_mentioned(r)} == POOL
+          and all(r.get("context") == {12: 85} for r in window_rows
+                  if r.get("machine") == "yourStuck"),
+          "the rm86 fold rows lost a pool member or their kidnap context -- "
           "docs/KQ5-ORACLE.md §1.")
 
     needle_rows = [n for (n, _d, _r) in raw_rows if n == "Golden_Needle"]
@@ -200,29 +253,23 @@ def run():
           "paying with the needle starves the tailor->cloak chain. Exchange-slot class -- "
           "docs/KQ5-ORACLE.md §6.")
 
-    lamb_rows = [n for (n, _d, _r) in raw_rows if n == "Leg_of_Lamb"]
-    check("🔴 KNOWN GAP (KQ5): the roc's-nest lamb fold is caught", bool(lamb_rows),
-          "rm42 state 6: `owner(19)==34` (lamb fed to the eagle) -> newRoom 43; anything else "
-          "-> proc0_26 death -- and the eagle also EATS the pie without earning the rescue. "
-          "Throwing the lamb at the cat or dog is therefore fatal at rm42. The SAME "
-          "init-fork-on-an-ownedBy-value death fold as rm86's -- phase 1 of the window plan "
-          "should flip this red and the corral red together. docs/KQ5-ORACLE.md §1a.")
+    # --- the phase-3 halves, declared red the day phase 1 landed: the fold rows above state
+    # the DEMAND; that each demand's producers sit inside a one-shot window is not yet a row.
+    fish_bees = [n for (n, _d, r) in raw_rows if n == "Fish" and 11 in _rooms_mentioned(r)]
+    check("🔴 KNOWN GAP (KQ5): the bees' flag-36 window closure is caught", bool(fish_bees),
+          "flag 36's only writer is bearScript (exists only while `has: 5`); the hive arms "
+          "deathByBees under not-flag36 -- no row ties the Fish to rm11's honeycomb chain. "
+          "Phase 3 (window closure: a demanded value whose every producer is guarded on a "
+          "flag the producers' own trigger sets). docs/KQ5-ORACLE.md §1a.")
 
-    pie_rows = [n for (n, _d, _r) in raw_rows if n == "Pie"]
-    check("🔴 KNOWN GAP (KQ5): the eagle's pie swallow strands the yeti's counter-item",
-          bool(pie_rows),
-          "The pie's sole source is bakeShop (town, behind the one-way forest); rm34's eagle "
-          "swallows it (`put: 2 34`) earning nothing; rm36's yeti is a Chase into proc0_26 "
-          "countered only by throwing the pie (`put: 2 36`). User-confirmed 2026-08-14. "
-          "docs/KQ5-ORACLE.md §1a.")
-
-    fish_rows = [n for (n, _d, _r) in raw_rows if n == "Fish"]
-    check("🔴 KNOWN GAP (KQ5): the fish-at-cat waste seals the bees' flag-36 window",
-          bool(fish_rows),
-          "rm11's bear exists only while `has: 5`; bearScript state 13 is flag 36's ONLY "
-          "writer; the hive approach arms deathByBees under `not flag36` -- so wasting the "
-          "fish at the cat (`put: 5 6`) makes the honeycomb (-> beeswax -> boat) unobtainable "
-          "alive. docs/KQ5-ORACLE.md §1a.")
+    window_closed = [r for (n, _d, r) in raw_rows if n in POOL
+                     and r.get("pattern") == "window-closure"]
+    check("🔴 KNOWN GAP (KQ5): the cat window's closure on arming is caught",
+          bool(window_closed),
+          "flag 83 is set the moment the chase STARTS (rm006::doit), so every producer of "
+          "`owner == 6` is behind a window that closes on arming, win or lose -- the rm86 "
+          "demand rows exist (green above) but no row states the window. Phase 3; also the "
+          "site patch A holds. docs/KQ5-ORACLE.md §1.")
 
     amulet_rows = [n for (n, _d, _r) in raw_rows if n == "Amulet"]
     check("🔴 KNOWN GAP (KQ5): the witch-region worn-amulet death fold is caught",

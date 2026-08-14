@@ -43,6 +43,7 @@
     "Magic_Hen@[690]",
     "Peacock_Feather@[44]"
   ],
+  "ownedby_death_folds": [],
   "placements": [
     "Main/Magic_Fruit: applied=True kind=None",
     "Main: applied=True kind=register-write sites=1",

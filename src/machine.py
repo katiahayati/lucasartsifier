@@ -10,6 +10,12 @@ state. Each state body is a sequence of ops, some guarded by if/cond path condit
              `(other changeState: K)`, `(self cue:)`) -> next state = state+1
   JUMP k     `(self changeState: k)`              -- go to state k now
   SETSTATE k `(= state k)`                        -- set state (then a cue advances to k+1)
+             ...and `(++ state)` / `(-- state)` in state K's body, which are the SAME op
+             relative to K (SETSTATE K+1 / K-1): the game's cue: sends changeState(state+1),
+             so a body that bumps `state` moves where that cue lands. Read as a bare
+             ADVANCE -- which is what `(++ state)` was until 2026-08-14 -- the model walks
+             THROUGH the state the game skips and never reaches the one it lands on; KQ5's
+             rm42 hides its death chain (states 8-11) behind exactly this idiom.
   GET i      `(gEgo get: i)`                       -- acquire item
   COUNTER    `(++ c)`/`(-- c)`/`(= c lit)`        -- bounded local counter update
 A state that arms NO cue and does not transfer PARKS (waits for the next player action);
@@ -82,6 +88,14 @@ class Machine:
     #   control-restore selector (SCI1.1's handsOn -- vocab.derive_control_selectors): the player
     #   is free to act while this state waits. What lets fatal_uses treat a wait-on-the-clock
     #   state as pre-emptable by arming a competitor into the same slot. Empty on SCI0.
+    chase_states: set = field(default_factory=set)  # states whose body arms a `setMotion: Chase`
+    #   with a self cue: the state completes only by CATCHING the (moving) player, a race the
+    #   player co-determines and can decline by leaving the room. A death behind such a state is
+    #   preventable from its own screen, which is the one-rule line: KQ4's rm49 dog and KQ5's
+    #   rm36 yeti are this shape (control stays on until the catch), KQ5's yourStuck (pure
+    #   timers) and killEgo (scripted MoveTo kill) are not. `Chase` is the SCI system motion
+    #   class -- a MoveTo to fixed coordinates completes regardless of the player, so it does
+    #   not count.
     glob_dom: dict = field(default_factory=dict)   # glob -> sorted values, for globals this
     #   script uses as a COUNTER (`++`/`--`). compile fans an increment out over these: the new
     #   value depends on the old one, so it is only resolvable against values we know it takes.
@@ -414,6 +428,28 @@ class MachineBuilder:
                 return True
         return False
 
+    @staticmethod
+    def _chases(body):
+        """Does this state body arm a `setMotion: Chase ... self` -- a pursuit of the moving
+        player whose completion cue IS the catch? See the `chase_states` field for why that
+        state is a race the player can decline, and `missability.ownedby_death_folds` for the
+        consumer. The Self param is required: a Chase without a cue never advances this
+        machine, so no death of ours sits behind it."""
+        for n in I.walk(body):
+            if n.get("t") != "Send":
+                continue
+            try:
+                _recv, msgs = I.send_pairs(n)
+            except Exception:                          # noqa: BLE001
+                continue
+            for sel, params in msgs:
+                if (sel == "setMotion" and params
+                        and params[0].get("t") == "Class"
+                        and params[0].get("name") == "Chase"
+                        and any(p.get("t") == "Self" for p in params)):
+                    return True
+        return False
+
     def _local_regs(self, script_number):
         """{synthetic gi: reset value} for `script_number`'s own lowered room locals."""
         got = self._lreg_cache.get(script_number)
@@ -438,8 +474,10 @@ class MachineBuilder:
                     if k is not None:
                         m.bodies[k] = c["kids"][1]
                         ops = []
-                        self._ops(c["kids"][1], [], ops, script.number)
+                        self._ops(c["kids"][1], [], ops, script.number, state_k=k)
                         m.states[k] = ops
+                        if self._chases(c["kids"][1]):
+                            m.chase_states.add(k)
                         # A state that HANDS CONTROL BACK (the derived handsOn) is one the
                         # player lives through with the verbs available -- which is what lets
                         # `fatal_uses` see a wait-on-the-clock state as pre-emptable. Recorded
@@ -821,28 +859,36 @@ class MachineBuilder:
             if tgt != 255 and body is not None and name not in seen:
                 self._entries(body, pc, m, tgt, seen | {name}, source, is_self_obj)
 
-    def _ops(self, node, pc, out, room=None):
+    def _ops(self, node, pc, out, room=None, state_k=None):
         """Walk a state body, composing path conditions, appending guarded ops.
 
         Control flow comes from `extract.walk_stream` / `ir.control_shape`; this used to
         re-implement If/Cond/Switch itself, in code identical to extract's and opmodel's.
 
         `room` is the script the body lives in, threaded only so an indirect `newRoom:` can be
-        resolved against that script's own assignments -- see `_send_op`."""
+        resolved against that script's own assignments -- see `_send_op`. `state_k` is which
+        state's body this is, threaded only so `(++ state)` / `(-- state)` can be resolved to
+        the SETSTATE they are (relative to K, see the module docstring)."""
         from extract import walk_stream
-        walk_stream(node, pc, lambda n, p: self._op_leaf(n, _conj(p), out, room))
+        walk_stream(node, pc, lambda n, p: self._op_leaf(n, _conj(p), out, room, state_k))
 
-    def _op_leaf(self, node, g, out, room=None):
+    def _op_leaf(self, node, g, out, room=None, state_k=None):
         """What one statement means to the machine model -- the part that is ours, not shared."""
         tp = node["t"]
         if tp == "Send":
             self._send_op(node, g, out, room)
         elif tp == "Assignment":
             self._assign_op(node, g, out)
-        elif tp == "Increment":
-            self._counter_op(node["kids"][0], "inc", None, g, out)
-        elif tp == "Decrement":
-            self._counter_op(node["kids"][0], "dec", None, g, out)
+        elif tp in ("Increment", "Decrement"):
+            dst = node["kids"][0]
+            if dst.get("t") == "Property" and dst.get("name") == "state" \
+                    and state_k is not None:
+                # `(++ state)` in state K: the pending cue's changeState(state+1) now lands
+                # one further on -- identical in effect to `(= state K+1)`. Two bumps on one
+                # path would need composing; no corpus spells it, and one bump is the idiom.
+                out.append(Op("SETSTATE", g, state_k + (1 if tp == "Increment" else -1)))
+            else:
+                self._counter_op(dst, "inc" if tp == "Increment" else "dec", None, g, out)
 
     def _send_op(self, node, g, out, room=None):
         recv, msgs = I.send_pairs(node)

@@ -210,31 +210,29 @@ KNOWN_RED = {
             "states, so entering the kidnap unhammered produces no row. Phase 2 of the window "
             "plan: make register_strandings' point-of-no-return test own-alt-aware (a flip "
             "seals when every way back demands an item with no source inside).",
-        "🔴 KNOWN GAP (KQ5): the cat-scene window reaches the kidnap read":
-            "The 'mouse saved' token is the ownedBy store (`put: <pool item> 6`), read by "
-            "rm86's rescue/yourStuck fork; the producers all live inside a scene whose own "
-            "trigger sets flag 83 -- the window closes on ARMING. Needs the init-fork death "
-            "fold (yourStuck is unsurvivable, so the fork demands the owner value) plus the "
-            "window-closure walk (a demanded value whose every producer is guarded on a flag "
-            "the producers' own trigger sets is a toll in register space).",
-        "🔴 KNOWN GAP (KQ5): the roc's-nest lamb fold is caught":
-            "rm42's rescue-or-death fork tests `owner(Lamb)==34` (fed to the eagle; the pie "
-            "is eaten but earns nothing), and the lamb's town source plus the cat/dog scenes "
-            "accepting it make the waste reachable. Same ownedBy-fork death fold as the "
-            "inn-cellar rows -- one phase-1 build should flip all three. Verified from source "
-            "2026-08-14 at the user's prompting (docs/KQ5-ORACLE.md §1a).",
-        "🔴 KNOWN GAP (KQ5): the eagle's pie swallow strands the yeti's counter-item":
-            "Sole pie source = bakeShop (town), behind the one-way forest; the eagle eats it "
-            "for nothing (feedEagle differs only in animation); the yeti chase is death "
-            "countered only by the pie. USER 2026-08-14: 'I don't think you can reobtain the "
-            "pie after you feed it to the eagle' -- source agrees. Refines (does not flip) the "
-            "July pie-safe ruling, which scoped to town reachability. Slot-swallow + "
-            "chase-death counter-item class.",
-        "🔴 KNOWN GAP (KQ5): the fish-at-cat waste seals the bees' flag-36 window":
+        # ✅ PHASE 1 LANDED 2026-08-14 -- "the cat-scene window reaches the kidnap read", "the
+        # roc's-nest lamb fold is caught" and "the eagle's pie swallow strands the yeti's
+        # counter-item" are GREEN and no longer listed. `missability.ownedby_death_folds`:
+        # an arrival that forks on an OWNER VALUE, whose losing arm cannot be survived
+        # (`_room_unavoidable`, the classifier fatal_uses answers to), demands the value at
+        # the room's entry -- rm86's yourStuck (all four pool items, prev==85), rm42's hatch
+        # state-6 fork (the lamb; its death chain sits behind a `(++ state)` skip the
+        # transition model now reads -- compile._interp), and rm35's killEgo (the pie,
+        # prev==36; the rm36 chase itself makes no claim because a `Chase` state is a race
+        # the player can decline by leaving, which keeps KQ4's rm49 dog out). LSL2/KQ4
+        # surfaces byte-identical plus the new empty key; KQ5 moved by pure addition.
+        # The fish flipped with the same rows (its rm86 demand); the BEES half is the
+        # narrower red below.
+        "🔴 KNOWN GAP (KQ5): the bees' flag-36 window closure is caught":
             "flag 36's only writer is bearScript (runs only while `has: 5` spawns the bear); "
             "the hive arms deathByBees under not-flag36, so the honeycomb -> beeswax -> boat "
-            "chain dies with the wasted fish. Sole-writer window + exchange slot -- the same "
-            "two builds as the cat-scene rows should flip this.",
+            "chain dies with the wasted fish. Phase 3 (window closure): a demanded value "
+            "whose every producer is guarded on a flag the producers' own trigger sets.",
+        "🔴 KNOWN GAP (KQ5): the cat window's closure on arming is caught":
+            "The rm86 demand rows are green, but flag 83 is set the moment the chase STARTS "
+            "(rm006::doit) -- every producer of `owner == 6` sits inside a window that "
+            "closes on arming, win or lose, and no row states the window. Phase 3; the same "
+            "fact is patch A's hold site.",
         "🔴 KNOWN GAP (KQ5): the fortune teller's needle substitution is caught":
             "rm13's amulet slot takes Gold_Coin(11) OR Golden_Needle(3); the needle's real "
             "consumer is the tailor (-> cloak). Exchange-slot class ([[exchange-slots-one-"

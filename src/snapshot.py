@@ -46,7 +46,8 @@ def snapshot(cfg, with_placements=False):
                    | {t["item"] for t in s.toll_strandings()}
                    | {d["item"] for d in s.dangerous_sinks()}
                    | {f["item"] for f in s.fatal_uses()}
-                   | {r["item"] for r in s.register_strandings()})
+                   | {r["item"] for r in s.register_strandings()}
+                   | {r["item"] for r in s.ownedby_death_folds()})
     # REGISTER-VALUE strandings, unconditional like every other detector -- see the note at the
     # bottom of this comment block for what used to be here and why it went.
     #
@@ -104,6 +105,13 @@ def snapshot(cfg, with_placements=False):
         "register_strandings": sorted(f"{r['item_name']}@reg{r['register']}={r['value']}"
                                       f"->{r['still_needed_at']}"
                                       for r in s.register_strandings()),
+        # The owner-value death folds (2026-08-14, the KQ5 build). One frozen row per
+        # (item, owner-room, fold site); the context and the full demand disjunction ride
+        # along because a fold that changes its arming context or loses a pool member is a
+        # mechanism change, not churn.
+        "ownedby_death_folds": sorted(
+            f"{r['item_name']}@rm{r['need_room']}/{r['machine']}->owner{r['dest']}"
+            f" ctx={sorted(r['context'].items())}" for r in s.ownedby_death_folds()),
     }
     snap["register_value_strandings"] = sorted(
         f"reg{r['reg']}=={r['bad']}@seal{r['register']}={r['value']}"

@@ -613,7 +613,8 @@ class OpEmitter:
         steps_by_state = {}
         for K, body in m.bodies.items():
             body = self._inline_calls(body, m.script, set())
-            steps_by_state[K] = [C._interp(p, self.is_death) for p in C._paths_of(body)]
+            steps_by_state[K] = [C._interp(p, self.is_death, state_k=K)
+                                 for p in C._paths_of(body)]
         C.carry_cues(steps_by_state, m.start)   # SCI cross-state cue carry (PARK -> ADVANCE)
         entry_states = {k for k, _ in m.entries} | {k for k, _ in m.init_entries}
         C.compress_chains(steps_by_state, entry_states, m.start)   # collapse effect-free ADVANCE runs
@@ -683,6 +684,7 @@ class OpEmitter:
                 "entry_sources": m.entry_sources,
                 "local_regs": dict(getattr(m, "local_regs", None) or {}),
                 "restores_control": set(getattr(m, "restores_control", None) or ()),
+                "chase_states": set(getattr(m, "chase_states", None) or ()),
                 "start": m.start, "delivered": delivered, "drops": drops}
 
     def edge_hit_registers(self):

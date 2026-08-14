@@ -294,7 +294,10 @@ MECHANISM_ROWS = {
 # on LB2, so their serializer is the whole row -- a first row from one of them should show its
 # entire self, because a detector's first rows on a new game are unreviewed output, not results.
 DETECTORS = ("analyze", "joint_strandings", "resource_exhaustion", "dangerous_sinks",
-             "register_flip_strandings", "toll_strandings", "fatal_uses", "register_strandings")
+             "register_flip_strandings", "toll_strandings", "fatal_uses", "register_strandings",
+             # ownedby_death_folds joined 2026-08-14 (the KQ5 phase-1 build): zero rows on
+             # LB2, watched here so one appearing is a suspicion, not a silent addition.
+             "ownedby_death_folds")
 
 
 def _mech_row(det, r):

@@ -210,18 +210,26 @@ rows should collapse either way.**
 | 1 | temple pocket | consumed-opener toll | **CAUGHT** (toll) |
 | 2 | Shell past the sail | one-way edge, carry demanded | **CAUGHT** (analyze + spec) |
 | 3 | Fishhook past the sail | one-way edge, carry demanded | **CAUGHT** (analyze + spec) |
-| 4 | cat window missed → inn death | one-shot window → ownedBy read → death | MISSED (partial: sink rows) |
+| 4 | cat window missed → inn death | one-shot window → ownedBy read → death | **CAUGHT** (phase 1: `ownedby_death_folds`, all four pool items demanded at rm86 under prev==85); the WINDOW half (flag 83 closes on arming) stays a declared red for phase 3 |
 | 5 | pool starved at the dog | exchange slots over one pool | PARTIAL (`dangerous_sinks`, disjunction-blind) |
-| 6 | kidnap without Hammer | (room, prev-value) trap; gate modeled | MISSED (no state walker) |
+| 6 | kidnap without Hammer | (room, prev-value) trap; gate modeled | MISSED (no state walker; phase 2) |
 | 7 | rope on the branch | fatal use | **CAUGHT** (fatal_uses) |
 | 8 | tambourine near Dink | — | FP to cure (savior-condemned, arming polarity) |
 | 9 | needle to the fortune teller | exchange slot | MISSED |
 | 10 | forest without worn amulet | region-script death fold, flag 84 | MISSED (region scope) |
 | 11 | locket window missed | one-shot window (tier 3) | MISSED, unverified |
 | 12 | peas exhaustion | consumable | OPEN (13 noisy rows) |
-| 13 | lamb to the cat/dog → roc's nest death | exchange slots + ownedBy death fold (rm42) | MISSED (declared red; same fold class as #6) |
-| 14 | pie to the eagle → yeti unsurvivable | slot swallow + chase-death counter-item (rm36) | MISSED (declared red; user-confirmed) |
-| 15 | fish to the cat → flag 36 unsettable → bees | exchange slot + sole-writer window (rm11) | MISSED (declared red) |
+| 13 | lamb to the cat/dog → roc's nest death | exchange slots + ownedBy death fold (rm42) | **CAUGHT** (phase 1: rm42 `hatch` state-6 fork — its death chain sits behind a `(++ state)` skip the transition model now reads — plus the rm86 pool row) |
+| 14 | pie to the eagle → yeti unsurvivable | slot swallow + chase-death counter-item | **CAUGHT** (phase 1: rm35 `killEgo` entry fold, prev==36 — the yeti kill continuing across the edge. The rm36 chase itself makes no claim: a `Chase` state is a race the player can decline by leaving, the refinement that keeps KQ4's rm49 dog — flee-able in play — out of the surface) |
+| 15 | fish to the cat → flag 36 unsettable → bees | exchange slot + sole-writer window (rm11) | **CAUGHT on the demand half** (phase 1: the rm86 pool row names the Fish); the bees' flag-36 window closure stays a declared red for phase 3 |
+
+**Phase 1 (2026-08-14, `missability.ownedby_death_folds`):** an arrival that forks on an owner
+value, whose losing arm cannot be survived (`_room_unavoidable` — `_survivable` with
+pre-emption, the classifier `fatal_uses` answers to), demands the value at the room's entry.
+Rows carry the full demand disjunction and the readable arming context (`prev == 85` / `36`),
+which is what phases 2–3 and patch B consume. Measured corpus-wide: LSL2/KQ4 byte-identical
+plus the new empty snapshot key (goldens re-blessed key-by-key), KQ6/LB2 zero rows, KQ5 moved
+by pure addition.
 
 Nothing in this file is a guard source ([[derived-only-no-declared-specs]]): it validates, it
 never feeds the patcher.

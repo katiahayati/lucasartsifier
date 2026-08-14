@@ -50,6 +50,7 @@
       "mint or peppermint@750"
     ],
     "joint": [],
+    "ownedby_death_folds": [],
     "placements": [
       "Main/mint: applied=True kind=None",
       "Main/peppermint: applied=True kind=None",
@@ -150,6 +151,7 @@
     ],
     "groups": [],
     "joint": [],
+    "ownedby_death_folds": [],
     "placements": [
       "rm210: applied=True kind=setscript sites=1",
       "rm26->rm330: applied=True kind=entry-deferral-PARTIAL sites=2 entry_sites=2",
