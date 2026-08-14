@@ -7,32 +7,36 @@ Sierra games, unlike LucasArts ones, let you get stuck. Forget the sunscreen in 
 the cruise ship, and you die days later on the raft with no way back. This finds every such trap
 automatically and blocks the crossing that causes it.
 
+A patched game is playable normally, because the patch mechanism is how Sierra shipped its own bug fixes.
+You can set the guard behavior in-game: **Full** prevents every dangerous action; **Lite** prevents the action
+once, then allows it with a warning; and **Off** turns the guards off.
+
+## Caveat Player
+
+**Some deaths are deliberately left in** — the ones you can still avoid from where you are. In Leisure Suit Larry 2,
+  if you walk onto the KGB beach without the full disguise you will die. Some pieces of the disguise are only obtained
+  on the cruise ship, so we prevent you from leaving it until you have them. But the rest of the disguise is obtainable
+  on the island, i.e. from the place the death occurs, so we let it happen. The main reason is that these kinds of deaths
+  are how Sierra games hint at what you need to do. So, as Al Lowe says, you still have to "Save Early, Save Often!".
+
 ## Status
 
 Four games run end to end. Nothing about a title is declared: the start room, the victory room,
 the death signal and the debug flag are all derived from the game's own code.
 
-| game | engine | model | findings | edits placed | played |
-|---|---|---|---|---|---|
-| **Leisure Suit Larry 2** (1988) | SCI0 | 101 rooms, 27 components | 15 items + 1 group | 12 of 12 | ✅ patched game played to the ending |
-| **King's Quest IV** (1988) | SCI0 | 110 rooms, 15 components | 7 items | 5 of 5 | ✅ extensively play-tested (`kq4-playtest-1` on) |
-| **King's Quest VI** (1992) | SCI1.1 | 86 rooms, 15 components | 18 items + 1 group | 24 of 26 | ✅ in-game guard control confirmed in play |
-| **Laura Bow 2: The Dagger of Amon Ra** (1992) | SCI1.1 | 78 rooms, 26 components | 10 items | 5 of 5 | ✅ act-break guards confirmed in play |
+| game | engine | model | findings | edits placed |
+|---|---|---|---|---|
+| **Leisure Suit Larry 2** (1988) | SCI0 | 101 rooms, 27 components | 15 items + 1 group | 12 of 12 | 
+| **King's Quest IV** (1988) | SCI0 | 110 rooms, 15 components | 7 items | 5 of 5 | 
+| **King's Quest VI** (1992) | SCI1.1 | 86 rooms, 15 components | 18 items + 1 group | 24 of 26 | 
+| **Laura Bow 2: The Dagger of Amon Ra** (1992) | SCI1.1 | 78 rooms, 26 components | 10 items | 5 of 5 | 
 
 "Findings" is every detector's verdict unioned per item — the same seven a run prints and the
 frozen surface freezes; an item found by something other than the three stranding detectors is
-labelled with what found it (*sealed by a plot flag*, *fatal to use here*, …). "Edits placed"
+labeled with what found it (*sealed by a plot flag*, *fatal to use here*, …). "Edits placed"
 counts the guard and sink sites the patcher actually landed. KQ6's missing two are the suite's
 one deliberate red — a shared-dispatcher seam and a trade-shaped sink, both with their reasons
 written down rather than quietly dropped.
-
-LSL2 and KQ4 are **golden**: their full output surface is frozen byte-for-byte, and a change to it
-means the change is wrong until a human says otherwise. KQ6 and LB2 are **watched**: their surfaces
-are frozen too, but they are still moving, so a change is reported and then read row by row.
-
-A patched game lets the player set guard behaviour in-game — **Full** (every guard refuses),
-**Lite** (each site refuses once, then warns and lets you through), **Off** — from the SCI0 menu
-bar or KQ6's settings panel. See [`docs/GUARD-MODES.md`](docs/GUARD-MODES.md).
 
 ## Install
 
@@ -73,7 +77,7 @@ cmake -S tools/scicompile -B tools/scicompile/build
 cmake --build tools/scicompile/build -j
 ```
 
-Step 1 alone is enough to **analyse** a game (`--report`); step 2 is what turns the derived guards
+Step 1 alone is enough to **analyze** a game (`--report`); step 2 is what turns the derived guards
 into patch files. `vendor/` is gitignored — no third-party source and no game data is
 redistributed here.
 
@@ -83,12 +87,12 @@ You supply your own copy of a game; none is included. The commands run from `src
 
 ```bash
 cd src
-python3 -m pipeline /path/to/game            # decompile -> analyse -> derive -> patch
-python3 -m pipeline /path/to/game --report   # analyse only, write nothing
+python3 -m pipeline /path/to/game            # decompile -> analyze -> derive -> patch
+python3 -m pipeline /path/to/game --report   # analyze only, write nothing
 python3 -m pipeline /path/to/game --skip-decompile    # reuse the IR under build/ir
 ```
 
-Output lands in `build/patch/` as ScummVM loose patch files:
+Output lands in `build/patch/` as loose patch files:
 
 ```bash
 cp build/patch/script.* /copy/of/game/    # install
@@ -104,7 +108,7 @@ your only one.
 Abridged from a real run on LSL2 (`python3 -m pipeline <game>`, 2026-08-14):
 
 ```
-[2] ANALYSE
+[2] ANALYZE
     anchors: start rm11, victory [86]  (discovered)
     death signal: global101 == 1001, debug globals: [14, 100]  (derived)
     101 rooms, 27 strongly-connected components, 40 gating registers
@@ -145,9 +149,9 @@ compile.
    the one-way edges between them can strand you, which is what makes the problem finite.
 4. **Find strandings**: an item obtainable before a crossing, unavailable after, still needed beyond.
 5. **Derive a guard** from the winning region — the condition under which the goal is still
-   reachable — and place it at the last point where the player can still comply.
-6. **Recompile and emit.** Item-wasting dead ends are neutralised separately, with a *"Just
-   kidding!"* message and no score penalty.
+   reachable — and place it at the last point where the player can still comply. Item-wasting dead ends are also neutralized separately, 
+   with a *"Just kidding!"* message that prevents you from wasting the needed item and no score penalty.
+6. **Recompile and emit.** The patched game is now playable normally (eg, from ScummVM or DOSBox).
 
 Longer version in [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md); per-file map in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); current KQ6 status in
@@ -158,61 +162,24 @@ Longer version in [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md); per-file map i
 
 ```
 python3 tools/run_tests.py              # the whole suite (~21 min with every model cold)
-python3 tools/run_tests.py toll scopes  # only files matching these names
 ```
 
-Each `src/test_*.py` is also a standalone script you can run directly. Files that need no game
-at all — `test_walkers`, `test_abstractions`, `test_guards`, `test_deletion_soundness` — run
-anywhere; the rest need the IR of the game they are about.
-
-**Some checks are RED on purpose, and the runner is built around that.** A test that asserts
-known-wrong behaviour would be worse than no test, so a known limitation is written as a *failing*
-check with its reason recorded in `KNOWN_RED` at the top of the runner. The suite therefore exits
-0 only when the failing set is **exactly** the declared one — which means a red check that starts
-*passing* is also a failure, reported as "a gap was closed, promote it". Currently **one**: two of
-KQ6's guard specs have no placement site (`test_sci11_patch.py`).
-
-Three nets sit behind that, and they are not the same kind of thing:
-
-* `test_golden.py` — the **full** output surface of LSL2 and KQ4, frozen in
-  `src/testdata/*.golden.json`. A failure means the change is wrong. Re-blessing needs sign-off.
-* `test_watched_surface.py` — the same surface for KQ6 and LB2, in
-  `src/testdata/watched_surfaces.json`. A change is allowed, but it must be read row by row and
-  then deliberately refreshed.
-* `test_kq4_ground_truth.py`, `test_kq6_ground_truth.py`, `test_lb2_ground_truth.py` — per-game
-  oracles of user-confirmed verdicts, derived from the games and from hint books rather than from
-  our own output. A **drop is a regression**; an **addition is treated with suspicion**. Neither
-  column may be edited without sign-off.
-
-The first two answer "did anything move?"; the third answers "is what we emit right?".
-
-### Play-testing a build without playing it
-
-The suite checks the *emitted source*; it cannot see what the patched game draws. That gap
-cost four wrong cuts at KQ6's in-game guard control, each shipped on a theory because
-checking one meant asking someone to play. It does not:
-
-```
-python3 -m venv .venv-x && .venv-x/bin/pip install python-xlib pillow
-.venv-x/bin/python tools/drive_scummvm.py --game <COPY of the patched game> --id kq6 \
-    --script tools/kq6_panel_probe.py          # -> build/kq6_panel_probe/*.png
-```
-
-ScummVM opens a real window, XTEST drives the mouse and keyboard, and the window's pixels
-are read off the X server. This is the only part of the project that wants third-party Python
-packages, and it is optional. Point `--game` at a **copy**, never at the installed game.
+[`docs/TESTING.md`](docs/TESTING.md) has the rest: why some checks are RED on purpose, the three
+regression nets and the different questions they answer, how to measure a change against the full
+output surface before committing it, and how to drive a patched build under ScummVM with nobody at
+the keyboard.
 
 ## Layout
 
 ```
 src/                      the analysis (Python 3, standard library only)
 src/testdata/             the frozen surfaces: two goldens + the watched pair
-tools/run_tests.py        the test runner (see above)
+tools/run_tests.py        the test runner (docs/TESTING.md)
 tools/drive_scummvm.py    play-test a patched build with nobody at the keyboard
 tools/kq6_panel_probe.py    ... a driver script: cold start -> KQ6's guard control
 tools/sci-tools-fork/     build.sh for our JSON-IR fork of sci-tools               [C#]
 tools/scicompile/         headless Linux port of SCICompanion's compiler     [C++, GPL-2.0+]
-docs/                     how it works, architecture, per-game status, licensing
+docs/                     how it works, architecture, testing, per-game status, licensing
 docs/reviews/             contextless reviews of tagged releases, verbatim
 docs/archive/             superseded plans, kept for their measurements      [see its README]
 vendor/                   cloned at build time, never committed (see Install)
@@ -221,41 +188,24 @@ vendor/                   cloned at build time, never committed (see Install)
 Per-game configuration is one small file, `src/config.py`. Start and victory rooms are **discovered**
 rather than declared; see `src/anchors.py`.
 
-## Limits
+## Future work
 
-- **Play-testing is the only oracle a new title has.** All four have had some: LSL2's patch was
-  played through to the ending, KQ4's has been play-tested extensively (from `kq4-playtest-1`
-  on), and KQ6's and LB2's guards were confirmed at the sites that mattered. That is what makes
-  LSL2 and KQ4 golden and leaves the other two watched. Static verification proves the guards
-  close every *detected* softlock and introduce none — it has nothing to say about what
-  detection missed, which is why the five defects below were found by playing.
-- **Required *actions* are out of scope** (KQ5's throw-the-shoe-at-the-cat). What is in scope has
-  turned out to be one rule rather than several: a transition must not be taken while something it
-  needs is still required and no longer obtainable. That covers a room edge, a plot flag advancing,
-  and an event the player does not control — a whale that swallows you, nightfall, an act break.
-- **Some deaths are deliberately left in** — the ones you can still avoid from where you are. Walk
-  onto the KGB beach without the disguise and you die; we allow that, because every piece of the
-  disguise is still reachable from that screen. Reach the raft without sunscreen and you also die,
-  but by then the sunscreen is hours behind you in Los Angeles — so we refuse the crossing that
-  stranded it, and refuse it at the cruise ship. The test is the same one used for softlocks: is
-  what you need still obtainable? Whether failing it kills you or merely leaves you stuck does not
-  change the answer or the fix. Al Lowe's "Save Early, Save Often!" still applies.
-- **Nothing game-specific is declared any more** — not the start room, the victory room, the death
-  signal, or the debug flag. `config.py` holds paths and optional overrides. The death signal is the
-  global the Game class tests on its way to offering Restore/Restart/Quit; the debug flag is the one
-  a menu toggles with `^=`. Both reproduce the values we used to hand-write. That matters more than
-  it sounds: KQ4's debug flag lets the copy-protection screen warp to any room you type, and
-  unpinned it would make every room reachable from the start.
-- **Five defects were found by playing** that no static check caught — misleading refusal text, a
-  self-contradicting message, an infinite loop, and a whole class of item destruction living in a
-  globally-active script. Verification proved the guards closed every *detected* softlock and
-  created none; it had nothing to say about what we failed to detect.
+- **Required *actions* are not currently modeled** Currently we guard a transition that must not be taken while something it
+  needs is still required and no longer obtainable after the crossing. That covers a room edge, a plot flag advancing,
+  and an event the player does not control — a whale that swallows you, nightfall, an act break. But we do not model actions that, if not taken, will lead to a death
+  later. For example, in King's Quest V you have to throw a shoe at a cat to save a mouse who will later save you from bandits.
+- **State explosion in Quest For Glory games** QFG games have SO MUCH going on that the analyzer cannot complete. I suspect we can fix that by abstracting away
+  from player stats, combat, and health consumables (rations, etc.), but that work has not been done yet.
+- **SCI1.0** We have successfully modeled SCI0 and SCI1.1 games. SCI1.0 (e.g. KQ5) are a weird hybrid and have not been fully modeled yet. Those are next on the list.
+- **More games!** While there is no game-specific code in the engine, unfortunately Sierra does ship a lot of game-specific code in each game! That means that every
+  new game requires new work to extend the engine. Hopefully at some point this will converge to 0.
+- **AGI** AGI games should definitely be included, but that work is not started yet.
+
 
 ## Licensing
 
-MIT, **except `tools/scicompile/` which is GPL-2.0-or-later** — it contains modified SCICompanion
-source and links its compiler, so it is a derivative work. See [`LICENSE`](LICENSE),
-[`NOTICE`](NOTICE), and [`docs/LICENSING.md`](docs/LICENSING.md).
+MIT, **except `tools/scicompile/` which is GPL-2.0-or-later** — it contains modified SCICompanion source and links its compiler, so it is a derivative work. See 
+[`LICENSE`](LICENSE), [`NOTICE`](NOTICE), and [`docs/LICENSING.md`](docs/LICENSING.md).
 
 Built on [sci-tools](https://github.com/sluicebox/sci-tools) (sluicebox, MIT) and
 SCICompanion (Philip Fortier, GPL-2.0+). No game data is included in this repository under any terms.

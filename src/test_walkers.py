@@ -176,7 +176,7 @@ def matrix():
 
 
 def run():
-    print("Walker coverage matrix -- who recognises which IR construct")
+    print("Walker coverage matrix -- who recognizes which IR construct")
     seen = matrix()
     shared = {c: f for c, f in seen.items() if len(f) >= 2}
     print(f"  {len(seen)} constructs, {len(shared)} known to more than one walker\n")

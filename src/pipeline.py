@@ -99,7 +99,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Find and patch softlocks in a Sierra SCI game.")
     ap.add_argument("game_dir", help="game directory (RESOURCE.MAP + RESOURCE.00x)")
     ap.add_argument("--out", default=os.path.join(_ROOT, "build"), help="output root")
-    ap.add_argument("--report", action="store_true", help="analyse only; write no patch")
+    ap.add_argument("--report", action="store_true", help="analyze only; write no patch")
     ap.add_argument("--emit-unclosed", action="store_true",
                     help="emit even when some findings have no placeable guard (they are listed). "
                          "A guard that INTRODUCES a softlock still stops the run.")
@@ -126,7 +126,7 @@ def main(argv=None):
     import missability as M
     import guards as G
 
-    step(2, "ANALYSE")
+    step(2, "ANALYZE")
     t0 = time.time()
     s = M.load(cfg=cfg)
     print(f"    anchors: start rm{s.em.cfg.start_room}, victory "
