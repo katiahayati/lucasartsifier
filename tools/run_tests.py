@@ -141,6 +141,28 @@ KNOWN_RED = {
         # not-missable, unholdable-cannot-strand; SINGLETON-only -- the group form deletes LSL2's
         # play-validated raft guard and is ruled out). `pipeline --report` exits 0 on KQ6.
     },
+    # THE v1.0-lb2 REVIEW's PATCH-TEXT flags (§3.1 and §3.2), the half that reaches the PLAYER:
+    # a guard that wraps one of several doors is a guard the player walks around, and this
+    # project has paid for that twice already (findings #4 and #8).
+    "test_patch_text.py": {
+        "BOTH arms committing the flip are wrapped":
+            "§3.1. `patcher.guard_flip_interceptor` wraps the FIRST matching arm and returns. "
+            "Two arms pinning the same stage and routing into the same pocket = one wrapped "
+            "door and one open one. Latent: LB2's rm520 has exactly one such arm.",
+        "...and the count returned is the number of doors, not 1":
+            "§3.1, the half that makes it invisible: the surface freezes `sites=N`, so a "
+            "hardcoded 1 reports full coverage of a commitment it covered once.",
+        "a `doit` twin of the same commit is wrapped too":
+            "§3.1 across methods -- `newRoom` and `doit` are both searched, and the first hit "
+            "in either wins.",
+        "an arm that only MENTIONS the stage under an (or ...) is refused":
+            "§3.2. The stage test is matched by whitespace-normalised SUBSTRING containment, "
+            "so an arm running at act 4 OR act 9 matches the act-4 stage. Conjoining a demand "
+            "there gates a crossing the spec never scoped -- the wall-shaped failure.",
+        "a NEGATED stage test does not pin the stage":
+            "§3.2, same cause read the other way: `(not (== global123 4))` contains the stage "
+            "as a substring while meaning every act EXCEPT it.",
+    },
     # ✅ ALL FOUR PROMOTED 2026-08-14, the same day they were declared. The v1.0-lb2 review's
     # deletion-side holes (docs/reviews/review-v1.0-lb2.md §4.1-§4.4) are closed, and
     # `test_deletion_soundness.py` is now ten green checks -- four cures plus the six companions
