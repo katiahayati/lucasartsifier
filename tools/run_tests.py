@@ -198,6 +198,42 @@ KNOWN_RED = {
     # exactly over the register's own value universe (guard_reqs relational + edge_meta domains).
     # All three measured byte-identical on LSL2/KQ4/KQ6; the street collapsed to acts [1] and
     # the check is a permanent green pin. docs/LB2-ORACLE.md §7ag.
+
+    "test_kq5_ground_truth.py": {
+        # KQ5's oracle landed 2026-08-14 (docs/KQ5-ORACLE.md: game source + three independent
+        # walkthroughs) with five caught softlocks pinned green and these five declared red the
+        # same day. The first two share one root -- the (room, register-value) trapped state --
+        # and the design for closing them is the oracle doc's §1/§2 three-phase plan.
+        "🔴 KNOWN GAP (KQ5): the inn-cellar corral demands the Hammer":
+            "The rm86->rm28 exit gate IS modelled (own(22) when prev==85, free otherwise -- the "
+            "green pin in the same file), but no detector walks (room, register-value) trapped "
+            "states, so entering the kidnap unhammered produces no row. Phase 2 of the window "
+            "plan: make register_strandings' point-of-no-return test own-alt-aware (a flip "
+            "seals when every way back demands an item with no source inside).",
+        "🔴 KNOWN GAP (KQ5): the cat-scene window reaches the kidnap read":
+            "The 'mouse saved' token is the ownedBy store (`put: <pool item> 6`), read by "
+            "rm86's rescue/yourStuck fork; the producers all live inside a scene whose own "
+            "trigger sets flag 83 -- the window closes on ARMING. Needs the init-fork death "
+            "fold (yourStuck is unsurvivable, so the fork demands the owner value) plus the "
+            "window-closure walk (a demanded value whose every producer is guarded on a flag "
+            "the producers' own trigger sets is a toll in register space).",
+        "🔴 KNOWN GAP (KQ5): the fortune teller's needle substitution is caught":
+            "rm13's amulet slot takes Gold_Coin(11) OR Golden_Needle(3); the needle's real "
+            "consumer is the tailor (-> cloak). Exchange-slot class ([[exchange-slots-one-"
+            "statement-one-item]]) -- the detector for 'a slot consumed by an item another "
+            "slot demands' does not exist yet.",
+        "🔴 KNOWN GAP (KQ5): the witch-region worn-amulet death fold is caught":
+            "witchRegion.sc's fireball is survived only under `(and (has: 27) flag84)` -- worn "
+            "IS modelled (flag 84, the ordinary bit store), but the fold lives in a REGION "
+            "script and the death-fold scope stops at rooms. Extending it to setRegions "
+            "scripts is the build.",
+        "🔴 KNOWN FP (KQ5): fatal_uses does not condemn the tambourine":
+            "hugScript (Dink's hug, proc0_26 death) arms under own(34) because Dink only "
+            "EXISTS while you hold the tambourine, and giving it (giveTamboScript, the "
+            "hairpin's source) is the escape from that very machine. Savior-condemned family, "
+            "sixth member, NEW POLARITY: the item rides the arming guard, not a branch. The "
+            "cure belongs in fatal_uses' survivability reading, not in the oracle.",
+    },
 }
 
 CHECK = re.compile(r"^\s*\[(PASS|FAIL)\]\s*(.*?)\s*$")
