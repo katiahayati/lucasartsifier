@@ -78,6 +78,33 @@ parks into `walkingDead` (60 seconds, `proc0_26`).
   ("when you start to shiver wear the cloak"); the freeze-death mechanism is not yet
   source-verified. **Open: verify the mountains' cold-death read.**
 
+### 1a. The pool is wider than the two scenes — the Lamb and the Fish have their own consumers (tier 1, verified 2026-08-14 at the user's prompting)
+
+The cat and dog scenes accepting four items is not generosity, it is a trap surface:
+
+- **Leg_of_Lamb(19): sole source rm28 (the inn's cupboard — `openCup` tests `owner == 28`), in
+  town, so it IS in the pool at cat/dog time. Its required consumer is the roc's nest:**
+  `rm042` state 6 branches on `(== ((global9 at: 19) owner:) 34)` — lamb fed to the eagle →
+  `newRoom: 43` (the rescue); *anything else* → states 8–11 → `proc0_26`, death. **And the
+  else covers the pie**: `rm034`'s eagle accepts Pie(2) too (`put: 2 34`), `feedEagle` differs
+  only in the throw animation (`local36` picks loop 9 vs 8), and the begging scene disarms on
+  either feed (`(and (!= owner(19) 34) (!= owner(2) 34))`) — so **feeding the pie silences the
+  eagle's visible need, wastes the pie (the yeti's item), and still leaves rm42 fatal.**
+  Verdicts: *throw the lamb at the cat or dog* → TRUE softlock (death at rm42) — note the
+  cat throw still banks the rm86 rescue while dooming rm42, a genuine cross-slot web. *Feed
+  the pie to the eagle* → TRUE waste; whether it is a softlock turns on the pie's
+  re-obtainability post-forest, and the pie is user-ruled SAFE (tier 2) — **flagged for a
+  user ruling on this specific chain, not reclassified.** Detected today: nothing — but rm42's
+  fork is the SAME init-fork-on-an-ownedBy-value death fold as rm86's, so phase 1 of the
+  window plan should surface the lamb for free. Declared red in the test.
+- **Fish(5): source rm4 (the barrel), accepted by the cat (`put: 5 6`), not by the dog. Its
+  other consumer is the bear:** `rm011` inits the bear only while `(global0 has: 5)` (the
+  Dink existence-guard shape) and the throw (`put: 5 11`) clears the way to the Stick and
+  Honeycomb (→ beeswax → the boat). **OPEN:** the fishless arm loads a different control
+  overlay (`proc958_0 128 314 316` vs `128 320`), so whether arriving fishless leaves the
+  stick/honeycomb takeable — i.e., whether fish-at-cat is fatal or merely wasteful — needs
+  the overlay semantics read before a verdict.
+
 ## 2. The kidnap corral (rm85 → rm86) (tier 1)
 
 `rm085::doit`: walking north past a spoken warning (`(not local0)` arm, ego bounced to y=148)
@@ -185,6 +212,9 @@ rows should collapse either way.**
 | 10 | forest without worn amulet | region-script death fold, flag 84 | MISSED (region scope) |
 | 11 | locket window missed | one-shot window (tier 3) | MISSED, unverified |
 | 12 | peas exhaustion | consumable | OPEN (13 noisy rows) |
+| 13 | lamb to the cat/dog → roc's nest death | exchange slots + ownedBy death fold (rm42) | MISSED (declared red; same fold class as #6) |
+| 14 | pie to the eagle | slot waste hiding a need | AWAITING USER RULING (pie is user-ruled safe) |
+| 15 | fish to the cat → bear/stick chain | exchange slot | OPEN (fishless overlay semantics unread) |
 
 Nothing in this file is a guard source ([[derived-only-no-declared-specs]]): it validates, it
 never feeds the patcher.

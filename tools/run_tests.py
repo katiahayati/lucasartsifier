@@ -217,6 +217,12 @@ KNOWN_RED = {
             "fold (yourStuck is unsurvivable, so the fork demands the owner value) plus the "
             "window-closure walk (a demanded value whose every producer is guarded on a flag "
             "the producers' own trigger sets is a toll in register space).",
+        "🔴 KNOWN GAP (KQ5): the roc's-nest lamb fold is caught":
+            "rm42's rescue-or-death fork tests `owner(Lamb)==34` (fed to the eagle; the pie "
+            "is eaten but earns nothing), and the lamb's town source plus the cat/dog scenes "
+            "accepting it make the waste reachable. Same ownedBy-fork death fold as the "
+            "inn-cellar rows -- one phase-1 build should flip all three. Verified from source "
+            "2026-08-14 at the user's prompting (docs/KQ5-ORACLE.md §1a).",
         "🔴 KNOWN GAP (KQ5): the fortune teller's needle substitution is caught":
             "rm13's amulet slot takes Gold_Coin(11) OR Golden_Needle(3); the needle's real "
             "consumer is the tailor (-> cloak). Exchange-slot class ([[exchange-slots-one-"

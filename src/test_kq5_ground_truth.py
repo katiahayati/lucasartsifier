@@ -200,6 +200,14 @@ def run():
           "paying with the needle starves the tailor->cloak chain. Exchange-slot class -- "
           "docs/KQ5-ORACLE.md §6.")
 
+    lamb_rows = [n for (n, _d, _r) in raw_rows if n == "Leg_of_Lamb"]
+    check("🔴 KNOWN GAP (KQ5): the roc's-nest lamb fold is caught", bool(lamb_rows),
+          "rm42 state 6: `owner(19)==34` (lamb fed to the eagle) -> newRoom 43; anything else "
+          "-> proc0_26 death -- and the eagle also EATS the pie without earning the rescue. "
+          "Throwing the lamb at the cat or dog is therefore fatal at rm42. The SAME "
+          "init-fork-on-an-ownedBy-value death fold as rm86's -- phase 1 of the window plan "
+          "should flip this red and the corral red together. docs/KQ5-ORACLE.md §1a.")
+
     amulet_rows = [n for (n, _d, _r) in raw_rows if n == "Amulet"]
     check("🔴 KNOWN GAP (KQ5): the witch-region worn-amulet death fold is caught",
           bool(amulet_rows),
