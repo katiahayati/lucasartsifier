@@ -258,32 +258,46 @@ state and a *quantity* we cannot.
 | redHair | `rm750` `has: 27` | ditto |
 | grapes | `rm750` `has: 31` | ditto |
 | pressPass | `put: 6` at `Main`, `rm300`, `rm335`; still `has:`-checked at 250/300/335 | `dangerous_sinks`, **not** the act-1→2 carry — the mechanism we catch it by is not the mechanism that makes it real |
+| snakeOil | act 3 `rm630` → acts 4, **5**; empty bottle *destroyed* at the cobra nest (§5a) | `register_strandings` joint row `(12,123)=(26,5)→[730]` — ⭐ **promoted from column B 2026-08-10** |
+| cheese | act 3 `rm650` → act 5 `rm740` | joint row `(26,5)→[740]` — promoted 2026-08-10 |
+| snakeLasso | act 3 `rm640` → act 5 `rm700` | joint row `(26,5)→[700]` — promoted 2026-08-10 |
+| smellingSalts | act 4 `rm525` → act 5 `rm720` | joint row `(26,5)→[720]` + `reg123=5→[720]` — promoted 2026-08-10 |
 
-**B — REAL, AND WE MISS IT** (the act-boundary carries; §7 says why)
+**B — REAL, AND WE MISS IT** — ✅ **EMPTY since 2026-08-10.** The four real act-boundary carries
+are caught (rows above); the fifth, **eveningGown, was RULED not a softlock**: *"evening gown:
+act 2 gate, not a softlock"* [user, 2026-08-10]. The derived mechanism (§7ab): the act 1→2 break
+itself demands `wearingGown`, whose only act-1 writer costs the gown — the boundary's own
+precondition, unstrandable, now pinned in `NEVER_STRANDABLE`. ⚠️ The one column-B *debt* left is
+not an item: the ruled-in-scope **empty-bottle-at-act-5 death** (`global150 == 0` crossing into
+act 5) has no detector — §8.
 
-| item | obtained | needed | consequence of arriving without it | evidence |
-|---|---|---|---|---|
-| snakeOil | act 3 `rm630` | acts 4, **5** | cobra nest impassable; empty bottle is *destroyed* (§5a) | source + Sierra hints + LP |
-| cheese | act 3 `rm650` (`(not (has: 16))` respawn — but `rm650` is act 3/4) | **5** | the rats are impassable | source + all walkthroughs |
-| snakeLasso | act 3 `rm640` (respawns in `rm640`) | **5** | cannot reach the mummy-case hook | source + all walkthroughs |
-| smellingSalts | act 4 `rm525` (respawns in `rm525`) | **5** | Steve cannot be revived | source + all walkthroughs |
-| eveningGown | act 1, Lo Fat's | 2 | no entry to the fundraiser | walkthroughs; **no `get:` site extracted**, so the source end is unmodelled too |
+**C — ✅ RULED SAFE 2026-08-10, pending the §9 play test** (formerly CONTESTED; the user delegated
+the check — *"should be checked"* — and then ruled on the findings: *"let's mark those safe, but
+let's remember to put them in a play test plan later… I suspect the act 5 chase is very tight"*)
 
-**C — CONTESTED: the source contradicts the walkthroughs. NEEDS A USER RULING (§8)**
-
-| item | walkthroughs say | the source says |
+| item | user's play-side shape (2026-08-10) | what the source check found |
 |---|---|---|
-| workBoot | miss it in act 4 → unwinnable (LP part 12) | `rm720` (the act-5 room that uses it) re-places it under `(not (has: 12))` with a working `sGetBoot` |
-| wire | clip it in act 3 or the act-5 door cannot be wired | `rm430`'s `wireEnd` inits under `(or (> global123 3) …)` and `(not flag44)`, and `sGetThatWire` has an explicit `(== global123 5)` branch — so it is cuttable *in act 5* |
-| dinoBone | act 3 only; needed act 4 to break the statue | `rm480:79` `(if (not (global0 has: 18)) (bone init: stopUpd:))` — no act test on that line. Whether `rm480` is reachable in act 4 is **unresolved** and needs the act partition |
+| workBoot | obtainable act 4, then act 5 is the chase; used in act 5; *"I don't know if it's still available in act 5"* | **available at the point of use**: `rm720:46` re-places it with NO act test, `rm720` IS the act-5 use room (verb 23 on `steve` → `put: 12` + `sGetUp`), both `sGetBoot` armings are plain takes, and `rm720` carries the act-5 chase costume branch (`view 426`) → SAFE by source |
+| wire | *"same shape as the boot… I'm guessing it's really a softlock"* | source disagrees: sourced AND used at `rm430`; `wireEnd` inits acts 4 **and 5** (`(> global123 3)`, act 3 under its progress flag; `(not flag44)` = not already cut); `sGetThatWire` dresses the ego in the act-5 running `view 426`; the use (`sWireItShut`) is act-5-only. Arrive wireless → cut a fresh one at the door, **if you hold the wireCutters** — the strandable link is the CUTTERS, already column A |
+| dinoBone | obtained act 2, used later, availability unknown | `rm480:79` respawn guard, NO act test; the bone is **never consumed** (zero `put: 18` sites); real uses `rm500` (`sSmashPlaster`, self-limited to acts ≤4), `rm600` (`sBreakGlass`), `rm650` (`sDisarmTrap`) — all in `rm480`'s museum block → SAFE by source |
 
 **D — OUT OF SCOPE BY THE 2026-07-26 RULING** (their absence from `s.required` is correct)
 
 - The 8 examine-to-know conviction items: pocketWatch, garter, ankhMedallion, watney_sFile,
   warthogHairs, carbonPaper, yvette_sShoe, and the notebook's evidence pages.
 - **magnifier**, **pippin_sPad**, **waterGlass** — reclassified out of column B on 2026-08-06.
-  All three were listed as missed carries in the old §5; measured, **none of them has a downstream
-  `has:` use site at all**. magnifier's need runs through evidence examination, pippin_sPad's
+  All three were listed as missed carries in the old §5.
+  ⛔ **CORRECTED 2026-08-09: the stated reason was FACTUALLY WRONG.** It read "measured, none of
+  them has a downstream `has:` use site at all" — but LB2's use sites are **verb-dispatched**, and
+  the verb number is the inventory item's `message` property (`invCode.sc`), not the item index.
+  `waterGlass` is `message 38` and has **two** real use sites, `rm510` and `rm700`, both arming
+  `sListen`. Its source is `rm350` (the `waterGlass1/2/3` tray). USER CONFIRMED 2026-08-09: *"the
+  water glass is used to eavesdrop on conversations"* — so the **conclusion (out of scope) stands
+  and the reasoning does not**. Never check an LB2 requirement by grepping `has: N`.
+  ⚠️ This matters operationally: the act-5 deadly-exit fix (§7u) makes `waterGlass` a flagged
+  finding, which trips `test_lb2_ground_truth`'s "nothing OUT OF SCOPE is flagged" check. The model
+  derives requirements from use sites and cannot tell an eavesdrop `setScript:` from a progress
+  one, so this needs a ruling (§8) rather than a patch. magnifier's need runs through evidence examination, pippin_sPad's
   through the act-5 riddle UI, waterGlass's through eavesdropping. Under "gate on items only" these
   are exactly the layer the ruling excludes, so they are not gaps — they are the ruling working.
 
@@ -312,7 +326,1117 @@ modelled. That is recorded here, not gated on, pending §8.
 
 ---
 
-## 7. WHERE WE ARE — MEASURED 2026-08-06 at `7aa9a11` (tag `v2.1-kq6`)
+## 7. WHERE WE ARE — the short version (2026-08-10)
+
+> ⛔ **This section's history corrected itself twice (§7u, §7y) before closing.** §7u put column B
+> at 1 of 5 (snakeLasso had been "caught" by a `fatal_uses` FP); §7y took it to 3 of 5 by walking
+> the joint projections; §7ab landed the last two blockers and the 2026-08-10 rulings settled the
+> remainder.
+
+**Column A 10 of 10 · Column B EMPTY (closed 2026-08-10) · Column C: checks done, awaiting the
+user's word (§8 item 1).** The four real act-boundary carries were PROMOTED into column A;
+eveningGown was RULED an act gate (§8 item 5) and is pinned `NEVER_STRANDABLE`; the former
+KNOWN_RED is promoted and deleted.
+✅ **The `skeletonKey` FP IS DEAD** (2026-08-10, latest) — §7ad. The oracle test is **9 of 9
+GREEN**: every real softlock caught, zero false positives. With it died the
+armed remedy it carried (the `(not (gEgo has: 8))` action spec and the rm630 applied placement —
+a prohibition at the key's real use site, the Spinach_Dip shape).
+✅ **The hardening round** (2026-08-10, closing) — §7ae: the watched surface RE-BLESSED on the
+user's word; the oracle retrofitted to MECHANISM PINS (whole rows, per the 2026-08-09 ruling);
+and the STREET SEAL declared as the file's one deliberate red — so "zero declared reds" above is
+now, deliberately, one.
+✅ **Remediation round 1** (2026-08-10, later) — §7af: the SOLE-EXIT DEFERRAL lands and all four
+act-break demands PLACE (`entry-deferral-PARTIAL`, stage-scoped on the game's own act register).
+⚠️ Two of the four rest on the street-seal gap and would wall if shipped — they retract when the
+seal lands; nothing ships. Open: the register-write hold and the joint rows' specs.
+✅✅ **THE STREET IS SEALED** (2026-08-10, latest) — §7ag: three derivations (departing init,
+dead-letter nav, relational lowering over the register's own universe), all corpus-neutral
+outside LB2; the street collapses to acts [1], the RED promoted same-day, pressPass gains its
+true mechanism. (The seal retracted rm250 as a deferral SITE only — §7af's two wall-risk
+`has: 6` specs still placed until §7ai retired them.)
+✅✅ **THE PASS WALLS ARE RETIRED** (2026-08-10, latest) — §7ai: need retirement
+(`crossing_retires_need`, the third edge-drop rule), delegate-slot cast conditions
+(`extract.delegate_slots` — the doorman's `123==2` finally reaches the sGiveInvite arming) and
+need-site conditions (`required_guards`). Both act-blind `has: 6` demands gone, `rm26->rm330`
+keeps the real act-1→2 carry, corpus byte-identical elsewhere. THE SHIP-BLOCKER IS CLOSED.
+✅ **The empty-bottle death IS caught** (2026-08-10, later): `register_value_strandings` —
+see §7ac. One row corpus-wide: `reg150==[0]@seal(12,123)→[730]`.
+Nothing safe is flagged, so the false-positive side is clean. The five misses turned out to be
+**three independent causes**, all diagnosed and measured:
+
+| # | cause | closes | the fix |
+|---|---|---|---|
+| 1 ✅ | **The act register could run backwards.** `_inroom[123] = {rm355: [0], rm630: [4]}` — two in-room writes whose from-value was lost, so at act 5 the model set the act back to 4 and re-entered `rm525`. | **smellingSalts — LANDED** | Every ordered step of `_rstep[123]` is `k→k+1`, so: **a register that COUNTS (≥2 ordered steps, all consecutive, >2 values) may not be DECREASED by an unordered write.** Read off the model's own step relation. Post-pass in `_build_product`; corpus census = 3 registers, none in LSL2/KQ4. §7s |
+| 2 ◐ | **Act 5's walls are deaths on entry.** Act 5 is an 11-room pursuit region entered at `rm420`; its only two exits (`north 350`, `west 500`) run `sLauraDies` when `global123 == 5`, conditioned on arrival direction. | **snakeLasso LANDED**; cheese and snakeOil still open | Half built. LB2's deaths are now REAL (0 → 37 DEATH transitions) via the three death fixes below. The remaining piece is precision — and the obvious fix for it FAILED, see §7t. |
+| 3 ⛔ | **`get:` is variadic and we read one argument.** `(global0 get: -1 32)` — `-1` is a "silent pickup" sentinel, the items follow it. 13 sites lost, 28% of LB2's acquisitions. | eveningGown, and it clears the `skeletonKey` FP | **BUILT AND REVERTED 2026-08-09 — blocked on the debug exclusion.** The rule itself is right and derived: `get`'s role is `dest_fixed='ego'`, `dest_arg=None`, so there IS no destination argument and *every* argument is an item; `-1` filters out as a non-item. Measured, it gives `eveningGown` its real source (`rm270`). **But it is a NET REGRESSION without the exclusion** — see below. §7o |
+
+**Build order:** 1 ✅ landed, then 2, then 3.
+
+### ⭐ THREE BUGS FOUND BY BUILDING #1 — each exposed by fixing the last (2026-08-09)
+
+Cause #1 landed and its own side effects led straight into three defects that had nothing to do
+with it. None was invented by the change; each was already there, masked.
+
+| # | bug | fix | measured |
+|---|---|---|---|
+| A | **LB2 had NO deaths at all.** `derive_death_send` finds `(99, 'deathRoom')`, but `lower_death_sci11` only injected into a `changeState` switch and LB2's dialog offers Restore/Restart from `init` — a silent `continue`. | Inject at the object's **ENTRY**: own `init` if it has one, else `changeState` case 0. `init` IS the SCI entry point; `Script` overrides it to dispatch to `changeState(0)`, so case 0 is not a second rule. Silent skip → loud `[degraded]`. | KQ6 unchanged: 66 DEATH transitions, 34 rooms, 0 of its 4 dialogs define `init` |
+| B | **A death SCREEN was walkable.** `deathRoom` is a picture and a `repeat` around a 3-button Print that never returns — and it declares `north 350`, which the game never reads. We took it at face value, so the model could travel by dying, and `rm99` became a sink witness and a guard target (`pressPass@rm99`, `rm210->rm99: (gEgo has: 6)`). | A death dialog that IS its script's room object is a death screen → joins `_no_walk_rooms`, exits dropped. | 1 of 1 on LB2, **0 of 4 on KQ6** (its dialogs are cutscenes inside real rooms) |
+| C | **A room's own `newRoom` override was unread.** `rm666` — the dark passage — exits via the placeholder `(gRoom newRoom: 0)` and picks the real destination in its own `newRoom` from `global12`: from 520→610, 630→454, 650→560 (or 565). Reading the literal left it a pocket with no way out, which made `lantern` look stranded. | `_newroom_override_edges`: read the rewrites, ADD them as guarded edges (adding movement is the safe direction). | `rm666` → `[0, 99, 454, 560, 565, 610]`; `lantern` FP gone; `newRoom: 0` occurs in exactly one room corpus-wide |
+
+**On `lantern`:** it was flagged, §5 says `act-local`, and §5 was right — the pocket was ours, not
+the game's. Recorded because the standing rule is that an addition is SUSPICION and enumerated
+ground truth is never reclassified to make a change look good.
+
+### ⛔ WHY #3 IS REVERTED, AND EXACTLY WHAT IT NEEDS (2026-08-09)
+
+The variadic read is correct and lands `eveningGown`'s real source. Measured with it in:
+
+    eveningGown    sources=[270]              <- right, Lo Fat's, as the user described
+    skeletonKey    sources=[0, 29, 500]       <- 500 real; 0 and 29 PHANTOM
+    cheese         sources=[0, 29, 650]
+    smellingSalts  sources=[0, 29, 525]       <- ...and smellingSalts LEFT the softlock list
+
+**Script 29 is `whereTo` — the debug jump-to-act room — and it is the ONLY caller of `Main`'s
+`proc0_13`…`proc0_17`**, which hand over nine items each (`(ego get: -1 25 16 17 30 27 26 12 31
+13)`). Read as sources they make the items obtainable from Main scope, which `_sink_rooms` widens
+to every room, so a confirmed finding vanished. §1a predicted this in 2026-08-06:
+
+> *"Anything that models the act must exclude `whereTo`'s `-300` block the way
+> `config.debug_globals` excludes LSL2's; LB2's `debug_globals` is presently empty."*
+
+**It is reverted rather than shipped**, because a change that deletes a play-confirmed stranding is
+worse than the gap it closes — the standing rule is that a DROP is a regression.
+
+### ⭐⭐ §7ab. BOTH BLOCKERS LANDED — and the evening gown turns out to be the act break's PRICE, not a carry (2026-08-10, later)
+
+Three changes shipped, each derived, each measured **byte-identical on LSL2, KQ4 and KQ6**.
+
+| # | change | where | corpus profile |
+|---|---|---|---|
+| 1 | **`get:` read as VARIADIC**, from the wrapper's own body: `Ego::get` is `(for ((= temp0 0)) (< temp0 argc) ((++ temp0)) ((global9 at: [param1 temp0]) moveTo: self))` — a `ComplexVariable` indexing the ARGUMENT LIST under an `argc`-bounded cursor. That shape, not "`dest_fixed` and no `dest_arg`", is what says "every argument is an item". | `vocab._argc_temps` / `_variadic_item_arg` / `Vocabulary.transfer` | `get` is variadic in ALL FOUR games (it is SCI's own `Ego::get`), but **multi-argument call sites: LSL2 0, KQ4 0, KQ6 0, LB2 16** — so it is inert elsewhere by construction |
+| 2 | **A PROCEDURE IS NOT A HANDLER.** `opmodel`'s handler pass walked every script-level procedure standalone in its scope's rooms. The engine dispatches methods; a procedure runs only where it is CALLED, and all three walkers already follow calls in the caller's own room. | `opmodel.py` (the `for pbody in s.procs.values()` walk, deleted) | this is what made `whereTo`'s debug hand-outs into room-0 sources, i.e. sources EVERYWHERE. Nothing to do with detecting debug code — it never asks what a script is for |
+| 3 | **The object-property store reached through a GLOBAL.** `_prop_receiver_script` resolved `ScriptID` exports and unique names; a global only ever assigned one object is just as static. Bounded, because those objects are usually the ENGINE's: only a property the class INTRODUCES and that no class introducing that name ever uses itself. | `vocab.derive_global_props` / `_introduced_unused` / `lower_obj_props(split_chains=)` | **LSL2 0, KQ4 0, KQ6 0, LB2 2** (`ego.wearingGown`, `IconBar.walkIconItem`) — the profile of a real store, not a fitted one |
+
+⚠️ **#3 needed `lower_obj_props` to SPLIT CHAINED SENDS**, and that is a rule, not a workaround:
+the one load-bearing write is `(global0 put: 32 wearingGown: 1 setMotion: …)`. Lowering the reads
+and skipping that write is not "missing a write", it is **half a store** — a register whose only
+setter is invisible reads 0 forever, and a permanent 0 *fabricates a seal*. `derive_room_locals`
+already refuses to half-lower for exactly this reason. The split is scoped to the new pairs;
+curing the same defect for the existing ones is 283 more sites in KQ6 and 90 in KQ4 and needs its
+own measurement. **Open item.**
+
+**AND ONE FALSE POSITIVE, WHICH TOOK TWO TRIES TO DIAGNOSE.** #1 gave `notebook` its sources and
+it was promptly flagged — the FP `NEVER_STRANDABLE` was written to catch. The model was RIGHT
+about the graph: `intro` (script 92, a `Rgn` live in rooms 100…220) claims ESC and runs
+`sFadeToBlack` → `newRoom: 26`, so the intro really is skippable and rm220's grant really is
+bypassable. The fault was the REQUIREMENT: rm300's bar door arms `sEnterBar` from verb 4, verb 6
+**and verb 14**, and 14 is the notebook's `message` — a synonym for "talk to the doorman".
+
+> **An item only SOME armings demand is not a gate.** `missability`'s `required` now reads a
+> machine's entry guards through the intersection of `_own_required` over every entry.
+
+The requirement-side twin of the rule `fatal_uses` already carries (*a death armed on one arm of a
+fork does not condemn the fork*) and of `_own_required`'s own OR-branch exclusion — the same
+disjunction, spelled as separate entries instead of a `GOr`. ⚠️ My first attempt used
+`entry_musts`, which reads each alternative with `_own_positive` ("a mention, not a proof") — and
+every one of `sAskEnterBar`'s entries conjoins the whole `GOr` of its armer's three cases, so
+own(2) is mentioned in all three and the intersection kept it. **The fix has to use the same
+reading as the consumer.** It also drops `daggerOfRa`/`wireCutters` from `required@460`, where
+`sCutRope` is armed by verb 21 (wireCutters) OR verb 22 (daggerOfRa); both stay caught on rm750.
+
+#### ✅ WHAT THE MODEL NOW DERIVES ABOUT THE GOWN — and why nothing was flagged
+
+    rm250 -> rm26   req {wearingGown: {1}, prevRoom: {300}}      <- the ACT 1 -> ACT 2 break
+    rm320  sLauraChanges  writes wearingGown := 1, entries [own(32), own(32)]
+
+`rm250.sc:71` is `(cond ((and (== global12 300) (global0 wearingGown:)) (self setScript: sACTBREAK)) …)`
+and `sACTBREAK` state 10 is `newRoom: 26`. So **the act-1 break is gated on an ego property, and
+the only act-1 writer of that property costs the evening gown.** This is the act-gated-movement
+shape §7h asked for and §7q/§7r looked for in the wrong idiom — a third spelling to add to §7z's
+table, and the first one that is an EGO property rather than a room's.
+
+**No verdict moved, and that is the finding.** The gown is not carried ACROSS the act boundary; it
+is the boundary's own precondition. Nor is it strandable:
+
+* `rm270` gives it **unconditionally** (`source_guards[32] = {270: [[]]}`);
+* `rm250` re-places the laundry ticket while you hold neither ticket, nor gown, nor gown-worn;
+* `rm250 / rm270 / rm320` are one strongly-connected act-1 block (measured: rm270 and rm250 are
+  both reachable from rm320), so no reachable state loses access.
+
+Sierra's own hint file settles it: *"Act 1 never seems to end… e) Pick up an evening gown at Lo
+Fat's Laundry then put it on at the speakeasy"* — listed among the five things that **END ACT 1**,
+not among the things you carry into act 2.
+
+⛔ **SO §5's eveningGown ROW ("spans 1→2; no entry to the fundraiser") IS THE SAME SHAPE AS THE
+THREE `CONTESTED` ROWS** — a walkthrough's "you need it in act 2" read as a carry, where the game
+gates the transition itself. **It is NOT reclassified here. Report and ask** (§8).
+
+⚠️ And note what did NOT happen: **the ego-property store does not seal the street**, exactly as
+§7aa's own table predicted and its prose then talked past. Once `wearingGown` is a real register
+it is *satisfiable* in acts 2–5 (you are wearing the gown), so `rm330`'s taxi disjunction reduces
+to the "honest disjunction" row — measured, still acts 1–5 in the street block. The seal is the
+arrival taxi being driven **off-screen** by `sTaxiLeave` (`MoveTo 369 125`, x beyond the 320-wide
+screen) under `handsOff:`, so it can never be verbed. That is a POSITION mechanism and is still
+unmodelled. **Do not re-read §7aa as if the store were the street's cure; it is the ACT GATE's.**
+
+### ⭐⭐ §7ad. THE skeletonKey FP IS DEAD — a hands-on wait is pre-emptable (2026-08-10, latest)
+
+**The FP**: `fatal_uses` condemned `skeletonKey@rm630/sUnlockTrunk` — every lifted path of the
+unlock reaches state 10's `global145 := 1` + `newRoom: 99` (the ferrets). **The truth**: state 6
+does `(global1 handsOn:)` + `(= seconds (if (HaveMouse) 6 else 12))` — control comes BACK with a
+clock running — and using the meat arms `sInsertMeat` into the same `('G', 2)` slot, disposing the
+pending death. Unlocking the trunk is the *solution*; the meat's cost rides sInsertMeat's own
+entry (`own(9)`), as a requirement should.
+
+**The rule, all three parts derived:**
+1. `vocab.derive_control_selectors` — the Game hierarchy's control switches, found as methods
+   writing constant 0/1 to names the USER class itself declares (property or method — SCI0 spells
+   `canInput` as a property, SCI1.1 makes both methods). LSL2/KQ4 derive no restore selector, so
+   the whole feature is inert on SCI0 by construction. KQ6/LB2: `handsOn → restore`.
+2. `machine._restores` marks a state ONLY when it pairs a restore send with a write to the
+   engine Script class's own cue clock (`seconds`/`ticks`/`cycles`… — read off `Script::doit`'s
+   countdowns, not listed). ⚠️ **The restore send alone was the warned naive form and it did
+   exactly what the warning said**: every SCI1.1 cutscene ends with a `handsOn:`, so marking
+   those made every doomed machine pre-emptable and KQ6's fatal_uses went to zero in one
+   measurement. Restore∧clock = "you are free, and something is coming" — the window is the fact.
+3. `_survivable(…, preempt=)` — a marked state is safe when a same-slot competitor
+   (`entry_recv`) is not itself in the evolving `unavoidable` set: the slot-race semantics
+   `death_traps` is already built on, seen from inside the machine. Only `fatal_uses` passes
+   `preempt`; `death_traps` is untouched, so the lingering-timer death class keeps its prices.
+
+**Measured**: LSL2/KQ4/KQ6 snapshots byte-identical (KQ6's `skull@rm420/throwSkull` survives —
+it never hands control back); LB2 loses exactly the skeletonKey rows. **The oracle is 9/9.**
+
+### ⭐⭐ §7an. THE 4→5 ACT FLIP HOLDS AT ITS OWN COMMIT CLAUSE — the night-guard shape lands (2026-08-11, night)
+
+**The user's §7al follow-up ("guards should condition the STATE CHANGE, like KQ4's night
+guard, not depend on rooms") is BUILT for the boundary that has the shape.** The commit census
+(memory `lb2-act-flip-hold-sites`): rm520::newRoom is an EXIT INTERCEPTOR — its cond arm
+`((and (== global123 4) (global0 has: 31)) (= param1 26) …)` diverts any exit into the
+act-break card, and its else arm is the stock plain exit. That is `guard_register_write`'s
+site one generalization over: the flip is by POCKET-DIVERT rather than a literal register
+write, in the same always-retested method pair (`newRoom`/`doit`).
+
+`patcher.guard_flip_interceptor` + a first-priority branch in `_guard_arrival_entries` (under
+`stage_override` only — the sole-exit deferral context, LB2-only by construction): an entry
+room whose interceptor arm CONTAINS the spec's own stage test and routes into the pocket gets
+the demand conjoined INTO that arm. Held = the stock else exit, hands on, nothing consumed,
+retry free on every exit; the demand reads at exit time (no state-born heads). rm520's own
+`cue` (the post-commit delivery) is untouched by construction (`cue` is not a retested method).
+
+**Measured**: suite 460+1-intended / 2 known-red / 0 other; the LB2 surface moved by EXACTLY
+two rows — `rm26->rm420` REFUSED → `applied=True` (sites=1, the flip-interceptor-hold at
+rm520) — re-blessed after reading both; KQ6/goldens byte-still. `rm26->rm750` stays honestly
+REFUSED (the 5→end commit is rm480's mid-chase capture — no interceptor exists; the likely
+cure is SUBSUMPTION by this 4→5 hold, unmeasured). **v4 patch** built
+(`build/dagger_patch_v4`, --skip-decompile on v3's ir): 210/280/300 byte-identical to v3 +
+new 520 (the hold, demand = the spec's 7 items); guarded-model verify "no NEW softlocks";
+INSTALLED to the live game with cmp (Sierra's own 100/450, lost in the v2 cleanup, restored
+too). **DEMAND FORWARDING landed the same night (user vote: option 2):** the rm26->rm750 demand (bifocals+redHair uncovered; wireCutters/daggerOfRa/grapes and the [10,11] any-of group already in the hold) FORWARDS into the same rm520 arm — `guards.defer_to_entry` proves the sole producing flip + satisfiability, `patcher._forward_demand_to_hold` conjoins the delta. Row: REFUSED → `demand-forwarded-to-hold`. THE DAGGER KNOWN_RED IS PROMOTED (user's word; run_tests.py records it). ⚠️ item 31 is the GRAPES (not the dagger) — the 4→5 break fires on exiting rm520 with the grapes.
+
+✅ **PLAY-CONFIRMED BY THE USER 2026-08-13** — all three hold behaviors (grapes-only → plain held exit, act stays 4; all nine → stock break to act 5; no grapes → stock exit) AND the rm300 taxi wraps at act 1. Test rig: ~/sierra/patched/dagger; teleport sessions need `send WrapMusic init 0` once per launch (WrapMusic.wrapSound defaults 0 until some room runs wrap-music; `dispose` sends `client:` into it — the stock-game crash that ate a day of triage was THIS, not any patch).
+
+**Play-confirm owed (§9)** (historical): at act 4 carrying the grapes but missing a carry,
+exit the office → a plain exit, act stays 4; re-enter, exit with all seven → the break fires.
+
+### ⭐ §7am. THE TICK STORE IS LOWERED — and the pass-vacuity detection is PARKED at three named hops (2026-08-11, evening)
+
+**USER ruling (this session): *"we don't actually need a guard between act 1 and 2 because the
+press pass is actually necessary for act 1 to end"* — "it's needed to operate the cab."*
+SOURCE-VERIFIED the same hour, two legs (full cites in the `lb2-pass-necessary-for-act1`
+memory): rm250 IS the cab interior and its init cond BOUNCES passless riders back
+(`sNoPressPass{C,D}` state 6 → `newRoom: prevRoom`); and the gown chain's root — the laundry
+ticket in rm250's trash — inits only under `(proc0_10 16 1)` = `(& global124 15) == 15`, where
+mask 1's only live writers are rm235's two pass-pickup handlers (`doit: 1` beside `get: 6`).
+Possession is stable: the only live `put: 6` is rm335's act-2 surrender; rm300's `sGivePass`
+dead-ends in deathRoom (99); Main's proc0_16 strip is whereTo-debug-only.
+
+**What LANDED (all green, all corpus-neutral -- suite 461/2/0, LSL2/KQ4 goldens intact, KQ6 and
+LB2 watched surfaces byte-unchanged across all keys):**
+1. **The SEVENTH container** (`vocab.derive_mask_accessors` + `lower_mask_accessors`, wired in
+   missability before the sixth store): a mask word reached through an ACCESSOR — write
+   `(+= global124 (&= param $00ff))` in `triggerAndClock::doit` behind
+   `((ScriptID 22 0) doit: <literal>)`, reads through `proc0_10`'s single/cumulative modes.
+   The pre-pass inlines every resolvable literal call site into the sixth store's own direct
+   idioms and husks the accessor/reader bodies; the sixth store derives and lowers from there
+   (registers 624-635). Allocates nothing itself. 26 write sites + 93 reader calls lowered;
+   one skip (script 90's `meetingTimer::cue`, a computed arg — unarmed at act 1). Census
+   (tools/probe_mask_accessor.py, all ten titles): global124 is the ONLY both-sides instance;
+   the score (g15) refuses on the reader requirement everywhere, the icon mask (g116) on its
+   computed reader masks. One relaxation in `_mask_site`: a non-literal `|=`/`&=` write is a
+   recorded SKIP, not a condemnation (the abstraction is still bits; only the values are
+   unknown — lower_flags' own gap). KQ6's g161 verdict unchanged under it.
+2. **The LB2 IR RE-EMITTED** with the current frontend (the shipped IR predated the ScriptID
+   export index; script 22's exports were empty). Recipe: copy the live game dir, drop OUR
+   210/280/300 patch files, RESTORE Sierra's own 100/450 from
+   `build/dagger_patch_v2/retired_from_live` (the v2 cleanup had pulled Sierra's originals from
+   the live dir — they are ALSO restored to the live game now, cmp-verified), run Snuffer
+   (~2s). Verified two ways: decompiled src tree byte-identical to the committed one; the
+   oracle 20/0 with all mechanism pins on the new IR BEFORE the store change.
+
+**And the measurement verdict: the pressPass rows did NOT retire — structurally.**
+`register_strandings` is a source-reachability claim ("after the flip you can no longer go GET
+it") with no inventory notion; retiring the row and the rm26->rm330 spec needs proving "every
+reachable act-1→2 flip implies own(6)", which no walker performs. The chain is now fully
+VISIBLE in the model — the ticket's cast condition reads `And(g624..g627)` in the lowered IR,
+`_inroom[624]` = {235:{1}, 26:{0}, …}, `sGetDress` entries `own(1)`, `sLauraChanges` entries
+`own(32)` — and exactly three consumers are missing:
+  * **Hop A**: cast conditions never conjoin into acquisition guards (`Acq.guard` is the take
+    site's own opaque verb pc; the KQ6-hole principle covers edges and machine entries but not
+    plain handler takes) — so `source_guards[1][250]` reads opaque/permissive. Independent
+    merit beyond this question.
+  * **Hop C**: no record couples a handler's register write to its co-sited `get:` —
+    `handler_writes` has `(235,235,624,1,opaque)`, `handler_gets` the adjacent `get: 6`, same
+    guard, uncoupled.
+  * **Hop D**: the filter itself — `crossing_implies_possession`, the possession-proof sibling
+    of §7ai's `crossing_retires_need` (same strict-quantifier template): flip req g545=1 → its
+    only pre-flip-reachable writer (rm320) costs own(32) [the rm600 sMeanwhile writer is
+    act-4-scoped away] → own(32)'s sole source (rm270) costs own(1) → own(1)'s sole source
+    needs bits 0-3 (hop A) → bit0's writers co-grant own(6) (hop C) → no live pre-flip
+    `put: 6` ⇒ held at the flip. Conservative: any opaque link keeps the row. Retire-side
+    only, so the no-necessity doctrine is untouched.
+
+**PARKED HERE by the user's word (same evening): the store ships as-is (green, self-contained);
+hops A/C/D are the recorded restart point if the 1→2 guard ever needs to retire by derivation.
+Until then the rm300 wrap stands (correctly sited per §7al; vacuous per this section's game
+truth, which the user ruled acceptable). Focus moved to the KQ4-night-SHAPED act holds (§7al's
+KNOWN_RED cure): rm520::newRoom's exit-interceptor arm is the 4→5 hold site — see the
+`lb2-act-flip-hold-sites` memory.**
+
+### ⭐⭐ §7al. THE ACT GUARDS SIT OUTSIDE THE ACT COMMITS — the arrival-commit triage for deferral sites (2026-08-11, after the play find)
+
+**USER ruling (same day, on §8.0's placement half): vacuity does not excuse a mis-sited wrap.**
+*"I'm not sure we really care about the fact that the press pass is always going to be available
+at the end of act 1... as long as the guard is properly placed, it just won't fire, which is
+fine."* So the pressPass spec STAYS (its vacuity question remains §8.0), and the placement moved
+to where a refusal is survivable.
+
+**The rule** (`patcher._defer_triage_site`, fed by `trigger.arming_contexts` +
+`guards.defer_to_entry`'s new model callbacks): a sole-exit deferral site is not a refusal point
+just because it precedes the pocket — its own arming may sit INSIDE a commit. Every arming of the
+site's trigger script is classified from the game's own context:
+
+  * **STAGE-VACUOUS** — the arming's own path pins a register against every stage alternative
+    (rm620: `sFoundDagger` arms under `(== global123 3)`; a stage-1/4/5 wrap there guards a
+    crossing that cannot happen): **no wrap at all**, reason recorded on the row.
+  * **COMMITTED** — mid-changeState, or the branch takes the controls (`handsOff:`/ego `hide:`
+    anywhere in the arming's branch — rm480's case-740 hides the ego AFTER the arming), or an
+    `init` arrival delivered by a cutscene (`_cutscene_delivers` reads the delivering room's
+    performers, nav-property destinations resolved): the demand RE-SITES up the chain —
+    in-file to the enclosing Script's own armings, cross-file to the delivering rooms via
+    `_guard_arrival_entries` rebased on the site (recursive, depth-capped, visited-set), each
+    hop owing the same presentability + compliance filters the original site owed
+    (`defer_to_entry`'s `site_ok`). The arming path's own non-positional heads ride the carried
+    stage (`(and <stage> <heads>)`), positional and stage-implied conjuncts stripped.
+  * **BENIGN** — a hands-on arming: in-place gate/refusal as before, and a target with BOTH a
+    controllable arming and an uncontrollable sibling gets both covered (the finding-#4 rule:
+    one wrapped door of an N-door commitment is a bypass).
+
+Two honesty walls inside the climb: a head that cannot cross files (`local0`) refuses the hop,
+and a head born in a changeState (its value at the landing's earlier moment is not the value the
+game tests — rm480's `local0` is 0 through all of init) refuses even in-file unless the stage
+already implies it.
+
+**What moved (measured in the product, no compile needed for the dry run):**
+
+    rm26->rm330 (stage 1, pressPass): rm250's init arm-gate REMOVED (it sat past rm300's
+        sHailCab commit — hidden ego, §7i strand, the play find). Re-sited to rm300, BOTH
+        armings of sHailCab: taxiSign::doVerb -> spoken refusal, frontDoor::cue (the automatic
+        gowned-exit taxi, the path the user actually played) -> silent arm-gate. Guard:
+        (or (not (and (== global123 1) (global0 wearingGown:))) (global0 has: 6)) — the
+        wearingGown head carried from rm250's own arming clause, so an ungowned passless taxi
+        ride (the driver-refusal flavor path) stays exactly stock.
+    rm26->rm420 / rm26->rm750 (stages 4/5): ALL sites refused, rows now
+        entry-deferral-REFUSED with per-site reasons (454: the only deliverer rm455 stands at
+        act 2 only; 480: state-born `local0`; 620: stage-vacuous; 500/520: no wrappable site).
+        The v2 wraps at rm454/480/620 were all either provably vacuous or mid-commit — what
+        looked like coverage was a strand or a dead guard. ⚠️ the "every non-refused dagger
+        spec places" check goes back to KNOWN_RED, honestly: the real act-4→5/5→end
+        pre-commit sites are not yet derivable (rm500/520 have no wrappable site; the séance
+        and chase corridors dead-end in state-born heads).
+
+LSL2/KQ4 goldens and KQ6 untouched by construction (the triage runs only under the sole-exit
+deferral, which only LB2 has).
+
+### ⭐ §7ak. THE v1 BOOT CRASH — a mode nobody can switch is not a mode (2026-08-11)
+
+**dagger_patch_v1 crashed at boot**: `[LB2::init @ 0af0]: Send to invalid selector 0x76 (add)
+of object at 0019:05b5`. The chain, diagnosed with the ScummVM debugger (`vo` on the receiver)
+plus a compile→decompile round-trip diff:
+
+1. The receiver was the **`Actions` class** (script 950, super `Code`, lone `doVerb`).
+2. The send was `(WrapMusic add:)` — **`WrapMusic` is a game class declared in script 0
+   itself**, stock species **134**. Our recompiled Main numbered it **46** = `Actions`' slot
+   (the ONE drifted class in a 149-class table; scicompile numbers classes by its own
+   enumeration, not the game's table). Every WrapMusic reference in our Main resolved to
+   Actions → no `add` → crash. The round-trip source diff could not see it — decompiling our
+   own binary maps 46 back through our own wrong heap, a fixed point.
+3. Main shipped ONLY to declare the mode/warned globals — and LB2's mode UI had been SKIPPED
+   (`no nsTop row idiom to clone` in its GameControls), so the plumbing had no picker anyway.
+   Stock LB2 declares 400 globals and references ≤399, so without the mode globals Main is
+   untouched.
+
+**The cure** (`patcher.install_mode_chooser`, the rule the feature's own docstring almost
+stated): the chooser install runs FIRST and is the mode's feasibility gate — no hostable
+chooser ⇒ `T.MODE = None` ⇒ classic modeless wraps, no new globals, no Main in the patch.
+KQ6/LSL2/KQ4 keep their modes (their choosers land); LB2 v2 ships 6 files, no Main, wraps
+without the `(== global400 2)` bypass. Guard modes for LB2 = delete-the-files, until either
+an LB2 panel idiom is derived or the species gap is fixed.
+
+⚠️ **OPEN ENGINE DEBT — the species drift itself**: any future patch that must edit a script
+declaring a game class will hit it. The fix belongs in scicompile (species for a same-named
+class from the game's own compiled resources — `LoadClassFromCompiled` exists) or a classdef
+`class#` pin generated from the IR, which knows every species.
+
+### ⭐⭐ §7ai. THE PASS WALLS ARE RETIRED — an unreachable need is a retired need (2026-08-10, latest; commits `61817b7` + the delegate-rule follow-up)
+
+**THE SHIP-BLOCKER IS CLOSED.** The two act-blind `has: 6` demands (`rm26->rm355` at stage 2,
+`rm26->rm420` at stage 4) are gone from the spec surface; `rm26->rm330` keeps its demand, which
+is the real act-1→2 carry. GAME TRUTH (source-read, `rm335.sc:144`): `sGiveInvite` state 5 does
+`(proc0_3 23)` + `(global0 put: 6)` and fires `((ScriptID 22 0) doit: 28673)` — surrendering
+the pass IS the 7:00 story tick, so demanding it at any later break walls every player. ⚠️ That
+the surrender is *required* rides the unmodelled trigger store (§7j); the §9 play pass should
+confirm the act-2→3 break does not fire without the fundraiser tick.
+
+Three derivations, in two commits, each measured corpus-wide:
+
+1. **NEED RETIREMENT** (`missability.crossing_retires_need`, the third `edge_strandings` drop
+   rule beside FORCED and UNHOLDABLE, also filtering `register_flip_frontier`'s per-row
+   demands): a demand at a crossing is retired when the crossing's own register commit leaves
+   every need site dead. Post-crossing states per meta row via `_crossing_reach` — the same
+   arrival rule as `_psucc`'s edge clause, walked with detection semantics (permissive, so
+   absence IS unreachability within the abstraction). Quantifiers strict: EVERY meta row needs
+   SOME projection with positive evidence; no meta, no candidate register, or a walk that never
+   crosses ⇒ keep ([[arming-floor]]: ignorance is not evidence — the Knife lesson carried in
+   from day one). Detection rows untouched; drops land in `dropped_why`.
+2. **DELEGATE SLOTS** (`extract.delegate_slots` + `cast_conditions(delegate_sels=)`): a
+   property the game dispatches through — derived from the forwarding shape `((client actions:)
+   doVerb: theVerb)` in `CueObj`, not a name catalogue — makes ASSIGNMENT as a delegate value a
+   cast event with the site's path condition. The rm335 doorman inits under `(and (== global123
+   2) (not (proc0_2 25)))` and takes `actions: doorActions` in the same send; `doorActions` is
+   never init:ed, so its verb-11 arming of `sGiveInvite` read always-live. Now the arming is
+   `own(6) ∧ 123==2 ∧ ¬(396≠0)`. CENSUS before the consumer: LSL2 {}, KQ4 {} (no Actions
+   layer — inert by construction), KQ6 {actions, curIcon} with three conditionally-assigned
+   delegates that move NOTHING (detector rows and full watched surface both), LB2 {actions}.
+3. **NEED-SITE CONDITIONS** (`build_maps` → `required_guards`, the need-side twin of
+   `source_guards`; consumed via `_need_live`/`_site_musts`): `required` stays a room-level
+   union, but each (item, room) keeps its evidence sites' guards, `None` poisoning the room
+   permissive. `_site_musts` reads liveness from `_must_equal`/`_must_hold` ONLY — deliberately
+   NOT `guard_reqs`, whose flat positive-equality pass would import OR-branch constraints and
+   read sites dead that another branch keeps alive, the unsafe direction for a demand-deleting
+   filter. So rm335 walkable at acts 3-4 keeps no pass-need alive: (335, act 2) is the only
+   live shape, and only `rm26->rm330`'s post-crossing walk contains it.
+
+**Measured**: LSL2/KQ4 goldens byte-identical, KQ6 full surface unmoved, suite 462/1-known-red
+both commits. LB2 moved by exactly FOUR rows across the two commits: `rm26->rm420` spec 8→7
+items (the pass out), `rm26->rm355` spec + placement REMOVED, and the analyze frontier
+`rm210->rm250|rm26->rm330|rm280->rm250`. Oracle 20/0, pressPass pin updated both times.
+
+⚠️ A cure that was CONSIDERED AND REJECTED, for the record: a register-aware "sourceable at the
+crossing's pre-state" reading (the edge twin of `register_strandings`' causality conjunct)
+retires rm355 but ALSO kills rm330 — the act-break card is a sole-exit pocket, so by the time
+you stand in it at act 1 the street is already behind you and no pre-state reaches a source.
+Reob-side readings are pocket-poisoned at rm26; the need-side reading has no such problem, and
+placement (the §7af deferral) is where the pre-commit moment is honestly represented.
+
+### ⭐ §7ah. REMEDIATION ROUND 2 — the REGISTER-FLIP FRONTIER: every stranded item's demand rides its flip edge (2026-08-10, after the seal)
+
+**The rule** (`guards.register_flip_frontier`, merged into `guard_specs`' frontier union): a
+register stranding whose seal is ENTERED BY AN EDGE WRITE — an edge whose meta writes the value
+from a state that excludes it — puts its demand on those entering edges, where the standard
+filters (`unholdable_at`, `unsatisfiable`) and placements (including the sole-exit deferral)
+apply unchanged. "What is committed COMMITS", applied to remedies: LB2's `rm26->rm420` *is* the
+`123 := 5` write, so it now demands all eight items that flip strands (the four carries + the
+four ending items whose joint rows witness the same seal), and `rm26->rm330` carries the
+pressPass. JOINT rows reduce to the same rule: the prev-room component names the from-room, and
+only the value-changing component needs a flip edge — so the 9 detection-only joint rows now
+have their remedy site, closing §7af's "the cure direction" item.
+
+**The mechanism selects itself**: a free-running trap's write lives in a `doit`, not on an edge
+(KQ4's nightfall, KQ6's wedding fuse — zero flip edges, they keep the register-write HOLD
+path), while a player-committed flip has no free-running writer (LB2's holds never placed).
+Holds whose flip edges took the demand are now REFUSED "superseded" instead of reading as open
+gaps. Measured: LSL2/KQ4 byte-identical, KQ6 unchanged, LB2 moved by 7 rows, oracle 20/0.
+
+⚠️ **THE PASS DEMAND AT `rm26->rm420` IS THE PRICE OF THE PERMISSIVE WALK — and the "fix" for
+it was BUILT, MEASURED, AND REVERTED the same hour.** The demand survives `unholdable_at`
+because `_rstep[123][26]` lets the walk pump the act counter several steps in one rm26 visit,
+finding a pass-keeping path that skips acts 2–3. Read as [[same-rule-two-places]] (the `++`
+write existing both as edge sets and as in-room steps), the cure looked like "an EXIT-path
+write is not an in-room step" — and applied, it DROPPED FOUR CONFIRMED SOFTLOCKS (cheese,
+salts, snakeOil, snakeLasso), the empty bottle, and pressPass's true rows. The oracle's DROP
+check caught it in one run. The diagnosis was wrong: **`_rstep` is not a duplicate of the edge
+sets — it is the FLIP INVENTORY the stranding detectors walk**, while the edge sets feed
+movement; the in-room steps are the deliberate detection over-approximation ("in-room writes
+are optional successors so it can never miss a stranding"). Two consumers, not two copies. If
+the pass demand ever needs curing, the cure lives in the FILTER's walk (`unholdable_at` with
+commit semantics for edge-committed writes), never in the recording. Nothing ships meanwhile,
+so the row costs nothing today. ✅ RESOLVED BY §7ai exactly as prescribed: the cure landed in
+the demand layer (`crossing_retires_need` filters both the edge rows and this frontier's own
+per-row demands), never in the recording — `_rstep` untouched.
+
+### ⭐⭐ §7ag. THE STREET IS SEALED — declared red and promoted the same day (2026-08-10, latest)
+
+**USER ground truth (§7z): the street is unreachable once the museum acts start. MEASURED NOW:
+all six street rooms (250/260/270/300/310/320) reach act [1] and nothing else.** The §7z/§7aa
+diagnosis — "the seal is positional, census-#1 control-map class, unmodellable" — was true only
+of the LAST link in the chain. Three derivations closed it, each general, each measured
+byte-identical on LSL2/KQ4 (goldens) and KQ6 (watched surface):
+
+1. **DEPARTING INIT** (`extract._object_departures`, consumed by `cast_conditions`): an `init:`
+   whose own branch arms a handsOff script whose TERMINAL literal `MoveTo` parks the object
+   off-pic (320×190 — engine constants) yields no interactive presence: input is off for the
+   whole drive (the motion carries a cue; every `handsOn:` comes after) and nothing moves the
+   object back without a fresh init. The arrival-taxi arm drops; **the taxi's owner reduces to
+   `123 < 2`** — the position mattered only as the END of a derivable lifecycle, not as a
+   modelled coordinate. Strict in the keeping direction (any non-literal motion, uncued
+   terminal, or early handsOn keeps the object).
+2. **DEAD-LETTER NAV** (`polygons.dead_nav_exits` + `opmodel._apply_dead_nav`, removal by the
+   new `Edge.via="nav:<dir>"` provenance): a declared s/e/w prop whose engine trigger zone the
+   room's UNCONDITIONAL polygon layout seals off is a dead letter. rm330's `south 250`: polygon
+   bottom y≤169, south trigger at the ego's base row ~189. Corpus: **LB2 2 rows (rm330 south,
+   rm240 east), KQ6/LSL2/KQ4 zero.** ⛔ **NORTH IS NEVER CLAIMED** — the engine tests the ego's
+   bounding RECT against the horizon, so north fires at `base_y - ego_height <= horizon` and the
+   ego's scaled height is unmodelled. The first cut claimed it and killed SIX live exits (LB2
+   rm290/rm310, KQ6 rm640/650/680/710/840 — rm290's corridor tops at y~84 with horizon 15 and
+   fires through the ~70px ego); every one was a false removal, caught by auditing the census
+   before wiring the consumer.
+3. **RELATIONAL LOWERING** (`guard_reqs` + `edge_meta` domains): `(< global123 2)` over the
+   register's own value universe {0..6} is exactly {0,1} — the same completeness the
+   `!=`-with-domain case already trusted, extended to the relational ops under the same
+   `_must_hold` soundness gate, and `edge_meta` now passes every promoted register's
+   `reg_vals` universe as its domain (sound within the abstraction: a value outside the
+   universe exists in no walk). **This is the first bullet of the §NEXT engine-debt list paid
+   down** for the conjunctive case; the disjunctive arm (`(or (> act 3) …)`) still reads flat.
+
+**What moved (29 rows, blessed):** the joint-seal witnesses left the sealed street —
+`(250,5) → (454,5)/(520,5)`, real act-4/5 standing rooms; **pressPass gained its TRUE
+mechanism** (reg rows `123=2→[335]` + three joint crossing states: enter act 2 without the pass
+and the fundraiser door is sealed off from rm235, its only source); the empty-bottle seal
+witness sharpened to the act-break card `(26,5)`; the deferral placements retracted rm250 as an
+entry site (sites 4→3 — the street room is no longer standable past act 1). ⚠️ That retraction
+was the SITE only, NOT §7af's two wall-risk wraps: the `rm26->rm355`/`rm26->rm420` `has: 6`
+specs still existed and still placed at their remaining 3 sites — the wall stood until §7ai
+retired the demands themselves; and
+`register_write_specs` now split per
+(register, FLIP VALUE) — the single-spec form had emitted `reg123=2: (pass AND salts AND
+grapes)`, a wall (salts don't exist until act 4). The scalar `reg123=5` spec still conjoined
+the pass via the flat projection row `pressPass@reg123=5` — ✅ retired by §7ai's need
+retirement on the frontier's own rows.
+
+The street-seal RED went GREEN in the same session it was declared and is **promoted**: removed
+from KNOWN_RED, the check is a permanent pin naming its three load-bearing derivations, and all
+six moved mechanism pins were confirmed against the game and re-pinned.
+
+### ⭐ §7af. REMEDIATION ROUND 1 — the SOLE-EXIT DEFERRAL: all four act-break demands now PLACE (2026-08-10, later)
+
+**The rule** (`guards.defer_to_entry` + `patcher.apply_guards(defer_info=)`): a demand whose
+trigger resolves to `sole-exit` — the pocket's one `newRoom:` lives inside the cutscene the wrap
+would refuse to arm, so refusing in place strands the player on the card (§7i) — is re-sited to
+the pocket's PREDECESSOR rooms as `(or (not <stage>) <demand>)`. This is the demand-side twin of
+the prohibition deferral (the Spinach_Dip raft) and reuses the arrival-commit re-site machinery
+(`_guard_arrival_entries`) with the stage passed in rather than read off proc-call heads.
+
+Three derivations, each refusing rather than guessing:
+- **The stage is the out-edge's own `_emeta` requirement** (positional registers dropped, exactly
+  as the KQ6 re-site drops prev-room clause heads): the act-break card's crossings are not
+  distinguishable by position at the entry sites, but the game's own register state names each
+  one — `rm26->rm330` is `(== global123 1)`. Any meta alternative that is stage-free,
+  multi-valued, or unspellable refuses the whole deferral: an under-stage gates crossings the
+  spec says nothing about.
+- **A promoted PLAIN global may spell its own stage** (`_stage_spelling`): `render_register`
+  refuses real globals for DEMANDS, rightly — only a store's reversal proves the game's reading —
+  but a promoted gating register's promotion IS the evidence (LB2 tests `global123` at 239
+  sites), so a register no lowering claims, below the synthetic base, at a walk-reached value,
+  spells directly. Deliberately NOT widened into `render_register`; that is its own measured
+  change.
+- **The site list is ALL predecessors, not `commit_entry_frontier`** — a game that STARTS behind
+  its own act-break card (the intro's 0→1 break) makes `reach_avoiding` call the entire game
+  "inside the pocket", leaving only the intro rooms. Every entry to a sole-exit pocket is a fresh
+  committed crossing; what protects the player is the per-site pair of filters: stage
+  presentability (`_pstates` — this is what keeps the wraps out of the intro rooms, which only
+  ever cross at act 0) and COMPLIANCE (`unsatisfiable` at the site's own crossing — a site where
+  the demand can no longer be met is refused, because a demand you cannot meet is a wall).
+
+**Measured**: LSL2/KQ4 goldens byte-identical, KQ6 watched surface unchanged (no sole-exit rows
+there), LB2 moved by exactly the four rows → `entry-deferral-PARTIAL sites=4` each, wraps read
+in the emitted source at rm250/rm454/rm480/rm620 (`sACTBREAK` / `sFinishIt` armings, silent
+no-else arm-gates, mode-off bypass intact). rm500/rm520 report `no wrappable site` — the PARTIAL
+is honest. One bug caught by READING the emitted source, again: the first cut embedded the
+`dest_test` discriminator — script 26's `local0` — in rooms where that name means something
+else; the deferral now uses the pre-dest_test condition (the stage discriminates instead).
+
+⚠️ **TWO OF THE FOUR PLACED DEMANDS REST ON THE STREET-SEAL GAP AND WOULD WALL IF SHIPPED.**
+The `rm26->rm355`/`rm26->rm420` pressPass demands (stages 2 and 4) exist because the unsealed
+model keeps rm250 "needing" the pass in acts 2–5; in truth the pass is surrendered at the act-2
+door and the street is sealed, so a stage-4 wrap demanding it would silently refuse the real
+4→5 break for every player. The compliance filter passed them because it walks the same unsealed
+model. **Nothing ships** (standing rule; §9 play pass gates that), and when the street seal
+lands (§7z red) those two specs retract on their own — which is the right dependency direction:
+fix the model, not the placement. STILL OPEN in this round: the `reg123=5` register-write hold
+(salts+grapes) does not place — `guard_prop_flag_owner_write` looks for a free-running writer
+and LB2's act write is player-committed (§7j: LB2 has no free-running clock); it needs this same
+deferral taught to register-write specs. And the joint rows (cheese/snakeOil/snakeLasso at the
+`(26,5)` seal) still emit NO spec at all — the seal's entering write is the act break, so their
+remedy is this same site once the joint→spec synthesis exists.
+
+### ⭐ §7ae. THE HARDENING ROUND — re-bless, mechanism pins, and the street-seal RED (2026-08-10, closing)
+
+Three closes in one pass, all in `src/test_lb2_ground_truth.py` + `tools/run_tests.py`:
+
+1. **The watched surface is RE-BLESSED** (user's word given). The 38-row diff was re-read before
+   refreshing — every row one of the day's intended changes — and both surfaces (KQ6, LB2) are
+   green again. One row of it deserves its own record: **pressPass moved detectors.** The
+   `dangerous_sinks` catch on the three `put: 6` sites retired, and `analyze` now flags it needed
+   at rm250 past the act-1→2 frontier — the catch is finally FOR the reason §5 gives (the act
+   1→2 span). A name-scored oracle could not have seen that move at all, which is point 2:
+
+2. **MECHANISM PINS** (the 2026-08-09 ruling, *"pin whole deserialized objects, not names"*,
+   applied — LB2 only, KQ4/LSL2 golden). Every column-A item now pins the FULL set of detector
+   rows that catch it (`MECHANISM_ROWS`), serialized in `snapshot.py`'s own shapes so a row can
+   be eyeballed against the watched surface; and an ATTRIBUTION TABLE (item → every detector row)
+   prints on every run, so "caught for the wrong reason" is visible in the run that does it.
+   A pinned row dropping or changing is a regression to confirm; a new row is suspicion. The
+   snakeLasso churn (two sessions planning on a `fatal_uses` FP that named the right item) is the
+   failure this makes automatic.
+
+3. **The STREET SEAL is a declared RED** (`tools/run_tests.py` KNOWN_RED). Ground truth §7z: the
+   street block (250/260/270/300/310/320) is unreachable once the museum acts start. Measured
+   today: the act projection walks all six rooms at acts 2–5 (the joint `(12,123)` at 2–4). The
+   check asserts the truth and fails, per the no-green-limitations rule — the honest derivation
+   cannot produce the seal because rm330's arrival-taxi init is `wearingGown:`-guarded
+   (satisfiable in acts 2–5, §7aa), and the real mechanism is POSITIONAL (`sTaxiLeave` drives
+   the taxi off the 320-wide pic under handsOff) — census-#1 control-map class, unmodelled.
+   Goes green only when a derived mechanism seals the street; promote it when it does.
+
+### ⭐⭐ §7ac. THE EMPTY BOTTLE IS CAUGHT — `register_value_strandings`, the register twin of the item rows (2026-08-10, later)
+
+**The ruling it implements** [2026-08-09]: *"you should have enough snake oil left before entering
+act 5 to not die because of it in act 5"* — the boundary value is the stranding, the spend
+arithmetic is out of scope. **The mechanism, all source-verified this session:**
+
+    global150 = 4 at Main; -- per shake (rm520 cobraDoor, rm610 pipe/drain); sDumpIt pours it out
+    rm610 vat refill: (if (< cel 3) (++ cel) (= global150 4))   <- THREE refills, metered by
+                                                                    flags 105/106/107
+    rm730 verb 25 (the snake-oil verb): (== 150 0) -> sThrowBottle (put: 14, destroys the bottle,
+                                        passes NOTHING); else sSprinkleOil / sRepelSnakes
+    the (12,123) joint proves rm610 unreachable once act 5 begins
+
+**The detector** — same flips, same walks, same conjuncts as `register_strandings`' item rows,
+register-shaped: the flip is reachable with `S == b`; a machine past the seal demands `S ∈ acc`
+with `b ∉ acc` (through `_reg_entry_demands`); **the register is FROZEN past the seal** (no write
+of any value — the causality conjunct); a pre-flip write could have fixed it; the goal survives.
+**Corpus: LSL2 0 · KQ4 0 · KQ6 0 · LB2 1 — exactly the ruled softlock.** Pinned green in
+`test_lb2_ground_truth` ("the empty-bottle act-5 crossing is caught"). Snapshot key
+`register_value_strandings` appears only when rows exist, so the golden fixtures stay frozen and
+a first row on a golden game is a loud new key.
+
+**Three lessons paid for while building it, kept so they are not re-bought:**
+1. **The arming floor cuts both ways.** `sSprinkleOil`'s chained entry embeds its armer's whole
+   entry disjunction with the recursion cut at the floor, and the floor arm read flat dissolves
+   every demand it embeds. `_reg_entry_demands` resolves chained entries through the ARMER's
+   demand, coinductively (a back-edge vouches for nothing new — entering a cycle passes some
+   member's direct entry), and resolves a doit-arming gated on a room-local latch through the
+   latch's machine writers (`local3 := 1` lives in sSprinkleOil state 2; the fifth store's
+   writer set is complete by construction, which is what makes the hop sound).
+2. **A machine that consumes an item still required where it stands is the LOSS, not the way
+   past.** Read as a demand site, `sThrowBottle` inverted the finding into "you can never throw
+   the bottle away".
+3. **The freeze conjunct is what separates a carry from choreography.** KQ6's wedding-sealed
+   castle produced 4 rows about guard-march flags — registers the sealed region itself keeps
+   toggling — and LB2's flag 63 (wire handshake, set in the rm435 inset, CLEARED by rm430's cue)
+   produced 3 more. If the region can write the register, its value there is the region's working
+   state, and blaming what you carried across is wrong attribution. prevRoom is excluded as the
+   demanded register for the same reason one level up: movement itself rewrites it.
+
+⚠️ **A real upstream gap found and NOT yet fixed, recorded before the FP-rows it caused were
+cured for the right reason:** `_emeta[(430,435)] req = {123: {3}}`. The skewer's guard is
+`(or (> global123 3) (and (== global123 3) <stage>))`, and `guard_reqs` reads it FLAT — the
+relational arm is ignored, the `== 3` arm is kept — so an OR-arm's atom NARROWS the edge instead
+of widening it, and rm435 (Ziggy's-body close-up, the wire-cut enabler) reads act-3-only in the
+whole product while the game keeps it verbable in acts 4–5. This is the whale lesson
+(`structural_reqs`' docstring) sitting in `edge_meta`'s own req extraction. The cure — structural
+reqs on edges — moves every disjunctively-guarded edge corpus-wide and needs its own measured
+round. **Open item; do not let the freeze conjunct's success hide it.**
+
+### ⭐ §7z. HOW THE MUSEUM SEALS THE STREET — and the refutation of "zero act-gated exits" (2026-08-10)
+
+**USER GROUND TRUTH:** *"the outside of the museum is not reachable once the museum acts start.
+So you need to figure out how that's enforced in the game before we proceed further."* Also:
+*"the notebook gets granted during a cutscene at the very beginning, there's no way to not have
+it"* — recorded as `NEVER_STRANDABLE` in the oracle test, because the variadic read newly flags it.
+
+This matters beyond eveningGown: the model says **`rm270` (Lo Fat's, the gown) is reachable at acts
+1–5**, and that is now known to be WRONG. Two mechanisms, found by reading `rm330` — the museum
+steps, which is the ONLY junction between the street block (250/260/270/300/310/320) and the museum:
+
+    rm330.sc:158   (if (< global123 2) (taxi init: stopUpd:))
+    rm330.sc:345   taxi doVerb 4 -> (setScript: sInTaxi) -> state 4 -> (newRoom: 250)
+    rm330.sc:170   doit: ((proc0_1 global0 256) (setScript: sHitEdgeScreen))
+    rm330.sc props  south 250
+
+1. **The taxi is the exit, and it is act-gated.** `sInTaxi` is the only script in the room that
+   reaches `newRoom: 250`, it is armed only by `taxi doVerb 4`, and **the taxi object is only
+   `init:`ed while `global123 < 2`.** From act 2 on the object does not exist, so the verb cannot
+   be dispatched and the exit cannot fire. *An object that is not initialised cannot be verbed* —
+   which is the "act-gated `init:`" shape §7h asked for, in a place §7q/§7r never looked.
+2. **`south 250` is a DEAD LETTER.** Stepping on control 256 arms `sHitEdgeScreen`, which says a
+   line, turns Laura around and walks her back (`MoveFwd 10`). The nav property is never consumed;
+   the room refuses the edge. Same class as LB2's `deathRoom north 350` (`extract.death_screen_rooms`)
+   and rm640's exits in KQ6 — **a declared exit the room's own `doit` intercepts**.
+
+⛔ **THIS REFUTES §7q/§7r's "ZERO act-gated exit sites corpus-wide", which is quoted in three
+places including the RED test.** That measurement asked for an `init:` **on an `ExitFeature` or
+`Door`** — and LB2 does not spell it that way. The real spellings, measured:
+
+| site | spelling | class |
+|---|---|---|
+| `rm330:158` | `(if (< global123 2) (taxi init:))` | **Actor** whose `doVerb` arms the exit |
+| `rm370:76` | `(if (> global123 2) (giftShoppeDoor locked: 1))` | **Door**, but `locked:` not `init:` |
+| `rm370:31` | `(if (== global123 2) (self setRegions: 93) ... else (setRegions: 90))` | the room's OBSTACLE SET |
+| `poly2360Code:42` | `(= points (if (> global123 2) @local0 else @local24))` | the walkable POLYGON itself |
+
+So the acts DO gate LB2's movement; they just never do it through the one idiom that was searched
+for. Two of these four are the control map (census #1) and are out of reach for now, but the first
+two are ordinary object state and are not.
+
+⚠️ **Do not re-run "grep for an act-gated ExitFeature/Door init".** It answers a question narrower
+than the one being asked, and answering it "zero" sent this project down the §7h/§8-item-4 path for
+two sessions. The question is *"what, if anything, makes this exit unavailable in this state"* —
+and the answer can be an actor's existence, a door's `locked:`, a region, or a polygon.
+
+### ⭐ §7aa. THE CONDITIONAL-INIT RULE ALREADY EXISTS — the blocker is an EGO PROPERTY (2026-08-10)
+
+USER: *"the init condition should be more generic than just act boundaries. I can imagine lots of
+other mechanisms. Any condition, when that condition isn't met."* Right — and **the model already
+does exactly that, fully generically**, `machine.py:698`:
+
+    # ...and the arming cannot be freer than the object whose method it sits in: a method
+    # of an object the room only conditionally `init:`s only runs under that condition.
+    self._add_entry(m, 0, _conj(apc + [owner]), loc, ...)
+
+`owner` is whatever guards the object's `init:` — any condition, not just an act. Measured on the
+taxi: `sInTaxi`'s entry guard really is
+
+    GAnd([opaque, GOr([ GAnd([GNot(12==335), opaque]), 123<2 ])])
+
+so nothing needs building here. **Do not re-implement it.** Two things stop it from biting:
+
+**1. `rm330` has TWO `taxi init:` sites, so the owner condition is a DISJUNCTION.**
+
+    rm330:158  (if (< global123 2) (taxi init: stopUpd:))                    <- the act gate
+    rm330:82   (else ... (if (global0 wearingGown:) (taxi posn: init: ...)))  <- the arrival taxi
+
+and `wearingGown:` is an **ego property we do not model**, so it lowers to `opaque` and the OR
+cannot be reduced. A disjunction with an unknown arm correctly yields no requirement. **The model
+is not wrong here; it is ignorant, and in the safe direction.**
+
+**2. `south 250` is a free parallel row** from `_nav_edges` (a dead letter — control 256 arms
+`sHitEdgeScreen`, which turns Laura round). Two rows, both `({}, {12: 330}, ...)`.
+
+**MEASURED at the product level** (mutate `_emeta`, recompute the projections only — note
+`_build_product` REBUILDS `_emeta`, so editing it and calling that throws the edit away):
+
+| variant | outside rooms (250/260/270/300/320) |
+|---|---|
+| baseline | acts 1,2,3,4,5 |
+| drop the nav row | acts 1,2,3,4,5 — **not enough on its own** |
+| the honest disjunction `NOT(12==335 AND 123>=2)` | acts 1,2,3,4,5 — the act break arrives with `12==26`, so the `12!=335` arm is open |
+| `123<2` alone | **acts [1] — THE STREET IS SEALED** |
+
+So the seal is real and the model can express it; what it cannot do is *derive* it, because the
+gown disjunct is opaque. **And even sealed, `eveningGown` is still not flagged — it has no source
+until the variadic `get:` lands.** Closing the gown needs BOTH.
+
+**⭐ AND THE GOWN'S USE SITE IS THE SAME PROPERTY**, which is what makes this worth building rather
+than routing around: `rm270.sc:366` is `(or (global0 has: 32) (global0 wearingGown:))` — item 32
+IS the gown — and `rm320.sc:211` is the write, `wearingGown: 1`. The chain *get it → wear it →
+be admitted* runs through the property, not through `has:`.
+
+**THE PROPOSED STORE, with its pre-implementation census.** `vocab.item_property_registers`
+already discovers the fourth store by asking which properties the game both WRITES with a constant
+and READS back — but it is scoped to the inventory class via `item_of_receiver`. Generalise the
+same discovery to the EGO. Raw, that is noisy (LSL2 5, KQ4 5, KQ6 9, LB2 3 non-drawing properties);
+the discriminator is pure class-table derivation, the same principle as
+[[derived-vocabulary-not-catalogue]] — **a property the game's OWN ego subclass declares and its
+engine ancestors do not**:
+
+    dagger   class ego   (script 19)  declares wearingGown   <- game-specific, script < 900
+    ALL      classes Actor/Ego/View/Prop (988, 998), Talker/Narrator (928, 909), Body (914),
+             RandCycle (941)          declare looper, scaler, scaleSignal, maxScale, reset,
+                                      currentSpeed, ignoreHorizon, oldScaleSignal
+
+Applied, that yields **exactly one property in exactly one game: LB2's `wearingGown`** — the same
+profile as the fourth store (KQ4 three items, LSL2 none), which is the sign of a real store rather
+than a fitted one. It is also the store `snakeLasso`'s survival arm needs (`mummy cel:`), so one
+build closes two open items. Not started.
+
+### ✅ §7y. CAUSE #2 IS CLOSED — `register_strandings` now walks the JOINTS (2026-08-09, later)
+
+§7w ended with "the load-bearing blocker for column B is now `{r for r, _ in back}`". It was not.
+The blocker was one loop header, and §7w had already named it without following it: the joint
+`(12, 123)` **was being built and nothing was reading it.**
+
+    missability.py:2857   for R in self.regs:      <- scalars ONLY
+    missability.py:1926   self.proj = list(self.regs) + list(self._joints)
+                          "...only the four reachability walks look at `self.proj`"
+
+`register_strandings` is the detector that reports seals, and it was the one place that could not
+see a seal expressed in two registers. **Now it iterates `self.proj`.**
+
+**THE USER'S FRAME, which is what produced this** (2026-08-09): *"the stuff that in the previous
+game was static — where an item was, whether you could get to it — becomes changeable in LB2 …
+we need to parametrize edges, item provenance, item availability based on whatever register values
+the game is looking at. It's a generalization of the previous model."* The parametrization was
+mostly already there (`_emeta` per-edge reqs/sets, `_pstates` per projection, `source_guards`);
+what was missing is that **joint state was a special favour rather than the default**.
+
+    LSL2   0 -> 0 rows     KQ4   0 -> 0 rows
+    KQ6    1 -> 1 row      (its one joint (12,173) adds nothing; the row's KEY SET is unchanged)
+    LB2    2 -> 14 rows / 9 distinct items, INCLUDING cheese and snakeOil
+
+**Three scalar assumptions had to be generalised**, all of them "the flip landed on `w`": a joint
+is entered into `w` when SOME component register is written to its component of `w` (requiring the
+whole tuple at once finds nothing — no single write sets two registers, which is precisely why the
+seal was invisible). Factored out as `_flip_seeds`.
+
+**And the first cut produced 163 rows carrying 9 facts** — prevRoom's 2026-08-02 degeneracy (323
+junk rows on KQ6) wearing a tuple: reg 12 is written by every crossing, so a sealed region reports
+once per (room-you-came-from, act) cell, 19 prevRoom values deep. The cure is `_collapse_flips` and
+it is derived, naming no register: **rows for the same item whose SEALED REGION is identical are
+one row**; flip rooms and values merge, genuinely different regions stay separate. `value` keeps the
+lowest merged value and `values` appears only when a merge happened, so a row that merged nothing —
+KQ6's letter — is byte-identical to before.
+
+⚠️ **Joint rows are DETECTION-ONLY in `guards.guard_specs`.** The `register-write` remedy holds one
+register's write until the items are in hand, and a seal that exists only at `12 == 420 AND
+123 == 5` names no single write to hold — neither component's flip is by itself the point of no
+return. Emitting `register: (12, 123)` would hand the patcher a global that does not exist. Deriving
+the causal component per row is the next piece; until then the finding is reported without a remedy.
+
+**What this leaves.** Column B goes 1 of 5 → 3 of 5 (cheese, snakeOil join smellingSalts).
+`snakeLasso` now has a row for the RIGHT reason as well as its `fatal_uses` false positive — the FP
+is still a FP and still needs the blame fix of §7u.2. `eveningGown` remains, and it is cause #3
+(variadic `get:`), still blocked on debug-code exclusion.
+
+### ⛔ §7w. CAUSE #2 DOES NOT CLOSE cheese/snakeOil — the "+2, validated" claim is WITHDRAWN
+
+> ⛔ **SUPERSEDED BY §7y.** The measurement below is correct — building A+B+C alone changed nothing
+> — but its conclusion ("the confinement is a disjunction and `register_strandings` walks scalars
+> only, so the blocker is `{r for r, _ in back}`") stopped one step short: the fix for "walks
+> scalars only" is to walk the joints, not to rewrite the scalar walk. Fourth instance of stating a
+> diagnosis and then not testing the cheapest cure it implies.
+
+Built A+B+C (below) and measured: `death_traps` now fires correctly on `rm350`/`rm500`, the joint
+`(12, 123)` projection is created — **and LB2's full surface is byte-identical. No new findings.**
+
+The reason, and it invalidates two earlier simulations including the reviewer's:
+
+    death_traps rm350 = [ ({12: <every room but 420>}, ...),      <- ALTERNATIVE 1
+                          ({123: {0,1,2,3,4,6}},      ...) ]      <- ALTERNATIVE 2
+
+`_apply_death_traps` conjoins the negated death condition as a **DISJUNCTION** (`12 != 420 OR
+123 != 5`) — correctly, because `NOT(a AND b)` is a disjunction. But `register_strandings` — the
+detector that would catch cheese and snakeOil, and the one that already catches smellingSalts —
+walks the **scalar** projections. In the scalar `123` projection alternative 1 carries no `123`
+requirement at all, so it passes, and the player "leaves rm350 at act 5" freely. The confinement is
+invisible to it.
+
+**Both prior simulations got "+cheese +snakeOil" by OVER-restricting**: mine (SHAPE 1) cut the
+entry edges outright, the reviewer's (SHAPE 2) applied only the `123` conjunct and dropped the `12`
+alternative. Neither is what the model actually writes. *Simulate the CHANGE* — a third time.
+
+`_trap_joints` builds the `(12, 123)` joint precisely for this, and it exists — but the two
+consumers that matter do not use it: `register_strandings` iterates `self.regs` (scalars only), and
+`reobtainable_rooms` collapses each projection to `{r for r, _ in back}`, so "reobtainable at act 3
+but not at act 5" cannot be expressed. **That collapse is the standing limitation §7t's note
+already flagged, and it is now the load-bearing blocker for column B.**
+
+Open question for the next block: should `register_strandings` iterate `self.proj` (scalars +
+joints) rather than `self.regs`? That is a real design change with corpus-wide blast radius, not a
+patch. It is the honest next step and it should be measured before it is built.
+
+### ⭐ §7v. EAVESDROPPING ADVANCES THE PLOT — waterGlass is IN SCOPE, and it is §7t's twin
+
+USER, 2026-08-09: *"I don't know how out of scope it is, particularly if it advances acts. I don't
+mind catching it."* Measured — **it does advance state**, so this is a merits call, not an
+indulgence:
+
+    Door.sc:20            listenVerb 0                      ; class default
+    rm510/560/600/610     listenVerb 38                     ; = waterGlass (invCode `message 38`)
+    Door.sc:98            (listenVerb (self listen:))       ; Property case label in a doVerb switch
+
+    rm510::listen         advances global111:  0->1, 4->5, 10->11, 12->13
+                          at 12 -> sListenToYvetteAndSteve -> (proc0_3 75)
+    global111             WRITTEN by actBreak.sc:52 `(= global111 11)`, rm560, rm630, rm610,
+                          triggerAndClock.sc; READ as a gate in rm510/rm550/rm560, often conjoined
+                          with the act: `(and (== global123 3) (proc999_5 global111 4 5))`
+
+`global111` is already a promoted register and is one of the three counters in the
+counter-monotonicity census (with `global123` and KQ6's `162`). So listening is not dialogue
+flavour: it drives a counter that gates room content.
+
+**And the reason we never saw it is §7t's defect in a second place.** `(listenVerb (self listen:))`
+is a **Property case label**, so `ir.control_shape` emits an UNGUARDED arm and the model believes
+you can listen at those four doors *without the glass*. Same root as the nav labels.
+
+⚠️ **BUT THE NAV-LABEL FIX DOES NOT FIX THIS ONE.** The switch lives in `Door::doVerb` — the CLASS,
+where `listenVerb` is **0** — while the real value **38** is declared on the four INSTANCES that
+override it. Resolving a Property label against the object that owns the method (what the §7t
+lowering does, and what its `v in (0, 0xffff)` skip would reject here anyway) reads 0 and gives up.
+Closing this needs class-method specialisation: *a Property label on a class method resolves to the
+set of values the instances declare* (`{0, 38}`), which for a `param1` dispatch head becomes
+OWN(waterGlass) on the 38 arm. That is a real extension, not a detail — scope it separately.
+
+**Oracle consequence:** `waterGlass` moves OUT of §5 column D (out of scope) and into the ALLOWED
+set. It is **not** thereby asserted to be a confirmed softlock — the user's words were "I don't mind
+catching it" — so it should be allowed, not expected. See [[dont-flip-enumerated-ground-truth]]:
+this is a user ruling, not a reclassification we made to flatter a change.
+
+### ✅ §7x. …AND IT DOES **NOT** GATE AN ACT TRANSITION — the question that settles the column
+
+USER, 2026-08-09, on reading §7v's "it advances the plot": *"if the waterGlass gates an act
+transition then it's required."* Correct as a principle, and it is the right question, because
+"advances a counter that gates room content" and "gates an act" are different claims and §7v only
+established the first. **Measured against the source — it does not.**
+
+    actBreak.sc:38-63   (switch global123 ...)          <- the act break reads global123 ALONE.
+                                                           global111 appears NOWHERE in its guards.
+    actBreak.sc:52      (= global111 11)                <- the act-3->4 arm OVERWRITES it, always
+    triggerAndClock:45  (300 ... (= global111 15))      <- and the 3:00 clock tick forces 15
+    rm520.sc:222        ((and (== global123 4) (global0 has: 31)) (= param1 26) ...)
+
+The traffic runs the *other* way: the act break and the clock **erase** listening progress rather
+than depend on it. `global111` has exactly one write outside listening-and-plot (`rm630:1151`) and
+its readers — `rm510`, `rm550`, `rm560` — gate room content and NPC positions.
+
+**The act-4→5 break is gated on `(global0 has: 31)` — the grapes**, which is already column A, read
+out of rm520's own `newRoom`. That is what an act-gating item looks like in this game, and
+`waterGlass` is not one. (The other five `newRoom: 26` sites — rm220, rm250, rm454, rm480, rm620 —
+are cutscene-terminal states; only rm620's carries a condition, `proc0_10 8512`.)
+
+**The one place listening touches MOVEMENT**, recorded because it is the strongest form of the
+user's concern and it survives: `rm510.sc:123` `(if (proc999_5 global111 0 6 10 14) (eastDoor
+locked: 1))` — `proc999_5` is OneOf (`System.sc:81`), and `eastDoor` is `entranceTo 550`,
+`listenVerb 38`, unlocked by default. So not listening *does* lock rm510's east door in act 3. It
+cannot strand: both forced writes above (11 and 15) land outside `{0,6,10,14}`, and the lock is
+re-evaluated in `init`, i.e. on every entry.
+
+**Verdict: ALLOWED, not EXPECTED** — the same column §7v landed on, now for a measured reason
+instead of a deferred one. If the class-method specialisation of §7v is ever built and `waterGlass`
+starts being flagged, that is a legitimate catch, not a false positive; but its absence is not a
+gap and must not be filed as one.
+
+### ✅ §7t RESOLVED (2026-08-09, later) — ONE root cause: the fix deletes ACT 4
+
+**Diagnosed end to end by measurement. The nav-label fix is CORRECT; what it lands on is the one
+write in LB2 that produces act 4, and a write the register model cannot ORDER it DROPS.**
+
+    BEFORE  _rstep[123] = {26: [(0,1),(1,2),(2,3),(4,5),(5,6)], 355: [(0,0)],
+                           630: [(0,4),(1,4),(2,4),(3,4),(4,4)]}
+    AFTER   _rstep[123] = {26: [ ...unchanged... ],             355: [(0,0)]}   <- rm630 GONE
+    act values reachable   [0,1,2,3,4,5,6]  ->  [0,1,2,3]
+    rooms leaving proj 123  [521, 525, 750]   (all other 79 projections: 63 rooms, unchanged)
+
+**The chain, each link measured:**
+
+1. `rm630`'s `(= global123 4)` sits in the **else-arm** of a `(switch global12 …)` (§7s said so).
+2. Resolving that switch's labels gives the else-arm priors `global12 != <each resolved case>`.
+   The path condition is now RICHER but still says nothing about `global123`.
+3. `_build_product` orders a register write **from its own path condition**. With a path condition
+   that constrains a *different* register, the derived from-value set for 123 comes out EMPTY, so
+   no step is emitted — and the write lands in neither `_rstep` nor `_inroom` (`_inroom[123]` is
+   `{}` in both runs; last session's monotonicity pass drains it into `_rstep`). **The write is
+   simply gone.**
+4. `rm630` is the SOLE producer of act 4 — note `(3,4)` is absent from `rm26`'s steps, because the
+   act-3→4 transition *is* that in-room write and not an act-break edge (§7s, already on record).
+   So the act counter can no longer pass 3.
+5. Acts 4/5/6 vanish, taking every room reachable only at act ≥ 4: **rm521, rm525, rm750**.
+6. Two unrelated consumers then absorb it **silently**, which is why it looked like two bugs:
+   * `_need_rooms` drops `750` → bifocals/redHair lose their only need room, wireCutters/daggerOfRa
+     lose the one past the frontier. (`required[bifocals]` is still `[750]` — the raw map is
+     untouched, so a `required` diff shows nothing.)
+   * `reobtainable_rooms` INTERSECTS over every projection; projection 123 returns ∅ for anything
+     sourced at `rm525`, so grapes and smellingSalts become "obtainable nowhere" — which reads
+     downstream as "not strandable", not as "broken".
+7. `edge_strandings` therefore emits nothing for `rm26->rm750`, and the five column-A rows plus
+   smellingSalts disappear.
+
+**THE DEFECT, stated generally:** *when a write's path condition constrains registers OTHER than
+the one being written, `_build_product` must treat the from-value as UNKNOWN (→ `_inroom`, then
+let the monotonicity pass forward-restrict it), not as EMPTY (→ drop the write).* Dropping is the
+unsound direction and it is silent. Note the before-state `{(0,4),(1,4),(2,4),(3,4),(4,4)}` is
+exactly the monotonicity pass's output shape `{(u,4) | u <= 4}` — so that write reached `_rstep`
+*through* `_inroom`, and the lowering is what stopped it entering either.
+
+Same room, same write, same root as cause #1 last session. `rm630`'s act write has now produced
+two separate multi-session bugs; it deserves a pinned test of its own.
+
+**Hypotheses killed on the way (do not re-run):**
+
+| hypothesis | how it died |
+|---|---|
+| The goal/rooms become unreachable | `n_reach` 68, all four goals reachable, `edges26` identical |
+| Sources are deleted by `_prev_impossible` | `sources` identical; disabling the function entirely changes nothing |
+| Requirements are lost | `required`/`guard_required` byte-identical |
+| The frontier edge stops being one-way | `edge_kind=['goto']`, `_freely_reversible(26,750)=False`, both runs |
+| `rm750`'s ending selector sits in a `switch global12` | **rm750 has none.** `grep -l "switch global12"` matched `global126` — the true count is 37 files, not 45 |
+| The five become a DISJUNCTIVE GROUP at rm750 | `disjunctive_groups()[750] == []` in both runs; all four rm750 machines have 0 entries |
+
+**Method note.** The whole diagnosis ran WITHOUT editing `src/`: `_build` calls `I.load_ir`, so
+patching that applies the lowering to the IR the model is built from, and `load(cache=False)`
+returns before the pickle write, so the model cache is never poisoned. Four builds, ~6 min each.
+
+### ⛔ §7t (ORIGINAL ENTRY, superseded by the resolution above) — the nav-label fix was reverted
+
+`(switch global12 (north …))` compares the previous room against the room's **own `north`
+property**, and `ir.control_shape` builds an `Eq` guard only for a `Number` label — a `Property`
+label yields an **unguarded arm**. So LB2's act-5 deaths read as unconditional, `death_traps`
+returned `None` for `rm500` and `rm350`, and the two ways out of the pursuit region stayed open.
+That diagnosis is solid and still stands.
+
+**The fix does not work.** `vocab.lower_property_case_labels` (resolve the label to the property's
+literal value; skip 0/$ffff and any property the object assigns) was written, censused and
+measured:
+
+    census   LSL2 0 sites · KQ6 6, none resolvable · KQ4 7 · LB2 68, zero reassigned anywhere
+    result   LB2 softlocks 9 -> 3.  LOST: wireCutters, daggerOfRa, bifocals, redHair, grapes
+             (all COLUMN A, confirmed) and smellingSalts.
+
+A drop is a regression, so it is reverted. **Why five confirmed findings vanish when the model gets
+MORE precise is the interesting question, and it is unanswered** — that is a signal about the model,
+not merely an obstacle. Guess-free starting point: the guards land on room `init` arms, so entry
+writes and `init_seq` become conditional on arrival direction; something downstream is reading a
+now-conditional write as absent rather than as possible.
+
+⚠️ **And the probe that "confirmed" this fix was measuring the wrong thing.** It blocked TWO edges
+in the act-5 product and showed cheese/snakeOil/eveningGown all strand. Resolving 68 case labels
+across the game is not "block two edges". Simulate the CHANGE, not the consequence you want.
+
+**What #3 needs, in order:** a derived notion of debug-only code. `whereTo` (script 29) has no
+in-edges in the movement graph — it is entered by typing `-300` into a cab prompt, which is not a
+modelled crossing — so the usable shape is *"an acquisition site in a room the movement graph
+cannot reach, or in a proc called only from such a room, is not a source."* The proc half needs a
+call graph; `trigger.reaching_procs` already computes one for the arming work and is the obvious
+thing to reuse. Do NOT special-case `whereTo` by name.
+
+> **#1's result, measured.** `_rstep[123][630]` became `{(0,4),(1,4),(2,4),(3,4),(4,4)}` and
+> `[355]` became `{(0,0)}`; `_inroom[123]` is empty. smellingSalts is caught, no unexpected item
+> is flagged, and the red narrows from 5 missed to 4.
+>
+> ⚠️ **And it did NOT work the way §7s predicted it would.** `reobtainable_rooms(13)` still
+> returns 64 rooms including `rm420`, because that walk still collapses the product with
+> `{r for r, _ in back}` — the item is caught by a different detector. So the collapse hypothesis
+> I called refuted in §7s is *not* refuted; it was masked. Monotonicity was enough on its own
+> here, and the collapse remains a real, separate limitation for anything that goes through
+> `reobtainable_rooms`. Do not read §7s as clearing it.
+
+### ⭐ §7u. THE SCOREBOARD WAS LYING, AND THE REMAINING ACT-5 WORK IS TWO EDGES (2026-08-09, later)
+
+Re-measured from scratch at the uncommitted working tree. A single LB2 snapshot is **13 seconds**
+warm — the 11-minute figure is the whole suite, and it has been making this game's iteration loop
+look far more expensive than it is. Everything below is from `s` itself, not from these notes.
+
+**1. Column B is honestly 1 of 5, not 2.** `test_lb2_ground_truth` scores by item NAME over the
+union of eight detectors, so it cannot tell a right answer from a right-looking one. Per detector:
+
+    analyze              pressPass wireCutters daggerOfRa bifocals redHair grapes   <- column A
+    register_strandings  smellingSalts (525->720), grapes (525->750)                <- the real one
+    dangerous_sinks      pressPass @rm240 (row emitted TWICE)
+    fatal_uses           skeletonKey @rm630/sUnlockTrunk, snakeLasso @rm700/sExitRoom
+
+**`snakeLasso` is not caught by the act-5 confinement.** Its row is a `fatal_uses` verdict about
+the *mummy room*, a different room and a different mechanism, and it would survive a full revert of
+the act work. Crediting it to "the death fixes" is true only in the sense that the death fixes
+created the false positive.
+
+**2. Both `fatal_uses` rows are avoidable deaths read as unavoidable — the fifth correction this
+detector has needed.** Each machine really does end at `(newRoom: 99)`, and each really is armed by
+the item blamed (the model maps `doVerb` param → item via the inventory item's **`message`
+property** — `skeletonKey` is `message 18` and rm630's trunk case is `(18 …)`; `snakeLasso` is
+`message 30` and rm700's snake is `(30 …)`. Do **not** grep for `has: N` to check an LB2
+requirement, as an earlier reading of this document did — the use sites are verb-dispatched).
+What is wrong is "cannot be survived":
+
+| row | the escape the model cannot see |
+|---|---|
+| `skeletonKey@rm630/sUnlockTrunk` | state 6 does `(global1 handsOn:)` then `(= seconds 6/12)`. Hands are ON and the machine is waiting on real time, so the player can pre-empt it — `trunk doVerb 19` (meat, `message 19`) arms `sInsertMeat` on the same receiver, and `setScript:` cancels the running script. |
+| `snakeLasso@rm700/sExitRoom` | state 1 branches on `(or (has: 35) (not (== (mummy cel:) 0)))`; the survival arm needs `mummy setCel: 0`, written by `sPutMummy`. Object-property state — modelling-gap census #3. |
+
+Two consequences. The item blamed is the *entry* guard's, but the death is chosen by an **internal
+branch** whose condition names a different item (35, the mummy) — blame belongs to the branch.
+And the remedies these rows produce, `skeletonKey@rm630: (not (gEgo has: 8))` and
+`snakeLasso@rm700: (not (gEgo has: 19))`, forbid required progress: Spinach_Dip class.
+
+**3. The `skeletonKey` false positive is NOT the variadic `get:` gap.** `fatal_uses` never consults
+`sources`; giving item 8 its `rm500` source changes nothing. §7 and the handoff both say cause #3
+clears it. It does not — cause #2's blame fix does.
+
+**4. ⭐ THE REMAINING ACT-5 HALF IS TWO EDGES, AND IT IS NOT CONTROL-MAP-CLASS WORK.** §8 item 4
+asks whether act-conditioned exits are "worth it… bigger than everything in §7g". Simulated at the
+product level — restricting the edge's own register requirement in `_emeta`, which is the same
+structure the real fix writes, with no `src/` edit and therefore no cache invalidation:
+
+    restrict rm420->rm350 and rm420->rm500 to `global123 != 5`
+    NEW:  cheese (650->740), snakeOil (630->730)   ...and snakeLasso for the RIGHT reason (640->700)
+    LOST: nothing.  Column A intact.
+
+All of them arrive through **`register_strandings`, which already works** — it is what catches
+smellingSalts and grapes today. `_apply_death_traps` already conjoins a survival condition onto
+every way out of a room whose arrival kills you. So the only missing piece is letting `death_traps`
+*see* rm350's and rm500's death arm, whose guard is the unresolved `(switch global12 (north …))`
+case label. **The plumbing is built; one guard is unread.**
+
+⚠️ First cut of this simulation cut *every* edge leaving `PursuitRgn`'s eleven rooms and lost
+smellingSalts with nothing gained — `rm454->rm26` and `rm480->rm26` are the act **break**, so
+cutting them removes act 6 and `rm750` with it. The confinement is the pursuit region **plus** the
+tunnels (700/710/720/730/740, reached by `rm660->rm700`); only `rm420`'s two exits leave it.
+
+**5. …and it also flags `waterGlass`, which §5 puts OUT OF SCOPE — so the run would fail "nothing
+out of scope is flagged".** Not a model bug: `rm700` has a real `(38 …)` case (waterGlass is
+`message 38`) arming `sListen`. So **§5 column D's stated reason is factually wrong** — "measured,
+none has a downstream `has:` use site at all" missed the verb-dispatched sites. The *conclusion*
+(eavesdropping is out of scope) still stands, but the model derives requirements from use sites and
+LB2's out-of-scope mechanics **have** use sites. The 2026-07-26 items-only ruling is not expressible
+in this model, and every increase in precision will drag another out-of-scope item in. **This is a
+ruling question and it supersedes §8's five.**
+
+**6. Two stale diagnoses still steering the work.** `test_lb2_ground_truth.py`'s RED detail still
+says the gap "goes green when an act-gated `init:` on a door means THIS EDGE IS NOT THERE" —
+refuted by §7q/§7r (zero such sites corpus-wide). `tools/run_tests.py`'s copy of the same rationale
+was updated last session and the test's was not: [[same-rule-two-places]], and a red test
+protecting a stale diagnosis ([[kq6-wedding-fuse-is-kq4-clock-class]]).
+
+**Method that made this cheap, and is reusable:** build once (13 s), then mutate `s._emeta` in
+memory to express the candidate change and re-run the detectors. It simulates *the edit*, not the
+consequence you hope for — the failure §7t names — and it costs nothing, because the model cache
+keys on `src/` hashes and this never touches `src/`.
+
+### Refuted — do not re-run these
+
+| claim | why it died |
+|---|---|
+| "Act-conditioned exits are a control-map-class project" | Two edges; simulated +cheese +snakeOil, 0 lost. §7u |
+| "The `skeletonKey` FP is cleared by the variadic `get:` fix" | It is a `fatal_uses` row; that detector never reads `sources`. §7u |
+| "The act counter is not in the model" | It is. §7a's own correction. |
+| "Order the act counter and the boundaries become frontiers" | Ordered it; **zero** verdicts moved. §7h |
+| "The acts gate LB2's doors via an act-gated `init:`" | **Zero** such sites corpus-wide. §7h's bullet, §7q |
+| "Promote `global124` (the clock/achievement mask) and the five move" | All five acquisitions are unconditional. Census: 1 global in 5 games. §7l |
+| "The item-location store is the gap" | Three `owner:` writes in the whole game, all one item. §7m |
+| "The `{r for r, _ in back}` collapse is why smellingSalts is missed" | `rm420` is in `back` at **every** act; the cause is #1 above. §7s |
+
+**Method rule, paid for four times over:** measure the prediction against `s.edges`/`s._emeta`
+before building. A hand-rolled room graph disagreed with the model's in both directions (§7r).
+
+### The working record
+
+§7a–§7s below are the trail in the order it was measured, corrections included. Several are
+superseded — where they disagree with the table above, **the table wins**. They are kept because
+each refutation cost a measurement, and re-running one is more expensive than reading it.
+
+---
+
+## 7·0. The original measurement — 2026-08-06 at `7aa9a11` (tag `v2.1-kq6`)
 
 Run: `python3 src/snapshot.py dagger`, plus three derivation probes. Model:
 **78 rooms · 311 machines · 193 edges · 33 of 36 items with a source · 27 required.**
@@ -525,15 +1649,364 @@ So the act has to enter through the *content*, and there are two halves:
   **Inert on LB2 either way**: the boot's `rm440` site does carry `123==4`, but its second source
   `rm720` is unconditional (§5, the respawn idiom), and cheese/snakeOil/snakeLasso/smellingSalts
   have no act test on their acquisition at all.
-- **Exits — not started, and this is the real work.** An exit that exists only in some acts is an
-  act-gated `init:` on a door/Feature, not an act test on a `newRoom:`. Until an uninitialised door
-  means "this edge is not there in this state", acts 1–5 stay mutually reachable and no act boundary
-  can be a frontier. This is the same class as modelling-gap census #1 (the control map), and it is
-  a bigger piece than everything in §7g put together.
+- **Exits — ⛔ REFUTED 2026-08-08, see §7j.** This bullet used to read: *"An exit that exists only in
+  some acts is an act-gated `init:` on a door/Feature… until an uninitialised door means 'this edge
+  is not there in this state', acts 1–5 stay mutually reachable."* Measured against the source, **no
+  such site exists**: zero rooms gate an `ExitFeature`/`Door` init on `global123`, and zero condition
+  a nav property on it. The acts do not gate LB2's exits in that shape or any other we can find.
+  Nothing was built on this, which is the one piece of luck in it.
 
-**The honest status: the act counter is modelled and the act STRUCTURE is not.** What §7g bought is
-real — a correct act ordering, and the removal of two guards that would have walled the player — but
-column B needs the exits.
+**The honest status: the act counter is modelled, and what the act CHANGES is not.** What §7g bought
+is real — a correct act ordering, and the removal of two guards that would have walled the player —
+but column B does not need exits. It needs §7j.
+
+### 7j. ⭐ THE CLOCK — what actually moves LB2's world (measured 2026-08-08)
+
+The act counter is the visible half of a story clock, and the clock is the thing that moves items
+and people. **Script 22, `triggerAndClock`**, takes ONE packed word and does two jobs with it:
+
+    (method (doit param1 param2)
+        (if (& param1 $ff00)                            ; high byte present => a CLOCK TICK
+            (= local0 (>> (& param1 $f000) $c))         ;   $f000 = hour
+            (= local1 (>> (& param1 $0f00) $8))         ;   $0f00 = quarter
+            (= local2 (+ (* local0 100) (* 15 local1))) ;   -> the new time
+            (global2 setInset: clockInset …)            ;   the clock face animates
+            (&= param1 $00ff))
+        (+= global124 param1))                          ; low byte = achievement bits
+
+So the answer to "is LB2 time, or time plus achievement?" is **both, fused in one call**: nothing
+ticks on its own (unlike KQ4's real-time clock), the clock is advanced BY story events, and the same
+call ORs progress bits into `global124`, which `actBreak` zeroes at every act break.
+
+**12 static tick sites, 11 distinct times**, plus a dynamic one (`MuseumRgn` passes `global125`):
+
+| site | word | time | | site | word | time |
+|---|---|---|---|---|---|---|
+| rm630 | `0x1310` | 1:45 | | rm400 | `0x7204` | 7:30 |
+| rm420 | `0x2140` | 2:15 | | rm454 | `0x8120` | 8:15 |
+| rm510 | `0x2301` | 2:45 | | rm355 | `0xa000` | 10:00 |
+| rm500 | `0x3104` | 3:15 | | rm430, rm490 | `0xb102` | 11:15 |
+| rm520 | `0x4108` | 4:15 | | rm560 | `0xc304` | 12:45 |
+| rm335 | `0x7001` | 7:00 | | | | |
+
+**And the same constants are READ BACK by `proc0_10` at about a hundred sites** — `-20222` tested
+16×, `16648` 11×, `8512` 10×, `-15612` 9×, `4880` 8×, `-32480` 7×, `12548` 6×. "Has trigger T fired"
+is therefore already a first-class predicate in LB2's own source, keyed by the very word that fires
+it. That is the store we do not read.
+
+⚠️ **But read `proc0_10` before believing the word "clock" here** — I did not, at first, and the
+correction is the whole design:
+
+    (procedure (proc0_10 param1 param2)
+        (&= param1 $00ff)                                    ; <- the clock bits are DISCARDED
+        (return (if (and (> argc 1) param2)
+                    (== (- param1 1) (& global124 (- param1 1)))   ; every bit BELOW this one, i.e.
+                                                                   ; "all prior steps are done"
+                 else
+                    (& global124 param1))))                        ; "this step is done"
+
+So `proc0_10 -20222` does **not** ask "is it 11:15". It asks `global124 & $02`. The time is never
+stored in any variable — it lives in script 22's `local2` for the length of one call. **There is no
+clock variable to model.** What there is:
+
+- **`global124`, an 8-bit achievement mask** (reset to 0 at each act break), written `(+= global124
+  param1)` — addition, not `|=`, so the game is relying on each trigger firing exactly once.
+- **the relocations, which are an immediate consequence of the tick site itself** — `clockInset`'s
+  switch runs inline when that call happens, so `rm420`'s `doit: 8512` simply *is* the 2:15 moves.
+
+That is a much smaller problem than a clock. It is: an interprocedural constant, feeding a mask
+store we already have (the sixth store) and a location store we already have (`ownedBy`).
+
+**What a tick writes** (`clockInset::dispose`, switching on the new time) is the two location stores:
+
+    (1115  ((ScriptID 90 1) goTo: 440) ((ScriptID 90 2) goTo: 520) …)   ; characters relocate
+    (215   (if (== ((global9 at: 14) owner:) 520)
+               ((global9 at: 14) owner: 630)))                          ; AN ITEM relocates
+    …plus (proc0_2 N) tests that `moveTo: -2` characters off-stage entirely
+
+Item **14 is `snakeOil`**, and §5's table records its source as `rm630`: the clock is what put it
+there, moving it out of `rm520` at 2:15. Ticks also chain — reaching 1:45 arms trigger `8224`
+through `sShowClock`.
+
+So the store to build is the CLOCK, and the store it writes is `ownedBy`, which we already have. No
+control map, no new concepts.
+
+### 7k. ⚠️ And §5's "why" column is now partly unverified
+
+Chasing the cheese exposed that the per-item mechanisms in §5 were not all derived from source.
+`rm600 → rm650` is a plain `LbDoor` with `entranceTo 650`, init'ed unconditionally; what locks it is
+a **flag chain 81→82→83→84** driven by the listen-at-the-door verb — no act, no clock. `rm650`'s own
+act/clock conditions gate a character and an intercom script, not the exits, and the rat trap is
+`addToPic:`'d unconditionally. **So "but rm650 is act 3/4" is not established**, and the cheese's
+real mechanism is unknown.
+
+Before building anything for the five, re-derive each one's mechanism from source. One of them
+(snakeOil) is plainly the clock; one of them (cheese) is plainly not what this document says. Do not
+generalise from either until all five are read.
+
+### 7l. ⛔ AND THE MASK STORE WOULD NOT MOVE THEM EITHER — two pre-implementation probes
+
+The obvious next build after §7j is to promote `global124`: it is refused today only because
+`vocab.derive_mask_globals` rejects a non-literal write, and here the literal is one call-frame
+away. `tools/probe_mask_accessor.py` measures the shape corpus-wide:
+
+    dagger  global124  reads 1  writes 1  payload-mask 0xff
+                accessor Main:proc0_10 · accessor triggerAndClock:doit
+    kq6 / qfgvga / lsl2 / kq4  -
+    1 global across 5 games
+
+Exactly one instance — the same profile the sixth store had (`g161`), and the same argument for it:
+the accessors *declare their own payload mask* (`(&= param1 $00ff)`), so nothing is assumed, and the
+relationship is the one `derive_flags`/`lower_flags` already has with the flag word-array, one level
+down (per BIT of one word rather than per FLAG of an array).
+
+**And it would not close column B.** The second probe asks the only question that matters: are the
+five items' acquisitions gated by any of this?
+
+    cheese         rm650   no store condition in the enclosing tests
+    smellingSalts  rm525   no store condition
+    snakeLasso     rm640   no store condition
+    snakeOil       rm630   no store condition
+    eveningGown            no `get:` site at all (as §5 already records)
+
+**All five acquisitions are unconditional.** No act test, no `proc0_10`, no flag. So promoting
+`global124` moves nothing here, exactly as ordering the act counter moved nothing in §7h. Two
+mechanisations in a row would have been spent on stores these items never consult.
+
+**What the evidence does point at.** If the acquisition is unconditional, missability cannot be
+about *permission* — it has to be about the item not being THERE. And §7j caught the game doing
+precisely that: `(global9 at: 14) owner: 630` moves snakeOil out of `rm520` at 2:15. We model
+`ownedBy` as a fixed room per item.
+
+⚠️ **AND THIS SECTION'S HEADLINE IS ITSELF TOO STRONG — corrected below.** "The mask store would not
+move them" is true only of it as a *site guard*. See §7m: the guard is on the PLACEMENT, and
+`global124` is exactly the state coordinate it is written in. I probed the wrong site.
+
+### 7m. ⭐ THE GUARD IS ON THE PLACEMENT, NOT THE ACQUISITION — and the five are THREE mechanisms
+
+The `get:` sites are unconditional because by the time you can click the item, it is already there.
+The condition is on whether the game **put it there at all**, and that lives in the room's `init:`:
+
+    ; rm640
+    (if (not (proc0_2 4))
+        (cond
+            ((not (proc0_10 -20222))                       ; before the 11:15 trigger
+                … (snakeLasso ignoreActors: 1 … init:))    ;   the lasso is on the floor
+            ((not (proc0_10 4880))                         ; before 1:45
+                … (if (not (global0 has: 19))
+                      (snakeLasso … init:)))               ;   the respawn idiom, still gated
+            …
+
+So `source_guards` is the right home and `_source_live` already consumes the shape — but
+`build_maps` collects the guard at the acquisition site, where there is nothing to collect. **It has
+to come from the placement.**
+
+**Censused across all five, because generalising from `rm640` is how the last two wrong turns
+started** (`owner:` writes: *three in the whole game, all item 14*):
+
+| item | mechanism | |
+|---|---|---|
+| snakeLasso | placement `init:` gated by `proc0_10 -20222` | ✅ found |
+| snakeOil | `owner:` relocation `rm520`→`rm630` at the 2:15 tick | ✅ found |
+| cheese (`rm650`) | **zero** clock/act-gated init sites; placement and acquisition both unconditional | ❌ unknown |
+| smellingSalts (`rm525`) | same — zero | ❌ unknown |
+| eveningGown | no `get:` site at all; the source end is unmodelled too | ❌ unknown |
+
+**There is no single fix for the five.** Any design that claims to close all five from one mechanism
+is overfitting — which is the whole reason this table exists.
+
+### 7n. THE DESIGN, AND WHY IT IS NOT A NEW STORE [user, 2026-08-08]
+
+> *"it just feels like item source should be a product, rather than there being a new store"*
+
+Right, and the consumer is already built. `sources[item]` is a flat `{rooms}`;
+`source_guards[item][room]` already holds a condition per site; `_source_live` already filters a
+`(room, register-state)` node by it; `reobtainable_rooms` already intersects over `self.proj`. Source
+is half a product already. The missing half is that an item's **location is treated as a constant**
+rather than as a function of state.
+
+So: no new store. `ownedBy` exists, and `global124` is a register once the parameterised accessor of
+§7l is lowered. The change is that `sources[item]` becomes `{(room, condition)}`, fed by the
+PLACEMENT guard (§7m) and by `owner:` writes, and `_source_live` consumes it unchanged.
+
+Expect **2 of 5**. cheese, smellingSalts and eveningGown are not explained by any of this and must
+be diagnosed before anything is built for them.
+
+⚠️ **The permissiveness rule is not optional.** Making `sources` condition-aware is exactly what
+deleted LSL2's `Knife` (§7h): `sources` had been silently compensating for gaps in the register
+model, and a play-validated stranding vanished. [[arming-floor]]'s rule governs — falling off the end
+of a walk is IGNORANCE, not evidence — so a state we cannot decide must KEEP the source.
+
+### 7o. ✅ eveningGown DIAGNOSED — `get:` is VARIADIC and we read one argument
+
+User ground truth, 2026-08-08: *"you get the gown at the dry cleaner in the first act/prologue
+before going into the museum, and it's never available again."* The dry cleaner is `rm270`
+(Lo Fat's), and the acquisition is there — we simply never read it:
+
+    rm270.sc:274   (global0 get: -1 32)
+
+`ego_19`'s override says what `-1` is, and it is not an item:
+
+    (method (get param1)
+        (if (== param1 -1)
+            (super get: &rest)                    ; -1 = acquire SILENTLY; the items follow
+        else
+            (super get: param1 &rest)
+            (global91 say: 2 4 0 0 0 19)))        ; …otherwise also speak the pickup line
+
+So the item number is the SECOND argument, and `get:` is **variadic** —
+`(ego get: -1 25 16 17 30 27 26 12 31 13)` acquires nine items in one statement. Our extractor takes
+the first literal and records item **-1**.
+
+**Census: 13 two-argument sites against 33 one-argument ones — 28% of LB2's acquisitions lost**,
+across items 1, 2, 6, 8, 20, 21, 22, 25, 28, 32, 34. This is a plain extractor gap, not a modelling
+one, and it is the exact sibling of the `put:` gap the previous session fixed via
+`patcher.ego_spellings` (`(ego put: 6 0 1 3 4 5 8 9 18 23 32)` — same variadic shape, same receiver
+spelling, other direction).
+
+⚠️ **AND THE NAIVE FIX LOSES FINDINGS.** The richest variadic `get:` sites are in `Main`'s
+`proc0_13`…`proc0_17` — the **debug act-setup procs**, reached only from `whereTo`, the debug
+jump-to-act room. `proc0_16` alone hands over `25 16 17 30 27 26 12 31 13`, which includes **cheese
+(16) and smellingSalts (13)**. Read those as sources and both items become obtainable from anywhere
+and their strandings vanish. Same hazard as the LSL2 `Knife`, from the opposite direction: a phantom
+source is as destructive as a missing one. **The fix must exclude debug-only code.**
+
+### 7p. ❌ cheese and smellingSalts are still NOT diagnosed
+
+Both were chased to the end and neither yielded a gate:
+
+- **cheese** — `rm650`'s trap is `addToPic:`'d unconditionally, `(global0 get: 16)` carries no
+  condition, and entry via `rm600`'s `northDoor` is a flag chain (81→82→83→84) driven by the
+  listen-at-the-door verb, which is a puzzle you can complete at any time, not a seal.
+- **smellingSalts** — `feBody init:` sits in `rm525`'s `localproc_0` unconditionally, `(global0
+  get: 13)` carries no condition, and `rm525` is entered from `rm520` alone.
+
+So for both, missability can only be that the source ROOM stops being reachable in act 5 — and the
+model denies it. **✅ RESOLVED in §7q.**
+
+### 7q. ⭐ ACT 5 IS A TIMED CHASE, AND ITS WALLS ARE DEATHS ON ENTRY
+
+User, 2026-08-08: *"act 5 is a timed chase, you have to do everything in the right order quickly and
+I don't think you can go back and get the items."* Correct, and the code says it in three pieces.
+
+**1. Act 5 begins at `rm420`.** `actBreak` switches on the act you are LEAVING:
+`0→230, 1→330, 2→355, 3→610|510, 4→420, 5→750`. The act-4 break fires from `rm520`.
+
+**2. The chase is a REGION, which is why the room graph never showed it.** Script 94:
+
+    (class PursuitRgn of Rgn
+        (method (newRoom param1)
+            (= keep (proc999_5 param1 420 430 435 440 448 450 454 460 480 490 660))
+            (if (not keep) (pursuitTimer dispose: delete:))))
+
+Eleven rooms, named as a literal list. `pursuitTimer` is a real-time `Timer` whose `cue` calls
+`(global2 notify:)`, and `rm420::notify` runs `sDie` when `global123 == 5`. `rm420` arms it on entry
+(`oRileyTimer setTicks: 300`) and re-arms it on every departure
+(`(ScriptID 94 1) setReal: … local0`, 35–85 ticks by `global87`, doubled without a mouse).
+
+**3. The walls are DEATHS ON ENTRY, conditioned on the direction you came from.** `rm420`'s only
+exits out of the region are `north 350` and `west 500`, and in act 5 both kill you:
+
+    ; rm500 and rm350, identically
+    (switch global12
+        (north
+            …
+            (if (== global123 5)
+                … (self setScript: sLauraDies))))      ; -> (global2 newRoom: 99)
+
+So act 5 IS the eleven-room pursuit region. `rm650` (cheese), `rm525` (smellingSalts), `rm640`
+(snakeLasso) and `rm630` (snakeOil) are all statically connected to `rm420` — measured, they are —
+but every path out is a death.
+
+**And this needs NO new store.** The condition is a conjunction of two registers we already model:
+
+- `global123 == 5` — the act, modelled since §7g;
+- `global12 == north` — the previous room, the same register as KQ6's realm seal
+  ([[prevroom-is-the-realm-seal]]).
+
+…plus the standing rule that a death not preventable from its own screen is in scope
+([[one-rule-death-is-in-scope]]). The rule to state is general: **an edge whose DESTINATION arms a
+death on entry, under a condition on (previous room, register state), is not an edge in those
+states.** No clock, no control map, no act-gated doors — three directions this document proposed and
+all three wrong.
+
+The chase timer is then FLAVOUR for our purposes: it is what makes the confinement urgent in play,
+but the confinement itself is the two deadly exits, and those are static.
+
+### 7r. THE PREDICTION, MEASURED — 3 of 4, and it exposed two more causes
+
+The prediction was: *cutting those two edges in act-5 states strands cheese, smellingSalts,
+snakeLasso and snakeOil; the variadic `get:` fix closes eveningGown; column B goes 5 of 5.*
+Measured before building, in the model's own `(room, global123)` product walked from `(rm420, 5)`,
+using `s.edges` and `s._emeta` — **not** a hand-rolled graph, which is what caught the errors:
+
+| item | before the cut | after the cut |
+|---|---|---|
+| cheese | reachable | **stranded** ✅ |
+| snakeLasso | reachable | **stranded** ✅ |
+| snakeOil | reachable | **stranded** ✅ |
+| smellingSalts | **already stranded** | stranded ⚠️ |
+| eveningGown | reachable | **still reachable** ❌ |
+
+(54 rooms reachable while still in act 5 before, 39 after.)
+
+**Two corrections to §7q, both mine:**
+
+1. **`rm525` is ALREADY unreachable at act 5** in the product, before any cut. So the deadly exits are
+   not why smellingSalts is missed — the topology already says it is stranded and the oracle still
+   does not flag it. That is a THIRD cause, unidentified: something on the "still needed" side, or a
+   second source room, is keeping it alive. Do not credit the cut with this one.
+2. **`rm270` stays reachable at act 5**, so §7q's *"eveningGown is closed by the `get:` fix alone"*
+   is **wrong**. That claim rested on a regex room-graph I built by hand, which disagrees with the
+   model's — the model has edges mine did not. Only 31 of 193 edges carry an act requirement, so the
+   walk strolls back into the prologue. eveningGown needs the source fix AND the prologue→museum
+   crossing modelled as one-way; the second half is a separate gap.
+
+**What the measurement does support:** the deadly-entry rule is worth building, and it closes THREE
+of the five (cheese, snakeLasso, snakeOil). It is not the whole of column B, and §7q should not be
+read as if it were.
+
+**Method note, for the next person.** The hand-rolled graph and the model's graph disagreed in both
+directions — mine said `rm270` unreachable (it is not) and reached 36 rooms where the model reaches
+60. A convenient approximation is not a measurement. Walk `s.edges`/`s._emeta`.
+
+### 7s. ✅ smellingSalts DIAGNOSED — THE ACT CAN RUN BACKWARDS
+
+User ground truth, 2026-08-08: *"the smelling salts are obtained in Olympia's office right before
+act 5, and then they are used in act 5 to revive someone."* The model agrees on both ends:
+
+    sources[13]       = [525]          # Olympia's office
+    required[13]      = [720]          # the tunnels, where Steve is revived
+    edge 520 -> 525   requires {579: {1}, 123: {4}}     # act 4 only -- the model KNOWS this
+
+…and still does not flag it, because `reobtainable_rooms(13)` returns 64 rooms including every
+act-5 room. The reason is not the source condition and not the room graph:
+
+    _rstep[123]  = {26: {(0,1), (1,2), (2,3), (4,5), (5,6)}}    # ordered -- and (3,4) is ABSENT
+    _inroom[123] = {rm355: [0],  rm630: [4]}                    # settable from ANY act
+
+**The act register can DECREASE.** Standing in `rm630` at act 5, the model may set the act back to
+**4**, walk `rm520 → rm525` and collect the salts; `rm355` can reset it to **0** outright. This is
+§7a's "second, smaller ordering leak" — `_build_product` derives `_rstep` from a machine's ENTRY
+guards only, so an in-room write loses its from-value — and it is now measured to be the whole
+reason this item is missed. It is also why `(3,4)` is missing from `_rstep`: the act-3→4 transition
+IS `rm630`'s in-room write, not an act-break edge.
+
+**The from-value is not recoverable locally.** Both writes sit in the `else` arm of a
+`(switch global12 …)` on the arrival direction, with no act test anywhere near them. So no path
+condition supplies it.
+
+**The rule that does, derived from `_rstep` itself:** every ordered step of this register is
+`k → k+1`. **A register whose ordered steps are all monotone increasing may not be DECREASED by an
+in-room write.** That is read off the model's own step relation, asserts nothing about LB2, and is
+inert on any register that genuinely moves both ways. It kills both leaks at once: `rm630`'s write
+to 4 cannot apply at act 5, and `rm355`'s to 0 cannot apply above act 0.
+
+⚠️ **This partly corrects §7r.** That table called smellingSalts "already stranded before the cut",
+from a forward walk of mine that filtered to states with `act == 5`. The model's own backward walk
+does not filter, and it is right not to: the player really can end up at act 4 again *if* the
+backwards jump is real. It is not. So smellingSalts is a **monotonicity** finding, not a topology
+one, and the two fixes are independent.
 
 ### 7i. PLACEMENT: 3 of 4, and the fourth is a design gap
 
@@ -567,26 +2040,90 @@ controllable crossing of act 5, not the act break itself.
 
 ## 8. OPEN — needs a user ruling
 
-1. **The three CONTESTED rows (§5 column C).** The source says workBoot and wire are obtainable in
-   the act that uses them, contradicting the walkthroughs and the Let's Play. Our own authority
-   order says the source wins, which would move them to column E (safe) — but they are in the
-   twelve-item list this project has been carrying since 2026-07-26, and
-   [[dont-flip-enumerated-ground-truth]] says report and ask rather than reclassify. **Asking.**
-   dinoBone is genuinely unresolved and needs the act partition either way.
-2. **Deaths in LB2.** The standing rule is that deaths are in scope; the 2026-07-26 LB2 ruling was
-   about the *evidence* layer and did not speak to them. LB2's act-5 chase is ten or so forced
-   deaths (§4). Do we gate on them for this game, or hold the line at items?
-3. **The snake-oil quantity (§5a).** The mechanism is source-verified; the arithmetic that decides
-   whether the refill is *mandatory* is not derived yet. Worth deriving, or enough to guard the
-   `global150 == 0` sink unconditionally?
-4. **Act-conditioned exits — is it worth it?** (New, from §7h.) It is the only route to column B,
-   and it is a control-map-class piece of work: an act-gated `init:` on a door has to mean the edge
-   is absent in that state. Bigger than everything in §7g. The alternative is to accept that LB2
-   detects its act-6 boundary and stop there. Worth knowing before anyone starts.
-5. **`reobtainable_rooms._source_live` is inert on LB2** (§7h). It is correct, general, and the
+0. ⭐ **NEW 2026-08-11 (from the user's OWN play test of the shipped guard): is the pressPass
+   act-1→2 carry VACUOUS?** User, verbatim: *"there's no way to even operate the taxi without
+   the press pass, so there's no way to not have it at the act boundary."* The claim: the
+   boundary itself already implies the pass (some upstream gate — the rm250 cab cond's own
+   passless branches arm `sNoPressPassC/D`, the driver's refusal; what gates the gowned/cab
+   path upstream is NOT yet derived). If ruled: pressPass is the eveningGown shape — the
+   boundary's own precondition, not a carry — the EXPECTED_CAUGHT row is wrong, the rm26->rm330
+   spec retires, and the shipped wrap disappears. NOT reclassified here (dont-flip); needs the
+   ruling AND the upstream-gate derivation. Same session's finding either way: the wrap at
+   rm250 is MIS-SITED (see §7ak addendum / handoff) — the commit is rm300's `sHailCab`
+   (handsOff cab ride, ego hidden at state 9), so a refusal on arrival strands a hidden ego
+   with no script — the §7i/KQ6-corral arrival-commit class, reachable only if the vacuity
+   claim is false.
+   ✅ **THE PLACEMENT HALF IS RESOLVED 2026-08-11 (§7al): the user ruled vacuity does not
+   matter as long as the guard is properly placed, and the wrap now sits at rm300, before
+   `sHailCab` arms.** The VACUITY question itself (is the carry the eveningGown shape?) stays
+   open here — it decides whether the rm26->rm330 spec should one day retire, not whether the
+   shipped guard is safe.
+
+1. ✅ **RULED 2026-08-10 — the three contested rows are SAFE, pending the §9 play test.** The
+   source checks (column-C table) found all three re-obtainable at the point of use with the
+   game's own act-5 chase handling, and the user ruled: *"let's mark those safe, but let's
+   remember to put them in a play test plan later."* Applied: rows moved to `SAFE_RULED` in the
+   oracle test, where flagging one is now a false positive; the play-test obligation is §9. The
+   user's stated suspicion — the walkthroughs hoard these early **because the act-5 chase is very
+   tight** — is the exact claim the play test exists to check.
+2. ✅ **RULED 2026-08-09 — deaths ARE in scope, when unavoidable given earlier state.** User:
+   *"this is analogous to the other games… yes they're in scope, if they're unavoidable given
+   earlier state (the snake oil). The chase and looking both ways are not in scope."* The
+   items-only ruling was about the EVIDENCE layer and never covered deaths, so LB2 is not an
+   exception to the one rule: **preventable from its own screen ⇒ out**. IN: the act-5 cobras with
+   an empty bottle. OUT: every chase step (a wrong step, but the right one was available where you
+   stood) and act 1's look-both-ways. Not to be confused with LSL2's parked "dangerous ACTIONS"
+   class, which that oracle files as *hazards*, a separate report class — still parked.
+3. ✅ **RULED 2026-08-09 — the snake-oil arithmetic is NOT needed.** User: *"you should have enough
+   snake oil left before entering act 5 to not die because of it in act 5."* So the requirement is
+   the boundary condition, not the spend count: entering act 5 with `global150 == 0` is a
+   stranding, and the refill is mandatory rather than prudent. §5a's undelivered quantity stops
+   being a blocker.
+4. ⛔ **WITHDRAWN — the question was built on a refuted premise.** It asked whether act-conditioned
+   exits were worth a control-map-class effort. There are ZERO act-gated door inits corpus-wide
+   (§7q/§7r), so the work it proposed does not exist; and the actual remaining act-5 piece was two
+   edges, closed in §7y by walking the joint projections. Nothing to rule on.
+5. ✅ **RULED 2026-08-10 — eveningGown is an act gate, not a softlock.** User: *"evening gown:
+   act 2 gate, not a softlock."* Applied in full: the row left column B (now EMPTY — the four real
+   carries were promoted to column A), the item moved to `NEVER_STRANDABLE` in the oracle test,
+   and the KNOWN_RED check *"the act-boundary carries are caught"* was **promoted and deleted**
+   per the run_tests contract. The mechanism that earned the ruling stays pinned green (the
+   wearingGown gate + its gown-priced writer, §7ab).
+6. **`reobtainable_rooms._source_live` is inert on LB2** (§7h). It is correct, general, and the
    register form of a rule the codebase already applies to the previous-room register — but on
    today's corpus it changes nothing, so it is groundwork for item 4 rather than a result. Keep it
    or revert it; either is defensible and it should be a decision, not a leftover.
+
+## 9. PLAY-TEST PLAN (recorded 2026-08-10, not yet run)
+
+The 2026-08-10 rulings rest on SOURCE readings; the user asked that these be play-verified later
+(*"let's remember to put them in a play test plan later"*). Per the standing method rules: play is
+the LAST resort, no console-SET state (reads fine, writes are not evidence), stream progress.
+
+1. **The trio under the chase clock.** For each of workBoot / wire / dinoBone: reach act 5
+   WITHOUT the item (skip it in its usual act), then attempt the re-acquisition at the point of
+   use during the chase — boot at rm720 (take, then use on Steve), wire at rm430 (use wireCutters
+   on the wire, then wire the east door), bone at rm480 (take it mid-chase if any act-5 use needs
+   it — note rm500's bone use self-limits to acts ≤4, so the act-5 leg may be vacuous for the
+   bone; check whether anything in act 5 demands it at all). The user's suspicion to test: *"the
+   act 5 chase is very tight"* — i.e. the source-level availability may not survive the clock.
+   If any re-acquisition is not realistically completable, the row moves BACK from SAFE_RULED
+   with the user's sign-off, and the walkthroughs were right for the right reason.
+2. **The empty-bottle boundary** (§5a): enter act 5 with `global150 == 0` (spend all four shakes
+   in act 4 — legitimate play, no console writes) and confirm the cobra nest is impassable, i.e.
+   the stranding the 2026-08-09 ruling names. Also confirm the refill really is unavailable in
+   act 5 (the vat at rm610, `cel < 3`).
+3. **The pass surrender is required for the act-2→3 break** (§7ai's one caveat, added
+   2026-08-10). Source says `sGiveInvite` fires the 7:00 tick (`triggerAndClock doit: 28673`)
+   and the retirement of the `rm26->rm355`/`rm26->rm420` demands leans on the surrender being a
+   REQUIRED story step — but requiredness rides the unmodelled trigger store (§7j). In act 2,
+   do everything EXCEPT hand the pass to the doorman and confirm the act never advances; then
+   hand it over and confirm it does. While there, the pressPass mechanism itself: enter act 2
+   WITHOUT the pass (skip rm235 in act 1) and confirm the fundraiser cannot be entered and act
+   2 cannot complete — the carry today's rm26->rm330 demand exists to close.
+4. While in the file: the standing LB2 items not play-verified — the guard placements do NOT
+   ship (§7i), so nothing to verify there yet; the patched-game pass is its own plan once the
+   §NEXT ship pipeline runs.
 
 Related: [[one-rule-death-is-in-scope]], [[dont-flip-enumerated-ground-truth]],
 [[kq6-softlock-ground-truth]], `docs/KQ6-SOFTLOCK-CANDIDATES.md`, `src/test_lb2_ground_truth.py`.

@@ -1064,8 +1064,61 @@ def _mode_button(i):
     return "  %s  " % MODE_NAMES[i].center(max(len(n) for n in MODE_NAMES))
 
 
+def install_mode_chooser(dest, titles_by_num):
+    """The CHOOSER half of the mode feature -- run BEFORE any wrap is emitted, because it is
+    also the mode's own FEASIBILITY GATE: a mode nobody can switch is not a mode. If neither
+    dialect shape hosts a chooser (SCI0 menu bar / SCI1.1 control panel), the mode is
+    RETRACTED (`T.MODE = None`, `_MODE_DEST` left pinned so `_init_mode` cannot re-arm) and
+    every later emitter takes the classic always-refuse path: no mode conjunct in any wrap, no
+    mode/warned globals, and -- on a game whose stock declarations already cover its reads --
+    no Main in the patch at all.
+
+    LB2 is the case that forced the gate (docs/LB2-ORACLE.md §7ak): its GameControls panel has
+    no `(= nsTop (.. X else Y ..))` row ladder to clone, so v1 shipped mode plumbing with no
+    picker -- and shipping the plumbing meant shipping a recompiled Main, whose `WrapMusic`
+    class (a game class declared in script 0, stock species 134) came back numbered 46,
+    colliding with `Actions` (46, script 950): `LB2::init`'s `(WrapMusic add:)` resolved to a
+    class with no `add` and the game crashed at boot. The species drift is a real compiler gap
+    (scicompile numbers classes by its own enumeration, not the game's table) -- but the mode
+    plumbing was the only reason Main shipped, and a chooser-less mode was dead weight anyway.
+    The gate removes the exposure for every game whose script 0 declares a class; the species
+    gap itself stays open and documented for the day a patch NEEDS to edit such a script."""
+    _init_mode(dest)
+    if T.MODE is None:
+        return []
+    src_dir = os.path.join(dest, "src")
+    row = _install_menu_chooser(src_dir, T.MODE["g"])
+    if row is None:
+        row = _install_panel_chooser(src_dir, T.MODE["g"])
+    if row is None or not row.get("applied"):
+        T.MODE = None
+        row = row if row is not None else {"applied": False, "ui": None, "why": ""}
+        row["why"] = ((row.get("why") or "no menu bar or control panel shape found to host "
+                       "the chooser") + " -- MODE RETRACTED, wraps emit modeless")
+        return [row]
+    return [row]
+
+
+def declare_mode_globals(dest):
+    """The DECLARATION half: `_declare_missing_globals` re-run AFTER every apply pass, because
+    the mode/warned globals exist only in emitted text -- `assemble()`'s early run cannot see
+    them. Nothing to do on a modeless run (the wraps then reference no new global)."""
+    if T.MODE is None:
+        return []
+    if _declare_missing_globals(os.path.join(dest, "src")):
+        return [{"applied": True, "title": "Main", "ui": "globals",
+                 "why": "mode/warned globals declared"}]
+    return []
+
+
 def install_mode_ui(dest, titles_by_num):
     """Install the in-game guard-mode chooser and declare the mode/warned globals.
+
+    ⚠️ LEGACY COMPOSITION -- both halves at once, which is only correct when called BEFORE any
+    wrap emission or on a game whose chooser lands. The pipeline calls the halves separately
+    (`install_mode_chooser` right after `assemble`, `declare_mode_globals` after the applies);
+    a late composed call on a chooser-less game retracts the mode after wraps already
+    referenced it, and the compile then fails loudly on the undeclared mode global.
 
     The player-facing half of the mode feature: an entry in each game's own settings surface
     that sets the mode global (0 full / 1 lite / 2 stock). The SURFACE is derived by shape,
@@ -1087,27 +1140,10 @@ def install_mode_ui(dest, titles_by_num):
         existing button loop. Its doit runs a 3-button `Print` chooser (the font spelled as
         the host file spells it).
 
-    Also the one place the NEW globals get declared: `_declare_missing_globals` re-runs here,
-    AFTER every apply pass, because the mode/warned globals exist only in emitted text --
-    `assemble()`'s early run cannot see them. Returns edit rows (never merged into the
-    apply_* returns -- those are a frozen snapshot surface); `title`s must join the emission
-    set, `Main` included when the declaration pass touched it."""
-    _init_mode(dest)
-    if T.MODE is None:
-        return []
-    g = T.MODE["g"]
-    src_dir = os.path.join(dest, "src")
-    out = []
-    row = _install_menu_chooser(src_dir, g)
-    if row is None:
-        row = _install_panel_chooser(src_dir, g)
-    out.append(row if row is not None else
-               {"applied": False, "ui": None,
-                "why": "no menu bar or control panel shape found to host the chooser"})
-    if _declare_missing_globals(src_dir):
-        out.append({"applied": True, "title": "Main", "ui": "globals",
-                    "why": "mode/warned globals declared"})
-    return out
+    Returns edit rows (never merged into the apply_* returns -- those are a frozen snapshot
+    surface); `title`s must join the emission set, `Main` included when the declaration pass
+    touched it."""
+    return install_mode_chooser(dest, titles_by_num) + declare_mode_globals(dest)
 
 
 def _install_menu_chooser(src_dir, g):
@@ -1802,6 +1838,115 @@ def guard_prop_flag_owner_write(text, prop_name, mask, cond):
     return text, 0
 
 
+def _forward_demand_to_hold(dest, dsp, fwd, stage, out):
+    """Conjoin a refused-everywhere demand into the placed interceptor hold of its sole
+    producing flip, or report it covered when the host already demands everything.
+
+    The demand half of the deferral principle the prohibition side has had all along: a
+    demand with NO survivable site at its own crossing rides the last controllable commit
+    on the only path there. The model's proof obligations (sole producer, one host edge,
+    satisfiable at the host) were discharged by `guards.defer_to_entry`; here the host row
+    must actually carry a `flip-interceptor-hold` site, the delta items must all spell as
+    plain `has:` predicates of this spec's own rendered condition, and the re-wrap must
+    land -- any miss returns None and the refusal stands unchanged."""
+    hx, hy = fwd["host"]
+    host = next((r for r in out if r.get("from_room") == hx and r.get("to_room") == hy
+                 and r.get("applied")
+                 and any(e.get("kind") == "flip-interceptor-hold"
+                         for e in r.get("entry_sites") or ())), None)
+    if host is None:
+        return None
+    hitems = set(host.get("items") or ())
+    delta = sorted(set(dsp.get("items") or ()) - hitems)
+    # a demand GROUP (any-of) is covered when the host already demands SOME member;
+    # an uncovered group forwards as its own (or ...) clause
+    dgroups = [sorted(g) for g in (dsp.get("groups") or ()) if not (set(g) & hitems)]
+    base = {**dsp, "applied": True,
+            "placement": {"kind": "demand-forwarded-to-hold", "stage": stage,
+                          "host": "rm%d->rm%d" % (hx, hy), "forwarded": delta}}
+    base["placement"]["forwarded_groups"] = dgroups
+    if not delta and not dgroups:
+        base["placement"]["kind"] = "covered-by-host-hold"
+        base["sites"] = 0
+        return base
+    preds = {}
+    for m in re.finditer(r"\(\S+\s+has:\s*(\d+)\)", to_source_syntax(dsp["condition"])):
+        preds[int(m.group(1))] = m.group(0)
+    if not all(i in preds for i in delta) \
+            or not all(i in preds for g in dgroups for i in g):
+        return None
+    clauses = [preds[i] for i in delta] \
+        + ["(or %s)" % " ".join(preds[i] for i in g) for g in dgroups]
+    delta_cond = clauses[0] if len(clauses) == 1 else "(and %s)" % " ".join(clauses)
+    title = next(e["title"] for e in host["entry_sites"]
+                 if e.get("kind") == "flip-interceptor-hold")
+    p = os.path.join(dest, "src", title + ".sc")
+    try:
+        text = open(p, errors="replace").read()
+    except Exception:                                  # noqa: BLE001
+        return None
+    nt, n = guard_flip_interceptor(text, dsp["from_room"], fwd["host_stage"], delta_cond)
+    if not n:
+        return None
+    open(p, "w").write(nt)
+    base["sites"] = n
+    base["placement"]["title"] = title
+    return base
+
+
+def guard_flip_interceptor(text, pocket, stage_src, cond):
+    """Hold a player-committed register flip at its EXIT-INTERCEPTOR commit clause -- the
+    night-guard shape for a flip whose write lives in a sole-exit pocket room.
+
+    KQ4's nightfall holds a free-running writer's clock clause (`guard_register_write`); a
+    player-committed flip has no free-running writer to hold, but a game may spell the commit
+    as a clause in an always-retested method that ROUTES into the pocket -- LB2's
+    rm520::newRoom: `((and (== global123 4) (global0 has: 31)) (= param1 26) ...)` diverts
+    every exit into the act-break card. Conjoining the demand into that arm gives the KQ4
+    semantics exactly: a held exit falls through to the arm below it (the stock plain exit,
+    hands on), the demand is read at exit time (no state-born heads, no cross-file spelling),
+    nothing inside the arm is consumed while held (the retracted-consumption rule satisfied
+    by construction), and retry is free because the interceptor re-tests on every exit.
+
+    The arm must CONTAIN the spec's own stage test -- the flip this demand scopes to; an arm
+    that does not pin the stage is somebody else's crossing -- and its body must route into
+    the pocket (`(= param<N> <pocket>)` or `newRoom: <pocket>`). Only the retested methods
+    `newRoom`/`doit` are searched: the same pair as `guard_register_write`, for the same
+    reason (a `cue` fires once when cued -- refusing there would never retry; rm520's own
+    `cue` performs the post-commit delivery and must not be touched)."""
+    norm = lambda s: re.sub(r"\s+", " ", s).strip()          # noqa: E731
+    want_stage = norm(stage_src)
+    route = re.compile(r"\(=\s*param\d+\s+%d\s*\)|newRoom:\s*%d\b" % (pocket, pocket))
+    for meth in ("newRoom", "doit"):
+        for mm in re.finditer(r"\(method\s+\(%s\b" % meth, text):
+            ms, me = _block_span(text, mm.start())
+            region = text[ms:me]
+            for cm in re.finditer(r"\(cond\b", region):
+                cs, ce = _block_span(region, cm.start())
+                i = cs + len("(cond")
+                while i < ce:
+                    while i < ce and region[i] in " \t\r\n":
+                        i += 1
+                    if i >= ce or region[i] != "(":
+                        break
+                    as_, ae = _block_span(region, i)
+                    arm = region[as_:ae]
+                    j = as_ + 1
+                    while j < ae and region[j] in " \t\r\n":
+                        j += 1
+                    if j < ae and region[j] == "(":
+                        hs, he = _block_span(region, j)
+                        head = region[hs:he]
+                        if want_stage in norm(head) and route.search(region[he:ae]):
+                            new_head = ("(and %s %s)  ; softlock-guard: hold the act flip "
+                                        "until its carries are obtainable"
+                                        % (head, stock_or(cond)))
+                            new_region = region[:hs] + new_head + region[he:]
+                            return text[:ms] + new_region + text[me:], 1
+                    i = ae
+    return text, 0
+
+
 _SOURCE_CACHE = {}
 
 
@@ -1933,7 +2078,7 @@ def _guard_travel_dispatch(dest, sp, titles_by_num, seen_dispatch):
 
 
 def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), rooms=None,
-                 entry_frontier=None):
+                 entry_frontier=None, defer_info=None):
     """Place each EDGE guard at its CONTROLLABLE TRIGGER.
 
     A frontier `newRoom: N` usually sits at the last state of a changeState cutscene -- an
@@ -1945,7 +2090,15 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
 
     `entry_frontier(room)` -- MODEL knowledge for the arrival-commit re-site: the rooms that
     cross INTO `room` from outside its pocket (`guards.commit_entry_frontier`). Without it an
-    arrival commit stays honestly unplaced, exactly as before this parameter existed."""
+    arrival commit stays honestly unplaced, exactly as before this parameter existed.
+
+    `defer_info(sp)` -- MODEL knowledge for the SOLE-EXIT deferral (`guards.defer_to_entry`):
+    the register stage that discriminates the spec's crossing and the predecessor rooms where
+    it is presentable and satisfiable. A demand whose trigger resolves to sole-exit (LB2's act-break card: the one
+    `newRoom:` lives inside the cutscene the wrap would refuse to arm, so refusing in place
+    strands the player on the card) is re-sited to the pocket's entry frontier as
+    `(or (not <stage>) <demand>)` -- the demand deferral that prohibitions have had since the
+    Spinach_Dip raft, extended to demands. Without it a sole-exit row stays honestly unplaced."""
     _init_mode(dest)               # runtime stock/lite/full dispatch for everything placed below
     out_unplaced = []
     by_title = {}
@@ -2135,6 +2288,12 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             # every other destination passes untouched, and only the frontier is demanded. Applied
             # once, here, where the placement is settled -- every kind below reads `sp["condition"]`
             # and threading it through each of them would be the same rule in nine places.
+            # ...but keep the PRE-dest_test condition for the sole-exit deferral below: the
+            # dest_test names the pocket's OWN dispatch variable (LB2: script 26's `local0`),
+            # which does not exist at the entry rooms the demand is re-sited to -- there the
+            # model-derived stage does the same discriminating through a register that is in
+            # scope everywhere.
+            raw_cond = sp["condition"]
             if placement.get("dest_test"):
                 sp = {**sp, "condition": "(or (not %s) %s)"
                                          % (placement["dest_test"], sp["condition"])}
@@ -2223,6 +2382,70 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                 if got:
                     out.append({**sp, **got})
                     continue
+                # THE SOLE-EXIT DEFERRAL. Refusing in place is a wall (the pocket's one
+                # `newRoom:` is inside the cutscene being refused), so the demand moves to the
+                # controllable crossings INTO the pocket, scoped by the model-derived stage --
+                # without which the row stays honestly unplaced, exactly as before.
+                if placement["kind"] == "sole-exit" and defer_info is not None:
+                    dsp = {**sp, "condition": raw_cond}
+                    info = defer_info(dsp)
+                    if info:
+                        # MODEL knowledge for the arrival-commit triage: the stage's register
+                        # alternatives (vacuity), the positional registers (head stripping),
+                        # the predecessor map (chain hops), and the per-site filters the
+                        # deferral itself applies (a re-sited room owes the same presentability
+                        # and compliance the original site owed).
+                        dctx = {"alts": info.get("alts") or [],
+                                "positional": set(info.get("positional") or ()),
+                                "prev_g": info.get("prev_g"),
+                                "preds": info.get("preds") or (lambda r: []),
+                                "site_ok": info.get("site_ok") or (lambda X, r: None),
+                                "depth": 0, "visited": set()}
+                        placed, _stg, unwrapped = _guard_arrival_entries(
+                            dest, dsp, titles_by_num, rooms, path, placement, seen_entry,
+                            info["rooms"], site=row_site, stage_override=info["stage"],
+                            defer_ctx=dctx)
+                        if not placed and unwrapped and info.get("fwd"):
+                            # DEMAND FORWARDING: every site refused, but the model proved a
+                            # sole producing flip one stage earlier (guards.defer_to_entry
+                            # "fwd"). If THAT crossing carries a placed interceptor hold, the
+                            # part of this demand it does not already carry is conjoined into
+                            # the same arm -- the player meets the whole later demand at the
+                            # last controllable moment on its only path.
+                            frow = _forward_demand_to_hold(dest, dsp, info["fwd"],
+                                                           info["stage"], out)
+                            if frow is not None:
+                                out.append(frow)
+                                continue
+                        if not placed and unwrapped:
+                            # every deferral site refused -- the row stays unplaced, but the
+                            # PER-SITE reasons are the measurement (a wrap that would have been
+                            # vacuous or mid-commit is not coverage lost; it is a wall or a
+                            # strand not shipped). Losing them to the generic SKIP line made
+                            # the honest outcome unreadable.
+                            out.append({**dsp, "applied": False,
+                                        "why": "entry-deferral refused at every site",
+                                        "placement": {"kind": "entry-deferral-REFUSED",
+                                                      "commit": placement,
+                                                      "stage": info["stage"]},
+                                        "frontier_unwrapped": unwrapped})
+                            continue
+                        if placed:
+                            kind = ("entry-deferral" if not unwrapped
+                                    else "entry-deferral-PARTIAL")
+                            # NO "title": the wraps span several files, and a single title would
+                            # make sibling rows (same pocket, different stages) freeze as
+                            # identical strings -- a set-diff collapses duplicates, so one of
+                            # them dropping would be invisible. Keyed by the edge instead.
+                            row = {**dsp, "applied": True,
+                                   "sites": sum(p["sites"] for p in placed),
+                                   "placement": {"kind": kind, "commit": placement,
+                                                 "stage": info["stage"]},
+                                   "entry_sites": placed}
+                            if unwrapped:
+                                row["frontier_unwrapped"] = unwrapped
+                            out.append(row)
+                            continue
                 out.append({**sp, "applied": False,
                             "why": "no controllable trigger (%s) and no room-property exit"
                                    % placement["kind"],
@@ -2372,8 +2595,319 @@ def _gate_notify_awards(dest, cond):
     return out
 
 
+def _pristine_room_text(dest, ttl):
+    """The UNEDITED source for `ttl` -- context classification must read what the game wrote,
+    not what a sibling row's wrap already rewrote (the same rule the stage extraction states)."""
+    pris = globals().get("_PRISTINE_DIR")
+    for base in ([os.path.join(pris, ttl + ".sc")] if pris else []) + \
+            [os.path.join(dest, "src", ttl + ".sc")]:
+        if os.path.exists(base):
+            try:
+                return open(base, errors="replace").read()
+            except Exception:                      # noqa: BLE001
+                return None
+    return None
+
+
+_REG_EQ_HEAD = re.compile(r"\(==\s+global(\d+)\s+(-?\d+)\s*\)$")
+
+
+def _head_conjuncts(head):
+    t = head.strip()
+    if t.startswith("(and"):
+        return [t[a:b] for (k, a, b) in T._immediate_children(t, 1, len(t) - 1) if k == "form"]
+    return [t]
+
+
+def _ctx_pins(ctx):
+    """Registers this arming's own path PINS to a value: exact `(== globalN V)` heads (or
+    top-level conjuncts of an `(and ...)`), plus switch cases whose discriminator is a bare
+    global. Disjuncts pin nothing -- an `(or ...)` alternative is not a commitment."""
+    pins = {}
+    for h in ctx["heads"]:
+        for c in _head_conjuncts(h):
+            m = _REG_EQ_HEAD.match(c.strip())
+            if m:
+                pins[int(m.group(1))] = int(m.group(2))
+    for (expr, v) in ctx["cases"]:
+        m = re.fullmatch(r"global(\d+)", expr.strip())
+        if m:
+            pins[int(m.group(1))] = v
+    return pins
+
+
+def _stage_vacuous(pins, alts):
+    """The arming's own path CONTRADICTS every stage alternative -- the game's own condition
+    says this site never crosses at the spec's stage, so it carries no wrap at all. (LB2's
+    rm620: `sFoundDagger` arms under `(== global123 3)`; a stage-1/4/5 demand there is a guard
+    on a crossing that cannot happen.)"""
+    return bool(alts) and all(any(R in pins and pins[R] != v for R, v in musts.items())
+                              for musts in alts)
+
+
+_PORTABLE_TOK = re.compile(r"global\d+|proc\d+_\d+|-?\d+|\$[0-9a-fA-F]+")
+_HEAD_OPS = {"and", "or", "not", "==", "!=", "<", ">", "<=", ">=", "&", "|", "+", "-", "*",
+             "/", "u<", "u>", "mod"}
+
+
+def _portable_head(h):
+    """May this head text cross into ANOTHER room's file? Only spellings that resolve game-wide:
+    globals, public procedures, selectors, literals. `local0` compiles in the file that declares
+    it and means garbage anywhere else -- a chain hop that would carry one refuses instead."""
+    for tok in re.findall(r"[^\s()]+", re.sub(r"\{[^}]*\}", " ", h)):
+        if tok.endswith(":") or tok in _HEAD_OPS or _PORTABLE_TOK.fullmatch(tok):
+            continue
+        return False
+    return True
+
+
+def _strip_positional_head(head, positional, alts=()):
+    """`head` with its positional-register conjuncts removed -> (text-or-empty, ok). At the
+    re-sited frontier a previous/current-room test names where the player is standing NOW --
+    keeping it would make the carried guard vacuously true (the same rule the stage extraction
+    applies to clause heads). A positional register in a shape that is not a strippable
+    conjunct (inside an `or`) refuses the whole head.
+
+    Conjuncts the STAGE already implies are dropped too (`(== global123 4)` under a stage that
+    pins 123=4): they are redundant at the landing, and dropping them is what lets a
+    state-conditioned arming whose only condition IS the stage ride upstream at all."""
+    keep = []
+    for c in _head_conjuncts(head):
+        c = c.strip()
+        m = _REG_EQ_HEAD.match(c)
+        if m and int(m.group(1)) in positional:
+            continue
+        if m and alts and all(musts.get(int(m.group(1))) == int(m.group(2))
+                              for musts in alts):
+            continue
+        if any(re.search(r"\bglobal%d\b" % g, c) for g in positional):
+            return None, False
+        keep.append(c)
+    if not keep:
+        return "", True
+    return (keep[0] if len(keep) == 1 else "(and %s)" % " ".join(keep)), True
+
+
+def _cutscene_delivers(dest, titles_by_num, from_room, to_room):
+    """Does `from_room` perform its crossing into `to_room` from inside a changeState -- a
+    cutscene ride, arriving with the game in control of the ego? (rm300 -> rm250 is `sHailCab`
+    state 10; the ego is hidden by state 9.) Read from the PRISTINE performer file; unreadable
+    or unparseable refuses toward False -- the caller then treats the arrival as walkable,
+    which keeps the in-place gate, the behavior every site had before this triage existed."""
+    ttl = titles_by_num.get(from_room)
+    if not ttl:
+        return False
+    pris = globals().get("_PRISTINE_DIR")
+    path = os.path.join(pris, ttl + ".sc") if pris else os.path.join(dest, "src", ttl + ".sc")
+    if not os.path.exists(path):
+        path = os.path.join(dest, "src", ttl + ".sc")
+    try:
+        forms = read_file(path)
+        nr, _cs, _ss, _pc = T.analyze_room(forms)
+    except Exception:                              # noqa: BLE001
+        return False
+    # the same destination spellings find_trigger resolves: a literal, a nav-property read
+    # (`newRoom: (self north:)` -- rm740's sGoTRex exits north into rm480), or a variable
+    nav = T.nav_props(forms)
+    assigned = T._var_assigned_rooms(forms)
+
+    def hits(dst):
+        if dst == to_room:
+            return True
+        if isinstance(dst, tuple) and dst[0] == "nav":
+            return nav.get(dst[1]) == to_room
+        if isinstance(dst, tuple) and dst[0] == "var":
+            return to_room in assigned.get(dst[1], ())
+        return False
+    return any(meth == "changeState" and hits(dst)
+               for (_inst, meth, _state, dst, _pos) in nr)
+
+
+def _defer_triage_site(dest, num, ttl, sp, trig, cond, stage_override, titles_by_num,
+                       rooms, own_path, placement, seen, site, dctx):
+    """The ARRIVAL-COMMIT TRIAGE for a sole-exit deferral site whose trigger is an arm-event.
+
+    Play-found (LB2 2026-08-11, the user's own test of the shipped guard): the deferral placed
+    its arm-gate on `rm250::init`'s arming of `sACTBREAK` -- but the arrival that satisfies that
+    arming's own head (`prevRoom == 300`) is delivered by rm300's `sHailCab`, a hands-off cab
+    ride that hides the ego before `newRoom:`. The gate refused AFTER the commit: hidden ego,
+    nothing armed, the §7i strand. The act guard must sit OUTSIDE the act commit.
+
+    Per arming of the trigger's target script, classified from the game's own context
+    (`trigger.arming_contexts`):
+
+      * STAGE-VACUOUS -- the path pins a register against every stage alternative: no wrap;
+        recorded. A guard that cannot fire is not worth a mis-siting.
+      * COMMITTED -- mid-changeState, or the game takes the controls (`handsOff:`/ego `hide:`)
+        before the arming, or an `init` arrival delivered by a cutscene: not a refusal point.
+        The demand is RE-SITED up the chain: in-file to the enclosing Script's own armings, and
+        across files to the delivering rooms (`_guard_arrival_entries`, rebased on this room),
+        with the arming path's own non-positional heads conjoined into the stage so the carried
+        guard scopes to exactly the committed chain. Heads that cannot cross files (`local0`)
+        refuse the hop -- honestly unplaced beats a wrap built on garbage.
+      * BENIGN -- a hands-on arming (walk-in `init`, `cue`/`doit`/`notify` without a preceding
+        handsOff): the in-place silent gate stays exactly as before.
+
+    Returns (handled, placed, unwrapped). handled=False only when no arming context could be
+    read at all (no pristine text, or the armings are spelled in a form `arming_contexts`
+    cannot see) -- the caller's legacy flow then proceeds unchanged. Once contexts exist the
+    triage owns the whole site, INCLUDING the benign armings: a target with a controllable
+    arming and an uncontrollable sibling (rm300's `sHailCab`: `taxiSign::doVerb` and
+    `frontDoor::cue`) needs both covered, and the legacy single-trigger wrap takes only the
+    first -- wrapping one door of an N-door commitment is a bypass (the KQ6 finding #4 rule,
+    applied here because the play-tested walkthrough path was the CUE one)."""
+    text = _pristine_room_text(dest, ttl)
+    if text is None:
+        return False, [], []
+    ego = "global%d" % _EGO
+    ctxs = T.arming_contexts(text, trig["target_script"], ego=ego)
+    if not ctxs:
+        return False, [], []
+    placed, unwrapped = [], []
+    benign = []                                    # (ctx, heads_carried, land_controllable)
+    handled = True                                 # ctxs found: the triage owns this site
+    prev_g = dctx.get("prev_g")
+    frontier = [(c, [], trig["target_script"]) for c in ctxs]
+    for _depth in range(6):
+        nxt = []
+        for (c, hs, tgt) in frontier:
+            where = "%s::%s" % (c["instance"], c["method"])
+            pins = _ctx_pins(c)
+            if _stage_vacuous(pins, dctx["alts"]):
+                unwrapped.append({"room": num, "why": "stage-vacuous arming at %s: the game's "
+                                  "own path pins %s" % (where, pins)})
+                continue
+            if c["method"] in T.CONTROLLABLE_METHODS:
+                benign.append((c, hs, tgt, True))
+                continue
+            committed = (c["method"] == "changeState" or c["handsoff_branch"])
+            deliverers = []
+            if not committed and c["method"] == "init":
+                pinned = [pins[prev_g]] if prev_g in pins else []
+                deliverers = pinned or dctx["preds"](num)
+                committed = any(_cutscene_delivers(dest, titles_by_num, X, num)
+                                for X in deliverers)
+            if not committed:
+                benign.append((c, hs, tgt, False))
+                continue
+            if c["poisoned"]:
+                unwrapped.append({"room": num, "why": "arrival-commit arming at %s behind an "
+                                  "else arm: path underivable" % where})
+                continue
+            # heads carried out of a changeState are STATE-BORN: their value at the landing's
+            # earlier moment is not the value the game tests at the arming (rm480's `local0`
+            # is 0 through all of init and only means something by state 13). One survives the
+            # stage-implied drop -> the hop refuses; a guard built on a wrong-time read is
+            # worse than an honest SKIP.
+            stripped, ok = list(hs), True
+            for h in c["heads"]:
+                sh, good = _strip_positional_head(h, dctx["positional"], dctx["alts"])
+                if not good:
+                    ok = False
+                    break
+                if sh:
+                    stripped.append((sh, c["method"] == "changeState"))
+            if not ok:
+                unwrapped.append({"room": num, "why": "arrival-commit arming at %s: positional "
+                                  "register in an unstrippable head" % where})
+                continue
+            if c["method"] == "changeState":
+                up = T.arming_contexts(text, c["instance"], ego=ego)
+                if not up:
+                    unwrapped.append({"room": num, "why": "mid-cutscene arming at %s (state %s) "
+                                      "with no in-file armer" % (where, c["state_case"])})
+                    continue
+                nxt += [(u, stripped, c["instance"]) for u in up]
+                continue
+            # a committed arrival: the refusal belongs in the delivering rooms
+            if not deliverers:
+                pinned = [pins[prev_g]] if prev_g in pins else []
+                deliverers = pinned or dctx["preds"](num)
+            state_born = [h for (h, born) in stripped if born]
+            if state_born:
+                unwrapped.append({"room": num, "why": "arrival-commit arming at %s: state-born "
+                                  "head %r cannot ride upstream" % (where, state_born[0])})
+                continue
+            bad = [h for (h, _b) in stripped if not _portable_head(h)]
+            if bad:
+                unwrapped.append({"room": num, "why": "arrival-commit arming at %s: head %r "
+                                  "cannot cross files" % (where, bad[0])})
+                continue
+            stage2 = (stage_override if not stripped
+                      else "(and %s %s)" % (stage_override,
+                                            " ".join(h for (h, _b) in stripped)))
+            if dctx["depth"] >= 4:
+                unwrapped.append({"room": num, "why": "arrival-commit chain from %s exceeds "
+                                  "depth" % where})
+                continue
+            u_before, climbed = len(unwrapped), False
+            for X in deliverers:
+                if (X, num) in dctx["visited"]:
+                    continue
+                dctx["visited"].add((X, num))
+                reason = dctx["site_ok"](X, num)
+                if reason:
+                    unwrapped.append({"room": num, "why": "chain hop to rm%s refused: %s"
+                                      % (X, reason)})
+                    continue
+                sp2 = {**sp, "from_room": num}
+                p2, _stg, u2 = _guard_arrival_entries(
+                    dest, sp2, titles_by_num, rooms, own_path, placement, seen, [X],
+                    site=site, stage_override=stage2,
+                    defer_ctx={**dctx, "depth": dctx["depth"] + 1})
+                placed += [{**pp, "via_room": num} for pp in p2]
+                unwrapped += u2
+                climbed = climbed or bool(p2)
+            if not climbed and len(unwrapped) == u_before:
+                unwrapped.append({"room": num, "why": "arrival-commit arming at %s: no chain "
+                                  "hop landed" % where})
+        if not nxt:
+            break
+        frontier = nxt
+    if not handled:
+        return False, [], []
+    # The benign armings still need their cover -- the legacy flow will not run for this site.
+    t2_path = os.path.join(dest, "src", ttl + ".sc")
+    for (c, hs, tgt, controllable) in benign:
+        state_born = [h for (h, born) in hs if born]
+        if state_born:
+            unwrapped.append({"room": num, "why": "benign arming at %s::%s carries state-born "
+                              "head %r: wrong-time guard refused"
+                              % (c["instance"], c["method"], state_born[0])})
+            continue
+        htxt = [h for (h, _b) in hs]
+        guard_c = ("(or (not %s) %s)" % (stage_override, cond) if not htxt
+                   else "(or (not (and %s %s)) %s)" % (stage_override, " ".join(htxt), cond))
+        key = (ttl, sp["from_room"], guard_c, c["instance"], c["method"], tgt)
+        if key in seen or not os.path.exists(t2_path):
+            continue
+        t2 = open(t2_path, errors="replace").read()
+        pl = {"kind": "setscript" if controllable else "arm-event",
+              "trigger_instance": c["instance"], "trigger_method": c["method"],
+              "target_script": tgt, "target_pattern": re.escape(tgt)}
+        if controllable:
+            if REFUSE is None:
+                unwrapped.append({"room": num, "why": "no refusal form for the controllable "
+                                  "arming at %s::%s" % (c["instance"], c["method"])})
+                continue
+            nt, n = T.wrap_all_armings_in_source(t2, pl, guard_c, REFUSE, site=site)
+            if n:
+                nt = _ensure_refusal_use(nt, titles_by_num)
+        else:
+            nt, n = T.wrap_trigger_in_source(t2, pl, guard_c, REFUSE, site=site)
+        if n:
+            open(t2_path, "w").write(nt)
+            seen.add(key)
+            placed.append({"title": ttl, "kind": ("chain-refusal" if controllable
+                                                  else "arm-event"), "sites": n})
+        else:
+            unwrapped.append({"room": num, "why": "benign arming at %s::%s found but not "
+                              "rewritten" % (c["instance"], c["method"])})
+    return True, placed, unwrapped
+
+
 def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, seen,
-                           entry_rooms, site=None):
+                           entry_rooms, site=None, stage_override=None, defer_ctx=None):
     """An ARRIVAL COMMIT cannot be refused in place. Play-found (finding #5, the winged-guards
     capture): the proc-call wrap put a refusal inside `rm340::init`, and by then the seizure
     has begun -- the refusal left a half-armed scene and the game hung two rooms later. The
@@ -2402,40 +2936,51 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
 
     `seen` dedups across the sibling rows that share one commit (the capture rows would
     otherwise stack identical nested wraps on one crossing)."""
-    pris = globals().get("_PRISTINE_DIR")
-    ppath = os.path.join(pris, os.path.basename(own_path)) if pris else own_path
-    text = open(ppath if os.path.exists(ppath) else own_path, errors="replace").read()
-    # THE STAGE: the game's own test of when this room's arrival commits the player, read off
-    # the PRISTINE init. One placement names one proc-call, but a room can commit through
-    # several calls into the same helper script (rm340: proc342_0 -> the Celeste flight,
-    # proc342_1 -> seized returning from the spring, proc342_2 -> seized on arrival), so every
-    # same-script call contributes its clause head. A head that tests the PREVIOUS-ROOM
-    # register is dropped: it names an in-pocket arrival (`(== global12 440)` -- coming back
-    # out of the lair), which cannot hold at the frontier this guard is being re-sited to --
-    # keeping it would make the whole guard vacuously true there. What survives on rm340 is
-    # exactly the capture-arm test, `(and (not (proc913_0 1)) (proc913_0 2))`.
-    m_script = re.match(r"proc(\d+)_", placement.get("target_script") or "")
-    prev_g = None
-    if _IR is not None:
-        import extract as _X
-        prev_g = _X.prev_room_global(_IR)
-    heads = []
-    inst_span = _find_region(text, r"\(instance\s+%s\b" % re.escape(placement["trigger_instance"]))
-    if inst_span and m_script:
-        i0, i1 = inst_span
-        meth_rel = _find_region(text[i0:i1],
-                                r"\(method\s+\(%s\b" % re.escape(placement["trigger_method"]))
-        if meth_rel:
-            region = text[i0 + meth_rel[0]:i0 + meth_rel[1]]
-            for pm in re.finditer(r"\(proc%s_\d+\s*\)" % m_script.group(1), region):
-                head = enclosing_clause_head(region, pm.start())
-                if not head or not head.startswith("("):
-                    continue                   # an `else` arm or a switch case: no test to keep
-                if prev_g is not None and re.search(r"\bglobal%d\b" % prev_g, head):
-                    continue                   # an in-pocket arrival; meaningless at the frontier
-                if head not in heads:
-                    heads.append(head)
-    stage = heads[0] if len(heads) == 1 else ("(or %s)" % " ".join(heads) if heads else None)
+    if stage_override is not None:
+        # A SOLE-EXIT deferral arrives with its stage already derived from the MODEL (the
+        # out-edge's own `_emeta` requirement, `guards.defer_to_entry`) -- there is no proc-call
+        # arming to read clause heads off, and the pocket's own file has nothing to say about
+        # which crossing the demand scopes to. The dedup key carries the stage: sibling rows off
+        # one pocket share a CONDITION (LB2's three pressPass rows) while meaning different
+        # crossings, and keying on the condition alone would place the first act's guard and
+        # silently swallow the rest.
+        stage = stage_override
+    else:
+        pris = globals().get("_PRISTINE_DIR")
+        ppath = os.path.join(pris, os.path.basename(own_path)) if pris else own_path
+        text = open(ppath if os.path.exists(ppath) else own_path, errors="replace").read()
+        # THE STAGE: the game's own test of when this room's arrival commits the player, read off
+        # the PRISTINE init. One placement names one proc-call, but a room can commit through
+        # several calls into the same helper script (rm340: proc342_0 -> the Celeste flight,
+        # proc342_1 -> seized returning from the spring, proc342_2 -> seized on arrival), so every
+        # same-script call contributes its clause head. A head that tests the PREVIOUS-ROOM
+        # register is dropped: it names an in-pocket arrival (`(== global12 440)` -- coming back
+        # out of the lair), which cannot hold at the frontier this guard is being re-sited to --
+        # keeping it would make the whole guard vacuously true there. What survives on rm340 is
+        # exactly the capture-arm test, `(and (not (proc913_0 1)) (proc913_0 2))`.
+        m_script = re.match(r"proc(\d+)_", placement.get("target_script") or "")
+        prev_g = None
+        if _IR is not None:
+            import extract as _X
+            prev_g = _X.prev_room_global(_IR)
+        heads = []
+        inst_span = _find_region(text,
+                                 r"\(instance\s+%s\b" % re.escape(placement["trigger_instance"]))
+        if inst_span and m_script:
+            i0, i1 = inst_span
+            meth_rel = _find_region(text[i0:i1],
+                                    r"\(method\s+\(%s\b" % re.escape(placement["trigger_method"]))
+            if meth_rel:
+                region = text[i0 + meth_rel[0]:i0 + meth_rel[1]]
+                for pm in re.finditer(r"\(proc%s_\d+\s*\)" % m_script.group(1), region):
+                    head = enclosing_clause_head(region, pm.start())
+                    if not head or not head.startswith("("):
+                        continue               # an `else` arm or a switch case: no test to keep
+                    if prev_g is not None and re.search(r"\bglobal%d\b" % prev_g, head):
+                        continue               # an in-pocket arrival; meaningless at the frontier
+                    if head not in heads:
+                        heads.append(head)
+        stage = heads[0] if len(heads) == 1 else ("(or %s)" % " ".join(heads) if heads else None)
     cond = to_source_syntax(sp["condition"])
     guard = "(or (not %s) %s)" % (stage, cond) if stage else cond
     placed, unwrapped, siteless = [], [], []
@@ -2443,7 +2988,8 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
         ttl = titles_by_num.get(num)
         if ttl is None or (rooms and num not in rooms) or num == sp["from_room"]:
             continue
-        key = (ttl, sp["from_room"], sp["condition"])
+        key = ((ttl, sp["from_room"], guard) if stage_override is not None
+               else (ttl, sp["from_room"], sp["condition"]))
         if key in seen:
             continue
         p2 = os.path.join(dest, "src", ttl + ".sc")
@@ -2455,7 +3001,34 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
         except Exception:                              # noqa: BLE001
             unwrapped.append({"room": num, "why": "unparseable"})
             continue
+        if stage_override is not None:
+            # THE NIGHT-GUARD SHAPE FIRST (user ruling 2026-08-11: guards condition the STATE
+            # CHANGE, not rooms): if this entry room spells the commit as an exit-interceptor
+            # clause pinning the spec's own stage, conjoin the demand INTO that clause -- one
+            # site, re-tested every exit, held = the stock else arm. Every boundary without an
+            # interceptor falls through to the triage below unchanged.
+            it2 = open(p2, errors="replace").read()
+            nt2, n2 = guard_flip_interceptor(it2, sp["from_room"], stage_override, cond)
+            if n2:
+                open(p2, "w").write(nt2)
+                seen.add(key)
+                placed.append({"title": ttl, "kind": "flip-interceptor-hold", "sites": n2})
+                continue
         trig = find_trigger(forms2, sp["from_room"])
+        if (stage_override is not None and defer_ctx is not None
+                and trig["kind"] in ("arm-event", "sole-exit", "setscript")):
+            # THE ARRIVAL-COMMIT TRIAGE (sole-exit deferral only). A deferral site is not a
+            # refusal point just because it precedes the pocket: its own arming may sit inside
+            # a commit (LB2's rm250, play-found 2026-08-11). Classified from the game's own
+            # arming context; committed sites re-site up the chain, benign ones keep the
+            # in-place wrap, and a site whose path contradicts the stage carries nothing.
+            handled, p3, u3 = _defer_triage_site(
+                dest, num, ttl, sp, trig, cond, stage_override, titles_by_num, rooms,
+                own_path, placement, seen, site, defer_ctx)
+            if handled:
+                placed += p3
+                unwrapped += u3
+                continue
         if trig["kind"] == "arm-event" and REFUSE is not None:
             # A silent arm-gate prevents the softlock and wastes the player's climb (play
             # feedback 2026-08-04: solve the face, step every rock, and the ascent just...
@@ -2469,7 +3042,8 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
                 p3 = os.path.join(dest, "src", used + ".sc")
                 if not os.path.exists(p3):
                     continue
-                ckey = (used, sp["from_room"], sp["condition"], "chain")
+                ckey = ((used, sp["from_room"], guard, "chain") if stage_override is not None
+                        else (used, sp["from_room"], sp["condition"], "chain"))
                 if ckey in seen:
                     continue
                 t3 = open(p3, errors="replace").read()
@@ -2742,6 +3316,10 @@ def main():
     print("assembling project from %s" % config.ACTIVE.src_dir)
     nums = assemble(dest)
     titles_by_num = {n: t for t, n in nums.items()}
+    cedits = install_mode_chooser(dest, titles_by_num)   # feasibility gate BEFORE any wrap
+    for e in cedits:
+        print("  [%s] mode-ui %-10s %s" % ("ok " if e["applied"] else "SKIP",
+                                           e.get("title", "?"), e.get("why", "")))
 
     print("\napplying %d sink remedies:" % len(sinks))
     edits = apply_sink_remedies(dest, sinks, titles_by_num)
@@ -2772,8 +3350,8 @@ def main():
         print("  [%s] %-16s %s" % (mark, loc, how))
         if e["applied"]:
             print("        %s" % to_source_syntax(e["condition"]))
-    uedits = install_mode_ui(dest, titles_by_num)
-    for e in uedits:
+    uedits = cedits + declare_mode_globals(dest)
+    for e in uedits[len(cedits):]:
         print("  [%s] mode-ui %-10s %s" % ("ok " if e["applied"] else "SKIP",
                                            e.get("title", "?"), e.get("why", "")))
     touched = sorted({e["title"] for e in edits + resedits + gedits + uedits

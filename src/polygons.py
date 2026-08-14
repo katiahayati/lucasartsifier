@@ -204,6 +204,108 @@ def reachable_edges(polys, seeds=None, step=4):
     return out
 
 
+def _room_object(script):
+    """The Rm instance: the object carrying a `picture` property (and the nav exits)."""
+    for o in script.objects:
+        if not o.is_class and "picture" in o.props:
+            return o
+    return None
+
+
+def dead_nav_exits(ir, room):
+    """[{room, edge, declared_room}] -- declared s/e/w props whose engine trigger zone the
+    room's own unconditional obstacle layout never lets the ego reach. A dead letter: the
+    edge handoff fires off the ego's position, and a polygon whose boundary stops short of the
+    trigger zone means no ego ever fires it -- so reading the property at face value invents a
+    free edge. LB2's rm330 is the case that demanded it (docs/LB2-ORACLE.md §7z): `south 250`
+    is the ONLY free way from the museum steps back to the street, and the init polygon's
+    lower boundary sits at y<=169 while the south handoff needs the ego's base at y~189. Same
+    family as the death-screen and walk-icon rules (`extract._no_walk_rooms`): a declared exit
+    the player cannot use.
+
+    ⛔ NORTH IS REFUSED, ALWAYS -- the engine tests the ego's bounding RECT against the
+    horizon, so the north handoff fires when `base_y - ego_height <= horizon`, and the ego's
+    height is a scaled VIEW fact this module does not model. MEASURED before that was
+    understood (2026-08-10): a horizon-band reading killed LB2 rm290's `north 295` (walkable
+    corridor tops at y~84, horizon 15 -- fires through the ~70px ego) and five KQ6 Realm
+    norths with it; every one was a false removal. South is the ego's BASE row and east/west
+    its x +- half-width, so those three stay provable from base geometry, with a conservative
+    40px margin standing in for the half-width.
+
+    REMOVING movement is the unsafe direction, so everything refuses toward keeping the edge:
+      * every `addObstacle:` site must be UNCONDITIONAL (an empty path condition) -- a room
+        that swaps layouts under a condition keeps all its exits here (`polygon_gates` is the
+        machinery for those);
+      * a `setRegions:` anywhere in the file refuses the whole room -- a region swap can
+        install a different layout than the one read;
+      * no arrival seed (no literal `gEgo posn:` in init), no polygons at all, or a layout
+        that blocks every seed -> refuse."""
+    script = ir.scripts.get(room)
+    rm = _room_object(script) if script else None
+    if rm is None:
+        return []
+    from extract import NAV_SELECTORS
+    declared = [(d, rm.props.get(d)) for d in NAV_SELECTORS
+                if rm.props.get(d) and rm.props.get(d) != 0xffff]
+    if not declared:
+        return []
+    sites = room_obstacles(ir, script)
+    if not sites or any(any(a is not None for a in pc) for pc, _p in sites):
+        return []
+    for o in script.objects:
+        for ast in o.methods.values():
+            if any(I.t(n) == "Selector" and n.get("name") == "setRegions"
+                   for n in I.walk(ast)):
+                return []
+    polys = [p for _pc, ps in sites for p in ps]
+    step = 4
+    blocked, gw, gh = _blocked_mask(polys, step)
+    seeds = []
+    init = rm.methods.get("init")
+    for send in (I.sends(init) if init else ()):
+        recv, msgs = I.send_pairs(send)
+        if not I.is_global(recv, 0):
+            continue
+        for sel, ps in msgs:
+            if sel == "posn" and len(ps) >= 2:
+                x, y = I.as_int(ps[0]), I.as_int(ps[1])
+                if x is not None and y is not None:
+                    gx = min(max(x // step, 0), gw - 1)
+                    gy = min(max(y // step, 0), gh - 1)
+                    if not blocked[gy * gw + gx]:
+                        seeds.append((gx, gy))
+    if not seeds:
+        return []
+    q = deque(seeds)
+    seen = set(seeds)
+    while q:
+        gx, gy = q.popleft()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = gx + dx, gy + dy
+            if (0 <= nx < gw and 0 <= ny < gh and (nx, ny) not in seen
+                    and not blocked[ny * gw + nx]):
+                seen.add((nx, ny))
+                q.append((nx, ny))
+    # The trigger zones, in the ego's BASE coordinates (see the docstring for why north has
+    # none): south fires with the base row at the screen bottom; east/west with base x within
+    # half an ego of the side, over-approximated by a 40px margin so a wide scaled ego cannot
+    # out-reach the proof.
+    margin_ew, margin_s = 40, 6
+    zones = {
+        "south": [(gx, gy) for gx in range(gw) for gy in range(gh)
+                  if gy * step + step // 2 >= H - margin_s],
+        "east":  [(gx, gy) for gx in range(gw) for gy in range(gh)
+                  if gx * step + step // 2 >= W - margin_ew],
+        "west":  [(gx, gy) for gx in range(gw) for gy in range(gh)
+                  if gx * step + step // 2 <= margin_ew],
+    }
+    out = []
+    for d, dst in declared:
+        if d in zones and not any(cell in seen for cell in zones[d]):
+            out.append({"kind": "dead-nav", "room": room, "edge": d, "declared_room": dst})
+    return out
+
+
 def polygon_gates(ir, room):
     """[{room, edge, guard}] -- a screen edge this room's obstacle layout OPENS only under a
     condition, i.e. a positional exit that is really gated.

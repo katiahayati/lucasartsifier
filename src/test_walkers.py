@@ -75,6 +75,11 @@ ACCEPTED = {
     "cue":         "cue counting is a machine concern only.",
     "setCycle":    "arming selectors -- machine/compile for cues, extract for cue-armed edges.",
     "setMotion":   "as setCycle.",
+    "posn":        "extract._object_departures reads posn (with setMotion/handsOff/handsOn) as "
+                   "the POSITION-EVENT vocabulary of the departing-init rule -- the terminal "
+                   "off-pic parking that says an init yields no interactive presence (LB2's "
+                   "arrival taxi, the street seal). A single-purpose lifecycle reader, not "
+                   "control flow: no other walker asks where an object ENDS.",
     "setRegions":  "region membership is built once, in opmodel.",
     "Add":         "arithmetic appears in guard atoms (extract) and in counter detection (vocab).",
     "Sub":         "as Add.",

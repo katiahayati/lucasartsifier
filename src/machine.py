@@ -78,6 +78,10 @@ class Machine:
     entry_sources: list = field(default_factory=list)   # PARALLEL to entries: the METHOD the
     #   arming was found in ("init", "doit", "cue", a proc, ...). A `cue` is not a way IN -- see
     #   MachineBuilder._drop_continuation_entries.
+    restores_control: set = field(default_factory=set)  # states whose body sends a derived
+    #   control-restore selector (SCI1.1's handsOn -- vocab.derive_control_selectors): the player
+    #   is free to act while this state waits. What lets fatal_uses treat a wait-on-the-clock
+    #   state as pre-emptable by arming a competitor into the same slot. Empty on SCI0.
     glob_dom: dict = field(default_factory=dict)   # glob -> sorted values, for globals this
     #   script uses as a COUNTER (`++`/`--`). compile fans an increment out over these: the new
     #   value depends on the old one, so it is only resolvable against values we know it takes.
@@ -219,6 +223,22 @@ class MachineBuilder:
     def __init__(self, ir, game_death):
         self.ir = ir
         self.is_death = game_death        # (glob_index, value) -> bool
+        import vocab as _V
+        self._restore_sels = frozenset(
+            sel for sel, kind in _V.derive_control_selectors(ir).items() if kind == "restore")
+        #   the Game hierarchy's own "player control comes back" selectors (SCI1.1's handsOn),
+        #   derived from the class table; empty on SCI0. Marks states for `restores_control`.
+        _script_cls = ir.find_class("Script")
+        _timers = set()
+        for n in I.walk((_script_cls.methods.get("doit") or {}) if _script_cls else {}):
+            if n.get("t") in ("Decrement", "Assignment", "Eq", "Ne", "Lt", "Gt", "Le", "Ge"):
+                for k in (n.get("kids") or []):
+                    if isinstance(k, dict) and k.get("t") == "Property":
+                        _timers.add(k.get("name"))
+        self._timer_props = frozenset(_timers)
+        #   the cue CLOCK: whatever properties the engine Script class's own doit counts down
+        #   and compares (seconds/ticks/cycles and their lastX shadows -- read off the class,
+        #   not listed). A state that writes one of these is scheduling its own future.
         self.procs_by = {}                # (script, proc-name) -> body, for call-following
         self._cast_cache = {}             # script number -> extract.cast_conditions(script)
         self._local_cache = {}            # script number -> extract.local_write_conditions(script)
@@ -364,6 +384,36 @@ class MachineBuilder:
                                 got[key] = X.var_room_values(self.ir, script.number, p)
         return got
 
+    def _restores(self, body):
+        """Restore-of-control AND a clock: the state opens a WINDOW the player acts in.
+
+        The restore send alone is not the fact -- every SCI1.1 cutscene ends with a `handsOn:`,
+        and marking those made EVERY doomed machine on the corpus pre-emptable (measured: KQ6's
+        fatal_uses went from three play-validated rows to zero). What distinguishes LB2's trunk
+        state -- the one the rule exists for -- is that it hands control back AND starts the
+        Script class's own timer in the same body: `(global1 handsOn:)` + `(= seconds ...)` is
+        "you are free, and something is coming". The timing properties come from the engine's
+        Script class table (`seconds`/`ticks`/... are whatever it declares), not from a list
+        here; the value written is deliberately ignored, because LB2 writes it as
+        `(if (HaveMouse) 6 else 12)` and the window's LENGTH is not the question."""
+        restore = timer = False
+        for n in I.walk(body):
+            t = n.get("t")
+            if t == "Send":
+                try:
+                    _recv, msgs = I.send_pairs(n)
+                except Exception:                      # noqa: BLE001
+                    continue
+                restore = restore or any(sel in self._restore_sels for sel, _p in msgs)
+            elif t == "Assignment":
+                k = (n.get("kids") or [None])[0]
+                if isinstance(k, dict) and k.get("t") == "Property" \
+                        and k.get("name") in self._timer_props:
+                    timer = True
+            if restore and timer:
+                return True
+        return False
+
     def _local_regs(self, script_number):
         """{synthetic gi: reset value} for `script_number`'s own lowered room locals."""
         got = self._lreg_cache.get(script_number)
@@ -390,6 +440,14 @@ class MachineBuilder:
                         ops = []
                         self._ops(c["kids"][1], [], ops, script.number)
                         m.states[k] = ops
+                        # A state that HANDS CONTROL BACK (the derived handsOn) is one the
+                        # player lives through with the verbs available -- which is what lets
+                        # `fatal_uses` see a wait-on-the-clock state as pre-emptable. Recorded
+                        # on the state, not the path: the send is unconditional room dressing
+                        # in every observed case, and a guarded restore would only over-mark
+                        # in the PERMISSIVE direction for the one consumer this feeds.
+                        if self._restore_sels and self._restores(c["kids"][1]):
+                            m.restores_control.add(k)
         # entries: ANY object's init/handleEvent/doit that does `(<inst> changeState: K)`
         # (guarded) -- the machine is often started/redirected by the ROOM object, not by
         # itself (rm65.init -> rm65Script changeState: survive-or-die on gCurrentStatus).
@@ -424,7 +482,8 @@ class MachineBuilder:
                         if k is None:
                             continue
                         self._scan_setscript(c["kids"][1], [], m, source=mn,
-                                             armer=(other.name, k), owner=owner)
+                                             armer=(other.name, k), owner=owner,
+                                             selfobj=other.name)
                     continue
                 # An arming inside another MACHINE's doit/cue is a continuation of that machine
                 # exactly as a changeState-case arming is, so it carries the same armer link and
@@ -437,7 +496,7 @@ class MachineBuilder:
                 armer = ((other.name, None)
                          if other.name != m.inst and "changeState" in other.methods else None)
                 self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn),
-                                     owner=owner, armer=armer)
+                                     owner=owner, armer=armer, selfobj=other.name)
         # ...and this script's own PROCEDURES, which were never scanned at all. A machine armed
         # from a proc in its own script had no entry whatever: KQ6's realm cutscene is armed by
         # `proc344_1`, and the item-state test guarding it went with it.
@@ -455,7 +514,8 @@ class MachineBuilder:
             seen.add(key)
             s2 = self.ir.scripts.get(arm_script)
             self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn),
-                                 owner=(X.cast_guard(self._cast(s2), oname) if s2 else None))
+                                 owner=(X.cast_guard(self._cast(s2), oname) if s2 else None),
+                                 selfobj=oname)
         self._drop_continuation_entries(m)
         self._inherit_local_continuations(m, script)
         return m
@@ -620,10 +680,11 @@ class MachineBuilder:
             c = self._cast_cache[script.number] = X.cast_conditions(
                 script, proc_guard=lambda pn: X.any_guard(self.proc_calls.get(pn)),
                 machine_guard=lambda on: self._entry_guard.get((script.number, on)),
-                init_sels=X.init_selectors(self.ir))
+                init_sels=X.init_selectors(self.ir),
+                delegate_sels=X.delegate_slots(self.ir))
         return c
 
-    def _scan_setscript(self, node, pc, m, source, armer=None, owner=None):
+    def _scan_setscript(self, node, pc, m, source, armer=None, owner=None, selfobj=None):
         """Find `(x setScript: <ref>)` where <ref> is m, record an entry to m at state 0 with the
         path condition, AND carry the LOCAL WRITES the arming context made before the setScript. A
         machine reads its own script's locals, so a local the arming branch set gates the machine's
@@ -655,6 +716,20 @@ class MachineBuilder:
                         slot = ("G", _r["index"])
                     elif _r.get("name"):
                         slot = ("O", _r["name"])
+                    elif _r.get("t") == "Self" and selfobj:
+                        # `(self setScript: X)` IS a slot arming -- `self` is the object whose
+                        # method we are standing in, and it holds the one Script slot exactly as a
+                        # named receiver does. Recorded as ("O", <that object>), the same key the
+                        # named spelling produces, so the two spellings compete correctly.
+                        #
+                        # It read as NO SLOT, and `death_traps` bails on `if not slots` -- so a
+                        # room that kills you by arming its own death script was not a trap at all.
+                        # LB2's act-5 walls are precisely that: `rm350`/`rm500`'s `init` do
+                        # `(self setScript: sLauraDies)` under `global12 == 420 AND global123 == 5`,
+                        # a fully-modelled arming whose negation is exactly "do not arrive from the
+                        # pursuit region during act 5" -- and it was discarded for want of a
+                        # receiver name.
+                        slot = ("O", selfobj)
                 for sel, params in msgs:
                     if sel != "setScript" or not params or not self._targets(params[0], m):
                         continue

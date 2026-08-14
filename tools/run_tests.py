@@ -122,16 +122,18 @@ KNOWN_RED = {
         # I D)`, while LB2's Main spells the receiver `(ego put: ...)` and carries nine trailing
         # arguments the engine ignores (`patcher.ego_spellings` derives the names from the game's
         # own `(= global0 ego)`).
-        "🔴 KNOWN GAP (dagger): every non-refused spec places":
-            "PHASE 4, and the one left is a DESIGN gap, not a search gap. rm26->rm750 (the act "
-            "break into the inquest) is now FOUND -- `analyze_room` learned the third destination "
-            "shape, a variable-valued `newRoom:` -- and is then deliberately refused as "
-            "`sole-exit`: script 26 holds exactly one `newRoom:`, inside the very cutscene the "
-            "arm-event would decline to start, so gating it leaves the player on the title card "
-            "with nothing left to run. Measured by reading the emitted source, not inferred. The "
-            "real placement is a DEFERRAL to the last controllable commit before an unavoidable "
-            "crossing -- `apply_guards` already does exactly that for prohibitions (the "
-            "Spinach_Dip raft) and the same treatment has to be extended to demands.",
+        # ✅ PROMOTED 2026-08-11 (the user's word, same session as the fix) -- "every
+        # non-refused dagger spec places" is GREEN again, this time on real coverage. Its
+        # 2026-08-10 promotion had been REVERSED next day (the sole-exit wraps sat inside
+        # commits -- the user's play test caught rm250's; §7al). What closed it honestly:
+        # the NIGHT-GUARD SHAPE (§7an, guard_flip_interceptor) placed the act-4->5 demand
+        # inside rm520::newRoom's own exit-interceptor arm -- the flip's commit clause,
+        # re-tested every exit, held = the stock else exit -- and DEMAND FORWARDING
+        # (guards.defer_to_entry "fwd" + patcher._forward_demand_to_hold) carried the
+        # act-5->end demand's uncovered remainder (bifocals + redHair, sourceable through
+        # act 4, zero loss sites) into the same arm, its own crossing having no survivable
+        # site (the commit is rm480's mid-chase capture). The user chose the forwarding over
+        # narrowing the red: "i vote 2. i think it's the practical right answer too".
         # ✅ PHASE 5 LANDED 2026-08-02 -- "every KQ6 finding is closed by a guard" is GREEN and no
         # longer listed. The last three: handkerchief + skeletonKey placed at the Realm's exit
         # frontier (pocket_carryout_frontier, rm640->rm650), and the wrong-door stranding rows
@@ -139,21 +141,27 @@ KNOWN_RED = {
         # not-missable, unholdable-cannot-strand; SINGLETON-only -- the group form deletes LSL2's
         # play-validated raft guard and is ruled out). `pipeline --report` exits 0 on KQ6.
     },
-    "test_lb2_ground_truth.py": {
-        "🔴 KNOWN GAP (LB2): the act-boundary carries are caught":
-            "THE ACT COUNTER IS MODELLED; THE ACT STRUCTURE IS NOT. The act break itself now "
-            "reads as the game writes it -- `rm26->X req{k} sets{k+1}`, the ordering in `_rstep`, "
-            "nothing free in `_inroom` -- and that moved no item verdict. LB2's act gates what "
-            "rooms PUT IN THEMSELVES, not their doors: rm650 (the cheese) and rm740 (the rats "
-            "that need it) are both reachable at acts 0-5, because the cheese's pickup carries no "
-            "act test and what stops you fetching it during the chase is that the museum rooms "
-            "never initialise the objects and exits that would let you walk there. So no act "
-            "boundary can be a frontier and snakeOil, cheese, snakeLasso, smellingSalts and "
-            "eveningGown stay invisible. Goes green when an act-gated `init:` on a door means "
-            "THIS EDGE IS NOT THERE IN THIS STATE (modelling-gap census #1, the control map). "
-            "The source half of the same question is already built (`_source_live`) and is inert "
-            "on LB2. docs/LB2-ORACLE.md §7g/§7h.",
-    },
+    # ✅ PROMOTED 2026-08-10 -- "test_lb2_ground_truth.py: the act-boundary carries are caught" is
+    # no longer red. The five rows were THREE causes plus one misclassification: §7s (the act
+    # register could run backwards) closed smellingSalts; §7y (register_strandings walks the
+    # JOINT projections) closed cheese, snakeOil and snakeLasso; and eveningGown was RULED by the
+    # user -- "act 2 gate, not a softlock" -- once the model derived the whole mechanism (the
+    # ACT 1 -> ACT 2 break itself demands `wearingGown`, whose only act-1 writer costs the gown;
+    # docs/LB2-ORACLE.md §7ab). The four real carries now sit in EXPECTED_CAUGHT, where a drop is
+    # a loud regression; the gown sits in NEVER_STRANDABLE, where flagging it is an FP. (The
+    # `skeletonKey` FP that was tripping the suspicion check -- kept out of this list on purpose,
+    # as a defect rather than a limitation -- was closed the same day: a hands-on wait with the
+    # Script clock running is pre-emptable, docs/LB2-ORACLE.md §7ad.)
+    # ✅ PROMOTED 2026-08-10, the same day it was declared -- "test_lb2_ground_truth.py: the
+    # street block is sealed from act 2 on (POSITIONAL taxi seal)" went green and is deleted.
+    # The "positional, control-map class, unmodellable" diagnosis was only the LAST link of the
+    # chain: the arrival taxi's init is consumed by its own departing handsOff cutscene
+    # (extract._object_departures -- no click window ever opens), the `south 250` nav prop is a
+    # polygon-proven dead letter (polygons.dead_nav_exits -- north deliberately never claimed,
+    # the ego's rect height is unmodelled), and the surviving act gate `(< global123 2)` lowers
+    # exactly over the register's own value universe (guard_reqs relational + edge_meta domains).
+    # All three measured byte-identical on LSL2/KQ4/KQ6; the street collapsed to acts [1] and
+    # the check is a permanent green pin. docs/LB2-ORACLE.md §7ag.
 }
 
 CHECK = re.compile(r"^\s*\[(PASS|FAIL)\]\s*(.*?)\s*$")

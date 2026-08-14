@@ -430,12 +430,23 @@ def build_maps(em):
     trap_items = hopeless - hopefuls
 
     required = defaultdict(set)
+    # THE GUARD BEHIND EACH NEED SITE -- the need-side twin of `source_guards`. `required` is a
+    # room-level union and that is right for the frontier walks, but the site a room's entry came
+    # from carries a register condition of its own (LB2's sGiveInvite arming is `own(6) AND
+    # global123==2` once the delegate rule lands the doorman's init guard), and
+    # `crossing_retires_need` must be allowed to see it: a need room whose EVERY site is
+    # register-dead at the post-crossing states is not a live need there. One list per (item,
+    # room), one entry per evidence site; `None` marks a site with no guard (the consumption
+    # fallback, or evidence read without one) and poisons the room PERMISSIVE -- unconditionally
+    # live -- which is the strict direction for a filter that deletes demands.
+    required_guards = defaultdict(dict)
     # CONSUMPTION is a FALLBACK evidence source, not an additive one -- see the note where it is
     # applied, below. Collected separately so it can be weighed after all guard evidence is in.
     consumed_at = defaultdict(set)
-    def req_item(it, room):
+    def req_item(it, room, guard=None):
         if it not in trap_items:
             required[it].add(room)
+            required_guards[it].setdefault(room, []).append(guard)
     # THE ALWAYS-LIVE SCOPES CONTRIBUTE EFFECTS, NOT REQUIREMENTS. `required[X]` means "own(X) is
     # FACED here, as a gate" -- it is the evidence a frontier is computed from, so it has to be a
     # claim about a PLACE. An SCI1 inventory `doVerb` is dispatched by the icon bar and so is
@@ -454,13 +465,14 @@ def build_maps(em):
     # because their items live in script 0 -- so this test cannot move LSL2 or KQ4.
     globalsc = getattr(em, "global_homed", ())
 
-    def req(guard, room, script=None):
+    def req(guard, room, script=None, only=None):
         if script is not None and script in globalsc:
             return
         for it in _own_required(guard):     # OR-branch items are NOT required -- see _own_required
-            req_item(it, room)
+            if only is None or it in only:
+                req_item(it, room, guard)
         for it in _loc_placed_required(guard, em.ts.placed):   # owner-gate on a PLACED room
-            req_item(it, room)
+            req_item(it, room, guard)
     for e in em.ts.edges:
         req(e.guard, e.src)
     for e in em.ts.cs_edges:
@@ -494,10 +506,30 @@ def build_maps(em):
                 req(g, info["room"])
         # machine ENTRY guards too: a `Said 'throw/beach'` success branch is captured as an
         # entry/changeState guarded by own(Sand) -- skipping entries lost Sand/Ash.
-        for K, eg in info.get("entries", ()):
-            req(eg, info["room"])
-        for K, eg in info.get("init_entries", ()):
-            req(eg, info["room"])
+        #
+        # ...BUT AN ITEM ONLY SOME ARMINGS DEMAND IS NOT A GATE. Facing own(X) on one arm of a
+        # fork while another arm is free is not facing it at all; you take the other arm. This is
+        # the requirement-side twin of the rule `fatal_uses` already carries ("a death armed on
+        # one arm of a fork does not condemn the fork") and of `_own_required`'s own OR-branch
+        # exclusion -- the same disjunction, spelled as separate entries instead of a `GOr`.
+        #
+        # LB2's rm300 is the case: the bar door's `doVerb` arms `sEnterBar` from verb 4, verb 6
+        # AND verb 14, and 14 is the notebook's `message` -- so a SYNONYM for "talk to the
+        # doorman" made the notebook a requirement of the room, and with it a stranding across
+        # the intro's ESC-skip edges. The item is one the opening cutscene hands you on every
+        # path (user ground truth 2026-08-10); the demand was never real.
+        #
+        # NOT `entry_musts`, deliberately, though it answers the same shape of question: it reads
+        # each alternative with `_own_positive` -- a mention ANYWHERE, "a mention, not a proof",
+        # which is the right conservatism for pricing an arming and the wrong one here. Every one
+        # of `sAskEnterBar`'s entries CONJOINS the whole `GOr` of its armer's three cases, so
+        # own(2) is mentioned in all three and the intersection keeps it. `_own_required` is the
+        # reading `req` itself uses, and it is the one that has to intersect.
+        ent_alts = defaultdict(list)
+        for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+            ent_alts[K].append(_own_required(eg))
+        for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+            req(eg, info["room"], only=set.intersection(*[set(a) for a in ent_alts[K]]))
         for it in info.get("drops", ()):
             consumed_at[it].add(info["room"])
 
@@ -532,7 +564,8 @@ def build_maps(em):
     # volcano to the island hub, hiding the Ashes/Sand stranding. The gate-aware product graph
     # subsumes it -- the ticket FP was really an unguarded duplicate edge shadowing the machine
     # EXIT's own(ticket) guard (see edge_meta's machine_delivered filter).
-    return edges, edge_kind, sources, drops, required, guard_required, source_guards
+    return (edges, edge_kind, sources, drops, required, guard_required, source_guards,
+            {it: dict(rooms) for it, rooms in required_guards.items()})
 
 
 def _cmp_atoms(guard, out):
@@ -657,6 +690,11 @@ def asserts_eq(op, pol):
     return (op == "==" and pol) or (op == "!=" and not pol)
 
 
+_REL_INV = {"<": ">=", "<=": ">", ">": "<=", ">=": "<"}
+_REL_CMP = {"<": (lambda a, b: a < b), "<=": (lambda a, b: a <= b),
+            ">": (lambda a, b: a > b), ">=": (lambda a, b: a >= b)}
+
+
 def _must_hold(guard, out=None):
     """`(reg, value)` pairs the guard REQUIRES along its top-level AND spine.
 
@@ -675,6 +713,20 @@ def _must_hold(guard, out=None):
     elif isinstance(guard, Pred) and guard.kind == "CMP" and guard.op == "!=":
         try:
             out.add((guard.var, int(guard.value)))
+        except (TypeError, ValueError):
+            pass
+    elif isinstance(guard, Pred) and guard.kind == "CMP" and guard.op in _REL_INV:
+        # A RELATIONAL on the AND spine, keyed with its op so it can never collide with the
+        # `!=` pairs above. Same contract: only an atom that MUST hold may constrain.
+        try:
+            out.add((guard.var, int(guard.value), guard.op))
+        except (TypeError, ValueError):
+            pass
+    elif (isinstance(guard, GNot) and isinstance(guard.kid, Pred)
+          and guard.kid.kind == "CMP" and guard.kid.op in _REL_INV):
+        # `(not (< x v))` asserts `(>= x v)` -- a computable leaf flip, same as the `==` case.
+        try:
+            out.add((guard.kid.var, int(guard.kid.value), _REL_INV[guard.kid.op]))
         except (TypeError, ValueError):
             pass
     elif (isinstance(guard, GNot) and isinstance(guard.kid, Pred)
@@ -765,9 +817,15 @@ def guard_reqs(guard, regs, dom=None):
     gate constrained a machine entry and nothing at all on a room edge -- which is how KQ6's realm
     of the dead kept its doors open. See the same-shaped bug in `asserts_eq`'s docstring.
 
-    Only positive equalities are used. `!=` and the relational ops are deliberately ignored: they
-    would need the value-partition abstraction to stay exact, and ignoring them is the PERMISSIVE
-    direction (we never block movement the game allows).
+    Only positive equalities are used unconditionally. `!=` and the relational ops constrain
+    NOTHING without a complete domain: they would need the value-partition abstraction to stay
+    exact, and ignoring them is the PERMISSIVE direction (we never block movement the game
+    allows). WITH a complete domain both are exact -- "not v" is "one of the others", and
+    `< v` is "one of those below" -- so both lower when `dom` names the register, subject to
+    `_must_hold` (an atom inside an OR or under a negation still constrains nothing). The
+    relational case is what LB2's street seal needed (docs/LB2-ORACLE.md §7z): the taxi -- the
+    museum steps' only exit -- is init:ed under `(< global123 2)`, and the flat reading dropped
+    the whole literal, so the exit read free at every act.
 
     A NEGATED `!=` is a positive equality, though, and that is not a technicality: `(if (not gX)
     ...)` is how SCI writes "gX is 0", and `atom()` turns bare-global truthiness into
@@ -809,6 +867,18 @@ def guard_reqs(guard, regs, dom=None):
                 must = _must_hold(guard)        # only conjuncts that MUST hold -- see _must_hold
             if (r, v) in must:
                 out.setdefault(r, set()).update(full - {v})
+        elif op in _REL_INV:
+            full = (dom or {}).get(r)
+            if not full:
+                continue                        # no domain -> a relational constrains nothing
+            eff = op if pol else _REL_INV[op]
+            sat = {u for u in full if _REL_CMP[eff](u, v)}
+            if not sat or sat == set(full):
+                continue                        # a contradiction, or the test excludes nothing
+            if must is None:
+                must = _must_hold(guard)
+            if (r, v, eff) in must:
+                out.setdefault(r, set()).update(sat)
     return out
 
 
@@ -1287,7 +1357,21 @@ def _armer_knowns(info):
     return common or {}
 
 
-def _survivable(info, unavoidable, handoff, start=None):
+def _complementary(a, b):
+    """Are these two path guards `g` and `NOT g` -- i.e. is the state a real BRANCH?
+
+    Structural and deliberately narrow: one side is a single `GNot` whose kid IS the other side's
+    single guard. Anything cleverer would be inventing a satisfiability claim about conditions we
+    often cannot evaluate (LB2's arm turns on `(mummy cel:)`, object-property state we do not
+    model), and the whole point of the rule is that an UNEVALUABLE arm is still an arm."""
+    if len(a) != 1 or len(b) != 1:
+        return False
+    x, y = a[0], b[0]
+    return ((isinstance(x, GNot) and x.kid == y)
+            or (isinstance(y, GNot) and y.kid == x))
+
+
+def _survivable(info, unavoidable, handoff, start=None, preempt=frozenset()):
     """Is there ANY way through this machine, FROM STATE `start`, that does not end in death?
 
     Per ENTRY, not per machine, because one machine routinely serves both roles. KQ6's
@@ -1337,17 +1421,52 @@ def _survivable(info, unavoidable, handoff, start=None):
                 if m in unavoidable and not _ctr_contradicted(g, known)}
 
     hands_to_death = any(_lethal_handoff(K) for (a, K) in handoff if a == inst)
+    # A state that RESTORES PLAYER CONTROL and then waits is PRE-EMPTABLE: the machine occupies
+    # a `setScript:` slot, so arming any competitor into the same slot disposes it, pending death
+    # and all -- the same slot-race semantics `death_traps` is built on, seen from inside the
+    # machine. LB2's `sUnlockTrunk` is the case: state 6 does `handsOn:` + `(= seconds 6)`, and
+    # the player who uses the meat arms `sInsertMeat` (same slot, not doomed) before the ferrets
+    # wake -- so using the skeleton key is the SOLUTION, not a fatal use, and the meat's own cost
+    # rides sInsertMeat's entry like any other requirement. `preempt` is the competitor set the
+    # caller computed from `entry_recv`; membership in `unavoidable` is re-checked here because
+    # the caller's fixpoint grows it -- a competitor that turns out doomed pre-empts nothing.
+    # `restores_control` is derived (vocab.derive_control_selectors) and empty on SCI0, so this
+    # cannot move LSL2/KQ4; and a machine that never hands control back (KQ6's throwSkull) is
+    # exactly as condemned as before.
+    restored = info.get("restores_control") or set()
     safe, changed = set(), True
     while changed:
         changed = False
         for K, paths in states.items():
             if K in safe:
                 continue
+            if K in restored and (preempt - unavoidable):
+                safe.add(K)
+                changed = True
+                continue
             # A state that hands the room's script slot to a death is not safe by ANY path: the
             # `setScript:` replaces whatever this machine would have done next.
-            if _lethal_handoff(K):
+            #
+            # ...UNLESS THE STATE IS A BRANCH (2026-08-09). `handoff` is keyed by state, not by
+            # path, so a death armed on ONE arm of a fork condemned the fork. LB2's `sExitRoom`
+            # state 1 is the case: `PARK` under `own(35) OR NOT <mummy cel>` hands off to
+            # `sKillRileyKill`, and `JUMP 3` under the exact NEGATION reaches `EXIT 710`. Taking
+            # the other arm survives, so blaming the item the ENTRY required (`snakeLasso`) was a
+            # false positive -- and its remedy, `(not (gEgo has: 19))`, forbids required progress:
+            # Spinach_Dip class, the shape that broke LSL2 in play.
+            #
+            # The test is COMPLEMENTARY GUARDS, not "more than one path": a fork whose arms are
+            # `g` and `NOT g` is a genuine choice the player's state decides, which is a claim
+            # about branching rather than about how many rows the state happens to have. Measured:
+            # kills exactly this row, keeps KQ6's `throwSkull` (the play-validated positive this
+            # detector exists for -- it does NOT branch, every path re-arms the ceiling), and
+            # leaves LSL2/KQ4 at zero rows.
+            lethal = _lethal_handoff(K)
+            if lethal and not any(_complementary(a, b) for a, *_x in paths for b, *_y in paths):
                 continue
             for (_g, _w, _gg, _c, tr) in paths:
+                if lethal and not any(_complementary(_g, b) for b, *_y in paths):
+                    continue          # this arm carries the handoff and nothing steers away
                 if tr and tr[0] == "DEATH":
                     continue
                 if tr and tr[0] == "EXIT":
@@ -1568,7 +1687,15 @@ def edge_meta(em, regs):
     pdom = {r for e in em.ts.edges for r in (e.src,)} | \
            {r for e in em.ts.cs_edges for r in (e.src,)} | \
            {i["room"] for i in em.machines} | {0}
-    dom = {prev_room_reg(em): pdom} if prev_room_reg(em) in regset else {}
+    # ...and every promoted register's OWN value universe. `reg_vals` is the set of values the
+    # MODEL can ever produce -- the same completeness `compile._fan_globals` already commits to
+    # when it fans an increment over it -- so a `!=`/relational read against it is exact within
+    # the abstraction: a value outside the universe exists in no walk, so no movement is
+    # wrongly credited or blocked. This is what lets LB2's taxi guard `(< global123 2)` reach
+    # the exit row as {0, 1} instead of being dropped flat (docs/LB2-ORACLE.md §7z).
+    dom = {R: set(em.reg_vals[R]) for R in regset if em.reg_vals.get(R)}
+    if prev_room_reg(em) in regset:
+        dom[prev_room_reg(em)] = pdom
 
     def reqs(guard):
         return guard_reqs(guard, regset, dom)
@@ -1683,7 +1810,7 @@ class IrSccReach(SccReach):
         self.em = em
         self.g = _ItemNames(vocab.item_names(em.ir))
         (self.edges, self.edge_kind, self.sources, self.drops, self.required,
-         self.guard_required, self.source_guards) = build_maps(em)
+         self.guard_required, self.source_guards, self.required_guards) = build_maps(em)
         self.rooms = list(em.rooms)
         self.comps, self.comp_of = tarjan_scc(self.rooms, self.edges)
         self.cedges = defaultdict(set)
@@ -1700,7 +1827,7 @@ class IrSccReach(SccReach):
         self.reach_rooms = reachable(self.edges, {em.cfg.start_room})
         self.members, self.room_region, self.controllers = {}, {}, set()   # no regions in IR
         self.goal_comps = {self.comp_of[r] for r in em.cfg.goal_rooms if r in self.comp_of}
-        self._reob, self._rw, self._after, self._avoid = {}, {}, {}, {}
+        self._reob, self._rw, self._after, self._avoid, self._xreach = {}, {}, {}, {}, {}
         self._build_product()
 
     # ---- gate-aware movement ------------------------------------------------
@@ -1779,6 +1906,50 @@ class IrSccReach(SccReach):
                 if gi in regset:
                     self._inroom[gi][room].add(v)
                     cheapest((gi, room, v), ())
+        # ⭐ ...AND THE CONDITIONAL ONES, WHICH ARE *POSSIBLE* IN-ROOM WRITES.
+        #
+        # `init_writes` holds only the UNCONDITIONAL entry writes -- `opmodel._init_leaf` files a
+        # write there solely when its path condition is None -- and the loop above was the only
+        # thing seeding `_inroom` from room `init`. So a register a room writes under ANY
+        # condition was, for projection purposes, a register that room never wrote. That is the
+        # unsound direction: `_inroom` means "settable here, from a value we could not recover",
+        # which is exactly what we know about such a write. Dropping it instead asserts the game
+        # never makes it.
+        #
+        # It cost LB2 a third of its act structure. `rm630`'s `(= global123 4)` is the only
+        # reachable producer of act 4 (`rm26` has no `(3,4)` step -- act 3's destination is an
+        # `If`-valued `newRoom:` that `_fan_exit` cannot resolve, so `compile._contradicts` kills
+        # that branch and the write with it, docs/LB2-ORACLE.md §7b). The moment anything gives
+        # rm630's write a path condition, acts 4/5/6 become unreachable, rooms 521/525/750 leave
+        # the projection, and SIX findings vanish -- five of them play-confirmed. Two independent
+        # consumers absorb it in silence: `_need_rooms` drops need-room 750 while
+        # `required[bifocals]` still literally reads `[750]`, and `reobtainable_rooms` -- an
+        # INTERSECTION over every projection -- returns the empty set for anything sourced at
+        # rm525, which downstream is indistinguishable from "the item is safe".
+        #
+        # NOT a latent LB2 quirk waiting on a future change: `rm350.sc:81`'s `(= global123 2)`
+        # already sits in a `switch global12` else-arm with numeric labels, is already
+        # conditional, and is already missing from `_rstep` today. This is a present bug.
+        #
+        # A SEPARATE CHANNEL on purpose. `init_writes` is documented UNCONDITIONAL BY
+        # CONSTRUCTION and eight other places lean on that for COMMIT semantics (`_psucc`'s
+        # `commit=`, the placement walk, `guards`); widening it would quietly assert that
+        # entering the room FORCES the value, which is the rm79 seal bug in reverse.
+        #
+        # Set-valued and cost-carrying, both load-bearing. A room may write the same register to
+        # several values down different arms, so one value per (room, gi) -- what `init_writes`
+        # can hold -- would drop the rest (measured: 13 such collisions on LSL2, 7 KQ4, 4 KQ6,
+        # 5 LB2). And the write's guard may demand items, which `cheapest` is exactly there to
+        # record; seeding it free would make a gated entry write look like a free one.
+        #
+        # Measured inert on today's corpus -- LSL2, KQ4, KQ6 and LB2 all byte-identical on the
+        # full snapshot surface -- so it is groundwork that pays off under
+        # `vocab.lower_property_case_labels`, not a verdict change.
+        for room, seq in getattr(em, "init_seq", {}).items():
+            for (gi, v, g) in seq:
+                if gi in regset and g is not None:
+                    self._inroom[gi][room].add(v)
+                    cheapest((gi, room, v), _own_positive(g))
         self._rstep = {R: defaultdict(set) for R in self.regs}
         # ...and here, the one consumer an always-live scope is lifted FOR: what its action makes
         # true, and what that costs. `cheapest` below is where "mixing the paint costs the Styx
@@ -1836,6 +2007,43 @@ class IrSccReach(SccReach):
                         # started, so reading only that made every cutscene effect free.
                         cheapest((gi, info["room"], v),
                                  _own_positive(g) | emust.get(K, frozenset()))
+        # ⭐ A COUNTER MAY NOT BE WOUND BACKWARDS.
+        #
+        # A write whose from-value we could not recover lands in `_inroom`, which means "settable
+        # here from ANY value" -- and for a counter that is a claim the game never makes. LB2's act
+        # is the case: `rm630` does a bare `(= global123 4)` inside a `(switch global12 …)` on the
+        # arrival direction, with no act test anywhere near it, so no path condition supplies the
+        # from-value. Read permissively, the model may stand at act 5, step into `rm630`, wind the
+        # act back to 4, walk to `rm525` and collect the smelling salts -- so the item stops being
+        # stranded. `rm355`'s `(= global123 0)` resets it outright. Measured: this, and not the
+        # source condition or the room graph, is the whole reason that item is missed.
+        #
+        # The from-value IS recoverable -- from the STEP RELATION rather than the source. Every
+        # ordered step of such a register is `k -> k+1`, so the rule is read off `_rstep` itself
+        # and asserts nothing about any particular game:
+        #
+        #     a register that COUNTS -- two or more ordered steps, every one of them consecutive,
+        #     and more than two values in play -- may not be DECREASED by an unordered write.
+        #
+        # ALL THREE QUALIFIERS ARE LOAD-BEARING, and the first census without them was wrong. A
+        # boolean flag has exactly one step `(0, 1)`, and its `_inroom` writes of 0 are ordinary
+        # CLEARS; forbidding those would forbid every flag reset whose guard we failed to recover
+        # -- 20+ registers across KQ6 and LB2, a behaviour change with no evidence behind it. With
+        # the qualifiers, the corpus census is three registers: LB2's act, LB2's `111`, KQ6's
+        # `162`. LSL2 and KQ4 have none, so they cannot move [standing ruling, 2026-08-01].
+        #
+        # `<= v`, not `< v`: a write of the value it already holds is a harmless self-write, and
+        # refusing it would be a second unevidenced claim.
+        for gi in list(self._rstep):
+            steps = {st for room in self._rstep[gi].values() for st in room}
+            vals = ({v for st in steps for v in st}
+                    | {v for vs in self._inroom.get(gi, {}).values() for v in vs})
+            if len(steps) < 2 or len(vals) <= 2 or not all(t == f + 1 for (f, t) in steps):
+                continue
+            for room, wr in list(self._inroom.get(gi, {}).items()):
+                for v in sorted(wr):
+                    self._rstep[gi][room] |= {(u, v) for u in vals if u <= v}
+                    wr.discard(v)
         self._joints = []
         self._apply_death_traps()
         self._own_fixpoint()
@@ -1891,6 +2099,27 @@ class IrSccReach(SccReach):
                         dom[R].add(v)
         traps = death_traps(self.em, self.regs, dom)
         self._joints = self._trap_joints(traps, dom)
+        # ⭐ WHICH REGISTER VALUES MEAN "YOU ARE DEAD" (2026-08-09). A room's rows are ALTERNATIVE
+        # ways to survive, so death is "every alternative failed". Only when there is exactly ONE
+        # alternative naming exactly ONE register does a single value of a single register mean
+        # death by itself -- and then the excluded values are precisely the death signal.
+        #
+        # KQ6 is the case and the reason this exists: `proc0_1` is the imperative death procedure
+        # (`Main.sc:251` -- set global160, set flag 44, `newRoom: 640`) and `rm640` plays the death
+        # cartoon iff flag 44 is set, so reg216's survival condition is the lone `216 == 0` and
+        # `216 == 1` MEANS DEAD. `free_running_traps` was then classifying the death signal as an
+        # adversarial plot clock (see its guard). Deliberately NOT claiming LB2's `123 == 5`: act
+        # 5's rooms kill you only in conjunction with `12 == 420`, two alternatives, so no single
+        # value is death -- being in act 5 is a place you can stand, being dead is not.
+        self._death_values = defaultdict(set)
+        for room, rows in traps.items():
+            if len(rows) != 1:
+                continue
+            (treq, _talts) = rows[0]
+            if len(treq) != 1:
+                continue
+            (R, vals), = treq.items()
+            self._death_values[R] |= (set(dom.get(R, ())) - set(vals))
         for room, rows in traps.items():
             for b in self.edges.get(room, ()):
                 base = list(self._emeta.get((room, b)) or [self._FREE])
@@ -2170,8 +2399,167 @@ class IrSccReach(SccReach):
         self._avoid[key] = out if out is not None else set(self.reach_rooms)
         return self._avoid[key]
 
+    def _crossing_reach(self, a, b):
+        """Per `_emeta` row of a->b: {projection: STATES reachable AFTER the crossing, or None}.
+
+        The post-crossing walk for the NEED-RETIREMENT question (`crossing_retires_need`). For
+        each way of making the move (each meta row), each candidate projection starts from the
+        states the crossing itself produces: every value the walk believes at `a` that passes the
+        row's requirement, with the row's writes applied -- the same arrival rule as `_psucc`'s
+        edge clause, restricted to this one edge. Deliberately a mirror of that clause rather than
+        a call: `_psucc` enumerates all edges on a hot path every corpus baseline is pinned to.
+
+        Candidate projections are the ones the meta itself touches (a register in its req or
+        sets; a joint qualifies through any component) -- the question is what the crossing's OWN
+        register commit seals, so a projection the edge neither tests nor writes is not evidence
+        about this crossing. Positional registers (previous-room, current-room) are dropped the
+        same way `defer_to_entry` drops them from stages: they name where the player stands, not
+        which crossing this is.
+
+        `None` for a projection means NO EVIDENCE -- the walk believes no value at `a` that
+        passes the row -- and the consumer must treat it as "keep" ([[arming-floor]]: falling off
+        the end of a walk is ignorance, not evidence). Detection semantics throughout (empty
+        `commit`, no ban): the walk over-approximates movement, so a room absent from it is
+        genuinely unreachable within the abstraction, which is the only direction a retirement
+        may rest on."""
+        got = self._xreach.get((a, b))
+        if got is not None:
+            return got
+        metas = self._emeta.get((a, b))
+        if not metas:
+            self._xreach[(a, b)] = []
+            return []
+        import extract as X
+        positional = {prev_room_reg(self.em), getattr(X, "_CURROOM", None)}
+        out = []
+        for (req, sets, _alts) in metas:
+            touched = (set(req) | set(sets)) - positional
+            cands = [R for R in self.proj
+                     if (any(Ri in touched for Ri in R) if isinstance(R, tuple)
+                         else R in touched)]
+            per = {}
+            for R in cands:
+                vals = {v for (r, v) in self._pstates[R] if r == a}
+                starts = set()
+                if isinstance(R, tuple):
+                    for v in vals:
+                        if any(req.get(Ri) is not None and v[i] not in req[Ri]
+                               for i, Ri in enumerate(R)):
+                            continue
+                        starts.add((b, tuple(sets.get(Ri, v[i]) for i, Ri in enumerate(R))))
+                else:
+                    for v in vals:
+                        need = req.get(R)
+                        if need is not None and v not in need:
+                            continue
+                        starts.add((b, sets.get(R, v)))
+                per[R] = self._walk(R, frozenset(), starts=starts) if starts else None
+            out.append(per)
+        self._xreach[(a, b)] = out
+        return out
+
+    def _site_musts(self, guard, regs):
+        """{reg: allowed values} a need SITE's guard requires of `regs` -- the LIVENESS reading.
+
+        Deliberately NOT `guard_reqs`: its positive-equality pass reads `_cmp_atoms` FLAT, so a
+        `(== reg v)` inside an OR would constrain here too -- and for liveness that is the unsafe
+        direction (an OR-branch constraint would read a site dead that another branch keeps
+        alive, and a dead site is what lets `crossing_retires_need` delete a demand). Only
+        conjuncts that MUST hold may narrow a site, so this is built on `_must_equal` and
+        `_must_hold` alone. A `!=` constrains nothing without a domain except the boolean
+        globals ({0,1} -- the same special case `guard_reqs` carries); relationals constrain
+        nothing (no domain is threaded here; permissive = live = the strict direction).
+        Contradictory musts yield an empty allowed set -- a site that can never fire, honestly
+        dead."""
+        out = {}
+        for (r, v) in _must_equal(guard):
+            if r in regs:
+                out[r] = (out[r] & {v}) if r in out else {v}
+        for t in _must_hold(guard):
+            if len(t) != 2:
+                continue                        # relational: no domain -> constrains nothing
+            r, v = t
+            if r in regs and v == 0 and r in vocab.BOOL_GLOBALS:
+                allowed = {1}                   # "must be != 0" on a boolean IS "== 1"
+                out[r] = (out[r] & allowed) if r in out else allowed
+        return out
+
+    def _need_live(self, item, room, R, states):
+        """Is the need for `item` at `room` live at any of these projection-R states?
+
+        Room-level first: a room the walk never stands in is dead outright. Then per SITE
+        (`required_guards`, one guard per evidence site): a site with no guard (`None`) or
+        no musts over R's registers is live wherever the room is reached -- the permissive
+        poison -- and a conditioned site is live only at a state consistent with its musts.
+        LB2's rm335 is the case the distinction exists for: the pass's one site there is the
+        sGiveInvite arming, `own(6) AND global123==2 AND trigger-25-unfired`, so the room being
+        walkable at acts 3-5 keeps no need alive -- (335, act 2) is the only live shape, and
+        whether the post-crossing walk contains it is exactly the retirement question."""
+        hit = [v for (r, v) in states if r == room]
+        if not hit:
+            return False
+        alts = self.required_guards.get(item, {}).get(room)
+        if not alts or any(g is None for g in alts):
+            return True
+        regs = set(R) if isinstance(R, tuple) else {R}
+        for g in alts:
+            musts = self._site_musts(g, regs)
+            if not musts:
+                return True
+            for v in hit:
+                vals = dict(zip(R, v)) if isinstance(R, tuple) else {R: v}
+                if all(vals[r] in allowed for r, allowed in musts.items() if r in vals):
+                    return True
+        return False
+
+    def crossing_retires_need(self, a, b, item, need_rooms):
+        """A why-string when crossing a->b's own register commit leaves EVERY need site of
+        `item` in `need_rooms` dead -- an unreachable need is a RETIRED need -- else None (keep).
+
+        The register half of `edge_strandings`' "still needed past the edge" conjunct. The flat
+        walk answers it with `rooms_after(b)`, which is register-blind, so LB2's act-break edges
+        kept demanding the pressPass at the 2->3 and 4->5 breaks (`rm26->rm355`/`rm26->rm420`)
+        to protect needs at rm250/rm335 -- and the pass is surrendered at the act-2 door, a
+        required story step, so either demand would have WALLED the break for every player, the
+        failure this project holds to be worse than the bug. Two register facts close them, one
+        each: rm250 is room-dead past act 1 (the street seal), and rm335's one need site is the
+        sGiveInvite arming, condition `global123==2` (the doorman's init guard, carried by the
+        delegate rule + `required_guards`), so the room being walkable at acts 3-4 keeps no
+        need alive. `rm26->rm330` keeps its demand: (335, act 2) is in its post-crossing walk.
+
+        Quantifiers, each in the strict direction: retired only when EVERY way of making the
+        move (every meta row) has SOME projection with positive evidence (`_crossing_reach`
+        returned a walk, not None) in which every need room is dead (`_need_live`). One row with
+        no candidate register, or whose every candidate projection lacks evidence, keeps the
+        demand whole. The detection rows are NOT touched -- detection deliberately
+        over-approximates ("in-room writes are optional successors so it can never miss a
+        stranding"); this is a demand-side filter in the same family as `unholdable_at`, and
+        the drop is recorded in `_stranding_drops` where specs surface it as dropped_why.
+
+        MEASURED 2026-08-10 (room-level half, at 61817b7): LSL2 0 of 16, KQ4 0 of 3, KQ6 0 of
+        24 edge rows retired and 0 register-frontier demands anywhere -- the mechanism
+        self-selects for edges that commit a register against a sealed need, which outside LB2's
+        act breaks none does. The site-condition half is measured in the same session's
+        follow-up commit (docs/LB2-ORACLE.md §7ai)."""
+        need = set(need_rooms)
+        if not need:
+            return None
+        per_meta = self._crossing_reach(a, b)
+        if not per_meta:
+            return None
+        evidence = []
+        for per in per_meta:
+            got = [R for R, states in per.items()
+                   if states is not None
+                   and not any(self._need_live(item, r, R, states) for r in need)]
+            if not got:
+                return None
+            evidence.append(got[0])
+        return ("need %s unreachable past the crossing's own register commit "
+                "(projections %s)" % (sorted(need), evidence))
+
     def edge_strandings(self):
-        """The shared core, minus the rows two existing rules already refute.
+        """The shared core, minus the rows three existing rules already refute.
 
         FORCED, NOT MISSABLE -- the crossing ITSELF demands the unit, so nobody crosses without
         it and the crossing cannot strand it. The toll carry-in detector has stated this rule
@@ -2185,6 +2573,12 @@ class IrSccReach(SccReach):
         handkerchief and skeleton key cannot be in hand there), and the long door's route rides
         the pawn chain (so the nightingale IS the brush). Their real boundaries -- the Realm exit
         for the carry-outs, the short door for the nightingale -- carry the real guards.
+
+        RETIRED -- the crossing's own register commit leaves every need room unreachable
+        (`crossing_retires_need`), so the row's "still needed past the edge" conjunct fails in
+        the register view even though the flat `rooms_after` passes it. LB2's act breaks are the
+        case: `rm26->rm420` writes act 5, the pass's need rooms cap at acts 1-2, and the demand
+        would have walled the break for every player (the pass is surrendered at the act-2 door).
 
         GROUPS pass through untouched, twice over. `edge_demands` is the intersection over DNF
         alternatives, so a demanded group's members distribute across alternatives and never
@@ -2204,6 +2598,15 @@ class IrSccReach(SccReach):
                    for it in e["items"] if it in dem}
             rest = set(e["items"]) - set(why)
             why.update(_G.unholdable_at(self, a, b, rest) if rest else {})
+            # RETIRED -- the crossing's own register commit leaves every need room unreachable,
+            # so the demand would protect a need no post-crossing player can face. Items only:
+            # groups pass through untouched here for the same measured reason as the FORCED
+            # filter above.
+            for it in set(e["items"]) - set(why):
+                w = self.crossing_retires_need(a, b, it,
+                                               self._unit_need_rooms(frozenset({it})))
+                if w:
+                    why[it] = w
             if why:
                 drops.setdefault((a, b), {}).update(why)
             items = [it for it in e["items"] if it not in why]
@@ -2668,8 +3071,20 @@ class IrSccReach(SccReach):
             if room not in self.reach_rooms:
                 continue
             _arms, _fatal, doomed, handoff = _trap_graph(infos)
+            # Same-slot competitors, for the pre-emption rule in `_survivable`: the slot a
+            # machine's arming wrote (`entry_recv`) is the slot a rival `setScript:` steals.
+            slots = defaultdict(set)
+            for i in infos:
+                for rc in (i.get("entry_recv") or ()):
+                    if rc is not None:
+                        slots[rc].add(i["inst"])
+
+            def _preempt(i):
+                return frozenset(m for rc in (i.get("entry_recv") or ()) if rc is not None
+                                 for m in slots[rc] if m != i["inst"])
             unavoidable = {i["inst"] for i in infos
-                           if i["inst"] in doomed and not _survivable(i, doomed, handoff)}
+                           if i["inst"] in doomed
+                           and not _survivable(i, doomed, handoff, preempt=_preempt(i))}
             # ...and settle the mutual dependency the same way `_trap_graph` settles `doomed`: a
             # state that hands off to a machine we have just condemned is not an escape either.
             changed = True
@@ -2678,7 +3093,7 @@ class IrSccReach(SccReach):
                 for i in infos:
                     if i["inst"] in unavoidable or i["inst"] not in doomed:
                         continue
-                    if not _survivable(i, unavoidable, handoff):
+                    if not _survivable(i, unavoidable, handoff, preempt=_preempt(i)):
                         unavoidable.add(i["inst"])
                         changed = True
             for info in infos:
@@ -2688,7 +3103,8 @@ class IrSccReach(SccReach):
                 # survivable: LSL2's bore talks you to death from state 0 and is SHUT UP by
                 # `(boreScript changeState: 10)`, which is what giving him the pamphlet does.
                 lethal = [(K, g) for K, g in (info.get("entries") or ())
-                          if not _survivable(info, unavoidable, handoff, start=K)]
+                          if not _survivable(info, unavoidable, handoff, start=K,
+                                             preempt=_preempt(info))]
                 if not lethal:
                     continue
                 # WHAT NO LETHAL ARMING AVOIDS -- `entry_musts` read over the fatal entries. An
@@ -2770,25 +3186,30 @@ class IrSccReach(SccReach):
           3. every source of the item is outside the post-flip region, and a use is inside it.
 
         Runs on the projections `_build_product` already made, so it costs a walk per (register,
-        value) and no new model."""
+        value) and no new model.
+
+        ⭐ JOINT PROJECTIONS SINCE 2026-08-09. This iterated `self.regs` -- scalars only -- while
+        `self.proj` (scalars PLUS the joints the death traps ask for) is what the four reachability
+        walks use. So a seal expressed in TWO registers was invisible to the one detector that
+        reports seals, even when the joint it needed had already been built. LB2 is the case: act 5
+        is a chase whose only two exits kill you, `_apply_death_traps` correctly writes the way out
+        as the disjunction `12 != 420 OR 123 != 5`, and each alternative passes freely in the
+        projection that cannot see the other. Measured: LSL2 0->0, KQ4 0->0, KQ6 1->1 (its one
+        joint, `(12, 173)`, adds nothing), LB2 2 -> 9 findings including cheese and snakeOil, the
+        two act-5 carries this project has been chasing since 2026-08-06. Nothing is lost anywhere.
+
+        Three scalar assumptions had to be generalised, all of them "the flip landed on w":
+        component-wise, a joint flips into w when SOME register of the tuple is written to its
+        component of w. See `_flip_seeds`."""
         out = []
         goal = self.goal_rooms_set()
-        for R in self.regs:
+        for R in self.proj:
             states = self._pstates[R]
             vals = {v for (_r, v) in states}
             if len(vals) < 2:
                 continue
             for w in sorted(vals):
-                # Seed where the flip ITSELF can happen -- rooms that write w, and edges that set
-                # it on the way out -- not every room already seen at w. Seeding a room with its
-                # own post-flip state is how a first attempt at this "proved" that KQ4's start
-                # room was sealed by nightfall.
-                seeds = {(r, w) for r, vs in self._inroom[R].items() if w in vs}
-                for (_a, b), metas in self._emeta.items():
-                    for (_req, sets, _alts) in metas:
-                        if sets.get(R) == w:
-                            seeds.add((b, w))
-                seeds &= states
+                seeds = self._flip_seeds(R, w, states)
                 if not seeds:
                     continue
                 after = self._walk(R, frozenset(), starts=seeds)
@@ -2849,15 +3270,357 @@ class IrSccReach(SccReach):
                         if self.required[it] & a:
                             strand_at.append(r)
                     if strand_at:
-                        ahead = self.required[it] & set().union(
-                            *(_flip_at(r)[0] for r in strand_at))
+                        sealed = set().union(*(_flip_at(r)[0] for r in strand_at))
+                        ahead = self.required[it] & sealed
                         out.append({"pattern": "register-flip-point-of-no-return",
                                     "register": R, "value": w, "item": it,
                                     "item_name": self.g.item_name(it),
                                     "flip_rooms": strand_at,
                                     "source_rooms": sorted(srcs),
-                                    "still_needed_at": sorted(ahead)})
+                                    "still_needed_at": sorted(ahead),
+                                    "_sealed": frozenset(sealed)})
+        return self._collapse_flips(out)
+
+    def _flip_seeds(self, R, w, states):
+        """The reachable states where the flip INTO `w` can itself happen.
+
+        Rooms that write `w`, plus edges that set it on the way out -- NOT every room already seen
+        at `w`. Seeding a room with its own post-flip state is how a first attempt at this "proved"
+        that KQ4's start room was sealed by nightfall.
+
+        Component-wise for a joint: a tuple value is entered when SOME register of the tuple is
+        written to its component. Requiring the whole tuple to be written at once would find
+        nothing, because no single write sets two registers -- which is exactly why a joint seal
+        was invisible here."""
+        if isinstance(R, tuple):
+            def writes(r):
+                return any(w[i] in self._inroom[Ri].get(r, ()) for i, Ri in enumerate(R))
+
+            def sets_it(sets):
+                return any(sets.get(Ri) == w[i] for i, Ri in enumerate(R))
+            seeds = {(r, v) for (r, v) in states if v == w and writes(r)}
+        else:
+            def sets_it(sets):
+                return sets.get(R) == w
+            seeds = {(r, w) for r, vs in self._inroom[R].items() if w in vs}
+        for (_a, b), metas in self._emeta.items():
+            for (_req, sets, _alts) in metas:
+                if sets_it(sets):
+                    seeds.add((b, w))
+        return seeds & states
+
+    @staticmethod
+    def _collapse_flips(rows):
+        """One SEAL of one item is one finding, however many states you can enter it from.
+
+        A joint that contains `prevRoom` inherits prevRoom's degeneracy in multiplied form: every
+        crossing writes reg 12, so a sealed region reports once per (room-you-came-from, value)
+        cell. Measured on LB2 before this: 163 rows carrying **9** distinct facts, the same item
+        repeated across 19 prevRoom values. That is the scalar detector's 2026-08-02 problem (323
+        junk rows on KQ6) wearing a tuple.
+
+        The collapse is derived from the model and names no register: rows for the same ITEM whose
+        SEALED REGION is identical are one row, and the flip rooms/values merge. Two rows that seal
+        genuinely different regions stay two. `value` keeps the lowest merged value so a row that
+        merged nothing is byte-identical to before; `values` appears only when a merge happened."""
+        by = {}
+        order = []
+        for r in rows:
+            k = (r["item"], str(r["register"]), r.pop("_sealed"))
+            if k not in by:
+                by[k] = r
+                order.append(k)
+                continue
+            keep = by[k]
+            keep.setdefault("values", [keep["value"]])
+            if r["value"] not in keep["values"]:
+                keep["values"].append(r["value"])
+            keep["flip_rooms"] = sorted(set(keep["flip_rooms"]) | set(r["flip_rooms"]))
+            keep["still_needed_at"] = sorted(set(keep["still_needed_at"])
+                                             | set(r["still_needed_at"]))
+        for k in order:
+            r = by[k]
+            if "values" in r:
+                r["values"] = sorted(r["values"])
+                r["value"] = r["values"][0]
+        return [by[k] for k in order]
+
+    def _reg_entry_demands(self, S):
+        """room -> [(machine inst, frozenset(accepted values of S))] for machines whose EVERY way
+        of being armed presupposes S in that set -- the register twin of a `has:` use site.
+
+        Read per entry with `structural_reqs` (the NECESSARY reading; a value inside an OR-branch
+        is not presupposed), then across entries: an entry with no constraint accepts the whole
+        domain, and the machine's accepted set is the UNION over its entries -- every way in
+        vouches for the values it accepts, and a demand exists only if the union still excludes
+        something.
+
+        A CHAINED entry (armed from inside another machine's changeState -- `entry_armers`)
+        resolves through the ARMER's own demand rather than its guard. Its guard is the armer's
+        entry disjunction with the recursion cut at the arming floor, and that floor arm is
+        IGNORANCE, not an atom-free way in ([[arming-floor]]: ignorance is not evidence) -- read
+        flat it dissolves every demand it embeds. LB2's cobra pass is the case: `sSprinkleOil`'s
+        direct doVerb entries both presuppose `150 != 0`, and its third entry, armed from
+        `sRepelSnakes` (whose own entries presuppose the same), reduced the intersection to
+        nothing. Coinductively -- a back-edge on the armer chain contributes nothing new, because
+        entering the cycle at all passes some member's direct entry -- the group's direct entries
+        decide, which is the honest reading of a closed arming loop. An armer we cannot resolve
+        accepts the whole domain: that kills the demand, the safe direction.
+
+        A direct entry silent on S but gated on a LOWERED ROOM LOCAL (the fifth store) resolves
+        the same way, through the machines that RAISE the latch: `snake1::doit` arms
+        `sRepelSnakes` under `local3`, and `local3 := 1` is written in `sSprinkleOil` state 2, so
+        that arming is exactly as free as the sprinkle that precedes it. The hop is bounded to
+        this room's own lowered locals because their writer set is COMPLETE by construction (the
+        script reloads on entry, resetting the latch -- see vocab.derive_room_locals); a global
+        latch may be written anywhere, and resolving it through the writers we happen to see
+        would fabricate demands from ignorance. Any non-machine write of a satisfying value
+        bails to the whole domain, the safe direction again."""
+        dom = frozenset(self.em.reg_vals.get(S, ())) | {v for (_r, v) in
+                                                        self._pstates.get(S, ())}
+        if len(dom) < 2:
+            return {}
+        domd = {S: set(dom)}
+        by_name = {(i["room"], str(i.get("inst"))): i for i in self.em.machines}
+        # This room's lowered locals (reg -> home room), their machine writers, and every
+        # non-machine write -- the latch hop's whole evidence base.
+        local_home = dict(getattr(self.em.ir, "_room_local_index", None) or {})
+        latch_writers = {}                             # (room, reg) -> [(info, value)]
+        for i in self.em.machines:
+            for _K, paths in i["states"].items():
+                for (_g, wr, _gg, _c, _tr) in paths:
+                    for gi, v in wr:
+                        if local_home.get(gi, (None,))[0] == i["room"]:
+                            latch_writers.setdefault((i["room"], gi), []).append((i, v))
+        nonmachine = {}                                # (room, reg) -> {values written}
+        for room, _script, gi, v, _g in getattr(self.em, "handler_writes", ()):
+            if local_home.get(gi, (None,))[0] == room and isinstance(v, int):
+                nonmachine.setdefault((room, gi), set()).add(v)
+        memo, stack = {}, set()
+
+        def accepted(info):
+            key = id(info)
+            if key in memo:
+                return memo[key]
+            if key in stack:
+                return None                            # back-edge: the cycle's directs decide
+            stack.add(key)
+            ents = list(info.get("entries", ()))
+            armers = list(info.get("entry_armers", ()))
+            armers += [None] * (len(ents) - len(armers))
+            ents += list(info.get("init_entries", ()))  # init entries are direct by construction
+            armers += [None] * (len(ents) - len(armers))
+            acc = set()
+            for (K, eg), arm in zip(ents, armers):
+                if arm:
+                    tgt = by_name.get((info["room"], arm[0]))
+                    got = accepted(tgt) if tgt is not None else dom
+                    if got is None:
+                        continue
+                    acc |= got
+                else:
+                    sr = structural_reqs(eg, {S}, domd).get(S)
+                    acc |= frozenset(sr) if sr else _via_latch(info, eg)
+                if acc >= dom:
+                    break
+            stack.discard(key)
+            memo[key] = frozenset(acc) if ents else frozenset(dom)
+            return memo[key]
+
+        def _via_latch(info, eg):
+            room = info["room"]
+            regs = {gi for gi, home in local_home.items() if home[0] == room}
+            if not regs:
+                return dom
+            need = structural_reqs(eg, regs, {gi: set(self.em.reg_vals.get(gi, {0, 1}))
+                                              for gi in regs})
+            for R2, vals in sorted(need.items()):
+                if nonmachine.get((room, R2), set()) & set(vals):
+                    continue                           # a handler can raise it: no bound
+                raisers = [i2 for (i2, v2) in latch_writers.get((room, R2), ()) if v2 in vals]
+                got, resolved = set(), False
+                for i2 in raisers:
+                    g2 = accepted(i2)
+                    if g2 is None:
+                        continue                       # back-edge: bounded by the group's directs
+                    resolved = True
+                    got |= g2
+                    if got >= dom:
+                        break
+                if not raisers or not resolved:
+                    # No machine ever raises the latch, or every raiser is upstream on this very
+                    # chain (a pure cycle). Either way this entry opens no way in that the group's
+                    # direct entries do not already account for -- an unfirable entry vouches for
+                    # nothing, and returning `dom` here was how the cobra pass's whole demand
+                    # dissolved (sRepelSnakes' doit arming resolved through sSprinkleOil, which
+                    # was on the stack, and the empty union read as freedom).
+                    return frozenset()
+                return frozenset(got)
+            return dom
+
+        merged = {}
+        for info in self.em.machines:
+            if info.get("global_scope"):
+                continue                               # the icon bar has no place -- see opmodel
+            if any(info["room"] in self.required.get(it, ()) for it in info.get("drops", ())):
+                # A machine that CONSUMES an item still required where it stands is the loss,
+                # not the way past -- LB2's `sThrowBottle` (the 150 == 0 arm of the cobra pass)
+                # destroys the very bottle rm730 requires. Reading its arming condition as a
+                # demand inverts the finding: the detector would report "you can never throw
+                # the bottle away" as the softlock.
+                continue
+            acc = accepted(info)
+            if acc is not None and acc:
+                # UNION per (room, machine): a region-homed machine appears once per room COPY,
+                # each with the copy's own entry conditions, and the copies are alternative
+                # armings of the SAME machine -- exactly what the per-entry union already says.
+                # KQ6's `walkGuardsOnScreen` at rm850 is the case: one copy resolves to
+                # `{flag == 1}` and another to `{flag == 0}`, which is no demand at all, and read
+                # separately each copy fabricated a choreography "stranding".
+                key = (info["room"], str(info.get("inst")))
+                merged[key] = (merged.get(key, frozenset()) | acc)
+        out = {}
+        for (room, inst), acc in merged.items():
+            if acc and not (acc >= dom):
+                out.setdefault(room, []).append((inst, acc))
+        for room in out:
+            out[room].sort()
         return out
+
+    def register_value_strandings(self):
+        """Crossing a SEAL while a register holds a value the far side rejects -- the REGISTER
+        twin of `register_strandings`' item rows, built on the same flips and the same walks.
+
+        The case that forced it [user rulings, 2026-08-09/10]: LB2's snake-oil bottle. The bottle
+        ITEM is already caught (the joint (12,123) row), but the bottle can be EMPTY -- global150,
+        spent by shakes at rm520/rm610, poured out whole by `sDumpIt` -- and entering act 5 with
+        `150 == 0` is its own stranding: rm730's cobra pass presupposes `150 != 0` in every arming
+        (`_reg_entry_demands`; the `== 0` arm throws the bottle away and passes nothing), the one
+        raise is rm610's vat (`= global150 4`, three refills metered by flags 105-107), and the
+        act-5 seal cuts rm610 off. The user ruled the spend ARITHMETIC out of scope -- "you should
+        have enough snake oil left before entering act 5" -- so the boundary value is the whole
+        question, which is exactly what the projections can answer.
+
+        Same conjuncts as the item rows, register-shaped:
+          1. the flip can happen while S == b -- `(flip_room, b)` is a reachable product state;
+          2. past the flip, some machine's every arming presupposes S in a set excluding b, at a
+             room the post-flip player reaches;
+          3. no write past the flip -- room write or edge write -- puts S into the accepted set,
+             and some pre-flip write could have (the causality half: what the pre-flip player
+             could not fix either, this flip did not break);
+          4. the goal is still reachable, or it is a dead end rather than a softlock.
+
+        prevRoom is excluded as the DEMANDED register outright: it is rewritten by movement
+        itself, so it is not state the player can HOLD across a seal -- a prevRoom demand the
+        sealed region cannot satisfy means a ROOM became unreachable, which is the flat graph's
+        fact (and the act partition's), not a value you failed to bring. Measured before the
+        exclusion: LB2's `sFinishIt` at rm454 demands `prev == 455` and rm455 is outside the
+        act-5 region, which is true, is not a register stranding, and is already the act seal's
+        own finding. Derived per game via `prev_room_reg`, not a number."""
+        out = []
+        goal = self.goal_rooms_set()
+        demand_cache = {}
+        prev = prev_room_reg(self.em)
+        for R in self.proj:
+            states = self._pstates[R]
+            vals = {v for (_r, v) in states}
+            if len(vals) < 2:
+                continue
+            comps = set(R) if isinstance(R, tuple) else {R}
+            for w in sorted(vals, key=repr):
+                seeds = self._flip_seeds(R, w, states)
+                if not seeds:
+                    continue
+                seed_rooms = {r for (r, _v) in seeds}
+                per_room = {}
+
+                def _flip_at(r, R=R, w=w, states=states, per_room=per_room):
+                    if r not in per_room:
+                        a = {q for (q, _v) in self._walk(R, frozenset(), starts={(r, w)})}
+                        b0 = {(r2, v) for (r2, v) in states if r2 == r and v != w}
+                        b = ({q for (q, _v) in self._walk(R, frozenset(), starts=b0)}
+                             if b0 else None)          # None: no pre-flip player -> an arrival
+                        per_room[r] = (a, b)
+                    return per_room[r]
+
+                for S in sorted(self.regs):
+                    if S in comps or S == prev:
+                        continue
+                    if S not in demand_cache:
+                        demand_cache[S] = self._reg_entry_demands(S)
+                    sites = demand_cache[S]
+                    if not sites:
+                        continue
+                    sst = self._pstates.get(S, set())
+                    dom = frozenset(self.em.reg_vals.get(S, ())) | {v for (_r, v) in sst}
+                    writes = {r2: set(v2) for r2, v2 in self._inroom.get(S, {}).items()}
+                    esets = [(x, m[1].get(S)) for (x, _y), ms in self._emeta.items()
+                             for m in ms if m[1].get(S) is not None]
+                    for r in sorted(seed_rooms):
+                        a, b = _flip_at(r)
+                        if b is None:
+                            continue                   # an arrival, owned by edge_strandings
+                        if goal and not (goal & a):
+                            continue                   # a dead end, not a softlock
+                        for room_d in sorted(set(sites) & a):
+                            for inst, acc in sites[room_d]:
+                                bad = dom - acc
+                                # attainable at THIS flip: S can hold a rejected value here
+                                bad_here = {v for v in bad if (r, v) in sst}
+                                if not bad_here:
+                                    continue
+                                # THE REGISTER MUST BE FROZEN PAST THE SEAL -- no reachable write
+                                # of ANY value, not merely none of an accepted one. If the sealed
+                                # region itself touches the register, its value there is the
+                                # region's working state and blaming what you carried across is
+                                # wrong attribution -- the same "the flip must be the cause"
+                                # conjunct the item rows carry. This is what separates the snake
+                                # oil (nothing in act 5 writes 150; what you bring is what you
+                                # have) from KQ6's guard choreography (the wedding-sealed castle
+                                # keeps toggling its own guard flags) and from LB2's flag 63 (a
+                                # set-in-the-inset / cleared-on-return handshake, rewritten by
+                                # the very room that reads it).
+                                if any(writes.get(q) for q in a) or any(x in a for x, _v in esets):
+                                    continue
+                                fix_in_b = (any(writes.get(q, set()) & acc for q in b)
+                                            or any(x in b and v in acc for x, v in esets))
+                                if not fix_in_b:
+                                    continue           # never fixable before: not this flip's doing
+                                out.append({"pattern": "register-value-at-seal",
+                                            "register": R, "value": w,
+                                            "reg": S, "bad": sorted(bad_here),
+                                            "accepted": sorted(acc),
+                                            "demanded_at": [room_d], "via": inst,
+                                            "raise_rooms": sorted(q for q in b
+                                                                  if writes.get(q, set()) & acc),
+                                            "flip_rooms": [r],
+                                            "_sealed": frozenset(a)})
+        return self._collapse_value_flips(out)
+
+    @staticmethod
+    def _collapse_value_flips(rows):
+        """One (register, rejected value, sealed region) is one finding -- `_collapse_flips` for
+        the register rows, keyed by the demanded register instead of the item."""
+        by, order = {}, []
+        for r in rows:
+            k = (r["reg"], tuple(r["bad"]), str(r["register"]), r.pop("_sealed"))
+            if k not in by:
+                by[k] = r
+                order.append(k)
+                continue
+            keep = by[k]
+            keep.setdefault("values", [keep["value"]])
+            if r["value"] not in keep["values"]:
+                keep["values"].append(r["value"])
+            keep["flip_rooms"] = sorted(set(keep["flip_rooms"]) | set(r["flip_rooms"]))
+            keep["demanded_at"] = sorted(set(keep["demanded_at"]) | set(r["demanded_at"]))
+            keep["raise_rooms"] = sorted(set(keep["raise_rooms"]) | set(r["raise_rooms"]))
+        for k in order:
+            r = by[k]
+            if "values" in r:
+                r["values"] = sorted(r["values"], key=repr)
+                r["value"] = r["values"][0]
+        return [by[k] for k in order]
 
     def resource_exhaustion(self):
         """Items you USE UP rather than throw away -- the fourth store's softlock shape.
@@ -3317,6 +4080,27 @@ class IrSccReach(SccReach):
             # code baked reset<=3 and trap>=10x; here it is a derived dominance, no magic constant.
             for T in sorted(loop_vals):
                 if T == SAFE:
+                    continue
+                if T in getattr(self, "_death_values", {}).get(R, ()):
+                    # ⭐ THE DEATH SIGNAL IS NOT A PLOT CLOCK (2026-08-09). A value that MEANS "you
+                    # are dead" cannot also be an adversarial state you get stranded in: you do not
+                    # recover from death, you restore. KQ6's flag 44 (reg216) is set by the death
+                    # procedure itself, and `death_traps` then makes every exit from the death room
+                    # require `216 == 0` -- which is exactly the "door gated on the trap's safe
+                    # value" shape `register_flip_strandings` hunts for. It produced a row blaming
+                    # flag 44 for sealing the `gauntlet`: a REDUNDANT REASON on an already-true
+                    # verdict (the gauntlet is genuinely caught by `toll_strandings`, the
+                    # deadMansCoin pocket carry-in) with an unplaceable `applied=False` spec. Wrong
+                    # reasons on right answers are invisible to a name-scored oracle, which is how
+                    # it reached a committed baseline.
+                    #
+                    # The dominance test below did not stop it because `1 > 0` passes VACUOUSLY:
+                    # reg216 is written in one place and reset nowhere. That is a real second
+                    # weakness, but it is NOT this defect -- flag 44 would still not be a plot
+                    # clock if the game set it in fifty rooms -- so it is left alone rather than
+                    # cured with a threshold. Measured: KQ4's nightfall g100 (set_in=111, the
+                    # play-validated positive) has NO death values and is untouched; LSL2 has no
+                    # traps; LB2's 18 trap registers name none.
                     continue
                 forced = byval.get(T, set())
                 reset = set().union(*(byval[v] for v in byval if v != T)) if byval else set()
@@ -3802,7 +4586,11 @@ def _build(cfg, ir_path):
         # (KQ6 proc0_1 -> rm640, called from the archer/minotaur/... hazards). See derive_death_sci11.
         dialogs, dprocs = V.derive_death_sci11(ir)
         if dialogs or dprocs:
-            synth, _n = V.lower_death_sci11(ir, dialogs, dprocs)
+            # the death SCREENS among those dialogs -- rooms that ARE the offer, so `newRoom:` into
+            # one is a death (see extract.death_screen_rooms and lower_death_sci11 mechanism 3)
+            import extract as _X
+            synth, _n = V.lower_death_sci11(ir, dialogs, dprocs,
+                                            screens=_X.death_screen_rooms(ir))
             sig = (synth, 1)
     if not sig and not V.is_sci11(ir):
         found = V.derive_death(ir)          # the global-flag shape (LSL2 gCurrentStatus, KQ4 g127)
@@ -3848,7 +4636,17 @@ def _build(cfg, ir_path):
     # region object outlives the rooms inside it -- KQ6's minotaur fight is decided entirely by
     # `(ScriptID 30 0) scarfOnMino:` / `seenByMino:`. Same "written with a constant AND read back"
     # rule as every other store, lowered to the same synthetic globals.
-    V.lower_obj_props(ir, V.derive_obj_props(ir))
+    # ...and the SAME container reached through a global. A game keeps its singletons in globals
+    # and addresses them there, which resolves as statically as a `ScriptID` export -- but the
+    # objects so held are usually the ENGINE's (the ego, the icon bar, User, a Sound), so the
+    # widening carries its own bound: only a property the class INTRODUCES and the class library
+    # never itself uses (`vocab._introduced_unused`). Measured corpus-wide that is LSL2 none,
+    # KQ4 none, KQ6 none, LB2 two -- so it cannot renumber a register in the other three, which
+    # matters here (see lower_prop_flags: allocation order IS register identity). Lowered in the
+    # SAME call as the ScriptID/singleton half so both spellings share one allocation, and it is
+    # the half allowed to split chained sends, because its one load-bearing write is inside one.
+    _gprops = V.derive_global_props(ir)
+    V.lower_obj_props(ir, V.derive_obj_props(ir) | _gprops, split_chains=_gprops)
     # FOURTH store, in the spelling item_property_registers cannot see: an item keeping its own
     # state as BIT FLAGS in its own property, written from inside its own methods via `self` and
     # read as a bare property. KQ6's skull gates the realm-of-the-dead cutscene on exactly that.
@@ -3894,7 +4692,30 @@ def _build(cfg, ir_path):
     # allocates mid-sequence renumbers every store after it -- measured: it took the skull's
     # item-bit registers (489/490) and test_scopes' pinned callback-scope check tripped on the
     # wrong store's writes.
+    # SEVENTH container, a PRE-PASS to the sixth: the same mask word reached through an
+    # ACCESSOR whose call sites carry the literal masks (LB2's global124, the per-act
+    # story-beat word -- writes ride `((ScriptID 22 0) doit: <tick>)`, reads ride
+    # `proc0_10`). The pre-pass inlines the accessor at every resolvable call site so the
+    # sixth store below derives and lowers the store as if the game had spelled it
+    # directly; it allocates nothing itself, so register identity elsewhere is untouched.
+    # Corpus-measured single instance (see derive_mask_accessors' docstring).
+    _macc = V.derive_mask_accessors(ir)
+    if _macc:
+        _mw, _mr, _mskips = V.lower_mask_accessors(ir, _macc)
+        print("  [lowered] mask accessor store(s) %s: %d write site(s), %d read call(s)"
+              "%s" % (sorted(_macc), _mw, _mr,
+                      "" if not _mskips else ", skipped %s" % _mskips))
     V.lower_mask_globals(ir, V.derive_mask_globals(ir))
+    # A `switch` case label that is a PROPERTY is a literal the model was throwing away -- see
+    # vocab.lower_property_case_labels. Runs LAST, after every store, deliberately: it allocates
+    # no register, but it DOES change path conditions, and the derivations above key their
+    # allocation order off what they see (see lower_mask_globals' note -- allocation order is
+    # register identity). Placing it here leaves every store's numbering exactly as it was.
+    _pcl = V.lower_property_case_labels(ir)
+    if _pcl:
+        _heads = sorted({h for *_x, h in _pcl})
+        print("  [lowered] %d property case label(s) in %d object(s), heads=%s"
+              % (len(_pcl), len({(s, o) for s, o, *_r in _pcl}), _heads), file=__import__("sys").stderr)
     d_gi, d_val = sig[0], (sig[1] if len(sig) > 1 else None)
     is_death = DeathSignal(d_gi, d_val)
     em = E.OpEmitter(ir, cfg, is_death)

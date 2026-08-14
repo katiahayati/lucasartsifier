@@ -50,7 +50,8 @@ def _placements(cfg):
                 + P.apply_guards(dest, specs, titles, nums,
                                  s_drops=lambda it: s.drops.get(it, set()),
                                  rooms=set(s.rooms),
-                                 entry_frontier=lambda r: G.commit_entry_frontier(s, r)))
+                                 entry_frontier=lambda r: G.commit_entry_frontier(s, r),
+                                 defer_info=lambda sp: G.defer_to_entry(s, sp)))
     finally:
         shutil.rmtree(dest, ignore_errors=True)
     def where(e):
@@ -198,7 +199,8 @@ def test_realm_entry_guard_sits_on_the_spell_delivery():
         P.apply_guards(dest, specs, titles, nums,
                        s_drops=lambda it: s.drops.get(it, set()),
                        rooms=set(s.rooms),
-                       entry_frontier=lambda r: G.commit_entry_frontier(s, r))
+                       entry_frontier=lambda r: G.commit_entry_frontier(s, r),
+                       defer_info=lambda sp: G.defer_to_entry(s, sp))
         mare = open(os.path.join(dest, "src", "nightMare.sc"), errors="replace").read()
         rm340 = open(os.path.join(dest, "src", "rm340.sc"), errors="replace").read()
         book = open(os.path.join(dest, "src", "openBook.sc"), errors="replace").read()

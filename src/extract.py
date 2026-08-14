@@ -420,6 +420,7 @@ def walk_stream(node, pc, on_leaf, on_loop=None, undecided=None):
 
 
 _INIT_SELECTORS = {}        # ir id -> selectors that put an object in the cast
+_DELEGATE_SLOTS = {}        # ir id -> property names the game dispatches doVerb through
 
 
 def init_selectors(ir):
@@ -476,7 +477,128 @@ def init_selectors(ir):
     return _INIT_SELECTORS[key]
 
 
-def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None):
+def delegate_slots(ir):
+    """Property names the game DISPATCHES a verb through: `((<x> P:) doVerb: ...)` -- a send
+    whose RECEIVER is itself a property read. SCI1.1's approach system is the shape's home:
+    LB2/KQ6's `CueObj` completes an approach with `((client actions:) doVerb: theVerb)`, so an
+    object assigned as an `actions:` VALUE runs its `doVerb` only when that read finds it --
+    which makes the ASSIGNMENT a cast event with the assignment site's own path condition
+    (`cast_conditions` consumes this via `delegate_sels`).
+
+    Why it matters: LB2's rm335 doorman is init:ed under `(and (== global123 2) (not (proc0_2
+    25)))` and armed `actions: doorActions` in the same send -- and `doorActions` itself is
+    never init:ed, so without this rule its verb-11 arming of `sGiveInvite` (give the press
+    pass) read as ALWAYS live, keeping a phantom act-3 use of the pass alive at the fundraiser
+    door. The condition was always derivable; only this spelling of "whose method is this
+    really" was missing (docs/LB2-ORACLE.md §7ai).
+
+    Derived from the forwarding shape itself, not a selector catalogue (the discipline
+    `init_selectors` states): a property qualifies only because the game's own code visibly
+    dispatches through it. CENSUS 2026-08-10: LSL2 {}, KQ4 {} (SCI0 has no Actions layer --
+    inert by construction), KQ6 {actions, curIcon}, LB2 {actions}; measured on KQ6, the three
+    conditionally-assigned delegates move nothing in the detector surface."""
+    key = id(ir)
+    if key in _DELEGATE_SLOTS:
+        return _DELEGATE_SLOTS[key]
+    slots = set()
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for body in o.methods.values():
+                for n in I.walk(body):
+                    if n.get("t") != "Send":
+                        continue
+                    recv, msgs = I.send_pairs(n)
+                    if not any(sel == "doVerb" for sel, _p in msgs):
+                        continue
+                    if isinstance(recv, dict) and recv.get("t") == "Send":
+                        _r2, m2 = I.send_pairs(recv)
+                        props = [sel for sel, p in m2 if not p]
+                        if len(props) == 1:
+                            slots.add(props[0])
+    _DELEGATE_SLOTS[key] = frozenset(slots)
+    return _DELEGATE_SLOTS[key]
+
+
+def _object_departures(script):
+    """`objname -> {Script-object names whose run PARKS that object off-pic}`.
+
+    The arrival-taxi shape (LB2 rm330, docs/LB2-ORACLE.md §7z): a branch `init:`s an Actor and
+    in the same breath arms a handsOff cutscene whose terminal motion is a literal `MoveTo`
+    beyond the pic bounds. The object survives -- no `dispose:`, no `hide:` -- but the player
+    never gets a click window: input is off for the whole drive and returns only after the
+    motion completes off-screen, and nothing moves it back without a fresh `init:`. So an
+    `init:` paired with such a script contributes NO interactive presence, and
+    `cast_conditions` must not let that site into the owner disjunction -- left in, it reads as
+    "the object is verbable whenever the arrival branch runs", which is what kept LB2's street
+    open at acts 2-5 (the taxi is rm330's only exit and its arrival init is gowned-satisfiable
+    in every act).
+
+    STRICT IN THE KEEPING DIRECTION -- all of the following, or the script departs nothing:
+      * every position write of the object in the script's changeState is literal (an unknown
+        destination keeps the object), and the LAST one (highest state) ends outside the pic.
+        320x190 are ENGINE constants: an SCI pic is that size and click dispatch is by screen
+        position, so an actor parked beyond it can never be verbed;
+      * the terminal motion carries a cue argument -- the machine advances only when the drive
+        has COMPLETED, so "after" really is after;
+      * a `handsOff:` fires at or before the departure's first position write and every
+        `handsOn:` comes strictly after the terminal one -- the input window reopens only once
+        the object is gone. A script that returns input mid-drive leaves a real click window
+        and keeps the object."""
+    W_PIC, H_PIC = 320, 190
+    out = {}
+    for S in script.objects:
+        cs = S.methods.get("changeState")
+        if cs is None:
+            continue
+        moves, hands_off, hands_on = {}, [], []
+        for n in I.walk(cs):
+            if I.t(n) != "Switch":
+                continue
+            for case in I.kids(n)[1:]:
+                if I.t(case) != "Case":
+                    continue
+                k = I.as_int(I.kids(case)[0])
+                if k is None:
+                    continue
+                for sn in I.walk(I.kids(case)[1]):
+                    if I.t(sn) != "Send":
+                        continue
+                    recv, msgs = I.send_pairs(sn)
+                    rname = recv.get("name") if isinstance(recv, dict) else None
+                    for sel, params in msgs:
+                        if sel == "handsOff":
+                            hands_off.append(k)
+                        elif sel == "handsOn":
+                            hands_on.append(k)
+                        elif sel == "setMotion" and rname:
+                            cls = (params[0].get("name")
+                                   if params and isinstance(params[0], dict) else None)
+                            if cls == "MoveTo" and len(params) >= 3:
+                                moves.setdefault(rname, []).append(
+                                    (k, I.as_int(params[1]), I.as_int(params[2]),
+                                     len(params) > 3))
+                            else:
+                                moves.setdefault(rname, []).append((k, None, None, False))
+                        elif sel == "posn" and rname and len(params) >= 2:
+                            moves.setdefault(rname, []).append(
+                                (k, I.as_int(params[0]), I.as_int(params[1]), True))
+        for O, evs in moves.items():
+            if any(x is None or y is None for (_k, x, y, _c) in evs):
+                continue
+            evs.sort(key=lambda e: e[0])
+            k_last, x, y, cued = evs[-1]
+            if (0 <= x < W_PIC and 0 <= y < H_PIC) or not cued:
+                continue
+            if not hands_off or min(hands_off) > evs[0][0]:
+                continue
+            if any(h <= k_last for h in hands_on):
+                continue
+            out.setdefault(O, set()).add(S.name)
+    return out
+
+
+def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None,
+                    delegate_sels=None):
     """`objname -> [guard|None]`: the conditions under which this script puts an object IN THE CAST.
 
     An object that is not `init:`ed does not exist for the player -- it cannot be clicked, cued or
@@ -508,6 +630,15 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None)
     hole-in-the-wall that way: `proc404_1` inits the hole actor, and every one of its three call
     sites is `(if (== (rLab holeCoords:) <this cell>) (proc404_1))`.
 
+    `delegate_sels` (see `delegate_slots`) adds the third cast event: being ASSIGNED as a
+    dispatch delegate. An `Actions` instance is never `init:`ed -- it exists for the player only
+    while some host carries it in a property the engine dispatches through (`(<host> actions:
+    doorActions)`), so the assignment site's path condition is its presence condition, exactly as
+    an `init:` site's is. Both spellings are read: the property message itself, and the bulk
+    `(<list> eachElementDo: #actions <obj>)`. LB2's rm335 doorman is the case this was built
+    for (docs/LB2-ORACLE.md §7ai): `doorActions` is assigned inside the doorman's own
+    `(== global123 2)`-guarded init send, and without this event its armings read always-live.
+
     `machine_guard(objname)` is the SAME rule for a `changeState` body, which likewise has no path
     condition of its own -- it runs because the machine was armed and reached that state, so its
     precondition is the machine's ENTRY. Sierra puts an object into the cast from inside a cutscene
@@ -531,6 +662,12 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None)
     declared = {o.name: (init_sels or {}).get(o.species if o.is_class else o.super) or {"init"}
                 for o in script.objects}
     out = {}
+    # Init sites are COLLECTED, then filtered against `_object_departures`: a site whose OWN
+    # BRANCH (same path condition -- the id-key over the shared guard nodes) also arms a script
+    # that parks the object off-pic contributes no interactive presence and is dropped. The arm
+    # and the init must be siblings for the drop, which is what scopes it to the arrival-taxi
+    # shape rather than to any room that ever drives the object somewhere.
+    pend, armed = [], set()
 
     def leaf(n, pc):
         if n.get("t") != "Send":
@@ -541,14 +678,27 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None)
         # selector in another, so the selector is collected across the whole send.
         bulk = {p.get("name") for sel, params in msgs if sel == "eachElementDo" for p in params
                 if isinstance(p, dict) and p.get("t") == "Selector"}
+        key = tuple(map(id, pc))
         for sel, params in msgs:
             if sel in declared.get(rname, ()):
-                out.setdefault(rname, []).append(_conj(pc))
+                pend.append((rname, key, _conj(pc)))
+            if sel == "setScript":
+                for p in params:
+                    if isinstance(p, dict) and p.get("name") in declared:
+                        armed.add((p["name"], key))
+            if delegate_sels and sel in delegate_sels:
+                # assigned as a dispatch delegate -- a cast event for the VALUE object
+                for p in params:
+                    if isinstance(p, dict) and p.get("name") in declared:
+                        pend.append((p["name"], key, _conj(pc)))
             if bulk:
                 for p in params:
                     if (isinstance(p, dict) and p.get("t") == "Object"
                             and bulk & set(declared.get(p.get("name"), ()))):
-                        out.setdefault(p["name"], []).append(_conj(pc))
+                        pend.append((p["name"], key, _conj(pc)))
+                    if (delegate_sels and isinstance(p, dict) and p.get("t") == "Object"
+                            and bulk & set(delegate_sels) and p.get("name") in declared):
+                        pend.append((p["name"], key, _conj(pc)))
 
     for o in script.objects:
         for mn, body in o.methods.items():
@@ -556,6 +706,12 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None)
             walk_stream(body, seed, leaf)
     for pn, body in script.procs.items():
         walk_stream(body, [proc_guard(pn)] if proc_guard else [], leaf)
+    dep = _object_departures(script)
+    for rname, key, g in pend:
+        if any((S, key) in armed for S in dep.get(rname, ())):
+            continue                     # a departing init: the object exists but is never
+                                         # clickable from this site -- see _object_departures
+        out.setdefault(rname, []).append(g)
     return out
 
 
@@ -1092,6 +1248,30 @@ def _room_object(script, ir=None):
     return None
 
 
+def death_screen_rooms(ir):
+    """Rooms that ARE a death dialog -- the Restore/Restart screen itself.
+
+    The distinction that matters: a death SCREEN is a room whose whole existence is the offer (LB2's
+    `deathRoom`, script 99: a picture and a `repeat` around a three-button Print that never
+    returns), while a death ROOM is an ordinary place you walk through where a hazard's cutscene
+    can kill you (KQ6's rm640/rm690/rm820). Only the first has no gameplay in it, and only the
+    first makes `newRoom:` into it a death rather than a journey.
+
+    Derived by shape -- the death dialog IS the script's room object -- and MEASURED: 1 of 1 on
+    LB2, 0 of 4 on KQ6, whose dialogs are `Script` objects living inside real rooms.
+
+    ONE definition, used by three callers (`_no_walk_rooms` for its vestigial exits,
+    `lower_death_sci11` for the `newRoom`-into-it deaths, and `anchors` through them), because
+    the same rule in two places is this codebase's most expensive recurring bug."""
+    out = set()
+    for (sn, name) in V.derive_death_send(ir):
+        sc = ir.scripts.get(sn)
+        ro = _room_object(sc, ir) if sc is not None else None
+        if ro is not None and ro.name == name:
+            out.add(sn)
+    return out
+
+
 class Extractor:
     def __init__(self, ir):
         self.ir = ir
@@ -1359,6 +1539,7 @@ class Extractor:
             self._cur_obj = ""
         for n, s in room_scripts.items():
             self._nav_edges(n, s)
+            self._newroom_override_edges(n, s)
             for o in s.objects:
                 self._cur_obj = o.name
                 for mname, meth_ast in o.methods.items():
@@ -1841,13 +2022,80 @@ class Extractor:
             # -- before that this room's edges were all guard-None and took the other branch.
             e.guard = _conj([e.guard, starter])
 
+    def _newroom_override_edges(self, room_num, script):
+        """A room that OVERRIDES `newRoom` rewrites its own destination -- read the rewrites.
+
+        `(gRoom newRoom: X)` is a send to the CURRENT ROOM, so a room that defines `newRoom`
+        intercepts every exit taken inside it and may substitute a different destination before
+        calling `super`. LB2's `rm666` -- the dark passage -- is the case, and it is a passage
+        precisely because of this method:
+
+            (method (newRoom param1)
+                (cond ((== param1 99) 0)                      ; a death passes through unchanged
+                      ((== global12 650) … (= param1 565) else (= param1 560))
+                      ((== global12 630) (= param1 454))
+                      ((== global12 520) (= param1 610)))
+                (super newRoom: param1))
+
+        Its entry scripts all walk you out with the placeholder `(gRoom newRoom: 0)`, and the real
+        destination is chosen HERE from `global12`, the previous room. Reading only the literal
+        left the passage with no exits at all, so the model believed you could never come back --
+        which made `lantern`, obtained in `rm600` and used in this room, look stranded. It is not:
+        the oracle's `act-local` was right, and the pocket was ours.
+
+        ADDS edges, never removes any: the destinations here are extra ways out that the literal
+        call site does not name, and adding movement is the safe direction (the walk-icon rule
+        above is the unsafe one, and says so). Each carries the branch's own path condition, so
+        `global12 == 650` really does mean "only when you came from rm650" -- the same prevRoom
+        register the realm seal already uses.
+
+        Inert unless a room overrides `newRoom` AND assigns its destination parameter a literal:
+        measured, `newRoom: 0` appears in exactly one room in LB2 and this fires on that one."""
+        obj = _room_object(script, self.ir)
+        meth = obj.methods.get("newRoom") if obj is not None else None
+        if meth is None:
+            return
+        dest_param = None                      # the parameter `super newRoom:` is finally handed
+        for n in I.walk(meth):
+            if n.get("t") != "Send":
+                continue
+            try:
+                _r, msgs = I.send_pairs(n)
+            except Exception:                  # noqa: BLE001
+                continue
+            for sel, params in msgs:
+                if sel == "newRoom" and params and isinstance(params[0], dict) \
+                        and params[0].get("vtype") == "Parameter":
+                    dest_param = params[0].get("index")
+        if dest_param is None:
+            return
+        seen = []
+
+        def leaf(node, pc):
+            if node.get("t") != "Assignment":
+                return
+            ks = node.get("kids") or []
+            if len(ks) < 2 or not isinstance(ks[0], dict):
+                return
+            if ks[0].get("vtype") != "Parameter" or ks[0].get("index") != dest_param:
+                return
+            dst = I.as_int(ks[1])
+            if dst and dst != 0xffff:
+                seen.append(Edge(room_num, dst, guard=_conj(pc)))
+
+        walk_stream(meth, [], leaf)
+        self.ts.edges.extend(seen)
+
     def _nav_edges(self, room_num, script):
         obj = _room_object(script, self.ir)
         if obj is not None and room_num not in self._no_walk_rooms():
             for sel in NAV_SELECTORS:
                 dst = obj.props.get(sel)
                 if dst and dst != 0xffff:
-                    self.ts.edges.append(Edge(room_num, dst))   # walk-off exit, free
+                    # `via` carries the PROVENANCE ("nav:south") so the dead-nav pass can remove
+                    # exactly this row and nothing else -- a scripted crossing to the same
+                    # destination is a different edge and must survive the removal.
+                    self.ts.edges.append(Edge(room_num, dst, via="nav:" + sel))
         # static entranceTo on any object (rooms + Doors): walking it goes to that room
         for o in script.objects:
             et = o.props.get("entranceTo", 0)
@@ -1886,6 +2134,26 @@ class Extractor:
         if self._nowalk is not None:
             return self._nowalk
         self._nowalk = set()
+        # ⭐ A DEATH SCREEN IS NOT A ROOM, and its declared exits are dead letters.
+        #
+        # LB2's `deathRoom` (script 99) is a picture and a `repeat` around a three-button Print --
+        # Restore / Restart / Quit -- whose `init` NEVER RETURNS. It also declares `north 350` in
+        # its properties, which the game therefore never reads. We took that at face value and
+        # invented a walk out of the death screen: the model could travel by dying (rm99 -> rm350,
+        # 60 rooms beyond), and rm99 became eligible as a dangerous-sink witness and a guard
+        # target, which is where `pressPass@rm99` and `rm210->rm99: (gEgo has: 6)` came from.
+        #
+        # The discriminator is that the death dialog IS its script's room object. That separates a
+        # death SCREEN from a death CUTSCENE: KQ6's four dialogs are `Script` objects that play
+        # inside real rooms you walk through (rm640/rm690/rm820), so none of them is a room object
+        # and none loses an exit. MEASURED before writing this -- 0 of 4 on KQ6, 1 of 1 on LB2.
+        #
+        # This sits with the walk-icon rule below rather than with the death machinery on purpose:
+        # both say the same thing, that a declared n/s/e/w is not an exit the player can use, and
+        # both are removing movement, which the docstring above rightly calls the unsafe direction.
+        # Note it must come BEFORE the walk-icon early-return, which bails on games with no icon
+        # bar -- a death screen is a death screen in SCI0 too.
+        self._nowalk |= death_screen_rooms(self.ir)
         found = V.derive_walk_icon(self.ir)
         if not found:
             return self._nowalk

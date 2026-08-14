@@ -172,6 +172,17 @@ def _literal_items(node):
     return out
 
 
+class AllOf(tuple):
+    """Several items moved by ONE statement, ALL of them -- as opposed to a plain tuple, which
+    `_literal_items` uses for a run-time PICK of one (a shop counter's `(get: (switch slot ...))`).
+
+    The two shapes reach `item_transfers` identically -- one entry per item, which is the right
+    reading for "where can this come from" either way -- and part company at `item_menus`, whose
+    whole job is the fact that one statement hands over one item. A variadic `get:` is the exact
+    opposite claim, so it must not be filed as an exchange slot."""
+    __slots__ = ()
+
+
 def item_menus(ir, vocab, item_of_receiver):
     """Every transfer site whose ITEM is picked at run time -- `{frozenset(items), ...}`.
 
@@ -204,9 +215,59 @@ def item_menus(ir, vocab, item_of_receiver):
                     continue
                 for sel, params in msgs:
                     tr = vocab.transfer(recv, sel, params, item_of_receiver)
-                    if tr and isinstance(tr[0], tuple) and len(set(tr[0])) > 1:
+                    if (tr and isinstance(tr[0], tuple) and not isinstance(tr[0], AllOf)
+                            and len(set(tr[0])) > 1):
                         out.add((frozenset(tr[0]), tr[1]))
     return out
+
+
+def _argc_temps(body):
+    """The temps a method uses as an ARGUMENT-LIST cursor: those it compares against parameter 0.
+
+    SCI passes the argument COUNT as parameter 0 and lays the arguments out contiguously after it,
+    so `(for ((= temp0 0)) (< temp0 argc) ((++ temp0)) ... [param1 temp0] ...)` is the language's
+    one way to spell "for every argument I was given". Recognising the cursor is what tells a
+    VARIADIC wrapper from one that indexes an ARRAY it was handed -- both spell the access
+    `[param1 temp0]`, and only the first bounds the index by how many arguments there are."""
+    out = set()
+    for n in I.walk(body):
+        if n.get("t") not in ("Lt", "Le", "Gt", "Ge", "Ne", "Eq"):
+            continue
+        ks = n.get("kids") or []
+        for a, b in ((ks[0], ks[1]),) if len(ks) >= 2 else ():
+            for x, y in ((a, b), (b, a)):
+                if (isinstance(x, dict) and x.get("vtype") == "Temp"
+                        and isinstance(y, dict) and y.get("vtype") == "Parameter"
+                        and y.get("index") == 0):
+                    out.add(x.get("index"))
+    return out
+
+
+def _variadic_item_arg(recv, argc_temps):
+    """`[param<i> <argc cursor>]` inside the forwarding receiver -> i, else None.
+
+    The wrapper does not take ONE item and a destination; it takes as many items as it was
+    given. `Ego::get` in the Dagger of Amon Ra is exactly this --
+
+        (method (get param1 &tmp temp0)
+          (for ((= temp0 0)) (< temp0 argc) ((++ temp0))
+            ((global9 at: [param1 temp0]) moveTo: self)))
+
+    -- and read as a one-item wrapper it loses every argument but the first. That is not a corner
+    case there: 13 of the game's acquisition sites are written `(gEgo get: -1 32)`, the `-1`
+    being the "no sound" sentinel with the items after it."""
+    for k in I.walk(recv):
+        if not (isinstance(k, dict) and k.get("t") == "ComplexVariable"):
+            continue
+        ks = k.get("kids") or []
+        if len(ks) != 2:
+            continue
+        base, idx = ks
+        if (isinstance(base, dict) and base.get("vtype") == "Parameter"
+                and isinstance(idx, dict) and idx.get("vtype") == "Temp"
+                and idx.get("index") in argc_temps):
+            return base.get("index")
+    return None
 
 
 def _arg_roles(ir, wrapper_cls, selector, core):
@@ -215,11 +276,15 @@ def _arg_roles(ir, wrapper_cls, selector, core):
     Read off the forwarding send. `Ego::put param1 param2` forwards as
     `((global9 at: param1) moveTo: <param2 or -1>)`, so the item is argument 1 and the
     destination argument 2; `Ego::get param1` forwards as `(... moveTo: self)`, so the
-    destination is the ego itself and there is no destination argument at all."""
+    destination is the ego itself and there is no destination argument at all.
+
+    ...and `variadic` says the item argument is the FIRST of however many were passed, which the
+    same body says too -- see `_variadic_item_arg`."""
     cls = ir.find_class(wrapper_cls)
     body = cls.methods.get(selector) if cls else None
     if body is None:
         return None
+    argc_temps = _argc_temps(body)
     for n in I.walk(body):
         if n.get("t") != "Send":
             continue
@@ -230,11 +295,13 @@ def _arg_roles(ir, wrapper_cls, selector, core):
         for pair in msgs:
             if not pair or pair[0] not in core:
                 continue
-            item_arg = None
-            for k in I.walk(recv):                     # `(<inv> at: <Parameter i>)`
-                if isinstance(k, dict) and k.get("vtype") == "Parameter":
-                    item_arg = k.get("index")
-                    break
+            item_arg = _variadic_item_arg(recv, argc_temps)
+            variadic = item_arg is not None
+            if item_arg is None:
+                for k in I.walk(recv):                 # `(<inv> at: <Parameter i>)`
+                    if isinstance(k, dict) and k.get("vtype") == "Parameter":
+                        item_arg = k.get("index")
+                        break
             dest_arg, dest_fixed = None, None
             for p in pair[1]:
                 if not isinstance(p, dict):
@@ -252,7 +319,8 @@ def _arg_roles(ir, wrapper_cls, selector, core):
                             dest_arg = k.get("index")
                             break
             if item_arg is not None:
-                return {"item_arg": item_arg, "dest_arg": dest_arg, "dest_fixed": dest_fixed}
+                return {"item_arg": item_arg, "dest_arg": dest_arg, "dest_fixed": dest_fixed,
+                        "variadic": variadic}
     return None
 
 
@@ -418,10 +486,24 @@ class Vocabulary:
         i = roles["item_arg"] - 1
         if i < 0 or i >= len(params):
             return None
-        its = _literal_items(params[i])
-        if not its:
+        if roles.get("variadic"):
+            # EVERY argument from here on is an item. A negative number is not an inventory index:
+            # SCI spells "none" as -1 everywhere (the same sentinel `moveTo:` takes for NOWHERE),
+            # and LB2's `get:` sites lead with one.
+            per_arg = [[v for v in _literal_items(p) if v >= 0] for p in params[i:]]
+        else:
+            per_arg = [_literal_items(params[i])]
+        per_arg = [a for a in per_arg if a]
+        if not per_arg:
             return None
-        it = its[0] if len(its) == 1 else tuple(its)
+        # WHICH TUPLE THIS IS depends on the SITE, not on the wrapper. Several ARGUMENTS means
+        # several items handed over at once (`AllOf`); ONE argument with several possible values
+        # is still a run-time pick of one, i.e. an exchange slot -- KQ6's pawn counter is
+        # `(gEgo get: (switch register (0 48) (3 27) ...))` through the very same variadic `get:`,
+        # and reading it as "all four" is what `item_menus`/`exchange_slots` exist to prevent.
+        its = [v for a in per_arg for v in a]
+        it = (its[0] if len(its) == 1
+              else AllOf(its) if len(per_arg) > 1 else tuple(its))
         if roles["dest_fixed"] is not None:
             return (it, roles["dest_fixed"])
         j = (roles["dest_arg"] or 0) - 1
@@ -465,6 +547,77 @@ if __name__ == "__main__":
 # pins it at 0, and global14 is inert. KQ4 derives {215} exactly. Dropping debug pinning entirely
 # costs 3 items (rm82's `if gDebugging` hands you the whole bomb), so it is not cosmetic.
 RESTART_SELECTORS = ("restart", "restore")
+
+
+def derive_control_selectors(ir):
+    """{selector: 'restore' | 'take'} -- the Game hierarchy's own player-control switches.
+
+    The engine spells player control as properties of the User class, written by methods of the
+    Game class -- SCI1.1's `Game::handsOn` is literally `(User canControl: 1 canInput: 1)` -- and
+    a game subclass keeps the selector when it overrides the body (KQ6 adds icon-bar bookkeeping,
+    LB2 routes through its own User global). So the selectors are DERIVED, not declared: a method
+    of a Game-descendant class qualifies when its body writes constant 0/1 to a property the User
+    class INTRODUCES (inherited props like `x` are other classes' business), on a receiver that
+    IS the User class or a global holding one of its instances, and the constant says which way
+    the switch points. Same evidence tier as `game_objects` / `RESTART_SELECTORS`: the engine
+    class table, because `Game` and `User` are the engine's own names for these anchors.
+
+    MEASURED: LSL2 {} and KQ4 {} (SCI0 rooms write User directly; everything built on this is
+    inert there by construction); KQ6 and LB2 both {'handsOn': 'restore', 'handsOff': 'take'}."""
+    user, game = ir.find_class("User"), ir.find_class("Game")
+    if user is None or game is None:
+        return {}
+    # The control switches are User's own vocabulary in BOTH spellings: SCI0 declares `canInput`
+    # as a property and `canControl` as a method; SCI1.1 makes both methods over a state word.
+    # Either way the NAME is declared on the User class itself, which is the whole test.
+    uprops = (_class_introduces(ir).get(user.species, frozenset())
+              | frozenset(user.methods))
+    if not uprops:
+        return {}
+    species = {game.species}
+    changed = True
+    while changed:                                     # Game's subclass closure
+        changed = False
+        for s in ir.scripts.values():
+            for o in s.objects:
+                if o.is_class and o.super in species and o.species not in species:
+                    species.add(o.species)
+                    changed = True
+    ginst = _global_instances(ir)
+
+    def _user_recv(recv):
+        if isinstance(recv, dict) and recv.get("t") in ("Object", "Class"):
+            return recv.get("name") == user.name
+        if isinstance(recv, dict) and I.is_global(recv):
+            hit = ginst.get(recv["index"])
+            return hit is not None and (hit[0].species == user.species
+                                        or hit[0].super == user.species)
+        return False
+
+    out = {}
+    for s in ir.scripts.values():
+        for o in s.objects:
+            if not (o.species in species if o.is_class else o.super in species):
+                continue
+            for sel, body in o.methods.items():
+                vals = set()
+                for n in I.walk(body):
+                    if n.get("t") != "Send":
+                        continue
+                    try:
+                        recv, msgs = I.send_pairs(n)
+                    except Exception:                  # noqa: BLE001
+                        continue
+                    if not _user_recv(recv):
+                        continue
+                    for s2, ps in msgs:
+                        if s2 in uprops and ps and I.as_int(ps[0]) in (0, 1):
+                            vals.add(I.as_int(ps[0]))
+                if vals == {1}:
+                    out[sel] = "restore"
+                elif vals == {0}:
+                    out.setdefault(sel, "take")
+    return out
 
 
 def game_objects(ir):
@@ -687,7 +840,10 @@ def derive_death_sci11(ir):
     return dialogs, death_procs
 
 
-def lower_death_sci11(ir, dialogs, death_procs, death_value=1):
+_skipped_deaths = []          # dialogs with no reachable entry -- reported, never swallowed
+
+
+def lower_death_sci11(ir, dialogs, death_procs, death_value=1, screens=()):
     """Both SCI1.1 death mechanisms lowered onto ONE synthetic death global (computed once, before
     any injection so the two passes agree): a death write into each inline dialog's state 0, and a
     death write in place of each call to a death proc."""
@@ -706,13 +862,33 @@ def lower_death_sci11(ir, dialogs, death_procs, death_value=1):
             {"t": "Number", "value": death_value}]}
 
     n = 0
-    for (sn, obj_name) in dialogs:                     # (1) inline dialogs -> death write at state 0
+    for (sn, obj_name) in dialogs:                     # (1) inline dialogs -> death write at ENTRY
         obj = ir.scripts[sn].by_name.get(obj_name)
-        cs = obj.methods.get("changeState") if obj else None
-        if cs is None:
+        # ⭐ THE OBJECT'S ENTRY -- which is what "reaching the death dialog" means. NOT where the
+        # buttons are: the offer sits two Switch/Case levels deep in KQ6's dialogs, and injecting
+        # there would put the death on the button-press path condition. Arriving at the dialog IS
+        # the death; Restore/Restart is epilogue.
+        #
+        # `init` IS the SCI entry point, and `Script` overrides it to dispatch to `changeState(0)`
+        # -- so case 0 is not a second rule, it is where `init` GOES for a Script that does not
+        # define its own. One concept, two spellings, and the fallback is read off the class
+        # protocol rather than asserted.
+        #
+        # MEASURED before writing this: KQ6's four dialogs (egoBeastScript, deathCartoonScr,
+        # deadInHereScript, noWayOut) define no `init`, so every one keeps the case-0 path exactly
+        # as before -- 66 DEATH transitions across 34 rooms, unchanged. LB2's `deathRoom` is a
+        # ROOM whose offer lives in `init`, and it used to fall out of this loop SILENTLY: the
+        # game ended up with zero deaths, `rm99` stayed an ordinary room with an exit to `rm350`,
+        # and the model could travel by dying.
+        own_init = obj.methods.get("init") if obj else None
+        entry = own_init or (obj.methods.get("changeState") if obj else None)
+        if entry is None:
+            _skipped_deaths.append((sn, obj_name))
             continue
         injected = False
-        for node in I.walk(cs):
+        # A state dispatcher hides its entry in case 0; a plain `init` runs top to bottom, and
+        # searching IT for a "case 0" would land in whichever branch the buttons happen to be in.
+        for node in (I.walk(entry) if own_init is None else ()):
             if node.get("t") != "Switch":
                 continue
             for c in (node.get("kids") or [])[1:]:
@@ -726,7 +902,7 @@ def lower_death_sci11(ir, dialogs, death_procs, death_value=1):
                     injected = True
             break
         if not injected:
-            old = dict(cs); cs.clear(); cs["t"] = "List"; cs["kids"] = [write(), old]
+            old = dict(entry); entry.clear(); entry["t"] = "List"; entry["kids"] = [write(), old]
         n += 1
     for s in ir.scripts.values():                      # (2) death-proc calls -> death write
         bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
@@ -738,6 +914,44 @@ def lower_death_sci11(ir, dialogs, death_procs, death_value=1):
                     node["kids"] = [{"t": "Variable", "vtype": "Global", "index": synth},
                                     {"t": "Number", "value": death_value}]
                     n += 1
+    # (3) `newRoom:` INTO A DEATH SCREEN is a death, not a journey. A screen is a room that IS the
+    # Restore/Restart offer (`extract.death_screen_rooms`), so arriving is dying and there is
+    # nothing on the other side to walk to. LB2 writes its deaths this way -- `sLauraDies` and 33
+    # siblings end `(gRoom newRoom: 99)` -- and with only mechanisms (1) and (2) every one of them
+    # was invisible: the game modelled ZERO deaths.
+    #
+    # Deliberately NOT "newRoom into a death ROOM": KQ6 has 34 of those, and they are ordinary
+    # places you walk through where a hazard's cutscene may kill you. Marking every entrance to
+    # them as a death would wall off a third of the game. Measured: 0 screens and 0 sites on KQ6,
+    # so this is inert there by construction; 34 sites on LB2.
+    if screens:
+        for s in ir.scripts.values():
+            bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
+            for body in bodies:
+                for node in I.walk(body):
+                    if node.get("t") != "Send":
+                        continue
+                    try:
+                        _r, msgs = I.send_pairs(node)
+                    except Exception:                  # noqa: BLE001
+                        continue
+                    # only a send whose SOLE message is the fatal `newRoom:` -- a chained send
+                    # does other work we would silently discard by replacing the whole node
+                    if len(msgs) == 1 and msgs[0][0] == "newRoom" and msgs[0][1] \
+                            and I.as_int(msgs[0][1][0]) in screens:
+                        node.clear()
+                        node["t"] = "Assignment"
+                        node["kids"] = [{"t": "Variable", "vtype": "Global", "index": synth},
+                                        {"t": "Number", "value": death_value}]
+                        n += 1
+    # LOUDLY. A death dialog we cannot lower is a whole game's worth of deaths going missing, and
+    # deaths are in scope by the project's central rule -- LB2 lost every one of them to a silent
+    # `continue` here and nobody knew until an unrelated change happened to expose it.
+    if _skipped_deaths:
+        import sys as _sys
+        print("  [degraded] death dialog(s) with neither an own `init` nor a `changeState` -- NO "
+              "death is modelled for them: %s" % (_skipped_deaths,), file=_sys.stderr)
+        _skipped_deaths.clear()
     return synth, n
 
 
@@ -1546,6 +1760,185 @@ def _prop_receiver_script(ir, recv):
     return _singleton_scripts(ir).get(recv["name"])
 
 
+def _global_instances(ir):
+    """global index -> the object it holds, for globals only ever assigned ONE object.
+
+    The THIRD spelling of `_prop_receiver_script`'s "statically one object". A game keeps its
+    long-lived singletons in globals and addresses them there -- `(= global0 ego)` in Main, then
+    `(global0 wearingGown:)` in fourteen rooms -- and a global assigned exactly one object
+    throughout the game resolves as surely as a `ScriptID` export or a unique name. It is the
+    same derivation `_class_globals` already does for the item vocabulary, kept by GLOBAL rather
+    than by class because here the question is which object a receiver denotes."""
+    cache = getattr(ir, "_global_insts", None)
+    if cache is not None:
+        return cache
+    by_name = {o.name: o for s in ir.scripts.values() for o in s.objects}
+    scr = {o.name: s.number for s in ir.scripts.values() for o in s.objects}
+    assigned = collections.defaultdict(set)
+    for s in ir.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for n in I.walk(body):
+                if n.get("t") != "Assignment":
+                    continue
+                ks = n.get("kids") or []
+                if len(ks) < 2 or not I.is_global(ks[0]):
+                    continue
+                src = ks[1]
+                if (isinstance(src, dict) and src.get("t") in ("Object", "Class")
+                        and src.get("name") in by_name):
+                    assigned[ks[0]["index"]].add(src["name"])
+    cache = {g: (by_name[next(iter(v))], scr[next(iter(v))])
+             for g, v in assigned.items() if len(v) == 1}
+    try:
+        ir._global_insts = cache
+    except Exception:                                      # noqa: BLE001
+        pass
+    return cache
+
+
+def _introduced_unused(ir, obj):
+    """The properties `obj`'s own class INTRODUCES and never itself mentions.
+
+    The bound the global-receiver case needs, and the reason it needs one: a `ScriptID` receiver
+    is a script the game WROTE -- a region controller, a cutscene director -- so every property on
+    it is game state. A global-held singleton is usually the ENGINE's own instance (the ego, the
+    icon bar, User, a Sound), and its property surface is the class library's machinery: `view`,
+    `cel`, `loop`, `x`, `y`, `signal`, `scaler`. Lowering those would model the animation system.
+
+    ONE question separates them, asked of the class table alone: *was the property introduced
+    here, and does the class library leave it alone?* A property inherited from a more general
+    class belongs to that generality's machinery, so only what THIS class adds is a candidate --
+    that is what excludes `view`, `cel`, `loop`, `x`, `y`, `signal`, `scaler` in one stroke. And a
+    property name that ANY class introducing it also reads or writes in its own methods is that
+    library's vocabulary, whichever class you met it on -- which is what excludes `Ego::edgeHit`,
+    `Body::currentSpeed`, `User::prevDir`, `IconBar::curInvIcon`, `Narrator::talkWidth` and
+    `Sound::number` (Sound never touches it, but `Rgn` and `Locale` introduce the same name and
+    do). What is left is a slot introduced at the leaf for OTHER code to use -- a state variable.
+
+    MEASURED, whole corpus: LSL2 none, KQ4 none, KQ6 none, LB2 exactly two --
+    `ego.wearingGown` (script 19) and `IconBar.walkIconItem`. The Dagger of Amon Ra gates its
+    ACT 1 -> ACT 2 break on the first of them (`rm250.sc:71`, `(and (== global12 300) (global0
+    wearingGown:)) -> sACTBREAK -> newRoom: 26`), and the only thing that sets it is the speakeasy
+    restroom's `sLauraChanges`, which costs the evening gown. Three of the four games contribute
+    nothing, which is what a real store looks like rather than a fitted one."""
+    byspec = _class_index(ir)
+    cls = obj if obj.is_class else byspec.get(obj.super)
+    if cls is None:
+        return frozenset()
+    own = _class_introduces(ir).get(cls.species, frozenset())
+    used = _library_used_props(ir)
+    return frozenset(p for p in own if p not in used)
+
+
+def _class_introduces(ir):
+    """species -> the properties that class adds to what it inherits."""
+    cache = getattr(ir, "_class_new_props", None)
+    if cache is not None:
+        return cache
+    byspec = _class_index(ir)
+    cache = {}
+    for spec, o in byspec.items():
+        inherited, cur = set(), byspec.get(o.super)
+        while cur is not None and cur.species != o.species:
+            inherited |= set(cur.props)
+            nxt = byspec.get(cur.super)
+            if nxt is cur:
+                break
+            cur = nxt
+        cache[spec] = frozenset(set(o.props) - inherited)
+    try:
+        ir._class_new_props = cache
+    except Exception:                                      # noqa: BLE001
+        pass
+    return cache
+
+
+def _library_used_props(ir):
+    """Property NAMES some class that introduces them also uses in its own methods."""
+    cache = getattr(ir, "_lib_used_props", None)
+    if cache is not None:
+        return cache
+    intro = _class_introduces(ir)
+    byspec = _class_index(ir)
+    cache = frozenset(p for spec, props in intro.items() for p in props
+                      if _mentions_prop(byspec[spec], p))
+    try:
+        ir._lib_used_props = cache
+    except Exception:                                      # noqa: BLE001
+        pass
+    return cache
+
+
+def _class_index(ir):
+    """species -> class object."""
+    cache = getattr(ir, "_class_by_species", None)
+    if cache is None:
+        cache = {o.species: o for s in ir.scripts.values() for o in s.objects if o.is_class}
+        try:
+            ir._class_by_species = cache
+        except Exception:                                  # noqa: BLE001
+            pass
+    return cache
+
+
+def _mentions_prop(cls, prop):
+    """Does any method of `cls` name `prop` -- as its own property, or as a selector?"""
+    for body in cls.methods.values():
+        for n in I.walk(body):
+            if (isinstance(n, dict) and n.get("name") == prop
+                    and n.get("t") in ("Variable", "Property", "Selector")):
+                return True
+    return False
+
+
+def derive_global_props(ir):
+    """`{(script, selector)}` for the property store reached through a GLOBAL-held singleton.
+
+    Same store as `derive_obj_props` and the same discovery rule -- a property is state if the
+    game both WRITES it with a constant and READS it back -- with the receiver resolved one more
+    way (`_global_instances`) and the eligible properties bounded by `_introduced_unused`, which
+    is where the whole justification for that widening lives."""
+    reads, writes = collections.Counter(), collections.Counter()
+    ginst = _global_instances(ir)
+    if not ginst:
+        return set()
+    allowed = {g: (scr, _introduced_unused(ir, o)) for g, (o, scr) in ginst.items()}
+    for s in ir.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for n in I.walk(body):
+                if n.get("t") != "Send":
+                    continue
+                try:
+                    recv, msgs = I.send_pairs(n)
+                except Exception:                          # noqa: BLE001
+                    continue
+                hit = allowed.get(recv["index"]) if I.is_global(recv) else None
+                if hit is None:
+                    continue
+                scr, props = hit
+                for sel, ps in msgs:
+                    if sel not in props:
+                        continue
+                    if ps and I.as_int(ps[0]) is not None:
+                        writes[(scr, sel)] += 1
+                    elif not ps:
+                        reads[(scr, sel)] += 1
+    return set(reads) & set(writes)
+
+
+def _global_prop_key(ir, recv, sel):
+    """`(script, selector)` if this send addresses a global-held singleton's state property."""
+    if not (isinstance(recv, dict) and I.is_global(recv)):
+        return None
+    hit = _global_instances(ir).get(recv["index"])
+    if hit is None:
+        return None
+    obj, scr = hit
+    return (scr, sel) if sel in _introduced_unused(ir, obj) else None
+
+
 def _singleton_scripts(ir):
     """{name: script} for names that name exactly ONE object or class in the game."""
     cache = getattr(ir, "_singleton_objs", None)
@@ -1601,16 +1994,107 @@ def derive_obj_props(ir):
     return set(reads) & set(writes)
 
 
-def lower_obj_props(ir, pairs):
+def _split_chained_writes(ir, pairs, split_chains):
+    """Break `(recv a: 1 <prop>: 2 c: 3)` into `[(recv a: 1), <prop write>, (recv c: 3)]`, so a
+    property write buried in a chain can be lowered like any other.
+
+    Only in STATEMENT position -- a direct kid of a statement `List` -- which is the whole safety
+    argument. There the send's value is discarded, so splitting one send into several changes
+    nothing about what runs, in what order, or under what condition; in an EXPRESSION a `List`
+    where a value was expected would be a lie. That position test is also why this cannot be done
+    from inside the plain node walk: it is a fact about the parent, not the node.
+
+    Runs are preserved rather than reordered (`a:` before the write, `c:` after) because sibling
+    effects under one path condition are read as a sequence, and one of them may be a `newRoom:`
+    or a `put:` whose order against the write is the whole content of the statement."""
+    if not split_chains:
+        return 0
+    lists = []
+    for s in ir.scripts.values():
+        bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for node in I.walk(body):
+                if node.get("t") == "List" and node.get("kids"):
+                    lists.append(node)
+    n_split = 0
+    for lst in lists:
+        out, changed = [], False
+        for kid in lst["kids"]:
+            pieces = _split_one(ir, kid, pairs, split_chains) if isinstance(kid, dict) else None
+            if pieces is None:
+                out.append(kid)
+            else:
+                out.extend(pieces)
+                changed = True
+                n_split += 1
+        if changed:
+            lst["kids"] = out
+    return n_split
+
+
+def _split_one(ir, node, pairs, split_chains):
+    """One chained send -> the list it becomes, or None if there is nothing here to split."""
+    if node.get("t") != "Send":
+        return None
+    kids = node.get("kids") or []
+    if len(kids) < 3:                                      # receiver + one message: nothing to do
+        return None
+    recv = kids[0]
+    try:
+        msgs = I.send_pairs(node)[1]
+    except Exception:                                      # noqa: BLE001
+        return None
+    if len(msgs) != len(kids) - 1:
+        return None
+    def key_of(sel, ps):
+        if not ps or I.as_int(ps[0]) is None:              # only CONSTANT writes are lowerable
+            return None
+        k = _global_prop_key(ir, recv, sel)
+        if k is None:
+            rs = _prop_receiver_script(ir, recv)
+            k = (rs, sel) if rs is not None else None
+        return k if (k in pairs and k in split_chains) else None
+    if not any(key_of(sel, ps) for sel, ps in msgs):
+        return None
+    out, run = [], []
+    def flush():
+        if run:
+            out.append({"t": "Send", "kids": [copy.deepcopy(recv)] + run[:]})
+            run.clear()
+    for sm, (sel, ps) in zip(kids[1:], msgs):
+        k = key_of(sel, ps)
+        if k is None:
+            run.append(sm)
+            continue
+        flush()
+        # A one-message Send, not the final Assignment: the pass that follows resolves the key to
+        # a register index, and there must be exactly ONE place that does that.
+        out.append({"t": "Send", "kids": [copy.deepcopy(recv), sm]})
+    flush()
+    return out
+
+
+def lower_obj_props(ir, pairs, split_chains=()):
     """Rewrite resolved `(ScriptID s n) <prop>:` reads and constant writes into synthetic globals,
     so object-property state reaches the register machinery as ordinary registers.
 
     Same shape as `lower_flags` / `lower_prop_flags`, and deliberately so: every store we model
-    ends up as a global, and nothing downstream learns a new concept. Chained sends and
-    non-constant writes are left alone -- an unmodelled write can only miss a stranding, never
-    invent one."""
+    ends up as a global, and nothing downstream learns a new concept. Non-constant writes are
+    left alone -- an unmodelled write can only miss a stranding, never invent one.
+
+    ⚠️ CHAINED SENDS ARE THE EXCEPTION TO THAT REASSURANCE, and `split_chains` is why the
+    argument exists. `(global0 put: 32 wearingGown: 1 setMotion: ...)` cannot be rewritten in
+    place -- the node carries three messages and a Global node carries one -- so it used to be
+    skipped, which is not "missing a write" but HALF A STORE: a register whose reads are modelled
+    and whose only setter is not reads 0 forever, and a permanent 0 fabricates a seal. Exactly
+    what `derive_room_locals` refuses to do for the same reason. Keys listed in `split_chains`
+    are split instead (see `_split_chained_writes`), and the rest keep the old behaviour --
+    curing those is a change with its own blast radius (283 more sites in KQ6, 90 in KQ4) and
+    belongs to its own measurement, not to this one."""
     if not pairs:
         return 0, 0
+    # FIRST, so the pass below sees plain one-message sends where a chain used to be.
+    _split_chained_writes(ir, pairs, split_chains)
     max_gi, sites = 0, []
     for s in ir.scripts.values():
         bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
@@ -1627,12 +2111,13 @@ def lower_obj_props(ir, pairs):
                     continue
                 if len(msgs) != 1:
                     continue                               # chained: rewriting drops the rest
-                rs = _prop_receiver_script(ir, recv)
-                if rs is None:
-                    continue
                 sel, ps = msgs[0]
-                key = (rs, sel)
-                if key not in pairs:
+                rs = _prop_receiver_script(ir, recv)
+                # A `ScriptID`/named receiver keys on its script; a GLOBAL-held one resolves
+                # through `_global_prop_key`, which also applies that case's property bound.
+                # Never both: `_prop_receiver_script` only accepts Object/Class/ScriptID nodes.
+                key = (rs, sel) if rs is not None else _global_prop_key(ir, recv, sel)
+                if key is None or key not in pairs:
                     continue
                 if not ps:
                     sites.append((node, key, None))
@@ -2075,6 +2560,273 @@ def lower_item_bit_flags(ir, flags, item_of_receiver):
     return n_read, n_write
 
 
+def _param_derived(n):
+    """True when some leaf of `n` is a Parameter of the enclosing callable."""
+    return any(isinstance(k, dict) and k.get("t") == "Variable"
+               and k.get("vtype") == "Parameter"
+               for k in I.walk(n) if isinstance(k, dict))
+
+
+def _accessor_callables(ir):
+    for snum, s in ir.scripts.items():
+        for o in s.objects:
+            for mn, b in o.methods.items():
+                yield snum, o, mn, b
+        for pn, b in s.procs.items():
+            yield snum, None, pn, b
+
+
+def derive_mask_accessors(ir):
+    """Mask-bit stores reached through an ACCESSOR: `{global: spec}` for globals whose
+    literal masks arrive one call-frame away.
+
+    The SEVENTH container -- the sixth (`derive_mask_globals`, a plain mask-word global)
+    with the same relationship to its call sites that the flag word-array has to
+    `derive_flags`' procs: the WRITE is an owner method accumulating a byte-masked
+    parameter (`(+= gN (&= param $00ff))`, reached as `((ScriptID s x) doit: <literal>)`),
+    and the READ is a proc bit-testing the global against its OWN parameter
+    (`(& gN param)`), optionally with a cumulative arm
+    (`(== (- param k) (& gN (- param k)))` -- "every beat below mine has fired").
+    The accumulate is modelled as a bit SET, which is what the reader's pure bit-tests
+    say the store means; `+=` vs `|=` is the owner's spelling, not its semantics.
+
+    MEASURED (2026-08-11, tools/probe_mask_accessor.py over all ten decompiled titles):
+    exactly ONE global matches -- LB2's global124, the per-act story-beat word whose
+    cumulative test gates the act-1 gown chain (`(proc0_10 16 1)` at the rm250 trash =
+    beats 1+2+4+8, and mask 1's only writers sit beside the pressPass `get: 6`). The
+    score (g15, `changeScore`) is parameterised on the write side in every title and
+    refused everywhere by the reader requirement; LB2's icon mask (g116) is refused
+    because its reader's masks are computed (`(>> $8000 temp0)`), not parameters.
+
+    Derived by SHAPE, refusing what it cannot rewrite exactly:
+      * exactly ONE accumulate site for the global, in a named owner;
+      * a reader's test operand must derive from its own parameter;
+      * >=1 owner call site with a literal argument, resolved through the script export
+        table, and >=1 reader call with literal arguments -- a store nobody reads or
+        writes through resolvable literals lowers to nothing;
+      * non-literal call sites are skipped and reported, never guessed at (the
+        lower_flags gap: an unmodelled write cannot invent a stranding, only miss one).
+        A send that reaches the owner through a VARIABLE rather than a `ScriptID` is
+        invisible to this derivation entirely -- the same aliasing bound every store
+        carries."""
+    # 1. accumulate sites: augmented global writes whose value derives from a parameter
+    accums = {}
+    for snum, o, mn, b in _accessor_callables(ir):
+        for n in I.walk(b):
+            if not isinstance(n, dict) or n.get("t") not in ("AssignmentAdd",
+                                                             "AssignmentBinOr"):
+                continue
+            ks = n.get("kids") or []
+            if not (ks and I.is_global(ks[0]) and len(ks) > 1 and _param_derived(ks[1])):
+                continue
+            accums.setdefault(ks[0]["index"], []).append((snum, o, mn, n, b))
+    out = {}
+    for gi, sites in accums.items():
+        if len(sites) != 1 or sites[0][1] is None:      # one site, and it must be a METHOD
+            continue                                    # (call sites resolve via exports)
+        snum, o, mn, accnode, obody = sites[0]
+        wmask = 0xFFFF
+        for n in I.walk(obody):
+            if isinstance(n, dict) and n.get("t") == "AssignmentBinAnd":
+                ks = n.get("kids") or []
+                if ks and isinstance(ks[0], dict) and ks[0].get("vtype") == "Parameter":
+                    v = I.as_int(ks[1]) if len(ks) > 1 else None
+                    if v is not None:
+                        wmask = v & 0xFFFF
+        # 2. reader procs: bit-test the global against their own parameter
+        readers, reader_nodes = {}, []
+        for rsnum, ro, rpn, rb in _accessor_callables(ir):
+            if ro is not None:
+                continue
+            hits = []
+            for n in I.walk(rb):
+                if not (isinstance(n, dict) and n.get("t") == "BinAnd"):
+                    continue
+                rks = n.get("kids") or []
+                if not any(I.is_global(k, gi) for k in rks if isinstance(k, dict)):
+                    continue
+                other = [k for k in rks if not (isinstance(k, dict) and I.is_global(k, gi))]
+                if other and _param_derived(other[0]):
+                    hits.append(n)
+            if not hits:
+                continue
+            pmask = 0xFFFF
+            for n in I.walk(rb):
+                if isinstance(n, dict) and n.get("t") == "AssignmentBinAnd":
+                    ks = n.get("kids") or []
+                    if ks and isinstance(ks[0], dict) and ks[0].get("vtype") == "Parameter":
+                        v = I.as_int(ks[1]) if len(ks) > 1 else None
+                        if v is not None:
+                            pmask = v & 0xFFFF
+            cum_k = None
+            for n in I.walk(rb):
+                if not (isinstance(n, dict) and n.get("t") == "Eq"):
+                    continue
+                ks = n.get("kids") or []
+                if len(ks) != 2:
+                    continue
+                for e, other in ((ks[0], ks[1]), (ks[1], ks[0])):
+                    if isinstance(other, dict) and other.get("t") == "BinAnd" \
+                            and any(I.is_global(k, gi) for k in (other.get("kids") or [])
+                                    if isinstance(k, dict)) \
+                            and isinstance(e, dict) and e.get("t") == "Sub":
+                        sk = e.get("kids") or []
+                        kk = I.as_int(sk[1]) if len(sk) > 1 else None
+                        if kk is not None and _param_derived(sk[0] if sk else {}):
+                            cum_k = kk
+            readers[(rsnum, rpn)] = {"pmask": pmask, "cum_k": cum_k}
+            reader_nodes.extend(hits)
+        if not readers:
+            continue
+        # 3. acceptance needs >=1 literal writer call site and >=1 literal reader call
+        wlit = rlit = 0
+        for csnum, co, cmn, cb in _accessor_callables(ir):
+            for n in I.walk(cb):
+                if not isinstance(n, dict):
+                    continue
+                if n.get("t") == "Send":
+                    ks = n.get("kids") or []
+                    if ks and isinstance(ks[0], dict) and ks[0].get("t") == "KernelCall" \
+                            and ks[0].get("name") == "ScriptID":
+                        ra = [I.as_int(k) for k in (ks[0].get("kids") or [])]
+                        tgt = ir.export_target(ra[0], ra[1] if len(ra) > 1
+                                               and ra[1] is not None else 0) \
+                            if ra and ra[0] is not None else None
+                        if tgt == (snum, o.name):
+                            msgs = [m for m in ks[1:] if isinstance(m, dict)
+                                    and m.get("t") == "SendMessage"]
+                            if len(msgs) == 1:
+                                mk = msgs[0].get("kids") or []
+                                sel = mk[0].get("name") if mk and isinstance(mk[0], dict) \
+                                    else None
+                                if sel == mn and len(mk) > 1 \
+                                        and I.as_int(mk[1]) is not None:
+                                    wlit += 1
+                elif n.get("t") in ("PublicCall", "LocalCall"):
+                    for (rs, rp) in readers:
+                        if n.get("name") == rp and (n.get("t") == "LocalCall"
+                                                    and csnum == rs
+                                                    or n.get("script") == rs):
+                            a = [I.as_int(k) for k in (n.get("kids") or [])]
+                            if a and a[0] is not None:
+                                rlit += 1
+        if wlit and rlit:
+            out[gi] = {"owner": (snum, o.name, mn), "wmask": wmask, "readers": readers,
+                       "acc_node": accnode, "reader_nodes": reader_nodes}
+    return out
+
+
+def lower_mask_accessors(ir, accs):
+    """Rewrite every resolvable accessor call into the sixth store's own direct idioms,
+    IN PLACE, so `derive_mask_globals`/`lower_mask_globals` take the store from there.
+
+      * owner call `((ScriptID s x) <m>: N)`  ->  `(|= gG (N & wmask))`; a zero payload
+        (a pure clock tick) becomes a no-op literal;
+      * reader call `(proc N)`                ->  `(& gG (N & pmask))`;
+      * reader call `(proc N truthy)`         ->  And over per-bit `(& gG bit)` for the
+        bits of `(N & pmask) - k` (the body's own cumulative offset), constant-true when
+        no bits remain, refused when the offset underflows;
+      * the owner's accumulate and the reader bodies' tests are HUSKED to literals:
+        every semantic site now lives at a rewritten call site, and a husk left readable
+        would re-condemn the global for exactly the non-literal shapes the rewrite just
+        retired.
+
+    Allocates NOTHING -- the sixth store owns allocation, so register identity for every
+    other store is untouched by construction. Returns (lowered_writes, lowered_reads,
+    [(reason, script, where) skips])."""
+    wlow = rlow = 0
+    skips = []
+    for gi, spec in sorted(accs.items()):
+        ownum, oname, omn = spec["owner"]
+        wmask, readers = spec["wmask"], spec["readers"]
+        for csnum, co, cmn, cb in _accessor_callables(ir):
+            plan = []
+            for n in I.walk(cb):
+                if not isinstance(n, dict):
+                    continue
+                if n.get("t") == "Send":
+                    ks = n.get("kids") or []
+                    if not (ks and isinstance(ks[0], dict)
+                            and ks[0].get("t") == "KernelCall"
+                            and ks[0].get("name") == "ScriptID"):
+                        continue
+                    ra = [I.as_int(k) for k in (ks[0].get("kids") or [])]
+                    tgt = ir.export_target(ra[0], ra[1] if len(ra) > 1
+                                           and ra[1] is not None else 0) \
+                        if ra and ra[0] is not None else None
+                    if tgt != (ownum, oname):
+                        continue
+                    msgs = [m for m in ks[1:] if isinstance(m, dict)
+                            and m.get("t") == "SendMessage"]
+                    if len(msgs) != 1:
+                        skips.append(("chained-send", csnum, cmn))
+                        continue
+                    mk = msgs[0].get("kids") or []
+                    sel = mk[0].get("name") if mk and isinstance(mk[0], dict) else None
+                    if sel != omn:
+                        continue
+                    arg = I.as_int(mk[1]) if len(mk) > 1 else None
+                    if arg is None:
+                        skips.append(("non-literal-write", csnum, cmn))
+                        continue
+                    bits = arg & wmask
+                    rep = {"t": "AssignmentBinOr",
+                           "kids": [{"t": "Variable", "vtype": "Global", "index": gi},
+                                    {"t": "Number", "value": bits}]} if bits \
+                        else {"t": "Number", "value": 0}
+                    plan.append((n, rep, "w"))
+                elif n.get("t") in ("PublicCall", "LocalCall"):
+                    info = None
+                    for (rs, rp), ri in readers.items():
+                        if n.get("name") == rp and (n.get("t") == "LocalCall"
+                                                    and csnum == rs
+                                                    or n.get("script") == rs):
+                            info = ri
+                    if info is None:
+                        continue
+                    a = [I.as_int(k) for k in (n.get("kids") or [])]
+                    nargs = len(n.get("kids") or [])
+                    if not a or a[0] is None:
+                        skips.append(("non-literal-read", csnum, cmn))
+                        continue
+                    m = a[0] & info["pmask"]
+                    if nargs > 1 and a[1] is None:
+                        skips.append(("non-literal-mode", csnum, cmn))
+                        continue
+                    if nargs > 1 and a[1] and info["cum_k"] is not None:
+                        mm = m - info["cum_k"]
+                        if mm < 0:
+                            skips.append(("cumulative-underflow", csnum, cmn))
+                            continue
+                        terms = [{"t": "BinAnd",
+                                  "kids": [{"t": "Variable", "vtype": "Global",
+                                            "index": gi},
+                                           {"t": "Number", "value": 1 << b}]}
+                                 for b in range(16) if (mm >> b) & 1]
+                        rep = ({"t": "Number", "value": 1} if not terms else
+                               terms[0] if len(terms) == 1 else
+                               {"t": "And", "kids": terms})
+                    else:
+                        rep = {"t": "BinAnd",
+                               "kids": [{"t": "Variable", "vtype": "Global", "index": gi},
+                                        {"t": "Number", "value": m}]} if m \
+                            else {"t": "Number", "value": 0}
+                    plan.append((n, rep, "r"))
+            for n, rep, kind in plan:
+                n.clear()
+                n.update(rep)
+                if kind == "w":
+                    wlow += 1
+                else:
+                    rlow += 1
+        spec["acc_node"].clear()
+        spec["acc_node"].update({"t": "Number", "value": 0})
+        for n in spec["reader_nodes"]:
+            n.clear()
+            n.update({"t": "Number", "value": 0})
+    return wlow, rlow, skips
+
+
 def derive_mask_globals(ir):
     """`{global: universe-of-bits}` for plain globals used ONLY as bit-mask words.
 
@@ -2178,8 +2930,15 @@ def _mask_site(n):
     if t in ("AssignmentBinOr", "AssignmentBinAnd") and ks and g_of(ks[0]) is not None:
         m = _const_or(ks[1]) if len(ks) > 1 else None
         gi = g_of(ks[0])
+        # A non-literal MASK write is a SKIP, not a condemnation: `|=`/`&=` still say the
+        # global is bits -- the abstraction per-bit lowering expresses -- only the values are
+        # unknown, so the site is left standing and its writes go unmodelled (the lower_flags
+        # gap: an unmodelled write cannot invent a stranding, only miss one). Arithmetic
+        # writes and value reads still refuse, because there the ABSTRACTION is wrong. LB2's
+        # debug console (`(|= global124 (ReadNumber @temp162))`) is the site class this
+        # admits -- and its effects are scope-dropped anyway (no room ever arms debugHandler).
         return ("or" if t == "AssignmentBinOr" else "and", gi, m) if m is not None \
-            else ("bad", gi, None)
+            else ("mask_skip", gi, None)
     if t == "Assignment" and ks and g_of(ks[0]) is not None:
         v = I.as_int(ks[1]) if len(ks) > 1 else None
         # a non-literal store is only 'bad' for a global OTHER shapes made a candidate;
@@ -2642,3 +3401,101 @@ def doverb_item_messages(ir):
                 if m is not None and m != 65535:
                     base_verbs.add(m)
     return {m: i for m, i in msg_idx.items() if counts[m] == 1 and m not in base_verbs}
+
+
+def lower_property_case_labels(ir):
+    """A `switch` case label that is a PROPERTY, resolved to the literal it holds.
+
+        (switch global12                 ; global12 = the previous room
+            (north  <arrived from the north neighbour>)
+            (south  <arrived from the south neighbour>)
+            (330    <arrived from rm330>))
+
+    `north` here is the ROOM OBJECT'S OWN `north` property -- a room number -- so the arm means
+    `global12 == <that number>`, exactly as the numeric arms do. But `ir.control_shape` builds an
+    `Eq` guard only for a `Number` label and hands a `Property` label back as an UNGUARDED arm, so
+    the model reads every arrival-direction branch as taken unconditionally, all at once. LB2 mixes
+    the two spellings inside a single switch (`rm350::init` has four Property arms and two numeric
+    ones), which is how the asymmetry hid: the numeric arms ordered, the property arms did not.
+
+    Rewriting the label is the whole fix -- `control_shape` then treats it like any other numeric
+    case, including the `priors` accumulation that makes the arms mutually exclusive and gives the
+    `else` its real condition.
+
+    FOUR RESTRICTIONS, each one a claim about what a property label can be trusted to mean:
+
+    * **INSTANCE methods only** (`not o.is_class`). In a CLASS method the label names whatever the
+      RECEIVING INSTANCE holds, and the class's own value is only a default. LB2's `Door` is the
+      case and it is not hypothetical: `Door.sc:20` declares `listenVerb 0` while `rm510`, `rm560`,
+      `rm600` and `rm610` each override it to `38` (the water glass), and `Door::doVerb`'s
+      `(listenVerb (self listen:))` is exactly this idiom. Resolving against the class would assert
+      the wrong number for all four. That arm therefore stays unguarded and the eavesdrop mechanic
+      stays free -- a KNOWN REMAINING GAP, and closing it needs per-instance specialisation of a
+      class method, not this pass. See docs/LB2-ORACLE.md §7v.
+    * **A property the object ASSIGNS is not a literal.** If anything writes that selector the
+      declared value is an initial value, not an invariant.
+    * **0 and $ffff are sentinels, never destinations.** `Door`'s `listenVerb 0` means "this door
+      cannot be listened at"; a room's `north 0` means "no exit north". Resolving either would
+      manufacture a guard on a value the game uses to mean ABSENT -- and on a `param1` dispatch
+      head, where `_cmp_atom` turns `param1 == N` into OWN(N), `0` would invent a requirement to
+      hold item 0.
+    * **Only under a head `control_shape` treats as VALUED** -- a global, or a parameter/selected-
+      item dispatch. Anywhere else the label yields no guard whether or not we resolve it, so
+      rewriting would be noise in the IR with no consumer.
+
+    Returns the census as `[(script, object, method, name, value, head)]` so the caller can print
+    what it did; the IR is mutated in place."""
+    sites = []
+    for sn, sc in ir.scripts.items():
+        for o in sc.objects:
+            if o.is_class:                      # the value belongs to the instance, not the class
+                continue
+            props = o.props or {}
+            if not props:
+                continue
+            written = _assigned_selectors(o)
+            for mname, meth in o.methods.items():
+                for node in I.walk(meth):
+                    if node.get("t") != "Switch":
+                        continue
+                    ks = node.get("kids") or []
+                    head = ks[0] if ks else None
+                    if not isinstance(head, dict):
+                        continue
+                    glob = (head.get("t") == "Variable" and head.get("vtype") == "Global")
+                    disp = (head.get("t") == "Variable" and head.get("vtype") == "Parameter") \
+                        or I.is_selected_item(head)
+                    if not (glob or disp):
+                        continue
+                    for c in ks[1:]:
+                        ck = c.get("kids") or []
+                        lbl = ck[0] if ck else None
+                        if not (isinstance(lbl, dict) and lbl.get("t") == "Property"):
+                            continue
+                        name = lbl.get("name")
+                        v = props.get(name)
+                        if v is None or v in (0, 0xffff) or name in written:
+                            continue
+                        lbl.clear()
+                        lbl["t"] = "Number"
+                        lbl["value"] = v
+                        sites.append((sn, o.name, mname, name, v,
+                                      head.get("index") if glob else "dispatch"))
+    return sites
+
+
+def _assigned_selectors(obj):
+    """Selectors this object writes -- as a property assignment or as a one-argument send to
+    itself. Their declared value is an initial value, not a constant."""
+    out = set()
+    for m in obj.methods.values():
+        for n in I.walk(m):
+            t = n.get("t")
+            ks = n.get("kids") or []
+            if t == "Assignment" and ks and isinstance(ks[0], dict) \
+                    and ks[0].get("t") == "Property":
+                out.add(ks[0].get("name"))
+            if t == "SendMessage" and ks and isinstance(ks[0], dict) \
+                    and ks[0].get("t") == "Selector" and len(ks) > 1:
+                out.add(ks[0].get("name"))
+    return out

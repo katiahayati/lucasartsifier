@@ -1,75 +1,4 @@
 {
-  "KQ4": {
-    "action_specs": [],
-    "dangerous": [
-      "Magic_Fruit@rm1->99 rooms"
-    ],
-    "death_signal": [
-      127,
-      null
-    ],
-    "debug_globals": [
-      215
-    ],
-    "edge_specs": [
-      "rm31->rm44: (and (gEgo has: 8) (gEgo has: 24))",
-      "rm43->rm31: (gEgo has: 21)",
-      "rm45->rm690: (and (gEgo has: 25) (gEgo has: 33))"
-    ],
-    "exhaustion": [
-      "Cupid_s_Bow@1->[3, 20, 26, 27, 82]",
-      "Cupid_s_Bow@82->[3, 20, 26, 27]",
-      "Cupid_s_Bow@[20, 26, 27]->[3, 82]",
-      "Shovel@16->[18]",
-      "Shovel@18->[16]"
-    ],
-    "fatal_uses": [],
-    "gate_specs": [
-      "rm16/3: (gEgo has: 7)",
-      "rm16/3: (gEgo has: 7)",
-      "rm16/3: (gEgo has: 7)",
-      "rm18/3: (gEgo has: 7)",
-      "rm18/3: (gEgo has: 7)",
-      "rm18/3: (gEgo has: 7)",
-      "rm69/3: (gEgo has: 7)"
-    ],
-    "goal_rooms": [
-      694
-    ],
-    "groups": [],
-    "joint": [
-      "Dead_Fish@[43]",
-      "Golden_Bridle@[20, 26, 27]",
-      "Magic_Fruit@[690, 693, 694]",
-      "Magic_Hen@[690]",
-      "Peacock_Feather@[44]"
-    ],
-    "placements": [
-      "Main/Magic_Fruit: applied=True kind=None",
-      "Main: applied=True kind=register-write sites=1",
-      "Room31: applied=True kind=arm-event sites=2",
-      "Room43: applied=True kind=edge-exit sites=1",
-      "Room45: applied=True kind=setscript sites=1"
-    ],
-    "register_strandings": [],
-    "register_write_specs": [
-      "reg100=1: (and (gEgo has: 1) (gEgo has: 17))"
-    ],
-    "sinks": [
-      "Magic_Fruit@rm0 dest=999 refused=False"
-    ],
-    "softlock_items": [
-      "Diamond_Pouch",
-      "Peacock_Feather",
-      "Fishing_Pole",
-      "Golden_Bridle",
-      "Dead_Fish",
-      "Magic_Fruit",
-      "Magic_Hen"
-    ],
-    "start_room": 99,
-    "tolls": []
-  },
   "KQ6": {
     "action_specs": [
       "skull@rm420: (not (gEgo has: 11))"
@@ -196,19 +125,18 @@
   },
   "dagger": {
     "action_specs": [],
-    "dangerous": [
-      "pressPass@rm240->3 rooms",
-      "pressPass@rm240->3 rooms"
-    ],
+    "dangerous": [],
     "death_signal": [
       370,
       1
     ],
     "debug_globals": [],
     "edge_specs": [
+      "rm210->rm250: (gEgo has: 6)",
+      "rm26->rm330: (gEgo has: 6)",
+      "rm26->rm420: (and (gEgo has: 10) (gEgo has: 11) (gEgo has: 13) (gEgo has: 14) (gEgo has: 16) (gEgo has: 19) (gEgo has: 31))",
       "rm26->rm750: (and (gEgo has: 10) (gEgo has: 11) (gEgo has: 26) (gEgo has: 27) (gEgo has: 31) (or (gEgo has: 10) (gEgo has: 11)))",
-      "rm440->rm435: (gEgo has: 6)",
-      "rm480->rm435: (gEgo has: 6)"
+      "rm280->rm250: (gEgo has: 6)"
     ],
     "exhaustion": [],
     "fatal_uses": [],
@@ -222,21 +150,49 @@
     "groups": [],
     "joint": [],
     "placements": [
-      "Main/pressPass: applied=True kind=None",
-      "rm26->rm750: applied=False kind=sole-exit why=no controllable trigger (sole-exit) and no room-property exit",
-      "rm440: applied=True kind=arm-event sites=1",
-      "rm480: applied=True kind=arm-event sites=1"
+      "rm210: applied=True kind=setscript sites=1",
+      "rm26->rm330: applied=True kind=entry-deferral-PARTIAL sites=2 entry_sites=2",
+      "rm26->rm420: applied=True kind=entry-deferral-PARTIAL sites=1 entry_sites=1",
+      "rm26->rm750: applied=True kind=demand-forwarded-to-hold sites=1",
+      "rm280: applied=True kind=setscript sites=1"
     ],
-    "register_strandings": [],
-    "register_write_specs": [],
-    "sinks": [
-      "pressPass@rm0 dest=0 refused=False",
-      "pressPass@rm0 dest=0 refused=False"
+    "register_strandings": [
+      "bifocals@reg(12, 123)=(454, 5)->[750]",
+      "cheese@reg(12, 123)=(26, 5)->[740]",
+      "daggerOfRa@reg(12, 123)=(26, 5)->[500, 750]",
+      "daggerOfRa@reg(12, 123)=(520, 5)->[750]",
+      "grapes@reg(12, 123)=(26, 5)->[750]",
+      "grapes@reg(12, 123)=(520, 5)->[750]",
+      "grapes@reg123=5->[520, 750]",
+      "pressPass@reg(12, 123)=(110, 2)->[335]",
+      "pressPass@reg(12, 123)=(26, 2)->[335]",
+      "pressPass@reg(12, 123)=(330, 3)->[335]",
+      "pressPass@reg123=2->[335]",
+      "pressPass@reg123=5->[335]",
+      "redHair@reg(12, 123)=(454, 5)->[750]",
+      "smellingSalts@reg(12, 123)=(26, 5)->[720]",
+      "smellingSalts@reg123=5->[720]",
+      "snakeLasso@reg(12, 123)=(26, 5)->[700]",
+      "snakeOil@reg(12, 123)=(26, 5)->[730]",
+      "wireCutters@reg(12, 123)=(26, 5)->[435, 500, 750]",
+      "wireCutters@reg(12, 123)=(520, 5)->[750]"
     ],
+    "register_value_strandings": [
+      "reg150==[0]@seal(12, 123)=(26, 5)->[730] via sRepelSnakes"
+    ],
+    "register_write_specs": [
+      "reg123=2: (gEgo has: 6) [REFUSED]",
+      "reg123=5: (and (gEgo has: 6) (gEgo has: 13) (gEgo has: 31)) [REFUSED]"
+    ],
+    "sinks": [],
     "softlock_items": [
       "pressPass",
       "wireCutters",
       "daggerOfRa",
+      "smellingSalts",
+      "snakeOil",
+      "cheese",
+      "snakeLasso",
       "bifocals",
       "redHair",
       "grapes"

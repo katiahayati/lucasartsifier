@@ -1,8 +1,9 @@
-"""WATCHED SURFACES: KQ6, KQ4 and LB2's full output, frozen so a change is REPORTED, not silent.
+"""WATCHED SURFACES: KQ6 and LB2's full output, frozen so a change is REPORTED, not silent.
 
 This is deliberately NOT `test_golden`, and the difference is the point.
 
-  `test_golden` (LSL2)   the behaviour is the ORACLE. "If this test fails, the DEFAULT
+  `test_golden` (LSL2, KQ4)
+                         the behaviour is the ORACLE. "If this test fails, the DEFAULT
                          assumption is that the change is wrong, not the golden."
   this file              the behaviour is WATCHED. A change is allowed -- these games are
                          under active work and their surfaces are expected to move -- but it
@@ -39,10 +40,17 @@ PASS, FAIL = [], []
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(_HERE, "testdata", "watched_surfaces.json")
 
-# The games whose surfaces are watched. LSL2 is absent on purpose -- it has `test_golden`,
-# which holds it to the stricter standard. `dagger` is LB2 (Laura Bow 2); the identifier is
-# what `config.by_name` and the build directory use.
-WATCHED = ("KQ6", "KQ4", "dagger")
+# The games whose surfaces are WATCHED -- i.e. still moving, so a change is reported and then
+# blessed. LSL2 and KQ4 are absent on purpose: both are VALIDATED and live in `test_golden`,
+# which holds them to the stricter standard (a failure means the change is wrong, not that the
+# baseline needs refreshing). KQ4 moved out on 2026-08-09 by user ruling -- it had been declared
+# golden since 2026-07-25 while still sitting in this tier, and a reference you are allowed to
+# re-bless is not a reference. Its frozen rows went to `testdata/kq4.golden.json` verbatim.
+#
+# A game belongs here while its output is expected to improve, and graduates to `test_golden`
+# when the user says its behaviour is validated. Do not move one back without asking.
+# `dagger` is LB2 (Laura Bow 2); the identifier is what `config.by_name` and the build dir use.
+WATCHED = ("KQ6", "dagger")
 LABEL = {"dagger": "LB2"}
 
 

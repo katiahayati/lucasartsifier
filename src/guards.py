@@ -30,6 +30,7 @@ This module only DERIVES and reports specs. It writes no game files.
 """
 from __future__ import annotations
 
+import re
 import sys
 
 from collections import defaultdict
@@ -508,6 +509,156 @@ def commit_entry_frontier(s, room):
                   if room in bs and a != room and a in outside)
 
 
+def defer_to_entry(s, sp):
+    """A demand refused at a SOLE-EXIT pocket, re-sited: the register stage that discriminates
+    the spec's crossing, and the pocket's predecessor rooms where that stage is presentable AND
+    the demand is still satisfiable. None when the crossing cannot be discriminated -- a
+    stage-less deferral would gate EVERY entry to the pocket, including the crossings this
+    demand says nothing about.
+
+    The site list is ALL predecessors, deliberately NOT `commit_entry_frontier`: that frontier
+    is built for a one-visit pocket (rooms crossing in from `reach_avoiding`), and a game that
+    STARTS behind its own act-break card (LB2: the intro's 0->1 break) makes the whole game
+    "inside the pocket", leaving only the intro rooms. A sole-exit pocket is a different shape:
+    every entry is a fresh committed crossing, so every predecessor is a candidate refusal
+    site, and what protects the player is not the frontier but the two per-site filters --
+    the stage (a wrap at the wrong act is vacuous by the game's own register) and COMPLIANCE
+    (`unsatisfiable` at the site's own crossing: a site where the demanded items can no longer
+    be sourced is refused, because a demand you cannot meet is a wall, the failure this project
+    holds to be worse than the softlock).
+
+    LB2's act-break card is the shape this exists for: script 26 holds exactly one `newRoom:`,
+    inside the very cutscene an arm-event would decline to start, so a refusal in place leaves
+    the player on the title card with nothing left to run (docs/LB2-ORACLE.md §7i, measured by
+    reading the emitted source). The controllable moment is the crossing INTO the card -- the
+    same doctrine as the arrival-commit re-site -- and what distinguishes "the act-1 break" from
+    "the act-4 break" there is not position but register state: the out-edge's own `_emeta`
+    requirement (the act counter), the discriminator the landing propagation already spells as
+    `(or (not <stage>) <demand>)`.
+
+    Positional registers (previous-room, current-room) are dropped from the stage for the same
+    reason `_guard_arrival_entries` drops prev-room clause heads: at the frontier they name
+    where the player is standing NOW, which is never the pocket. Beyond that the reading is
+    STRICT in the refusing direction: every meta alternative must yield a non-empty stage of
+    single-valued, spellable registers, or the whole deferral returns None -- one stage-free or
+    unspellable way through means the demand cannot be scoped, and an under-stage gates
+    crossings the spec says nothing about."""
+    import extract as X
+    a, b = sp["from_room"], sp["to_room"]
+    positional = {M.prev_room_reg(s.em), getattr(X, "_CURROOM", None)}
+    alts, conds = [], []
+    for (req, _sets, _alt) in s._emeta.get((a, b), ()):
+        keep = {R: vs for R, vs in req.items() if R not in positional}
+        if not keep or any(len(vs) != 1 for vs in keep.values()):
+            return None
+        musts = {R: next(iter(vs)) for R, vs in keep.items()}
+        cond = _stage_spelling(s, musts)
+        if cond is None:
+            return None
+        if cond not in conds:
+            alts.append(musts)
+            conds.append(cond)
+    if not conds:
+        return None
+    stage = conds[0] if len(conds) == 1 else "(or %s)" % " ".join(conds)
+    rec = {"items": set(sp.get("items") or ()), "groups": [set(g) for g in sp.get("groups") or ()]}
+
+    def _presentable(r):
+        return any(all((r, v) in s._pstates.get(R, ()) for R, v in musts.items())
+                   for musts in alts)
+
+    rooms = []
+    for r in sorted(x for x, bs in s.edges.items() if a in bs and x != a):
+        # STAGE presentability: a site that can never stand at the stage would carry a dead
+        # guard (on LB2 this is what keeps act-break wraps out of the intro rooms, whose ESC
+        # skip crosses at act 0 only)...
+        if not _presentable(r):
+            continue
+        # ...and COMPLIANCE at the site's own crossing, the same question the spec itself was
+        # asked at its edge: refusing where the player can no longer comply is a wall.
+        if unsatisfiable(s, r, a, rec):
+            continue
+        rooms.append(r)
+    if not rooms:
+        return None
+
+    # Model knowledge the placement's arrival-commit triage consumes (patcher._defer_triage_site):
+    # a deferral site that is itself inside a commit re-sites up its delivering chain, and every
+    # hop owes the same two per-site filters the rooms above just passed. `alts` carries the
+    # stage's register alternatives for the vacuity check; `positional`/`prev_g` name the
+    # registers whose tests mean "where the player stands NOW" and the one that names the
+    # delivering room.
+    def _site_ok(x, target):
+        if not _presentable(x):
+            return "stage not presentable"
+        bad = unsatisfiable(s, x, target, rec)
+        if bad:
+            return "demand unsourceable at the hop (%s)" % ", ".join(bad)
+        return None
+
+    # DEMAND FORWARDING (the §7c debt, demand half): when the arrival-commit triage later
+    # refuses every site, this demand may still ride the register's SOLE PRODUCING FLIP one
+    # stage earlier -- the nearest controllable commit on the only path to this crossing.
+    # Provable only when (a) the stage is one scalar test, (b) no in-room step anywhere else
+    # writes that value (the pocket's own flip is the sole producer), (c) exactly one sibling
+    # edge out of the pocket commits the write, with a single from-value to spell the host's
+    # stage, and (d) the demand is satisfiable before the HOST crossing (the same
+    # `unsatisfiable` wall-test every placement owes). Anything short of all four -> None,
+    # and the refusal stands as before.
+    fwd = None
+    m_st = re.match(r"^\(==\s*global(\d+)\s+(-?\d+)\)$", stage.strip())
+    if m_st:
+        reg, w = int(m_st.group(1)), int(m_st.group(2))
+        others = [r for r, vs in s._inroom.get(reg, {}).items() if w in vs and r != a]
+        hosts = [(x, y, mrow) for (x, y), rows_ in s._emeta.items() if x == a
+                 for mrow in rows_ if mrow[1].get(reg) == w]
+        if not others and len(hosts) == 1:
+            hx, hy, hrow = hosts[0]
+            hreq = hrow[0].get(reg) or set()
+            if len(hreq) == 1 and not unsatisfiable(s, hx, hy, rec):
+                fwd = {"host": (hx, hy),
+                       "host_stage": "(== global%d %d)" % (reg, next(iter(hreq)))}
+    return {"stage": stage, "rooms": rooms, "alts": alts, "fwd": fwd,
+            "positional": {g for g in positional if g is not None},
+            "prev_g": M.prev_room_reg(s.em),
+            "preds": lambda r: sorted(x for x, bs in s.edges.items() if r in bs and x != r),
+            "site_ok": _site_ok}
+
+
+def _stage_spelling(s, musts):
+    """`_render_reg_equals` plus the ONE case a stage may add: a promoted PLAIN global.
+
+    `render_register` refuses real globals, and for a DEMAND that is right: a demand is the
+    game being made to test something, and only a store's own reversal proves the game reads
+    that register in that spelling. A STAGE is a weaker claim -- it scopes OUR refusal to the
+    crossing the spec means -- and for a promoted gating register the game's own tests are the
+    promotion evidence (LB2 reads global123 at 239 sites, by equality; that is why it is a
+    register at all). So a register no store lowering claims, below the synthetic base, promoted,
+    and demanded at a value the walk itself reaches, is spelled directly as `(== globalN v)`.
+    Everything else still refuses -- a guessed stage gates crossings the spec says nothing
+    about. Kept OUT of `render_register` on purpose: widening the demand spelling corpus-wide
+    is its own change with its own measurement, not a rider on the sole-exit deferral."""
+    got = _render_reg_equals(s, musts)
+    if got is not None:
+        return got
+    ir = getattr(s.em, "ir", None)
+    claimed = set()
+    for name in ("_obj_prop_index", "_room_local_index", "_prop_flag_index",
+                 "_mask_global_index"):
+        claimed |= set(getattr(ir, name, {}) or {})
+    base = getattr(ir, "flag_synth_base", None)
+    terms = []
+    for R, v in sorted(musts.items()):
+        t = render_register(s, R, v)
+        if t is None:
+            if (R in claimed or (base is not None and R >= base) or R not in s.regs
+                    or not any(vv == v for (_r, vv) in s._pstates.get(R, ()))):
+                return None
+            t = f"(== global{R} {v})"
+        terms.append(t)
+    return terms[0] if len(terms) == 1 else "(and " + " ".join(terms) + ")"
+
+
 def unholdable_at(s, a, b, items):
     """Of `items`, those you CANNOT be holding when you cross a->b -> `{item: why}`.
 
@@ -582,6 +733,72 @@ def unholdable_at(s, a, b, items):
                        % (R, [s.g.item_name(i) for i in sorted(S)],
                           [s.g.item_name(i) for i in sorted(held)]))
     return out
+
+
+def register_flip_frontier(s):
+    """{(a, b): rec} -- register strandings whose SEAL IS ENTERED BY AN EDGE WRITE, demanded at
+    those edges. What is committed COMMITS (the teacup rule, applied to remedies): when the flip
+    that seals an item rides a room crossing -- LB2's act break, where `rm26->rm420` itself
+    writes `123 := 5` -- the crossing IS the seal's entering write, and the demand belongs on it
+    exactly as a carry-in demand belongs on a pocket's entry. Merged into `guard_specs`' frontier
+    union, so the standard filters (unholdable_at, unsatisfiable) and placements (including the
+    sole-exit deferral, which is how an act-break edge places at all) apply unchanged.
+
+    THE MECHANISM SELECTS ITSELF against the register-write HOLD (`site: register-write`): a
+    free-running trap's write lives in a `doit`, not on an edge (KQ4's nightfall, KQ6's wedding
+    fuse), so it has NO flip edges and keeps the hold path -- while a player-committed flip has
+    no free-running writer, which is why LB2's holds never placed ("no free-running trap write
+    found"). A flip edge is an edge whose meta WRITES the value from a state that excludes it
+    (`sets[R] == v`, `v not in req[R]`) -- arriving already at v is not entering the seal.
+
+    JOINT rows reduce to the same rule: the positional component (previous-room) names the
+    from-room -- `(12,123) = (26,5)` is entered exactly by the rm26 edges that write `123:=5`,
+    because `prev := 26` is what leaving rm26 means -- and only the value-CHANGING component
+    needs a flip edge. A joint row whose prev component does not match any flip edge's from-room
+    contributes nothing (the (110,2)/(330,3) pressPass witnesses: the same stranding seen from
+    non-causal states; the (26,2) row carries the demand).
+
+    AND THE SAME RETIREMENT FILTER AS THE EDGE ROWS (`crossing_retires_need`): a row whose
+    `still_needed_at` rooms are all unreachable past the flip edge's own commit puts no demand
+    there -- the scalar `reg123=5` pressPass row is the case (the flat projection of an act-2
+    stranding; its rm335 need is sealed from act 3 on, so demanding the pass at the 4->5 break
+    would wall it). The joint rows, whose needs live inside the post-flip region, keep their
+    demands untouched. Rows without a `still_needed_at` (the flip-trap mapping below) are never
+    retired -- no need set, no evidence."""
+    prev = M.prev_room_reg(s.em)
+
+    def flip_edges(R, v, from_room=None):
+        sites = set()
+        for (a, b), metas in s._emeta.items():
+            if from_room is not None and a != from_room:
+                continue
+            for (req, sets, _alts) in metas:
+                if sets.get(R) == v and req.get(R) and v not in req[R]:
+                    sites.add((a, b))
+                    break
+        return sites
+
+    out = defaultdict(lambda: {"items": set(), "groups": []})
+    rows = list(s.register_strandings()) + [
+        {"register": r["register"], "value": r["trap"], "item": r["item"]}
+        for r in s.register_flip_strandings()]
+    for r in rows:
+        R, V = r["register"], r["value"]
+        if isinstance(R, tuple):
+            comps = dict(zip(R, V))
+            from_room = comps.get(prev)
+            sites = set()
+            for Ri, vi in comps.items():
+                if Ri != prev:
+                    sites |= flip_edges(Ri, vi, from_room=from_room)
+        else:
+            sites = flip_edges(R, V)
+        need = set(r.get("still_needed_at") or ())
+        for (a, b) in sites:
+            if need and s.crossing_retires_need(a, b, r["item"], need):
+                continue
+            out[(a, b)]["items"].add(r["item"])
+    return dict(out)
 
 
 def joint_frontier(s):
@@ -1125,7 +1342,8 @@ def guard_specs(s):
     # items on a shared commit -- KQ4's whale swallow rm31->44 gets the feather (edge) AND the fish
     # (joint), so one guard demands both before you are swallowed.
     frontier = frontier_guards(s)
-    for src in (joint_frontier(s), pocket_frontier(s), pocket_carryout_frontier(s)):
+    rff = register_flip_frontier(s)
+    for src in (joint_frontier(s), pocket_frontier(s), pocket_carryout_frontier(s), rff):
         for (a, b), rec in src.items():
             if (a, b) in frontier:
                 frontier[(a, b)] = {"items": set(frontier[(a, b)]["items"]) | rec["items"],
@@ -1212,11 +1430,16 @@ def guard_specs(s):
     # in hand. KQ4's nightfall (global100:=1) shuts the day-only doors to the Diamond_Pouch and
     # Fishing_Pole; gate that one write on holding both, so the sunset waits for the day list. One
     # spec per trap register, conjoining its sealed items. LSL2 has no trap -> nothing.
+    # Keyed by (register, FLIP VALUE), not register alone: the spec's own semantics is "hold
+    # THE FLIP to v until the items IT seals are in hand", and a register that strands
+    # different items at different values (LB2's act counter: the pressPass at the 1->2 break,
+    # the salts and grapes at 4->5) must not conjoin them into one demand -- the single-spec
+    # form emitted `reg123=2: (pass AND salts AND grapes)`, a wall (the salts do not exist
+    # until act 4). One register with one flip value (KQ6's letter, KQ4's nightfall) is
+    # byte-identical under either key.
     byreg = defaultdict(set)
-    trap_of = {}
     for r in s.register_flip_strandings():
-        byreg[r["register"]].add(r["item"])
-        trap_of[r["register"]] = r["trap"]
+        byreg[(r["register"], r["trap"])].add(r["item"])
     # ...and the CAUSAL flips (`register_strandings`): a plot register whose one-way flip cuts
     # off an item's source while a later room still demands it. Same remedy, same spec: hold the
     # flip until the item is in hand. KQ6's letter is the case -- flag 166 ("the wedding has
@@ -1224,14 +1447,34 @@ def guard_specs(s):
     # vizier's letter -- and KQ4's nightfall is the shape's play-validated precedent. LSL2/KQ4
     # report zero causal rows, so this is KQ6-only today.
     for r in s.register_strandings():
-        byreg[r["register"]].add(r["item"])
-        trap_of.setdefault(r["register"], r["value"])
-    for R in sorted(byreg):
-        items = sorted(byreg[R])
+        # A JOINT row (register is a TUPLE, 2026-08-09) has no remedy of this shape and must not
+        # invent one: the spec holds ONE register's write until the items are in hand, and a seal
+        # that only exists at `12 == 420 AND 123 == 5` names no single write to hold -- neither
+        # component's flip is by itself the point of no return. Emitting `register: (12, 123)`
+        # would hand the patcher a global that does not exist. Detection-only until the causal
+        # component is derived per row (docs/LB2-ORACLE.md §7y); measured to change nothing on
+        # LSL2/KQ4/KQ6, which report no joint rows at all.
+        if isinstance(r["register"], tuple):
+            continue
+        byreg[(r["register"], r["value"])].add(r["item"])
+    for (R, trap) in sorted(byreg):
+        items = sorted(byreg[(R, trap)])
         cond = ("(and %s)" % " ".join(f"(gEgo has: {i})" for i in items)
                 if len(items) > 1 else f"(gEgo has: {items[0]})")
-        specs.append({"site": "register-write", "register": R, "trap": trap_of[R],
-                      "condition": cond, "items": items, "refused": []})
+        # A flip with ENTERING EDGES is player-committed, and its demand already rides those
+        # edges (`register_flip_frontier` -- see its docstring for why the two mechanisms are
+        # mutually exclusive by construction). The hold spec is superseded, not emitted as
+        # placeable: the free-running placer would find nothing anyway ("no free-running trap
+        # write found" was LB2's permanent row), and an unplaced spec that another spec already
+        # covers reads as an open gap when it is a closed one.
+        edge_carried = sorted((a, b) for (a, b), rec in rff.items()
+                              if set(items) & rec["items"])
+        specs.append({"site": "register-write", "register": R, "trap": trap,
+                      "condition": cond, "items": items,
+                      "refused": ([f"superseded: the flip is edge-committed and the demand "
+                                   f"rides the flip edge specs "
+                                   f"({', '.join(f'rm{a}->rm{b}' for a, b in edge_carried)})"]
+                                  if edge_carried else [])})
     return specs
 
 

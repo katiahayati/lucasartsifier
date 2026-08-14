@@ -173,20 +173,28 @@ def main(argv=None):
     out_dir = os.path.join(a.out, "patch")
     nums = P.assemble(dest, cfg)
     titles = {n: t for t, n in nums.items()}
+    # The mode CHOOSER goes in first -- it is the mode's feasibility gate. A game that cannot
+    # host a picker gets no mode plumbing at all (see install_mode_chooser: LB2's WrapMusic
+    # species collision is what a needlessly recompiled Main costs).
+    cedits = P.install_mode_chooser(dest, titles)
+    for e in cedits:
+        print(f"    [{'ok ' if e['applied'] else 'SKIP'}] mode-ui {e.get('title', '?')}"
+              + (f"  ({e['why']})" if e.get("why") else ""))
     edits = P.apply_sink_remedies(dest, sinks, titles)
     gedits = P.apply_guards(dest, specs, titles, nums, s_drops=lambda it: s.drops.get(it, set()),
                             rooms=set(s.rooms),
-                            entry_frontier=lambda r: G.commit_entry_frontier(s, r))
+                            entry_frontier=lambda r: G.commit_entry_frontier(s, r),
+                            defer_info=lambda sp: G.defer_to_entry(s, sp))
     for e in edits + gedits:
         where = e.get("title") or (f"rm{e['from_room']}->rm{e['to_room']}" if "from_room" in e
                                    else f"script{e.get('script', '?')}")
         why = "" if e["applied"] else f"  ({e.get('why', 'not placed')})"
         print(f"    [{'ok ' if e['applied'] else 'SKIP'}] {where}{why}")
-    # The in-game mode chooser + the mode/warned global declarations -- AFTER every apply pass
-    # (the globals exist only in emitted text), and NEVER merged into the apply_* rows (those
-    # are a frozen snapshot surface).
-    uedits = P.install_mode_ui(dest, titles)
-    for e in uedits:
+    # The mode/warned global DECLARATIONS -- AFTER every apply pass (the globals exist only in
+    # emitted text), and NEVER merged into the apply_* rows (those are a frozen snapshot
+    # surface). The chooser itself went in before the applies; see install_mode_chooser.
+    uedits = cedits + P.declare_mode_globals(dest)
+    for e in uedits[len(cedits):]:
         print(f"    [{'ok ' if e['applied'] else 'SKIP'}] mode-ui {e.get('title', '?')}"
               + (f"  ({e['why']})" if e.get("why") else ""))
     # A row edits ONE file -- except an entry-frontier row, which wraps every crossing into the

@@ -144,6 +144,7 @@ class OpEmitter:
         self._loc_dec = set()       # counter keys with a dec op (need -1 headroom)
         self.init_writes = {}       # room -> {gi: val} UNCONDITIONAL entry writes (initial value)
         self.init_seq = {}          # room -> ordered [(gi, val, guard)] entry writes, source order.
+        self.init_deaths = set()    # rooms whose `init` writes DEATH -- arriving there kills you
         #   Conditional init writes (inside if/cond) keep their guard instead of being FORCED --
         #   the rm79 seal: `(NormalEgo)` g101:=0 unconditional, then `(= gCurrentStatus 11)` only
         #   `if gIslandStatus==2`; flattening forced g101=11 always -> every win edge (needs
@@ -480,8 +481,24 @@ class OpEmitter:
                         # needs no red scarf and the whole carry-IN class cannot strand.
                         with verb_param_scope(mn):
                             self._hwalk(room, rn, body, [], set())
-                for pbody in s.procs.values():
-                    self._hwalk(room, rn, pbody, [], set())
+                # ...AND A PROCEDURE IS NOT A HANDLER. The engine dispatches METHODS -- `doit`,
+                # `handleEvent`, `doVerb`, `changeState`; nothing ever dispatches a script-level
+                # procedure, which runs only where something CALLS it. `_hwalk` (and the machine
+                # lift, and `extract._walk`) already follow those calls in the caller's own room
+                # context, so walking every proc standalone here added nothing for a called one
+                # and FABRICATED a scope for an uncalled one.
+                #
+                # In MAIN that fabrication is the whole game: LB2's `proc0_13`..`proc0_17` are the
+                # debug jump-to-act setup, called only from `whereTo` (script 29, a room with no
+                # in-edges), and they hand over nine items each -- `(ego get: -1 25 16 17 30 27 26
+                # 12 31 13)`. Walked as Main handlers they became sources at room 0, which
+                # `_sink_rooms` widens to EVERY room, so half the inventory was obtainable
+                # anywhere. That is what made the variadic `get:` read a net regression when it
+                # was first built (docs/LB2-ORACLE.md §7o): the read is right, and this was the
+                # thing it was uncovering.
+                #
+                # Nothing here is a debug-detection rule -- it never asks what a script is FOR.
+                # `whereTo`'s own methods still walk these procs, in room 29, where they belong.
         self._walk_game_newroom(ir)
         for room, script, gi, v, g in self.handler_writes:
             self.reg_vals.setdefault(gi, {0}).add(v)
@@ -548,6 +565,7 @@ class OpEmitter:
         #    inherits the disguise requirement, per-exit (does not over-gate the retreat).
         self._apply_control_gates()
         self._apply_polygon_gates()
+        self._apply_dead_nav()
 
         # finalize domains; single-value dims fold to constants (SMV rejects init on them)
         self.reg_dom, self.reg_const = {}, {}
@@ -664,6 +682,7 @@ class OpEmitter:
                 "entry_armers": m.entry_armers, "entry_recv": m.entry_recv,
                 "entry_sources": m.entry_sources,
                 "local_regs": dict(getattr(m, "local_regs", None) or {}),
+                "restores_control": set(getattr(m, "restores_control", None) or ()),
                 "start": m.start, "delivered": delivered, "drops": drops}
 
     def edge_hit_registers(self):
@@ -701,6 +720,36 @@ class OpEmitter:
                             witnesses[gi].add(v)
         self._edge_regs = frozenset(gi for gi, vs in witnesses.items() if len(vs) >= 2)
         return self._edge_regs
+
+    def _apply_dead_nav(self):
+        """Consume polygons.dead_nav_exits: a declared s/e/w prop whose engine trigger zone the
+        room's own UNCONDITIONAL obstacle layout seals off is a dead letter, and the free flat
+        edge `_nav_edges` invented from it is REMOVED -- by its `via` provenance ("nav:<dir>"),
+        so a scripted crossing to the same destination is untouched. LB2's rm330 `south 250` is
+        the case (docs/LB2-ORACLE.md §7z): the only free way from the museum steps back into
+        the street, at every act, in a room whose polygon stops the ego 20px short of the south
+        trigger. Removal is the unsafe direction; every refusal lives in `dead_nav_exits`
+        (unconditional layouts only, no setRegions, base-geometry directions only -- north
+        needs the ego's rect height and is never claimed)."""
+        self.dead_nav = []
+        try:
+            import polygons as PG
+        except Exception as e:                              # noqa: BLE001
+            _degraded("dead-nav (whole game)", e)
+            return
+        for room in sorted({e.src for e in self.ts.edges if e.via.startswith("nav:")}):
+            try:
+                rows = PG.dead_nav_exits(self.ir, room)
+            except Exception as e:                          # noqa: BLE001
+                _degraded("dead-nav for rm%s" % room, e)
+                continue
+            for row in rows:
+                gone = [e for e in self.ts.edges
+                        if e.src == room and e.dst == row["declared_room"]
+                        and e.via == "nav:" + row["edge"]]
+                if gone:
+                    self.ts.edges = [e for e in self.ts.edges if not any(e is g for g in gone)]
+                    self.dead_nav.append(row)
 
     def _apply_polygon_gates(self):
         """Consume polygons.polygon_gates: a screen edge a room's obstacle layout only OPENS
@@ -955,6 +1004,15 @@ class OpEmitter:
                                         ("dec",), _conj_atoms(pc)))
         if tp == "Assignment" and I.is_global(node["kids"][0]):
             gi, v = node["kids"][0]["index"], _int(node["kids"][1].get("value"))
+            # A DEATH written by a room's own `init` means ARRIVING HERE KILLS YOU, and it is not
+            # an ordinary entry write -- so it stays out of `init_seq`/`init_writes` (modelling it
+            # as "entering sets register R" would be nonsense) but it must not vanish either. It
+            # used to do exactly that: LB2's death screen is a ROOM, its death lives in `init`,
+            # and with no machine for it the game ended up with ZERO deaths. Nothing noticed until
+            # the room was made terminal and `discover_goal` -- "terminal, reachable, never fatal"
+            # -- promoted the Restore/Restart screen to a WINNING ENDING.
+            if v is not None and self.is_death(gi, v):
+                self.init_deaths.add(room)
             if v is not None and not self.is_death(gi, v):
                 g = _conj_atoms(pc)
                 self.init_seq.setdefault(room, []).append((gi, v, g))

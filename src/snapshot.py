@@ -47,6 +47,13 @@ def snapshot(cfg, with_placements=False):
                    | {d["item"] for d in s.dangerous_sinks()}
                    | {f["item"] for f in s.fatal_uses()}
                    | {r["item"] for r in s.register_strandings()})
+    # REGISTER-VALUE strandings join the surface CONDITIONALLY: the key appears only when rows
+    # exist. Not an optimization -- the golden fixtures (LSL2, KQ4) freeze the full dict and
+    # `test_golden._diff` walks the union of keys, so an unconditional empty key would move two
+    # goldens for no behaviour change, while this way the first row ever found on a golden game
+    # surfaces as a LOUD brand-new key. Measured at introduction (2026-08-10): LSL2 0, KQ4 0,
+    # KQ6 0, LB2 1 (the empty snake-oil bottle at the act-5 seal, user-ruled in scope).
+    rvs = s.register_value_strandings()
     snap = {
         "start_room": s.em.cfg.start_room,
         "goal_rooms": sorted(s.em.cfg.goal_rooms),
@@ -83,6 +90,10 @@ def snapshot(cfg, with_placements=False):
                                       f"->{r['still_needed_at']}"
                                       for r in s.register_strandings()),
     }
+    if rvs:                                      # conditional -- see the note above `snap`
+        snap["register_value_strandings"] = sorted(
+            f"reg{r['reg']}=={r['bad']}@seal{r['register']}={r['value']}"
+            f"->{r['demanded_at']} via {r['via']}" for r in rvs)
     specs = G.guard_specs(s)
     # REFUSED specs are marked, not hidden and not shown as if we emit them. `pipeline.py` prints
     # them under a REFUSED banner and the patcher skips them, so a snapshot that lists a refused
@@ -131,7 +142,8 @@ def snapshot(cfg, with_placements=False):
             gedits = P.apply_guards(dest, specs, titles, nums,
                                     s_drops=lambda it: s.drops.get(it, set()),
                                     rooms=set(s.rooms),
-                                    entry_frontier=lambda r: G.commit_entry_frontier(s, r))
+                                    entry_frontier=lambda r: G.commit_entry_frontier(s, r),
+                                    defer_info=lambda sp: G.defer_to_entry(s, sp))
             snap["placements"] = sorted(
                 # The ITEM is in the key because a sink edit is identified by (script, item) and
                 # three of LSL2's land in Main -- without it they are three identical strings and
