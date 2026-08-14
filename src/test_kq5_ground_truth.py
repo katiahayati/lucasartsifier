@@ -208,6 +208,22 @@ def run():
           "init-fork-on-an-ownedBy-value death fold as rm86's -- phase 1 of the window plan "
           "should flip this red and the corral red together. docs/KQ5-ORACLE.md §1a.")
 
+    pie_rows = [n for (n, _d, _r) in raw_rows if n == "Pie"]
+    check("🔴 KNOWN GAP (KQ5): the eagle's pie swallow strands the yeti's counter-item",
+          bool(pie_rows),
+          "The pie's sole source is bakeShop (town, behind the one-way forest); rm34's eagle "
+          "swallows it (`put: 2 34`) earning nothing; rm36's yeti is a Chase into proc0_26 "
+          "countered only by throwing the pie (`put: 2 36`). User-confirmed 2026-08-14. "
+          "docs/KQ5-ORACLE.md §1a.")
+
+    fish_rows = [n for (n, _d, _r) in raw_rows if n == "Fish"]
+    check("🔴 KNOWN GAP (KQ5): the fish-at-cat waste seals the bees' flag-36 window",
+          bool(fish_rows),
+          "rm11's bear exists only while `has: 5`; bearScript state 13 is flag 36's ONLY "
+          "writer; the hive approach arms deathByBees under `not flag36` -- so wasting the "
+          "fish at the cat (`put: 5 6`) makes the honeycomb (-> beeswax -> boat) unobtainable "
+          "alive. docs/KQ5-ORACLE.md §1a.")
+
     amulet_rows = [n for (n, _d, _r) in raw_rows if n == "Amulet"]
     check("🔴 KNOWN GAP (KQ5): the witch-region worn-amulet death fold is caught",
           bool(amulet_rows),

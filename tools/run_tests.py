@@ -223,6 +223,18 @@ KNOWN_RED = {
             "accepting it make the waste reachable. Same ownedBy-fork death fold as the "
             "inn-cellar rows -- one phase-1 build should flip all three. Verified from source "
             "2026-08-14 at the user's prompting (docs/KQ5-ORACLE.md §1a).",
+        "🔴 KNOWN GAP (KQ5): the eagle's pie swallow strands the yeti's counter-item":
+            "Sole pie source = bakeShop (town), behind the one-way forest; the eagle eats it "
+            "for nothing (feedEagle differs only in animation); the yeti chase is death "
+            "countered only by the pie. USER 2026-08-14: 'I don't think you can reobtain the "
+            "pie after you feed it to the eagle' -- source agrees. Refines (does not flip) the "
+            "July pie-safe ruling, which scoped to town reachability. Slot-swallow + "
+            "chase-death counter-item class.",
+        "🔴 KNOWN GAP (KQ5): the fish-at-cat waste seals the bees' flag-36 window":
+            "flag 36's only writer is bearScript (runs only while `has: 5` spawns the bear); "
+            "the hive arms deathByBees under not-flag36, so the honeycomb -> beeswax -> boat "
+            "chain dies with the wasted fish. Sole-writer window + exchange slot -- the same "
+            "two builds as the cat-scene rows should flip this.",
         "🔴 KNOWN GAP (KQ5): the fortune teller's needle substitution is caught":
             "rm13's amulet slot takes Gold_Coin(11) OR Golden_Needle(3); the needle's real "
             "consumer is the tailor (-> cloak). Exchange-slot class ([[exchange-slots-one-"

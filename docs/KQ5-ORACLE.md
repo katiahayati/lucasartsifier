@@ -91,19 +91,26 @@ The cat and dog scenes accepting four items is not generosity, it is a trap surf
   either feed (`(and (!= owner(19) 34) (!= owner(2) 34))`) — so **feeding the pie silences the
   eagle's visible need, wastes the pie (the yeti's item), and still leaves rm42 fatal.**
   Verdicts: *throw the lamb at the cat or dog* → TRUE softlock (death at rm42) — note the
-  cat throw still banks the rm86 rescue while dooming rm42, a genuine cross-slot web. *Feed
-  the pie to the eagle* → TRUE waste; whether it is a softlock turns on the pie's
-  re-obtainability post-forest, and the pie is user-ruled SAFE (tier 2) — **flagged for a
-  user ruling on this specific chain, not reclassified.** Detected today: nothing — but rm42's
-  fork is the SAME init-fork-on-an-ownedBy-value death fold as rm86's, so phase 1 of the
-  window plan should surface the lamb for free. Declared red in the test.
-- **Fish(5): source rm4 (the barrel), accepted by the cat (`put: 5 6`), not by the dog. Its
-  other consumer is the bear:** `rm011` inits the bear only while `(global0 has: 5)` (the
-  Dink existence-guard shape) and the throw (`put: 5 11`) clears the way to the Stick and
-  Honeycomb (→ beeswax → the boat). **OPEN:** the fishless arm loads a different control
-  overlay (`proc958_0 128 314 316` vs `128 320`), so whether arriving fishless leaves the
-  stick/honeycomb takeable — i.e., whether fish-at-cat is fatal or merely wasteful — needs
-  the overlay semantics read before a verdict.
+  cat throw still banks the rm86 rescue while dooming rm42, a genuine cross-slot web.
+  Detected today: nothing — but rm42's fork is the SAME init-fork-on-an-ownedBy-value death
+  fold as rm86's, so phase 1 of the window plan should surface the lamb for free. Declared
+  red in the test.
+- **Pie(2) to the eagle → the yeti (tier 1 end to end, user-confirmed 2026-08-14: "I don't
+  think you can reobtain the pie after you feed it to the eagle").** The pie's SOLE source is
+  `bakeShop.sc` — the bakery, in town, behind the one-way forest. rm36 is the yeti: a `Chase`
+  into `proc0_26` death whose counter is throwing the pie (`put: 2 36`). Feed the pie to the
+  eagle post-forest and the yeti is unsurvivable. This REFINES, not flips, the July "pie
+  re-obtainable, safe" ruling — that one scoped to town reachability (the rm29 misclick
+  question); the bakery cannot be reached from the mountains. **TRUE softlock, declared red.**
+- **Fish(5) → the bear → the BEES (tier 1, closed 2026-08-14; the user's "get rid of the
+  bear to save... the bees maybe?" was the right memory).** rm11 is the anthill-and-beehive
+  room. The bear inits only while `(global0 has: 5)`; throwing the fish (`put: 5 11`) runs
+  `bearScript`, whose state 13 is the ONLY writer of **flag 36**; and both `rm011::doit` and
+  `getWax` arm **`deathByBees`** (`proc0_26 263`) on the hive control while
+  `¬flag36 ∧ ¬bear-present`. So arriving fishless (or having wasted the fish on the cat —
+  `put: 5 6` is accepted) makes flag 36 unsettable and every honeycomb (`get: 17`) approach
+  fatal → no beeswax → the boat. **Fish-at-cat is a TRUE walking dead, declared red.** (The
+  earlier "overlay semantics" caveat is moot — the flag-36 gate decides it.)
 
 ## 2. The kidnap corral (rm85 → rm86) (tier 1)
 
@@ -213,8 +220,8 @@ rows should collapse either way.**
 | 11 | locket window missed | one-shot window (tier 3) | MISSED, unverified |
 | 12 | peas exhaustion | consumable | OPEN (13 noisy rows) |
 | 13 | lamb to the cat/dog → roc's nest death | exchange slots + ownedBy death fold (rm42) | MISSED (declared red; same fold class as #6) |
-| 14 | pie to the eagle | slot waste hiding a need | AWAITING USER RULING (pie is user-ruled safe) |
-| 15 | fish to the cat → bear/stick chain | exchange slot | OPEN (fishless overlay semantics unread) |
+| 14 | pie to the eagle → yeti unsurvivable | slot swallow + chase-death counter-item (rm36) | MISSED (declared red; user-confirmed) |
+| 15 | fish to the cat → flag 36 unsettable → bees | exchange slot + sole-writer window (rm11) | MISSED (declared red) |
 
 Nothing in this file is a guard source ([[derived-only-no-declared-specs]]): it validates, it
 never feeds the patcher.
