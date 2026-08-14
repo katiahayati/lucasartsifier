@@ -562,8 +562,17 @@ def derive_control_selectors(ir):
     the switch points. Same evidence tier as `game_objects` / `RESTART_SELECTORS`: the engine
     class table, because `Game` and `User` are the engine's own names for these anchors.
 
-    MEASURED: LSL2 {} and KQ4 {} (SCI0 rooms write User directly; everything built on this is
-    inert there by construction); KQ6 and LB2 both {'handsOn': 'restore', 'handsOff': 'take'}."""
+    MEASURED, and the number is not the one that stood here until 2026-08-14. The claim was
+    "LSL2 {} and KQ4 {} (SCI0 rooms write User directly)"; RE-RUN over the four shipped IRs, all
+    four titles answer something: LSL2 {'init': 'take'}, KQ4 {'init': 'take'}, KQ6 and LB2
+    {'init': 'take', 'handsOff': 'take', 'handsOn': 'restore'}. The SCI0 pair's one entry is
+    `Game::init` turning control OFF at startup, which is a real write of the switch and so a
+    correct derivation -- what was wrong was the docstring, not the code.
+    (Found by the v1.0-lb2 review, §2.2: a "MEASURED" claim that no longer reproduces is a
+    justification nobody can check, and this one is load-bearing twice over -- it is the whole
+    argument that `_survivable`'s pre-emption rule cannot move the two golden games. That
+    argument still holds, on the RESTORE half rather than on emptiness: `restores_control` is
+    built from the 'restore' selectors alone, of which SCI0 has none.)"""
     user, game = ir.find_class("User"), ir.find_class("Game")
     if user is None or game is None:
         return {}
@@ -2731,14 +2740,35 @@ def lower_mask_accessors(ir, accs):
         would re-condemn the global for exactly the non-literal shapes the rewrite just
         retired.
 
+    AN UNRESOLVABLE READ REFUSES THE WHOLE STORE, and that asymmetry with writes is the
+    point rather than an accident. Husking is only honest while every semantic site really
+    did move to a rewritten call site: a read call whose argument we cannot evaluate stays a
+    CALL, and after the husk it calls a body that is the literal 0, so a bit-test the game
+    passes reads FALSE in our model and the edges and requirements behind it are deleted.
+    "Unmodelled" must never lower to "modelled false" -- everywhere else in this codebase an
+    unreadable condition is OPAQUE and projects permissively, so this one site would be the
+    only place ignorance argues for a wall. A skipped WRITE is a different claim and stands
+    as before: an unmodelled write is invisible to every store we have (the `lower_flags`
+    gap the derivation cites), so leaving one out states nothing the model does not already
+    assume about writes it cannot see. Refusing means the global is not lowered at all --
+    it stays a plain global, `derive_mask_globals` refuses it for its own non-literal
+    shapes, and its tests read as unmodelled, which is where they started.
+
     Allocates NOTHING -- the sixth store owns allocation, so register identity for every
     other store is untouched by construction. Returns (lowered_writes, lowered_reads,
     [(reason, script, where) skips])."""
     wlow = rlow = 0
     skips = []
+    # Read-side skip reasons: each one is a call site left pointing at a body we are about to
+    # husk. Named here so the refusal below tracks the `skips.append`s rather than a count.
+    UNREADABLE = ("non-literal-read", "non-literal-mode", "cumulative-underflow")
     for gi, spec in sorted(accs.items()):
         ownum, oname, omn = spec["owner"]
         wmask, readers = spec["wmask"], spec["readers"]
+        # Nothing is mutated until every call site of this store has been read: the refusal is
+        # a property of the store as a whole, so the plan has to be complete before any of it
+        # is applied.
+        store_plan, store_skips = [], []
         for csnum, co, cmn, cb in _accessor_callables(ir):
             plan = []
             for n in I.walk(cb):
@@ -2759,7 +2789,7 @@ def lower_mask_accessors(ir, accs):
                     msgs = [m for m in ks[1:] if isinstance(m, dict)
                             and m.get("t") == "SendMessage"]
                     if len(msgs) != 1:
-                        skips.append(("chained-send", csnum, cmn))
+                        store_skips.append(("chained-send", csnum, cmn))
                         continue
                     mk = msgs[0].get("kids") or []
                     sel = mk[0].get("name") if mk and isinstance(mk[0], dict) else None
@@ -2767,7 +2797,7 @@ def lower_mask_accessors(ir, accs):
                         continue
                     arg = I.as_int(mk[1]) if len(mk) > 1 else None
                     if arg is None:
-                        skips.append(("non-literal-write", csnum, cmn))
+                        store_skips.append(("non-literal-write", csnum, cmn))
                         continue
                     bits = arg & wmask
                     rep = {"t": "AssignmentBinOr",
@@ -2787,16 +2817,16 @@ def lower_mask_accessors(ir, accs):
                     a = [I.as_int(k) for k in (n.get("kids") or [])]
                     nargs = len(n.get("kids") or [])
                     if not a or a[0] is None:
-                        skips.append(("non-literal-read", csnum, cmn))
+                        store_skips.append(("non-literal-read", csnum, cmn))
                         continue
                     m = a[0] & info["pmask"]
                     if nargs > 1 and a[1] is None:
-                        skips.append(("non-literal-mode", csnum, cmn))
+                        store_skips.append(("non-literal-mode", csnum, cmn))
                         continue
                     if nargs > 1 and a[1] and info["cum_k"] is not None:
                         mm = m - info["cum_k"]
                         if mm < 0:
-                            skips.append(("cumulative-underflow", csnum, cmn))
+                            store_skips.append(("cumulative-underflow", csnum, cmn))
                             continue
                         terms = [{"t": "BinAnd",
                                   "kids": [{"t": "Variable", "vtype": "Global",
@@ -2812,13 +2842,22 @@ def lower_mask_accessors(ir, accs):
                                         {"t": "Number", "value": m}]} if m \
                             else {"t": "Number", "value": 0}
                     plan.append((n, rep, "r"))
-            for n, rep, kind in plan:
-                n.clear()
-                n.update(rep)
-                if kind == "w":
-                    wlow += 1
-                else:
-                    rlow += 1
+            store_plan += plan
+        skips += store_skips
+        unread = [sk for sk in store_skips if sk[0] in UNREADABLE]
+        if unread:
+            # A call site we could not evaluate survives the rewrite, and husking the body it
+            # calls would make it read a literal 0. Refuse the store instead: rewrite nothing,
+            # husk nothing, and say so.
+            skips.append(("store-refused-unreadable-call", ownum, oname))
+            continue
+        for n, rep, kind in store_plan:
+            n.clear()
+            n.update(rep)
+            if kind == "w":
+                wlow += 1
+            else:
+                rlow += 1
         spec["acc_node"].clear()
         spec["acc_node"].update({"t": "Number", "value": 0})
         for n in spec["reader_nodes"]:

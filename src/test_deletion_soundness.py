@@ -189,6 +189,16 @@ def test_mask_accessor_refuses_unresolvable_reads():
                  "pointing at a husked body reads constant-FALSE"
                  % (w2, r2, sk2, not _reads_the_word(ir2.scripts[0].procs["proc0_10"])))
 
+    # WHERE A REFUSED STORE LEAVES THE GLOBAL, which is the half of the refusal that makes it
+    # the safe direction rather than merely a different one: unlowered, the word keeps its own
+    # non-literal shapes, the sixth store refuses it in turn, and its tests read as UNMODELLED
+    # -- opaque, permissive, exactly where they were before the seventh store existed. A
+    # lowered store, by contrast, hands back the word's bits.
+    check("a refused store leaves the word unmodelled, not modelled-false",
+          V.derive_mask_globals(ir2) == {} and 124 in V.derive_mask_globals(ir1),
+          detail="refused=%r lowered=%r" % (V.derive_mask_globals(ir2),
+                                            V.derive_mask_globals(ir1)))
+
 
 # --- 3. the pre-emption rule's unarmable competitor ---------------------------------------------
 def _machine(inst, room, entries, states, recv, restores=()):
@@ -205,11 +215,11 @@ def _trap_model(escape_item, sources):
     waits, and the wait ends in death. `sEscape` is `sInsertMeat`: the same script slot, armed
     by using item `escape_item`, and arming it disposes the trap."""
     trap = _machine("sTrap", 1, [(0, GAnd([_own(5)]))],
-                    {0: [(None, (), (), (), ("ADVANCE",))],
-                     1: [(None, (), (), (), ("DEATH", 0))]},
+                    {0: [([], (), (), (), ("ADVANCE",))],
+                     1: [([], (), (), (), ("DEATH", 0))]},
                     recv=[("G", 2)], restores=(0,))
     esc = _machine("sEscape", 1, [(0, GAnd([_own(escape_item)]))],
-                   {0: [(None, (), (), (), ("EXIT", 2))]}, recv=[("G", 2)])
+                   {0: [([], (), (), (), ("EXIT", 2))]}, recv=[("G", 2)])
     f = types.SimpleNamespace(em=types.SimpleNamespace(machines=[trap, esc],
                                                        dropped_entries=()),
                               reach_rooms={1}, sources=dict(sources), NOWHERE=set())
@@ -221,7 +231,7 @@ def test_preempt_requires_an_armable_competitor():
     no_escape = types.SimpleNamespace(
         em=types.SimpleNamespace(machines=[_machine(
             "sTrap", 1, [(0, GAnd([_own(5)]))],
-            {0: [(None, (), (), (), ("ADVANCE",))], 1: [(None, (), (), (), ("DEATH", 0))]},
+            {0: [([], (), (), (), ("ADVANCE",))], 1: [([], (), (), (), ("DEATH", 0))]},
             recv=[("G", 2)], restores=(0,))], dropped_entries=()),
         reach_rooms={1}, sources={}, NOWHERE=set())
     check("with no competitor at all, the fatal use is reported",

@@ -494,9 +494,15 @@ def delegate_slots(ir):
 
     Derived from the forwarding shape itself, not a selector catalogue (the discipline
     `init_selectors` states): a property qualifies only because the game's own code visibly
-    dispatches through it. CENSUS 2026-08-10: LSL2 {}, KQ4 {} (SCI0 has no Actions layer --
-    inert by construction), KQ6 {actions, curIcon}, LB2 {actions}; measured on KQ6, the three
-    conditionally-assigned delegates move nothing in the detector surface."""
+    dispatches through it. CENSUS, RE-RUN 2026-08-14 over the four shipped IRs: LSL2 {}, KQ4 {}
+    (SCI0 has no Actions layer -- inert by construction), KQ6 {actions, client, curIcon}, LB2
+    {actions}; measured on KQ6, the conditionally-assigned delegates move nothing in the
+    detector surface.
+
+    `client` was missing from the 2026-08-10 census recorded here, and it is the most ubiquitous
+    slot KQ6 has -- every Script forwards through `((client actions:) ...)`-shaped sends. The
+    v1.0-lb2 review caught it (§2.1) by re-executing the claim: a census that names some of what
+    it found reads exactly like one that named all of it, so the only defence is running it."""
     key = id(ir)
     if key in _DELEGATE_SLOTS:
         return _DELEGATE_SLOTS[key]

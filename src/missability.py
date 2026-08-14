@@ -122,6 +122,73 @@ def _loc_placed_required(guard, placed):
     return walk(guard, True)
 
 
+def latch_evidence(em):
+    """`(local_home, latch_writers, nonmachine)` -- everything that can RAISE a room's own
+    lowered locals (the fifth store's registers).
+
+      * `local_home`  reg -> (room, index), straight off the lowering;
+      * `latch_writers` (room, reg) -> [(machine info, value)] for the room's own machines;
+      * `nonmachine`  (room, reg) -> {values} written outside any machine (handlers).
+
+    ONE evidence base, TWO questions, and they must not drift apart. `_reg_entry_demands`
+    asks how FREE an entry gated on a latch is -- it hops to the machines that raise it and
+    inherits their demand. `build_maps` asks whether such an entry can fire AT ALL, because
+    an entry that cannot fire must not dissolve the requirement its siblings carry. Both
+    answers rest on the same fact ("who writes this latch, and to what"), and this codebase's
+    oldest recurring bug is that fact being computed in two places and fixed in one
+    ([[same-rule-two-places]]: `asserts_eq`, `_room_object`, `Increment`).
+
+    Bounded to a room's own lowered locals for the reason the fifth store exists: the script
+    reloads on entry and resets them, so the writers we can see ARE all the writers
+    (vocab.derive_room_locals). No such completeness holds for a global, which is why nothing
+    here generalises to one."""
+    local_home = dict(getattr(getattr(em, "ir", None), "_room_local_index", None) or {})
+    latch_writers = {}                                 # (room, reg) -> [(info, value)]
+    for i in em.machines:
+        for _K, paths in i["states"].items():
+            for (_g, wr, _gg, _c, _tr) in paths:
+                for gi, v in wr:
+                    if local_home.get(gi, (None,))[0] == i["room"]:
+                        latch_writers.setdefault((i["room"], gi), []).append((i, v))
+    nonmachine = {}                                    # (room, reg) -> {values written}
+    for room, _script, gi, v, _g in getattr(em, "handler_writes", ()):
+        if local_home.get(gi, (None,))[0] == room and isinstance(v, int):
+            nonmachine.setdefault((room, gi), set()).add(v)
+    return local_home, latch_writers, nonmachine
+
+
+def _entry_cannot_fire(em, room, guard, ev):
+    """Is this entry gated on a room-local latch NOTHING in the room can raise?
+
+    The requirement-side half of `_reg_entry_demands._via_latch`'s correction -- "an unfirable
+    entry vouches for nothing" -- which that function needed to stop LB2's cobra pass
+    dissolving its own demand through an arming that could not happen. The same reading is
+    owed wherever entries are read DISJUNCTIVELY, and `build_maps` intersects `_own_required`
+    across every entry at a state: one entry the player can never take erases the price all
+    the others charge, and a requirement erased is a frontier not computed and a need
+    retired.
+
+    DELIBERATELY WEAKER THAN `_via_latch`, which resolves the raiser chain and inherits its
+    demands. This one only refuses an entry when the latch has NO writer at all -- no machine
+    state in the room, no handler -- because that is the case where "cannot fire" needs no
+    reachability argument to be true. An entry whose latch someone raises is left alone
+    whatever it would cost to raise it: over-claiming unfirability would ADD requirements from
+    ignorance, which is the same fabrication in the other direction."""
+    local_home, latch_writers, nonmachine = ev
+    regs = {gi for gi, home in local_home.items() if home[0] == room}
+    if not regs:
+        return False
+    need = structural_reqs(guard, regs,
+                           {gi: set(em.reg_vals.get(gi, {0, 1})) for gi in regs})
+    for R, vals in need.items():
+        if nonmachine.get((room, R), set()) & set(vals):
+            continue
+        if any(v in vals for (_i, v) in latch_writers.get((room, R), ())):
+            continue
+        return True                                    # nothing can put the latch there
+    return False
+
+
 def _after(info, tr, gr, goal_ok):
     """Can the goal still be reached AFTER taking this transition?"""
     if tr[0] == "DEATH":
@@ -492,6 +559,7 @@ def build_maps(em):
         if script in globalsc:
             continue        # ...and the same for the consumption fallback: an inventory `put:` is
         consumed_at[it].add(room)   # spent wherever you do it, which is nowhere in particular.
+    latch_ev = latch_evidence(em)                       # for the entry-firability test below
     for i, info in enumerate(em.machines):
         gr = gr_maps[i]
         for K, paths in info["states"].items():
@@ -525,11 +593,26 @@ def build_maps(em):
         # of `sAskEnterBar`'s entries CONJOINS the whole `GOr` of its armer's three cases, so
         # own(2) is mentioned in all three and the intersection keeps it. `_own_required` is the
         # reading `req` itself uses, and it is the one that has to intersect.
-        ent_alts = defaultdict(list)
-        for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+        #
+        # ...AND AN ENTRY THAT CANNOT FIRE IS NOT AN ARM OF THE FORK. The disjunction above is
+        # only as good as the ways in it lists: a way in that no player can take dissolves the
+        # price every real way in charges, and the erased requirement is a frontier never
+        # computed and a need retired downstream. `_reg_entry_demands._via_latch` already
+        # refuses to be vouched for by such an entry -- it is the correction that stopped LB2's
+        # cobra pass dissolving its own demand -- and it is owed here for the same reason, off
+        # the same evidence (`latch_evidence`). Refused only where the proof is free: a lowered
+        # room local with NO writer anywhere in the room. If every entry at a state is
+        # unfirable the machine cannot be armed there at all, and nothing is subtracted --
+        # judging that from ignorance would fabricate a requirement rather than protect one.
+        ent_alts, live_alts = defaultdict(list), defaultdict(list)
+        ents = list(info.get("entries", ())) + list(info.get("init_entries", ()))
+        for K, eg in ents:
             ent_alts[K].append(_own_required(eg))
-        for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
-            req(eg, info["room"], only=set.intersection(*[set(a) for a in ent_alts[K]]))
+            if not _entry_cannot_fire(em, info["room"], eg, latch_ev):
+                live_alts[K].append(_own_required(eg))
+        for K, eg in ents:
+            alts = live_alts[K] or ent_alts[K]
+            req(eg, info["room"], only=set.intersection(*[set(a) for a in alts]))
         for it in info.get("drops", ()):
             consumed_at[it].add(info["room"])
 
@@ -1429,9 +1512,12 @@ def _survivable(info, unavoidable, handoff, start=None, preempt=frozenset()):
     # wake -- so using the skeleton key is the SOLUTION, not a fatal use, and the meat's own cost
     # rides sInsertMeat's entry like any other requirement. `preempt` is the competitor set the
     # caller computed from `entry_recv`; membership in `unavoidable` is re-checked here because
-    # the caller's fixpoint grows it -- a competitor that turns out doomed pre-empts nothing.
-    # `restores_control` is derived (vocab.derive_control_selectors) and empty on SCI0, so this
-    # cannot move LSL2/KQ4; and a machine that never hands control back (KQ6's throwSkull) is
+    # the caller's fixpoint grows it -- a competitor that turns out doomed pre-empts nothing, and
+    # neither does one the player cannot arm (the caller's `_armable`, added 2026-08-14).
+    # `restores_control` is derived: `machine._restore_sels` keeps the 'restore'-kind selectors
+    # of `vocab.derive_control_selectors`, and SCI0 declares none (LSL2/KQ4 derive
+    # {'init': 'take'} and nothing else -- re-measured 2026-08-14), so nothing here can move the
+    # two golden games; and a machine that never hands control back (KQ6's throwSkull) is
     # exactly as condemned as before.
     restored = info.get("restores_control") or set()
     safe, changed = set(), True
@@ -3073,15 +3159,39 @@ class IrSccReach(SccReach):
             _arms, _fatal, doomed, handoff = _trap_graph(infos)
             # Same-slot competitors, for the pre-emption rule in `_survivable`: the slot a
             # machine's arming wrote (`entry_recv`) is the slot a rival `setScript:` steals.
+            #
+            # ...AND ONLY THE ONES THE PLAYER CAN ACTUALLY ARM. Stealing the slot is an ACTION,
+            # so a competitor is an escape only while the player can perform it: `entry_musts`
+            # is the price of arming a machine by any route, and a price that cannot be paid
+            # buys no escape. The pre-emption rule was reading the slot map alone, which says
+            # who COULD hold the slot, never who the player can PUT there -- so a rival gated
+            # on something unobtainable deleted a death the player still dies of.
+            #
+            # The test is deliberately the weakest one that is still a proof: an item with no
+            # reachable source at all. LB2's trunk -- the case the rule exists for -- keeps
+            # every one of its escapes, `sInsertMeat`'s meat included, because the meat has a
+            # source; what it cannot keep is an escape whose price does not exist in the game.
             slots = defaultdict(set)
             for i in infos:
                 for rc in (i.get("entry_recv") or ()):
                     if rc is not None:
                         slots[rc].add(i["inst"])
+            by_inst = {i["inst"]: i for i in infos}
+
+            def _armable(m):
+                i = by_inst.get(m)
+                ents = list((i or {}).get("entries") or ()) \
+                    + list((i or {}).get("init_entries") or ())
+                if i is None or not ents:
+                    return True                        # no arming we can read: not a proof of
+                                                       # anything ([[arming-floor]]), so as before
+                musts = entry_musts(i)
+                return any(all(self.sources.get(it, set()) & self.reach_rooms
+                               for it in musts.get(K, ())) for K, _g in ents)
 
             def _preempt(i):
                 return frozenset(m for rc in (i.get("entry_recv") or ()) if rc is not None
-                                 for m in slots[rc] if m != i["inst"])
+                                 for m in slots[rc] if m != i["inst"] and _armable(m))
             unavoidable = {i["inst"] for i in infos
                            if i["inst"] in doomed
                            and not _survivable(i, doomed, handoff, preempt=_preempt(i))}
@@ -3382,20 +3492,7 @@ class IrSccReach(SccReach):
             return {}
         domd = {S: set(dom)}
         by_name = {(i["room"], str(i.get("inst"))): i for i in self.em.machines}
-        # This room's lowered locals (reg -> home room), their machine writers, and every
-        # non-machine write -- the latch hop's whole evidence base.
-        local_home = dict(getattr(self.em.ir, "_room_local_index", None) or {})
-        latch_writers = {}                             # (room, reg) -> [(info, value)]
-        for i in self.em.machines:
-            for _K, paths in i["states"].items():
-                for (_g, wr, _gg, _c, _tr) in paths:
-                    for gi, v in wr:
-                        if local_home.get(gi, (None,))[0] == i["room"]:
-                            latch_writers.setdefault((i["room"], gi), []).append((i, v))
-        nonmachine = {}                                # (room, reg) -> {values written}
-        for room, _script, gi, v, _g in getattr(self.em, "handler_writes", ()):
-            if local_home.get(gi, (None,))[0] == room and isinstance(v, int):
-                nonmachine.setdefault((room, gi), set()).add(v)
+        local_home, latch_writers, nonmachine = latch_evidence(self.em)
         memo, stack = {}, set()
 
         def accepted(info):
@@ -4701,10 +4798,15 @@ def _build(cfg, ir_path):
     # Corpus-measured single instance (see derive_mask_accessors' docstring).
     _macc = V.derive_mask_accessors(ir)
     if _macc:
+        import sys as _sys
         _mw, _mr, _mskips = V.lower_mask_accessors(ir, _macc)
+        # STDERR, like every other build diagnostic. On stdout this line lands inside the JSON
+        # `snapshot.py GAME > before.json` writes -- the project's own documented regression
+        # command -- and only on a COLD cache, so the file it corrupts is exactly the one taken
+        # before a change to the code that invalidated the cache.
         print("  [lowered] mask accessor store(s) %s: %d write site(s), %d read call(s)"
               "%s" % (sorted(_macc), _mw, _mr,
-                      "" if not _mskips else ", skipped %s" % _mskips))
+                      "" if not _mskips else ", skipped %s" % _mskips), file=_sys.stderr)
     V.lower_mask_globals(ir, V.derive_mask_globals(ir))
     # A `switch` case label that is a PROPERTY is a literal the model was throwing away -- see
     # vocab.lower_property_case_labels. Runs LAST, after every store, deliberately: it allocates
@@ -4713,9 +4815,10 @@ def _build(cfg, ir_path):
     # register identity). Placing it here leaves every store's numbering exactly as it was.
     _pcl = V.lower_property_case_labels(ir)
     if _pcl:
+        import sys as _sys
         _heads = sorted({h for *_x, h in _pcl})
         print("  [lowered] %d property case label(s) in %d object(s), heads=%s"
-              % (len(_pcl), len({(s, o) for s, o, *_r in _pcl}), _heads), file=__import__("sys").stderr)
+              % (len(_pcl), len({(s, o) for s, o, *_r in _pcl}), _heads), file=_sys.stderr)
     d_gi, d_val = sig[0], (sig[1] if len(sig) > 1 else None)
     is_death = DeathSignal(d_gi, d_val)
     em = E.OpEmitter(ir, cfg, is_death)

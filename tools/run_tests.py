@@ -141,33 +141,30 @@ KNOWN_RED = {
         # not-missable, unholdable-cannot-strand; SINGLETON-only -- the group form deletes LSL2's
         # play-validated raft guard and is ruled out). `pipeline --report` exits 0 on KQ6.
     },
-    # THE v1.0-lb2 REVIEW's four DELETION-SIDE holes (docs/reviews/review-v1.0-lb2.md §4.1-§4.4).
-    # Each is a filter that deletes on a proof weaker than its own comment, and each is latent on
-    # our four games -- "fails silent and green" is the review's phrase -- so the failing checks
-    # below are the only thing that will notice the next game exercising one.
-    "test_deletion_soundness.py": {
-        "a flip edge with a NON-POCKET source refuses the forwarding":
-            "§4.1. `guards.defer_to_entry`'s forwarding proof calls the pocket's flip the SOLE "
-            "PRODUCER after checking only in-ROOM writes elsewhere and edges OUT OF the pocket. "
-            "An edge write reg:=w from any other source is never considered, so the player can "
-            "stand at the stage without crossing the hold while the surface reports the demand "
-            "covered. Latent: LB2's 123:=5 really is the sole producer.",
-        "an unresolvable READ refuses the whole store (nothing lowered, nothing husked)":
-            "§4.2. `vocab.lower_mask_accessors` husks the reader bodies unconditionally, while "
-            "a read call site it could not evaluate is merely 'skipped' -- so that site now "
-            "calls a body that is a literal 0 and reads FALSE. Unmodelled must not lower to "
-            "false. Latent: LB2's g124 has one skip and it is a WRITE (script 90 `cue`).",
-        "an escape the player can never arm does NOT pre-empt the death":
-            "§4.3. `_survivable`'s pre-emption accepts any same-slot competitor that is not "
-            "itself doomed, without asking whether the player can ARM it. Latent: LB2's rm630 "
-            "trunk has seven competitors, one of them (`sPlayMusic`) armable unconditionally.",
-        "an entry gated on a latch nothing raises does NOT dissolve the requirement":
-            "§4.4. `build_maps` intersects `_own_required` over EVERY entry at a state, so an "
-            "entry that can never fire dissolves the requirement its siblings carry. "
-            "`_reg_entry_demands._via_latch` already carries the correction for the demand "
-            "side ('an unfirable entry vouches for nothing'); the requirement side does not, "
-            "and it feeds required -> frontiers -> crossing_retires_need.",
-    },
+    # ✅ ALL FOUR PROMOTED 2026-08-14, the same day they were declared. The v1.0-lb2 review's
+    # deletion-side holes (docs/reviews/review-v1.0-lb2.md §4.1-§4.4) are closed, and
+    # `test_deletion_soundness.py` is now ten green checks -- four cures plus the six companions
+    # that keep each cure from being "delete the filter":
+    #   §4.1 the forwarding proof's second half. "Sole producer" was proved over in-ROOM writes
+    #        elsewhere plus edges OUT OF the pocket, which never asks whether some OTHER room's
+    #        edge commits the same value; it does now, and a register written in two spellings
+    #        being checked in one is this codebase's oldest bug shape ([[same-rule-two-places]]).
+    #   §4.2 `lower_mask_accessors` refuses the whole store when a READ call site cannot be
+    #        evaluated, because husking the reader body under it turns "unmodelled" into
+    #        "modelled false" -- the one place in the codebase where ignorance argued for a wall.
+    #        Asymmetric with writes on purpose (an unmodelled write is invisible everywhere
+    #        else); LB2's g124 keeps its store, its one skip being a write.
+    #   §4.3 the pre-emption rule asks whether the player can ARM the competitor (`entry_musts`
+    #        priced against reachable sources), the weakest test that is still a proof: LB2's
+    #        trunk keeps every escape it had, including the meat.
+    #   §4.4 `build_maps` no longer lets an entry that cannot fire dissolve its siblings'
+    #        requirement, off the same evidence `_reg_entry_demands._via_latch` already uses --
+    #        now one `latch_evidence` shared by both, rather than the rule in two places.
+    # MEASURED: all four games' FULL snapshot surfaces byte-identical before and after (LSL2 and
+    # KQ4 goldens, KQ6 and LB2 watched, placements included -- LB2 still ships all five, the
+    # forwarded rm26->rm750 demand among them). Every cure is latent on today's corpus by
+    # construction; the tests are the only thing that will see the next game exercise one.
+
     # ✅ PROMOTED 2026-08-10 -- "test_lb2_ground_truth.py: the act-boundary carries are caught" is
     # no longer red. The five rows were THREE causes plus one misclassification: §7s (the act
     # register could run backwards) closed smellingSalts; §7y (register_strandings walks the
