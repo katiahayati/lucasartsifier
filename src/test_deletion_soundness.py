@@ -38,7 +38,7 @@ import guards as G                                                       # noqa:
 import ir as I                                                           # noqa: E402
 import missability as M                                                  # noqa: E402
 import vocab as V                                                        # noqa: E402
-from guard_ast import GAnd, Pred                                         # noqa: E402
+from guard_ast import GAnd, GNot, Pred                                         # noqa: E402
 
 PASS, FAIL = [], []
 
@@ -356,6 +356,42 @@ def test_departure_is_not_claimed_from_one_arm():
                  "deletes it: %r" % (got,))
 
 
+# --- 6. the fork escape that is the lethal arm itself --------------------------------------------
+def _fork_machine(lethal_arm_exits):
+    """One state, two complementary arms, a death armed under the guard of one of them.
+
+    LB2's rm620 vat shape: the handoff's condition IS an arm's condition (`392 != 0`). Which arm
+    exits is the whole question -- if the arm that hands you to the death is also the arm that
+    leaves, the state is not survivable through it, and reading it as the escape deletes the
+    death."""
+    g = Pred("CMP", 392, "!=", 0)
+    ng = GNot(g)
+    lethal_tr = ("EXIT", 9) if lethal_arm_exits else ("PARK",)
+    other_tr = ("PARK",) if lethal_arm_exits else ("EXIT", 9)
+    info = {"inst": "sSearchVat", "room": 1,
+            "entries": [(0, GAnd([_own(5)]))], "init_entries": [], "entry_armers": [None],
+            "entry_locals": [{}], "entry_recv": [("G", 2)], "restores_control": set(),
+            "states": {0: [([g], (), (), (), lethal_tr), ([ng], (), (), (), other_tr)]},
+            "drops": ()}
+    # the death is armed from this state, under the FIRST arm's own condition
+    handoff = {("sSearchVat", 0): {"sFallInVat": g}}
+    return info, handoff
+
+
+def test_fork_escape_is_not_the_lethal_arm():
+    print("\n-- missability._survivable: the arm that hands you over is not the way out --")
+    info, handoff = _fork_machine(lethal_arm_exits=False)
+    check("the OTHER arm's exit is a real escape (the fork rule's own case)",
+          M._survivable(info, {"sFallInVat"}, handoff, start=0),
+          detail="the death is armed under `392 != 0`; the `not` arm leaves the room")
+
+    info2, handoff2 = _fork_machine(lethal_arm_exits=True)
+    check("an arm that spells the ARMING's own condition is not an escape, even exiting",
+          not M._survivable(info2, {"sFallInVat"}, handoff2, start=0),
+          detail="the only arm with a way out is the one whose guard IS the death's arming "
+                 "condition -- taking it arms the death, and the sibling merely parks")
+
+
 def run():
     print("=== test_deletion_soundness ===")
     test_forwarding_sole_producer()
@@ -363,6 +399,7 @@ def run():
     test_preempt_requires_an_armable_competitor()
     test_entry_intersection_ignores_unfirable_entries()
     test_departure_is_not_claimed_from_one_arm()
+    test_fork_escape_is_not_the_lethal_arm()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL

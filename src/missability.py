@@ -1503,6 +1503,28 @@ def _survivable(info, unavoidable, handoff, start=None, preempt=frozenset()):
         return {m for m, g in (handoff.get((inst, K)) or {}).items()
                 if m in unavoidable and not _ctr_contradicted(g, known)}
 
+    def _lethal_guards(K):
+        """...and the CONDITIONS those armings carry, which is how an arm is told from its
+        siblings. `handoff` is keyed by state, so the fork rule below could only ever ask
+        whether the STATE branches; these are what let it ask whether THIS ARM is the one that
+        hands you over."""
+        return [g for m, g in (handoff.get((inst, K)) or {}).items()
+                if m in unavoidable and not _ctr_contradicted(g, known) and g is not None]
+
+    def _carries(pg, hgs):
+        """Does this arm's own guard SAY the handoff fires?
+
+        True only when the game spells the arming's condition as the arm's condition -- the
+        guard tree is the arm's whole guard, or one of its conjuncts. That is the common
+        spelling (LB2's rm620 vat: the arm is `392!=0` and so is the handoff; rm715's question:
+        both are `NOT local0`), and where it holds, taking this arm is taking the death,
+        whatever transition the arm carries. Where the arming's condition is some larger
+        expression we cannot line up with an arm (rm700's `sExitRoom`, whose handoff guard is
+        the armer's whole entry disjunction), this says nothing and the fork rule behaves as it
+        did -- deliberately, because that case is the play-validated false positive the fork
+        rule exists to prevent."""
+        return any(hg == pg or (isinstance(pg, list) and hg in pg) for hg in hgs)
+
     hands_to_death = any(_lethal_handoff(K) for (a, K) in handoff if a == inst)
     # A state that RESTORES PLAYER CONTROL and then waits is PRE-EMPTABLE: the machine occupies
     # a `setScript:` slot, so arming any competitor into the same slot disposes it, pending death
@@ -1547,12 +1569,21 @@ def _survivable(info, unavoidable, handoff, start=None, preempt=frozenset()):
             # kills exactly this row, keeps KQ6's `throwSkull` (the play-validated positive this
             # detector exists for -- it does NOT branch, every path re-arms the ceiling), and
             # leaves LSL2/KQ4 at zero rows.
+            #
+            # ...AND THE ARM THAT SPELLS THE ARMING'S OWN CONDITION IS NOT AN ESCAPE, whatever
+            # transition it carries. `handoff` is keyed by state, so "the state branches" was
+            # the only question this rule could ask, and it let an arm that BOTH hands off and
+            # exits stand as the way out -- a death deleted on the strength of the arm that
+            # causes it. `_carries` asks the narrower question the guards can answer.
             lethal = _lethal_handoff(K)
+            hgs = _lethal_guards(K)
             if lethal and not any(_complementary(a, b) for a, *_x in paths for b, *_y in paths):
                 continue
             for (_g, _w, _gg, _c, tr) in paths:
                 if lethal and not any(_complementary(_g, b) for b, *_y in paths):
                     continue          # this arm carries the handoff and nothing steers away
+                if lethal and _carries(_g, hgs):
+                    continue          # ...and this one says so itself
                 if tr and tr[0] == "DEATH":
                     continue
                 if tr and tr[0] == "EXIT":
