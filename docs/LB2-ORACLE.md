@@ -534,7 +534,9 @@ new 520 (the hold, demand = the spec's 7 items); guarded-model verify "no NEW so
 INSTALLED to the live game with cmp (Sierra's own 100/450, lost in the v2 cleanup, restored
 too). **DEMAND FORWARDING landed the same night (user vote: option 2):** the rm26->rm750 demand (bifocals+redHair uncovered; wireCutters/daggerOfRa/grapes and the [10,11] any-of group already in the hold) FORWARDS into the same rm520 arm — `guards.defer_to_entry` proves the sole producing flip + satisfiability, `patcher._forward_demand_to_hold` conjoins the delta. Row: REFUSED → `demand-forwarded-to-hold`. THE DAGGER KNOWN_RED IS PROMOTED (user's word; run_tests.py records it). ⚠️ item 31 is the GRAPES (not the dagger) — the 4→5 break fires on exiting rm520 with the grapes.
 
-**Play-confirm owed (§9)**: at act 4 carrying the grapes but missing a carry,
+✅ **PLAY-CONFIRMED BY THE USER 2026-08-13** — all three hold behaviors (grapes-only → plain held exit, act stays 4; all nine → stock break to act 5; no grapes → stock exit) AND the rm300 taxi wraps at act 1. Test rig: ~/sierra/patched/dagger; teleport sessions need `send WrapMusic init 0` once per launch (WrapMusic.wrapSound defaults 0 until some room runs wrap-music; `dispose` sends `client:` into it — the stock-game crash that ate a day of triage was THIS, not any patch).
+
+**Play-confirm owed (§9)** (historical): at act 4 carrying the grapes but missing a carry,
 exit the office → a plain exit, act stays 4; re-enter, exit with all seven → the break fires.
 
 ### ⭐ §7am. THE TICK STORE IS LOWERED — and the pass-vacuity detection is PARKED at three named hops (2026-08-11, evening)
