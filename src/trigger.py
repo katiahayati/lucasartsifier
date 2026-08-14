@@ -431,6 +431,8 @@ def find_nav_assign(forms, target_room):
     return None
 
 
+_STATE_DISPATCH = re.compile(r"\(=\s*\S+\s+param\d+\)|param\d+")
+
 _MASKED = {}
 
 
@@ -694,7 +696,17 @@ def arming_contexts(text, target_script, ego=None):
                     if k0 == "tok" and v == "else":
                         poisoned = True
                     elif k0 == "tok" and re.fullmatch(r"-?\d+", v):
-                        if meth == "changeState" and "state" in dtxt:
+                        # THE MACHINE'S OWN STATE DISPATCH, recognised by its FORM. This used to
+                        # ask whether the discriminator text contained the substring "state",
+                        # which is a bet on what a decompiler names a property (review §1.4) --
+                        # and getting it wrong turns a state number into a path CONDITION.
+                        # SCI's idiom is `(switch (= <prop> param1) ...)`: the method's own
+                        # parameter, stored. A game that switches on the parameter directly
+                        # spells the same dispatch. Measured over all four games' changeState
+                        # switches (1712 of them): the name test and this one agree everywhere,
+                        # including on KQ6's one switch that is neither (its discriminator is
+                        # `value`, and it is not a state dispatch).
+                        if meth == "changeState" and _STATE_DISPATCH.fullmatch(dtxt):
                             state_case = int(v)
                         else:
                             cases.append((dtxt, int(v)))

@@ -191,6 +191,45 @@ def test_unreadable_deliverer_is_not_a_cleared_one():
           P._cutscene_delivers("/nonexistent", {300: "rm300"}, 300, 250) is None)
 
 
+def test_interceptor_shape_census():
+    """WHERE THE INTERCEPTOR SHAPE EXISTS AT ALL, across the corpus.
+
+    The review's §1.2: the shape was generalised from ONE instance and its census lived in a
+    memory note rather than anywhere a run could check. It is cheap to measure -- the function
+    is pure text -- so it is measured here: for every room script, every `(== globalN v)` it
+    contains as a candidate stage and every `(= paramN <room>)` as a candidate pocket, does any
+    arm match?
+
+    MEASURED 2026-08-14: LSL2 0, KQ4 0, KQ6 0, LB2 6 -- rm500's act-2->3 arm, rm520's act-4->5
+    arm (the one that ships), and four in rm666, the game's own room-remap dispatcher. So the
+    mechanism is LB2-shaped today but not LB2-unique even within LB2, and a game whose
+    interceptor is spelled differently will show up here as a zero that ought not to be."""
+    print("\n-- guard_flip_interceptor: the corpus census, not a memory note --")
+    import os as _os                                                     # noqa: E402
+    import re                                                            # noqa: E402
+    import config                                                        # noqa: E402
+    want = {"LSL2": 0, "KQ4": 0, "KQ6": 0, "dagger": 6}
+    for name, expect in want.items():
+        cfg = config.by_name(name)
+        if cfg is None or not _os.path.isdir(cfg.src_dir):
+            check("%s: interceptor-shaped arms" % name, False, "NO src tree -- not measured")
+            continue
+        hits = 0
+        for fn in sorted(_os.listdir(cfg.src_dir)):
+            if not fn.endswith(".sc"):
+                continue
+            text = open(_os.path.join(cfg.src_dir, fn), errors="replace").read()
+            stages = set(re.findall(r"\(==\s*global\d+\s+-?\d+\)", text))
+            pockets = {int(x) for x in re.findall(r"\(=\s*param\d+\s+(\d+)\s*\)", text)}
+            for st in stages:
+                for pk in pockets:
+                    if P.guard_flip_interceptor(text, pk, st, "(gEgo has: 1)")[1]:
+                        hits += 1
+        check("%s: %d interceptor-shaped arm(s)" % (name, expect), hits == expect,
+              detail="measured %d, expected %d -- if a new game shows 0 here, its commit is "
+                     "spelled some other way and falls to REFUSED silently" % (hits, expect))
+
+
 def run():
     print("=== test_patch_text ===")
     test_single_arm_is_wrapped()
@@ -198,6 +237,7 @@ def run():
     test_stage_match_is_structural()
     test_handsoff_ignores_comments_and_strings()
     test_unreadable_deliverer_is_not_a_cleared_one()
+    test_interceptor_shape_census()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
