@@ -61,6 +61,38 @@ Loose `script.NNN` files in the game folder override the mapped resource, so the
 | **SCICompanion's compiler** (C++) | To emit a patch you must recompile. SCICompanion is the reference SCI compiler; we ported the compiler core to a headless Linux binary. Regenerating a `.sco` proved byte-identical to the original, which is the evidence the port is faithful. |
 | **Python 3, standard library only** | The analysis is graph algorithms over a JSON AST — Tarjan, BFS, fixpoints. No numpy, no networkx, no solver bindings. 7,200 lines with zero third-party dependencies, which matters because the fragile parts are the two native toolchains. |
 
+## Clean-room check
+
+The README's install instructions were run from scratch in a container, because a dependency list
+written from the machine that already has everything is a guess. Recipe, with the game mounted
+read-only (it is never written to, and no game data is redistributed):
+
+```bash
+docker run --rm -v "$PWD:/repo:ro" -v "/path/to/game:/game:ro" ubuntu:24.04 bash -c '
+  apt-get -qq update && DEBIAN_FRONTEND=noninteractive apt-get -qq install -y \
+      --no-install-recommends python3 git cmake g++ make dotnet-sdk-8.0 ca-certificates
+  git clone -q /repo /work/s && cd /work/s
+  tools/sci-tools-fork/build.sh /game /work/s/build/ir
+  git clone -q --depth 1 https://github.com/icefallgames/SCICompanion vendor/SCICompanion
+  cmake -S tools/scicompile -B tools/scicompile/build && cmake --build tools/scicompile/build -j
+  cd src && python3 -m pipeline /game --skip-decompile --out /work/s/build'
+```
+
+Measured 2026-08-14 on `ubuntu:24.04` against King's Quest IV (Python 3.12.3, .NET 8.0.129,
+cmake 3.28.3, g++ 13.3.0):
+
+| step | time |
+|---|---|
+| decompiler built + game decompiled to `.sc` + JSON IR | 14s |
+| SCICompanion cloned, 76 translation units compiled to `scicompile` | 1m54s |
+| analysis (`--report`) | 1m20s |
+| full run through patch emission | 1m23s → 5 loose patch files |
+| the four game-independent test files (49 checks) | seconds |
+
+Two things this caught that the host machine could not: the pipeline is a `src/`-relative module
+(`cd src` first — from the repo root `python -m pipeline` fails), and `vendor/SCICompanion` had
+never been written down as a step anywhere, having been cloned by hand once, years of commits ago.
+
 ## What didn't work
 
 **Syntactic analysis only** The first prototype just considered where items were used and walked back from there.

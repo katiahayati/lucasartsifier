@@ -17,9 +17,10 @@ Stages, each one runnable on its own if you want to poke at the middle:
 The game's own resources are never modified: `script.NNN` files dropped in the game folder
 override the mapped resource, and deleting them reverts.
 
-Anchors (start room, victory room) are DISCOVERED -- see anchors.py -- so a new title needs no
-room numbers declared. Two things still are game-specific: the death signal and the debug globals,
-both in config.py. The run warns when it is falling back to LSL2's.
+Nothing about the title is declared on this path. The anchors (start room, victory room) are
+DISCOVERED -- see anchors.py -- and so are the death signal and the debug globals, from the
+game's own Game class and menu code (vocab.derive_death / derive_debug, via `configure` below).
+The run prints all four, so what it derived is on the report rather than in a config file.
 """
 from __future__ import annotations
 
@@ -60,13 +61,36 @@ def decompile(game_dir, out_dir):
 
 
 def configure(ir_path, game_dir):
-    """Point the analysis at this game and BLANK the anchors so they get discovered."""
+    """Point the analysis at this game and BLANK everything game-specific so it gets DERIVED.
+
+    All four anchors, not just the two, and the two new ones are a GUARANTEE rather than a fix.
+    `dataclasses.replace(config.ACTIVE, ...)` starts from whatever config is ACTIVE -- LSL2
+    unless something changed it -- so a declared death signal or debug set on that entry would
+    ride into every other game analysed through this CLI, judging King's Quest IV's deaths by
+    Larry's `gCurrentStatus`. MEASURED before writing this (2026-08-14, and the first version of
+    this note asserted the bug without measuring it): no entry in config.py declares either
+    field today -- LSL2, KQ4 and KQ6 all carry `death_signal=()` and `debug_globals=frozenset()`
+    -- so the CLI already derived them, and blanking here changes no output on any game. KQ4
+    through this path derives `global127` and debug `{215}` and reports the same seven items as
+    `config.KQ4` does, before the change and after it.
+
+    It is still worth stating in code rather than trusting: what makes the derivation happen is
+    the field being EMPTY (`missability.load` fills it from `vocab.derive_death` /
+    `derive_death_sci11` / `derive_debug`), and this is the one entry point whose game arrives
+    as a path with no config entry behind it. A future declared override on ACTIVE would
+    otherwise leak here silently, which is the same class of mistake as the anchors this
+    function already blanks.
+
+    (The module docstring used to say "the run warns when it is falling back to LSL2's". No such
+    warning existed anywhere in this file. What the run does instead is PRINT the derived death
+    signal and debug globals, which is the fact that claim was reaching for.)"""
     import config
     cfg = dataclasses.replace(config.ACTIVE,
                               src_dir=os.path.join(os.path.dirname(ir_path), "src"),
                               ir_path=ir_path,
                               resource_dir=game_dir,
-                              start_room=0, goal_rooms=frozenset())
+                              start_room=0, goal_rooms=frozenset(),
+                              death_signal=(), debug_globals=frozenset())
     config.ACTIVE = cfg
     return cfg
 
@@ -107,6 +131,14 @@ def main(argv=None):
     s = M.load(cfg=cfg)
     print(f"    anchors: start rm{s.em.cfg.start_room}, victory "
           f"{sorted(s.em.cfg.goal_rooms)}  (discovered)")
+    # ...and the other two derived anchors, printed for the same reason: they decide what counts
+    # as dying and what counts as a debug-only acquisition, so a reader has to be able to see
+    # which globals this run picked without opening a config file. `load` writes both back into
+    # the config it returns precisely so they can be reported.
+    print(f"    death signal: global{s.em.cfg.death_signal[0]}"
+          + (f" == {s.em.cfg.death_signal[1]}" if s.em.cfg.death_signal[1] is not None
+             else " (any nonzero)")
+          + f", debug globals: {sorted(s.em.cfg.debug_globals) or 'none'}  (derived)")
     print(f"    {len(s.rooms)} rooms, {len(s.comps)} strongly-connected components, "
           f"{len(s.regs)} gating registers")
     cands = s.analyze()
