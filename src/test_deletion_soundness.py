@@ -518,30 +518,41 @@ def test_death_values_are_measured():
 
 # --- 11. two stores claiming one register --------------------------------------------------------
 def test_ambiguous_registers_are_refused():
-    """"Allocation order IS register identity" is the invariant seven lowerings rest on, and
-    nothing checked it. KQ6's 386-396 are claimed by the object-property store AND the
-    property-flag store: reg393 is `(rgLair cliffFace:)` to one and word 709 bit 12 to the
-    other, and two of the eleven are modelled. `render_register` tries the stores in a fixed
-    order, so an ambiguous register would be written back as whichever store is checked first --
-    the phantom-spelling bug this codebase has already shipped twice. Refused instead."""
-    print("\n-- guards.ambiguous_registers: a register two stores claim is unspellable --")
+    """NO REGISTER IS CLAIMED BY TWO STORES -- and one that were could not be spelled.
+
+    "Allocation order IS register identity" is the invariant seven lowerings rest on, and until
+    2026-08-14 nothing checked it. It was false: KQ6's 386-396 were claimed by the
+    object-property store AND the property-flag store (reg393 was `(rgLair cliffFace:)` to one
+    and word 709 bit 12 to the other, and two of the eleven were modelled), because each
+    allocator started above the highest global it could SEE and the flag store's last eleven
+    registers were allocated for bits with no site to rewrite. `vocab._synth_base` now carries a
+    high-water mark across the stores, so the ranges are disjoint by construction.
+
+    Both halves are pinned: the corpus has no collision, AND `render_register` still refuses one
+    if a future store reintroduces it -- the second is checked on a stub, so it keeps testing
+    the refusal after the disease is cured."""
+    print("\n-- guards.ambiguous_registers: the stores' registers are disjoint --")
     import config                                                        # noqa: E402
-    want = {"LSL2": 0, "KQ4": 0, "KQ6": 11, "dagger": 0}
-    for name, n in want.items():
+    for name in ("LSL2", "KQ4", "KQ6", "dagger"):
         cfg = config.by_name(name)
         if cfg is None or not os.path.exists(cfg.ir_path):
-            check("%s: ambiguous registers" % name, False, "NO IR -- not measured")
+            check("%s: no register is claimed by two stores" % name, False,
+                  "NO IR -- not measured")
             continue
-        s = M.load(cfg=cfg)
-        amb = G.ambiguous_registers(s.em.ir)
-        check("%s: %d register(s) claimed by two stores" % (name, n), len(amb) == n,
-              detail="measured %r" % (sorted(amb),))
-        if amb:
-            R = sorted(amb)[0]
-            check("%s: an ambiguous register has no spelling" % name,
-                  G.render_register(s, R, 1) is None,
-                  detail="reg%d spelled as %r -- one store's reading, asserted over the "
-                         "other's" % (R, G.render_register(s, R, 1)))
+        amb = G.ambiguous_registers(M.load(cfg=cfg).em.ir)
+        check("%s: no register is claimed by two stores" % name, not amb,
+              detail="claimed twice: %r -- `render_register` would spell one store's register "
+                     "with the other store's meaning" % (sorted(amb),))
+
+    # ...and the refusal itself, on a stub: two stores claiming reg 400, nothing else.
+    stub = types.SimpleNamespace(_obj_prop_index={400: (21, "cliffFace")},
+                                 _prop_flag_index={400: ((81, 0), 709, 12)},
+                                 _room_local_index={}, _mask_global_index={},
+                                 flag_synth_base=None, flag_test_proc=None, scripts={})
+    fake = types.SimpleNamespace(em=types.SimpleNamespace(ir=stub))
+    check("a register two stores DO claim has no spelling",
+          G.ambiguous_registers(stub) == {400} and G.render_register(fake, 400, 1) is None,
+          detail="rendered %r" % (G.render_register(fake, 400, 1),))
 
 
 def run():

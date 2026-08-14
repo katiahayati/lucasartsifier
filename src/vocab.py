@@ -754,6 +754,32 @@ def derive_death_proc(ir):
     return out
 
 
+def _synth_base(ir, max_gi):
+    """The first synthetic register a store may take.
+
+    Above everything the IR REFERENCES (`max_gi`) **and** above everything any earlier store
+    already ALLOCATED. The second half is the fix for a real collision: each of the seven
+    lowerings used to derive its base from a fresh scan of the IR alone, and a store that
+    allocates a register it never materialises -- a flag bit with no site to rewrite -- leaves
+    that number invisible to the scan. Measured 2026-08-14: KQ6's property-flag store allocated
+    336-396 with its last eleven unmaterialised, so the object-property store started at 386 and
+    the two claimed the same eleven registers; `render_register` would then spell one store's
+    register with the other store's meaning (`(rgLair cliffFace:)` vs word 709 bit 12), which is
+    the phantom-spelling bug this codebase has shipped twice.
+
+    "Allocation order IS register identity" is unchanged and load-bearing: this only ever moves a
+    base UP, and only where an earlier store had already taken the ground."""
+    return max(int(max_gi) + 1, int(getattr(ir, "_synth_hwm", 0) or 0))
+
+
+def _synth_taken(ir, top):
+    """Record that every register below `top` is now spoken for."""
+    try:
+        ir._synth_hwm = max(int(getattr(ir, "_synth_hwm", 0) or 0), int(top))
+    except Exception:                                      # noqa: BLE001
+        pass
+
+
 def lower_death_procs(ir, proc_names, death_value=1):
     """Rewrite every call to a death PROCEDURE into a synthetic death-flag global write, IN PLACE,
     so the (global,value)-based death machinery (`is_death`, death_rooms, the winnable filter)
@@ -770,7 +796,8 @@ def lower_death_procs(ir, proc_names, death_value=1):
                     max_gi = max(max_gi, node["index"])
                 elif node.get("t") in ("PublicCall", "LocalCall") and node.get("name") in proc_names:
                     targets.append(node)
-    synth = max_gi + 1
+    synth = _synth_base(ir, max_gi)
+    _synth_taken(ir, synth + 1)
     for node in targets:                                   # nodes are the AST dicts the parent holds
         node.clear()
         node["t"] = "Assignment"
@@ -873,7 +900,8 @@ def lower_death_sci11(ir, dialogs, death_procs, death_value=1, screens=()):
             for n in I.walk(body):
                 if I.is_global(n):
                     max_gi = max(max_gi, n["index"])
-    synth = max_gi + 1
+    synth = _synth_base(ir, max_gi)
+    _synth_taken(ir, synth + 1)
 
     def write():
         return {"t": "Assignment", "kids": [
@@ -1138,7 +1166,7 @@ def lower_flags(ir, base_global, flag_procs):
                     max_gi = max(max_gi, node["index"])
                 elif node.get("t") in ("PublicCall", "LocalCall") and node.get("name") in flag_procs:
                     calls.append(node)
-    synth_base = max_gi + 1
+    synth_base = _synth_base(ir, max_gi)
     lowered = skipped = 0
     seen_flags = set()
     for node in calls:
@@ -1171,6 +1199,9 @@ def lower_flags(ir, base_global, flag_procs):
         ir.flag_indices = frozenset(seen_flags)
     except Exception:                                       # noqa: BLE001
         pass
+    # The block runs `synth_base + flag_number`, so the ground it takes reaches the HIGHEST
+    # flag the game mentions -- not the count of them (the numbers are sparse).
+    _synth_taken(ir, synth_base + (max(seen_flags) + 1 if seen_flags else 0))
     return synth_base, lowered, skipped
 
 
@@ -1520,7 +1551,7 @@ def lower_prop_flags(ir, accessors):
     # direct-spelling keys; only genuinely new bits get new numbers. (Measured the hard way:
     # letting the new sites interleave renumbered the whole store and the user-confirmed
     # letter row dissolved into noise.)
-    synth_base, index = max_gi + 1, {}
+    synth_base, index = _synth_base(ir, max_gi), {}
     for want_legacy in (True, False):
         for _n, _r, plan, legacy in sites:
             if legacy != want_legacy:
@@ -1541,6 +1572,7 @@ def lower_prop_flags(ir, accessors):
         # spell the game's own `tstFlag:/setFlag: <word> <mask>` site -- and the flag-block
         # renderer needs to know these are NOT proc-flag numbers (the phantom-spelling class).
         ir._prop_flag_index = {gi: k for k, gi in index.items()}
+        _synth_taken(ir, synth_base + len(index))
         ir._prop_flag_sels = {op: sel for sel, op in accessors.items()}
         # ...and the selector number->NAME map as THIS pass saw it (pre-rewrite: the Selector
         # nodes carrying both die with the lowering, so a later walk cannot rebuild it). The
@@ -2154,9 +2186,10 @@ def lower_obj_props(ir, pairs, split_chains=()):
                     sites.append((node, key, None))
                 elif I.as_int(ps[0]) is not None:
                     sites.append((node, key, I.as_int(ps[0])))
-    base, index = max_gi + 1, {}
+    base, index = _synth_base(ir, max_gi), {}
     for _n, key, _v in sites:
         index.setdefault(key, base + len(index))
+    _synth_taken(ir, base + len(index))
     try:
         # Keep the map so a synthetic register can be named back to the property it stands for.
         # Every other store's registers are traceable (a flag has its number, a global its index);
@@ -2287,8 +2320,9 @@ def lower_room_locals(ir, keys):
             for n in I.walk(body):
                 if I.is_global(n):
                     max_gi = max(max_gi, n["index"])
-    base = max_gi + 1
+    base = _synth_base(ir, max_gi)
     index = {k: base + i for i, k in enumerate(sorted(keys))}
+    _synth_taken(ir, base + len(index))
     resets = {}
     written = collections.defaultdict(set)
     sites = 0
@@ -2485,9 +2519,10 @@ def lower_item_bit_flags(ir, flags, item_of_receiver):
             for n in I.walk(body):
                 if I.is_global(n):
                     max_gi = max(max_gi, n["index"])
-    index, base = {}, max_gi + 1
+    index, base = {}, _synth_base(ir, max_gi)
     for k in sorted(flags):
         index[k] = base + len(index)
+    _synth_taken(ir, base + len(index))
     BOOL_GLOBALS.update(index.values())
 
     def gread(gi):
