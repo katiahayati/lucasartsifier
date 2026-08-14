@@ -15,7 +15,7 @@ the death signal and the debug flag are all derived from the game's own code.
 | game | engine | model | findings | edits placed | played |
 |---|---|---|---|---|---|
 | **Leisure Suit Larry 2** (1988) | SCI0 | 101 rooms, 27 components | 15 items + 1 group | 12 of 12 | ✅ patched game played to the ending |
-| **King's Quest IV** (1988) | SCI0 | 110 rooms, 15 components | 7 items | 5 of 5 | — never play-tested |
+| **King's Quest IV** (1988) | SCI0 | 110 rooms, 15 components | 7 items | 5 of 5 | ✅ extensively play-tested (`kq4-playtest-1` on) |
 | **King's Quest VI** (1992) | SCI1.1 | 86 rooms, 15 components | 18 items + 1 group | 24 of 26 | ✅ in-game guard control confirmed in play |
 | **Laura Bow 2: The Dagger of Amon Ra** (1992) | SCI1.1 | 78 rooms, 26 components | 10 items | 5 of 5 | ✅ act-break guards confirmed in play |
 
@@ -224,10 +224,12 @@ rather than declared; see `src/anchors.py`.
 
 ## Limits
 
-- **Play-testing is the only oracle a new title has.** LSL2's patch was played to the ending;
-  KQ6's and LB2's guards were confirmed at the sites that mattered; KQ4 has never been played at
-  all, golden surface and all. Static verification proves the guards close every *detected*
-  softlock and introduce none — it has nothing to say about what detection missed.
+- **Play-testing is the only oracle a new title has.** All four have had some: LSL2's patch was
+  played through to the ending, KQ4's has been play-tested extensively (from `kq4-playtest-1`
+  on), and KQ6's and LB2's guards were confirmed at the sites that mattered. That is what makes
+  LSL2 and KQ4 golden and leaves the other two watched. Static verification proves the guards
+  close every *detected* softlock and introduce none — it has nothing to say about what
+  detection missed, which is why the five defects below were found by playing.
 - **Required *actions* are out of scope** (KQ5's throw-the-shoe-at-the-cat). What is in scope has
   turned out to be one rule rather than several: a transition must not be taken while something it
   needs is still required and no longer obtainable. That covers a room edge, a plot flag advancing,
