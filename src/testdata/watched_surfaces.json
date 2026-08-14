@@ -81,6 +81,7 @@
     "register_strandings": [
       "letter@reg338=1->[730, 870]"
     ],
+    "register_value_strandings": [],
     "register_write_specs": [
       "reg338=1: (gEgo has: 20)"
     ],

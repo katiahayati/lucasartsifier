@@ -47,12 +47,27 @@ def snapshot(cfg, with_placements=False):
                    | {d["item"] for d in s.dangerous_sinks()}
                    | {f["item"] for f in s.fatal_uses()}
                    | {r["item"] for r in s.register_strandings()})
-    # REGISTER-VALUE strandings join the surface CONDITIONALLY: the key appears only when rows
-    # exist. Not an optimization -- the golden fixtures (LSL2, KQ4) freeze the full dict and
-    # `test_golden._diff` walks the union of keys, so an unconditional empty key would move two
-    # goldens for no behaviour change, while this way the first row ever found on a golden game
-    # surfaces as a LOUD brand-new key. Measured at introduction (2026-08-10): LSL2 0, KQ4 0,
-    # KQ6 0, LB2 1 (the empty snake-oil bottle at the act-5 seal, user-ruled in scope).
+    # REGISTER-VALUE strandings, unconditional like every other detector -- see the note at the
+    # bottom of this comment block for what used to be here and why it went.
+    #
+    # ⛔ THE CLAUSE THIS REPLACES WAS THE PROJECT'S OWN OVERFIT TELL, and it is worth keeping the
+    # confession rather than the code. The key used to join the dict only `if rvs`, and the
+    # stated reason was that an unconditional empty key "would move two goldens for no behaviour
+    # change" -- i.e. a clause in src/ shaped to keep a frozen answer still, which is exactly
+    # the thing this codebase refuses when a detector does it ([[clause-that-protects-a-known-
+    # answer]]). Caught by the v1.0-lb2 contextless review, §2.3.
+    #
+    # It also cost something real. Seventeen of this dict's eighteen keys are unconditional and
+    # seven of them are EMPTY on LSL2 (`joint`, `tolls`, `register_strandings`, ...), frozen
+    # anyway -- because an empty list is the record that a detector RAN and found nothing, and an
+    # absent key cannot tell that apart from a detector this version of the code does not have.
+    # That is this file's own argument two blocks below, where `action_specs` and
+    # `register_write_specs` joined for the same reason.
+    #
+    # Re-blessed 2026-08-14 with the user's sign-off: both goldens gained exactly one line,
+    # `"register_value_strandings": []`, and were diffed key-by-key against their previous
+    # contents to prove nothing else moved. Measured (unchanged since 2026-08-10): LSL2 0,
+    # KQ4 0, KQ6 0, LB2 1 (the empty snake-oil bottle at the act-5 seal, user-ruled in scope).
     rvs = s.register_value_strandings()
     snap = {
         "start_room": s.em.cfg.start_room,
@@ -90,10 +105,9 @@ def snapshot(cfg, with_placements=False):
                                       f"->{r['still_needed_at']}"
                                       for r in s.register_strandings()),
     }
-    if rvs:                                      # conditional -- see the note above `snap`
-        snap["register_value_strandings"] = sorted(
-            f"reg{r['reg']}=={r['bad']}@seal{r['register']}={r['value']}"
-            f"->{r['demanded_at']} via {r['via']}" for r in rvs)
+    snap["register_value_strandings"] = sorted(
+        f"reg{r['reg']}=={r['bad']}@seal{r['register']}={r['value']}"
+        f"->{r['demanded_at']} via {r['via']}" for r in rvs)
     specs = G.guard_specs(s)
     # REFUSED specs are marked, not hidden and not shown as if we emit them. `pipeline.py` prints
     # them under a REFUSED banner and the patcher skips them, so a snapshot that lists a refused

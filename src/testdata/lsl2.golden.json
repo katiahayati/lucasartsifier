@@ -57,6 +57,7 @@
     "rm81/Hair_Rejuvenator: applied=True kind=None"
   ],
   "register_strandings": [],
+  "register_value_strandings": [],
   "register_write_specs": [],
   "sinks": [
     "Airsick_Bag@rm61 dest=-1 refused=False",

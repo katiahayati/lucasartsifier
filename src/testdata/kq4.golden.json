@@ -51,6 +51,7 @@
     "Room45: applied=True kind=setscript sites=1"
   ],
   "register_strandings": [],
+  "register_value_strandings": [],
   "register_write_specs": [
     "reg100=1: (and (gEgo has: 1) (gEgo has: 17))"
   ],
