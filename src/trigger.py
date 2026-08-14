@@ -431,6 +431,51 @@ def find_nav_assign(forms, target_room):
     return None
 
 
+_MASKED = {}
+
+
+def code_only(text):
+    """`text` with every COMMENT, message string and Said spec blanked to spaces.
+
+    Same span, character for character, so an offset computed on the original indexes the same
+    place here -- which is the whole point: the callers work in offsets into the real file and
+    only want to know whether a piece of CODE says something.
+
+    It exists because `arming_contexts` decides `handsoff_before` -- is this arming an arrival
+    commit, the classification LB2's play test made expensive -- by searching the source between
+    two offsets for `handsOff:`, and source contains prose. A room whose comment mentions the
+    handsOff it used to have, or a `Print {…}` line quoting one, read as the game taking the
+    controls away. The misclassification runs both ways and neither is benign: a false commit
+    re-sites a guard away from the site it belongs on.
+
+    The three forms are SCI's own and the same three `_block_span` already skips: `;` to end of
+    line, `{...}` strings, `'...'` Said specs. Cached per text object, since the callers ask
+    repeatedly about spans of one file."""
+    hit = _MASKED.get(id(text))
+    if hit is not None and hit[0] == text:
+        return hit[1]
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == ";":
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i))
+            i = j
+        elif c in "{'":
+            close = "}" if c == "{" else "'"
+            j = text.find(close, i + 1)
+            j = n - 1 if j < 0 else j
+            out.append(" " * (j - i + 1))
+            i = j + 1
+        else:
+            out.append(c)
+            i += 1
+    masked = "".join(out)
+    _MASKED[id(text)] = (text, masked)
+    return masked
+
+
 def _named_regions(text):
     """[(name, start, end)] for every `(instance NAME ...)` / `(class NAME ...)` block. Shared
     code often lives on a CLASS (KQ6's CliffRoom), so both spellings are one enumeration."""
@@ -667,9 +712,11 @@ def arming_contexts(text, target_script, ego=None):
         hide_pat = (re.compile(r"\(%s\b%shide:" % (re.escape(ego), _ANY))
                     if ego else None)
 
+        code = code_only(text)             # comments and message strings are not sends
+
         def _taken(a, b):
-            return (re.search(r"handsOff:", text[a:b]) is not None
-                    or bool(hide_pat and hide_pat.search(text[a:b])))
+            return (re.search(r"handsOff:", code[a:b]) is not None
+                    or bool(hide_pat and hide_pat.search(code[a:b])))
         handsoff = any(_taken(a, b) for (a, b) in segments if a is not None and a < b)
         # ...and branch-wide: a branch that takes the controls AFTER the arming (rm480's
         # case-740 hides the ego two statements later) is just as much a commit -- refusing

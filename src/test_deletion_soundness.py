@@ -441,6 +441,35 @@ def test_crossing_reach_mirrors_psucc():
           detail="disagreements: %r" % (bad[:5],))
 
 
+# --- 8. the store enumeration a stage spelling rests on -------------------------------------------
+def test_store_index_enumeration_is_complete():
+    """`guards.STORE_INDEX_ATTRS` names every lowering map that says "this register is ours".
+
+    `_stage_spelling` will spell a register as a plain `(== globalN v)` -- a global the GAME is
+    made to test -- only if no store claims it. A store missing from that list therefore ships a
+    stage naming a phantom global, and the list is hand-maintained because a store names its own
+    attribute. So it is derived here instead and compared: any `_..._index` map on a built model
+    whose keys are register numbers must be listed (review §5.2, "no test pins the
+    enumeration")."""
+    print("\n-- guards.STORE_INDEX_ATTRS covers every store's index map --")
+    import config                                                        # noqa: E402
+    for name in ("KQ6", "dagger"):                     # the two games with the most stores
+        cfg = config.by_name(name)
+        if cfg is None or not os.path.exists(cfg.ir_path):
+            check("%s: every store index map is enumerated" % name, False,
+                  "NO IR -- the enumeration was NOT compared")
+            continue
+        ir = M.load(cfg=cfg).em.ir
+        found = {a for a in dir(ir) if a.endswith("_index")
+                 and isinstance(getattr(ir, a, None), dict)
+                 and all(isinstance(k, int) for k in getattr(ir, a))}
+        missing = found - set(G.STORE_INDEX_ATTRS)
+        check("%s: every store index map is enumerated (%d found)" % (name, len(found)),
+              not missing,
+              detail="not in guards.STORE_INDEX_ATTRS: %r -- registers of that store would be "
+                     "spelled as globals the game never reads" % (sorted(missing),))
+
+
 def run():
     print("=== test_deletion_soundness ===")
     test_forwarding_sole_producer()
@@ -450,6 +479,7 @@ def run():
     test_departure_is_not_claimed_from_one_arm()
     test_fork_escape_is_not_the_lethal_arm()
     test_crossing_reach_mirrors_psucc()
+    test_store_index_enumeration_is_complete()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL

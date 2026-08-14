@@ -143,11 +143,61 @@ def test_stage_match_is_structural():
           detail="second pass n=%r:\n%s" % (n2, twice))
 
 
+# --- trigger.arming_contexts: what counts as the game taking the controls ------------------------
+#
+# `handsoff_before` decides whether an arming is an ARRIVAL COMMIT -- the classification that
+# sent LB2's rm250 wrap to a different site after the play test found it sitting inside the
+# commit. It is answered by searching the source text between two offsets, and source text
+# contains comments and message strings, which are not code.
+ARM = """(instance rm300 of Rm
+\t(method (init)
+\t\t%s
+\t\t(self setScript: sACTBREAK)
+\t)
+)
+"""
+
+
+def test_handsoff_ignores_comments_and_strings():
+    print("\n-- trigger.arming_contexts: a handsOff in a COMMENT is not a handsOff --")
+    import trigger as T                                                  # noqa: E402
+    real = T.arming_contexts(ARM % "(global1 handsOff:)", "sACTBREAK", ego="global0")
+    check("a real handsOff before the arming is seen",
+          len(real) == 1 and real[0]["handsoff_before"] is True,
+          detail="%r" % (real,))
+
+    commented = T.arming_contexts(ARM % "; the cab ride does (global1 handsOff:) elsewhere",
+                                  "sACTBREAK", ego="global0")
+    check("a handsOff inside a COMMENT is not the game taking the controls",
+          len(commented) == 1 and commented[0]["handsoff_before"] is False,
+          detail="a commented-out send classifies this arming as an arrival commit, which "
+                 "routes its guard somewhere else entirely: %r" % (commented,))
+
+    stringed = T.arming_contexts(ARM % '(Print {you hear a handsOff: click})',
+                                 "sACTBREAK", ego="global0")
+    check("a handsOff inside a message STRING is not one either",
+          len(stringed) == 1 and stringed[0]["handsoff_before"] is False,
+          detail="%r" % (stringed,))
+
+
+def test_unreadable_deliverer_is_not_a_cleared_one():
+    print("\n-- patcher._cutscene_delivers: 'could not read' is not 'no cutscene' --")
+    # False keeps the IN-PLACE GATE, which is the arrangement the user's play test caught
+    # sitting inside a commit. Answering it from a file we never read asserts what we could not
+    # check, so a missing performer has to be a third answer.
+    check("a room with no known title answers None, not False",
+          P._cutscene_delivers("/nonexistent", {}, 300, 250) is None)
+    check("a title whose file does not exist answers None, not False",
+          P._cutscene_delivers("/nonexistent", {300: "rm300"}, 300, 250) is None)
+
+
 def run():
     print("=== test_patch_text ===")
     test_single_arm_is_wrapped()
     test_every_matching_arm_is_wrapped()
     test_stage_match_is_structural()
+    test_handsoff_ignores_comments_and_strings()
+    test_unreadable_deliverer_is_not_a_cleared_one()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL

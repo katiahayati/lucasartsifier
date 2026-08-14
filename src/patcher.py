@@ -2156,6 +2156,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
     Spinach_Dip raft, extended to demands. Without it a sole-exit row stays honestly unplaced."""
     _init_mode(dest)               # runtime stock/lite/full dispatch for everything placed below
     out_unplaced = []
+    pending_fwd = []               # (index of the refusal row, spec, fwd, stage) -- see below
     by_title = {}
     for sp in specs:
         if sp["site"] != "edge" or sp["refused"] or not sp.get("condition"):
@@ -2467,11 +2468,14 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                             # part of this demand it does not already carry is conjoined into
                             # the same arm -- the player meets the whole later demand at the
                             # last controllable moment on its only path.
-                            frow = _forward_demand_to_hold(dest, dsp, info["fwd"],
-                                                           info["stage"], out)
-                            if frow is not None:
-                                out.append(frow)
-                                continue
+                            #
+                            # DEFERRED TO A SECOND PASS, because the host is found by scanning
+                            # the rows placed SO FAR: run inline, whether a demand forwards
+                            # depends on whether its host's spec happened to come first, and
+                            # nothing pins the order specs arrive in. The refusal row goes in
+                            # now and the pass below replaces it if the forward lands, so the
+                            # outcome is the same for every ordering.
+                            pending_fwd.append((len(out), dsp, info["fwd"], info["stage"]))
                         if not placed and unwrapped:
                             # every deferral site refused -- the row stays unplaced, but the
                             # PER-SITE reasons are the measurement (a wrap that would have been
@@ -2600,6 +2604,14 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             if also:
                 row["also_placed"] = also
             out.append(row)
+    # SECOND PASS -- every host row is placed by now, so a forward lands or refuses on the
+    # model's proof rather than on the order the specs arrived in. Each entry replaces its own
+    # refusal row in place (the index recorded when that row was appended), so a forward that
+    # still cannot find its host leaves the honest refusal exactly as it was.
+    for idx, dsp, fwd, stage in pending_fwd:
+        frow = _forward_demand_to_hold(dest, dsp, fwd, stage, out)
+        if frow is not None:
+            out[idx] = frow
     return out
 
 
@@ -2746,12 +2758,18 @@ def _strip_positional_head(head, positional, alts=()):
 def _cutscene_delivers(dest, titles_by_num, from_room, to_room):
     """Does `from_room` perform its crossing into `to_room` from inside a changeState -- a
     cutscene ride, arriving with the game in control of the ego? (rm300 -> rm250 is `sHailCab`
-    state 10; the ego is hidden by state 9.) Read from the PRISTINE performer file; unreadable
-    or unparseable refuses toward False -- the caller then treats the arrival as walkable,
-    which keeps the in-place gate, the behavior every site had before this triage existed."""
+    state 10; the ego is hidden by state 9.)
+
+    THREE ANSWERS, not two: True, False, and None for "the performer could not be read". The
+    difference matters because False is not a neutral place to land -- it classifies the arming
+    as benign and keeps the IN-PLACE GATE, which is the shape the user's play test caught
+    sitting inside a commit (LB2's rm250: the cab ride had already hidden the ego when the gate
+    declined to arm). Answering that from a file we failed to parse is asserting the very thing
+    we could not check. None makes the caller refuse the site and say why, which costs a
+    placement and cannot hang a game."""
     ttl = titles_by_num.get(from_room)
     if not ttl:
-        return False
+        return None                                # no file to read: not an answer
     pris = globals().get("_PRISTINE_DIR")
     path = os.path.join(pris, ttl + ".sc") if pris else os.path.join(dest, "src", ttl + ".sc")
     if not os.path.exists(path):
@@ -2760,7 +2778,7 @@ def _cutscene_delivers(dest, titles_by_num, from_room, to_room):
         forms = read_file(path)
         nr, _cs, _ss, _pc = T.analyze_room(forms)
     except Exception:                              # noqa: BLE001
-        return False
+        return None
     # the same destination spellings find_trigger resolves: a literal, a nav-property read
     # (`newRoom: (self north:)` -- rm740's sGoTRex exits north into rm480), or a variable
     nav = T.nav_props(forms)
@@ -2843,8 +2861,16 @@ def _defer_triage_site(dest, num, ttl, sp, trig, cond, stage_override, titles_by
             if not committed and c["method"] == "init":
                 pinned = [pins[prev_g]] if prev_g in pins else []
                 deliverers = pinned or dctx["preds"](num)
-                committed = any(_cutscene_delivers(dest, titles_by_num, X, num)
-                                for X in deliverers)
+                says = [_cutscene_delivers(dest, titles_by_num, X, num) for X in deliverers]
+                committed = any(d is True for d in says)
+                if not committed and any(d is None for d in says):
+                    # A deliverer we could not read is not a deliverer we cleared. Falling
+                    # through to `benign` would place the in-place gate on an arrival that may
+                    # well be a commit -- the play-caught shape -- so refuse and say so.
+                    unwrapped.append({"room": num, "why": "arrival-commit arming at %s: a "
+                                      "delivering room could not be read, so the arrival is "
+                                      "unclassified" % where})
+                    continue
             if not committed:
                 benign.append((c, hs, tgt, False))
                 continue

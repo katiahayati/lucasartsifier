@@ -636,6 +636,20 @@ def defer_to_entry(s, sp):
             "site_ok": _site_ok}
 
 
+# The lowering maps that say "this register is OURS, not a global the game reads" -- one per
+# store that records where its registers came from. `_stage_spelling` consults them before it
+# will spell a register as a plain `(== globalN v)`, so a store missing from this list would
+# have its registers spelled as globals the game never reads: a stage naming a phantom.
+#
+# HAND-MAINTAINED AND PINNED. It has to be hand-maintained -- a store's index attribute is named
+# by the store -- so `test_deletion_soundness` derives the set from a built model and fails if
+# an attribute appears that is not listed here. The item-bit store deliberately has no entry: it
+# records no index map, and its registers are caught by the synthetic-base test instead, which
+# is the backstop for every store allocated after `lower_flags`.
+STORE_INDEX_ATTRS = ("_obj_prop_index", "_room_local_index", "_prop_flag_index",
+                     "_mask_global_index")
+
+
 def _stage_spelling(s, musts):
     """`_render_reg_equals` plus the ONE case a stage may add: a promoted PLAIN global.
 
@@ -654,8 +668,7 @@ def _stage_spelling(s, musts):
         return got
     ir = getattr(s.em, "ir", None)
     claimed = set()
-    for name in ("_obj_prop_index", "_room_local_index", "_prop_flag_index",
-                 "_mask_global_index"):
+    for name in STORE_INDEX_ATTRS:
         claimed |= set(getattr(ir, name, {}) or {})
     base = getattr(ir, "flag_synth_base", None)
     terms = []
