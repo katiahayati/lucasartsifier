@@ -17,13 +17,19 @@ cat throw is recorded as `put: <item> 6` in the ownedBy store, read by rm86's ki
 fork -- `rescue` (which still demands the Hammer) vs `yourStuck` (an unpreventable timed death).
 Flag 83 closes the cat window ON ARMING, not on success -- the one-shot-window class.
 
-PHASE 1 LANDED 2026-08-14: `ownedby_death_folds` (arrival forks on an owner value; the losing
-arm is a death the player cannot dodge) flipped the kidnap-read, lamb-fold and pie reds green
--- their rows are mechanism-pinned below. The deliberate REDs that remain: the Hammer walk
-(phase 2), the two window-closure halves (phase 3: flag 83 closes on arming; flag 36's writer
-needs the fish), the needle slot, the region-scope amulet fold, and the tambourine FP; each is
-a real assertion that flips green when its build lands, per the promotion contract in
-tools/run_tests.py.
+⛔ KQ5 IS NOT A FINISHED ORACLE, and no run of this file should be reported as though it were.
+Four of the fifteen scorecard rows are still MISSED with a declared red apiece, one is a false
+positive we emit and have not cured, and several verdicts are open on their own terms (the peas
+consumable waits on the item-property store; the locket window, the mountains' cold death and
+the Hammer's crystal site are unverified against the source). The checks below passing means
+the catches we HAVE are still there and still caught for the stated mechanism -- nothing more.
+
+Two builds landed 2026-08-14. Phase 1, `ownedby_death_folds` (an arrival forks on an owner
+value and the losing arm is a death the player cannot dodge), retired the kidnap-read, lamb-fold
+and pie reds. Phase 2, item-banned fetch walks in `register_strandings`, retired the Hammer red.
+Their rows are mechanism-pinned below. STILL RED: the two window-closure halves (phase 3 -- flag
+83 closes on arming, flag 36's writer needs the fish), the fortune teller's needle slot, the
+region-scope amulet fold, and the tambourine false positive.
 """
 import os
 import sys
@@ -60,6 +66,12 @@ EXPECTED_CAUGHT = {
     "Leg_of_Lamb",
     "Fish",
     "Pie",
+    # ✅ PROMOTED 2026-08-14 (phase 2): register_strandings' fetch walks now BAN the item they
+    # fetch (`_psucc`'s own parachute discipline, applied to the source test) -- from
+    # (rm86, prev==85) the only exit prices own(Hammer), so the permissive walk's "still
+    # obtainable" dissolved and the kidnap corral emits its row: reg12=85, flip room 86,
+    # needed at 86 (the cellar door). The row's context is exactly patch B's demand.
+    "Hammer",
 }
 
 # B -- REAL, PARTIALLY CAUGHT: the sink rows name the right sites (spending a pool item at the
@@ -118,6 +130,9 @@ MECHANISM_ROWS = {
         "ownedby_death_folds: {'dest': 36, 'need_room': 35, 'machine': 'killEgo', "
         "'state': None, 'pattern': 'entry-fold', 'demand_group': [(2, 36)], "
         "'context': {12: 36}}",
+    },
+    "Hammer": {
+        "register_strandings: reg12=85->[86]",
     },
     # The partial catches are pinned too -- if the disjunction-aware cure changes their shape,
     # that is a mechanism change to confirm, not silent churn. Since phase 1 they also carry
@@ -221,11 +236,46 @@ def run():
     # Each is a live assertion that flips green the day its detector lands; tools/run_tests.py
     # KNOWN_RED carries the justification and the promotion contract does the rest.
 
-    hammer_rows = [n for (n, _d, _r) in raw_rows if n == "Hammer"]
-    check("🔴 KNOWN GAP (KQ5): the inn-cellar corral demands the Hammer", bool(hammer_rows),
-          "No detector emits a row for the (rm86, prev=85) trap even though the exit gate is "
-          "modelled (the green pin above). Needs the (room, register-value) trapped-state walk "
-          "-- docs/KQ5-ORACLE.md §2.")
+    # ✅ PROMOTED 2026-08-14 (phase 2) -- "the inn-cellar corral demands the Hammer" is GREEN:
+    # the fetch walks ban the item they fetch, so the (rm86, prev==85) trap's own(22)-priced
+    # exit no longer vouches for the Hammer's obtainability. The row's SHAPE is the assertion:
+    # the flip is the kidnap edge and the need site is the cellar itself.
+    hammer_rows = [r for (n, d, r) in raw_rows
+                   if n == "Hammer" and d == "register_strandings"]
+    check("the kidnap corral demands the Hammer (reg12=85 seals rm86)",
+          any(r.get("register") == 12 and r.get("value") == 85
+              and r.get("flip_rooms") == [86] and r.get("still_needed_at") == [86]
+              for r in hammer_rows),
+          f"rows={hammer_rows!r} -- expected the prev==85 flip at rm86 demanding the Hammer "
+          f"at the cellar door. docs/KQ5-ORACLE.md §2.")
+
+    # THE ROW SURVIVES BECAUSE THE CELLAR HAS TWO ARRIVALS, and that is the whole discipline
+    # separating it from the rows the same build DELETED on KQ6. `register_strandings` compares
+    # the post-flip player with the PRE-flip one, and for a positional register the pre-flip
+    # state is a different arrival rather than an earlier moment -- so it only means something
+    # when that other arrival is a state a hammer-less player can actually occupy. rm86 is
+    # enterable normally (prev == 28) as well as by the kidnap, so such a player exists and can
+    # still walk out to the Hammer's source; KQ6's rm155 is enterable only from rm340 or by
+    # coming back OUT of the sealed Realm, so no mirror-less player is ever there and those
+    # rows are arrivals, owned by the toll detector. Pinned here because it is the clause's
+    # only live instance in the corpus.
+    prev_states = s._pstates.get(12) or set()
+    check("the cellar's pre-flip arrival exists and is not the kidnap (prev==28)",
+          (86, 28) in prev_states,
+          f"states at rm86: {sorted(v for (r, v) in prev_states if r == 86)} -- the row above "
+          f"rests on a normal arrival existing beside the kidnap one.")
+
+    # ...AND THE DEMAND LANDS ON THE KIDNAP CROSSING ONLY (guards.register_flip_frontier's
+    # `land` clause). Every edge out of rm85 writes `prev := 85` -- that is what leaving rm85
+    # means -- so without the clause the Hammer's demand would ride each of them, walling the
+    # ordinary ways out of the room. Only the arrival the walk measured as sealing carries it.
+    import guards as G
+    front = {e: sorted(rec["items"]) for e, rec in G.register_flip_frontier(s).items()
+             if 22 in rec["items"]}
+    check("the Hammer demand rides only the crossing that strands it",
+          all(b == 86 for (_a, b) in front),
+          f"frontier edges carrying the Hammer: {front} -- an edge that writes prev==85 while "
+          f"arriving somewhere other than the cellar enters no seal.")
 
     def _rooms_mentioned(r):
         out = {x for x in (r.get("still_needed_at") or ()) if isinstance(x, int)}

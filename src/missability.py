@@ -2098,6 +2098,10 @@ class IrSccReach(SccReach):
         self.members, self.room_region, self.controllers = {}, {}, set()   # no regions in IR
         self.goal_comps = {self.comp_of[r] for r in em.cfg.goal_rooms if r in self.comp_of}
         self._reob, self._rw, self._after, self._avoid, self._xreach = {}, {}, {}, {}, {}
+        # `_reg_cost`'s memo and its (register, value) -> [item-set] index, both pure functions
+        # of `_inroom_own`; `_psucc`'s memo over the movement model -- see those methods.
+        self._regcost_cache, self._own_by_regval = {}, None
+        self._psucc_cache = {}
         self._build_product()
 
     # ---- gate-aware movement ------------------------------------------------
@@ -2418,19 +2422,41 @@ class IrSccReach(SccReach):
                     self._emeta[(room, b)] = out
 
     def _reg_cost(self, R, vals):
-        """Items you must hold to make register R take any of `vals` -- the cheapest route."""
+        """Items you must hold to make register R take any of `vals` -- the cheapest route.
+
+        MEMOISED, and indexed rather than scanned (2026-08-14). This is a pure function of the
+        built model, and it used to walk all of `_inroom_own` on every call -- affordable only
+        while `_reg_unreachable` (its sole caller) was reached rarely, because that function
+        returns immediately when nothing is banned. Item-banned walks made banned the common
+        case, and this became 37% of the detector's runtime at 2.8M calls. Neither the index
+        nor the cache can change an answer: both read the same `_inroom_own`, which nothing
+        mutates after the build."""
+        key = (R, frozenset(vals))
+        got = self._regcost_cache.get(key)
+        if got is not None:
+            return got
+        if self._own_by_regval is None:
+            idx = defaultdict(list)
+            for (Rk, _room, vk), own in self._inroom_own.items():
+                idx[(Rk, vk)].append(own)
+            self._own_by_regval = idx
         best = None
         for v in sorted(vals):
             if v == 0:
-                return frozenset()               # registers start at 0
-            ways = [own for k, own in self._inroom_own.items() if k[0] == R and k[2] == v]
+                out = frozenset()                # registers start at 0
+                break
+            ways = self._own_by_regval.get((R, v))
             if not ways:
-                return frozenset()               # nothing writes it -> initial value -> free
+                out = frozenset()                # nothing writes it -> initial value -> free
+                break
             cost = ways[0]
             for w in ways[1:]:
                 cost &= w
             best = cost if best is None else (best & cost)
-        return best or frozenset()
+        else:
+            out = best or frozenset()
+        self._regcost_cache[key] = out
+        return out
 
     def _reg_unreachable(self, req, banned):
         """Is some register requirement on this edge impossible while `banned` items are held back?
@@ -2564,7 +2590,22 @@ class IrSccReach(SccReach):
         init write goes to `init_seq` instead): entering the room forces the value, so a state
         that carries the old value past that door does not exist in play. For a register in
         `commit`, crossing into such a room arrives AT the written value instead of keeping the
-        carried one. Every detection caller leaves `commit` empty and is bit-for-bit unchanged."""
+        carried one. Every detection caller leaves `commit` empty and is bit-for-bit unchanged.
+
+        MEMOISED (2026-08-14). This is a pure function of the built model, and the walks call it
+        with the SAME (state, banned) over and over -- once per walk that passes through the
+        state, and there is one walk per (flip, value, item, seed room). Measured on LSL2: 3.7M
+        calls covering a few thousand distinct arguments. The cache is invalidated wherever
+        `_emeta` is (see `guards.apply_guards`), because that is the only thing under it that
+        ever changes."""
+        key = (R, node, banned, commit)
+        got = self._psucc_cache.get(key)
+        if got is not None:
+            return got
+        out = self._psucc_cache[key] = self._psucc_uncached(R, node, banned, commit)
+        return out
+
+    def _psucc_uncached(self, R, node, banned, commit=frozenset()):
         if isinstance(R, tuple):
             return self._psucc_joint(R, node, banned, commit)
         r, st = node
@@ -3547,9 +3588,90 @@ class IrSccReach(SccReach):
 
         Three scalar assumptions had to be generalised, all of them "the flip landed on w":
         component-wise, a joint flips into w when SOME register of the tuple is written to its
-        component of w. See `_flip_seeds`."""
+        component of w. See `_flip_seeds`.
+
+        ⭐ THE FETCH WALKS BAN THE ITEM THEY FETCH (2026-08-14, phase 2 of the KQ5 window
+        plan). The source test asked "can the post-flip player still reach a source?" with the
+        PERMISSIVE walk -- which crosses an own(X)-priced edge while judging whether X is still
+        obtainable, i.e. it assumes the hammer while fetching the hammer. That is the exact
+        assumption `_psucc`'s ban parameter exists to refuse ("you cannot use the parachute to
+        walk back to the parachute"), and it is why KQ5's kidnap corral never produced a row:
+        from (rm86, prev==85) the only exit prices own(Hammer), the permissive walk sailed
+        through it, and the Hammer read as obtainable from inside the room it unlocks.
+
+        The ban is applied exactly where the defect was: a flip the permissive walk already
+        strands keeps its permissive verdict, region and causality test bit-for-bit (the
+        detector's stance is over-approximated movement, and those rows never rested on the
+        bad assumption); a flip the permissive walk EXCUSES -- "still obtainable" -- is
+        re-asked with the item banned, and a row born this way reads its region, causality and
+        need sites from the banned walk (the stuck player's world, which is how the Hammer's
+        need lands on the cellar door and not on every hammer site an equipped player could
+        visit). The dead-end test stays permissive throughout: a flip is a softlock only if
+        some equipped player still wins. Banning an item no alternative prices cannot change a
+        walk (`banned` reaches `_psucc` via edge alts and `_inroom_own`, and
+        `_reg_unreachable`'s `_reg_cost` reads `_inroom_own` too), so the `priced` precheck
+        skips every other item, and the result is cached on the surface.
+
+        ⭐ AND THE PRE-FLIP HALF IS ASKED THE SAME WAY, of a player who can actually be there.
+        The conjunct asks what someone who had not yet crossed could still have reached, and
+        both halves of that carried the circularity: the walk fetched the item while holding
+        it, and the states it started from came from `_pstates` -- the permissive product,
+        which inside a sealed region contains arrivals no item-less player ever makes. So the
+        pre-flip states are intersected with what is REACHABLE under the same ban, and then
+        walked under it.
+
+        Both corrections matter, and a POSITIONAL register is where they bite: "this room at
+        another prevRoom value" is not an earlier moment but a DIFFERENT ARRIVAL, often one
+        from deeper inside the seal. KQ6 supplies both shapes -- rm155's only other arrival is
+        coming back OUT of the Realm at rm680, and rm405's are the labyrinth cells, whose
+        "still obtainable" coin (rm430) is itself inside the maze. Under both clauses those
+        read as arrivals (`b is None`, the rule this detector already states) and their real
+        boundary is left to the toll detector, which already carries it. A room with a genuine
+        two-way arrival keeps its row: KQ5's cellar is enterable normally as well as by the
+        kidnap, and that normal arrival is a real hammer-less player who can still reach rm5.
+
+        This DELETES findings, so it is stated narrowly: a comparison that assumes possession
+        of the item, or that starts from a state the item-less player cannot occupy, cannot
+        witness the loss of that item.
+
+        ⚠️ COST, stated rather than buried: the ban makes the per-seed-room walk memo
+        item-specific, so this is walks per (flip, value, item, room) where it used to be per
+        (flip, value, room). The mitigations are the `priced` set (an item no alternative
+        prices anywhere cannot move any walk), the REGION-LOCAL skip below (the same fact
+        asked of the region actually being walked), and the surface-level cache."""
+        if getattr(self, "_regstrand_cache", None) is not None:
+            return self._regstrand_cache
         out = []
         goal = self.goal_rooms_set()
+        # The items whose absence can change ANY walk: everything named by an edge alternative
+        # or an in-room write cost -- the two places `_psucc` consults `banned` directly, and
+        # `_reg_unreachable`'s `_reg_cost` reads `_inroom_own` too, so this covers all three.
+        priced = set()
+        for metas in self._emeta.values():
+            for (_req, _sets, alts) in metas:
+                for alt in alts:
+                    priced |= set(alt)
+        for own in self._inroom_own.values():
+            priced |= set(own)
+        # ...and the same fact indexed BY ROOM, which is what makes the re-asks affordable: an
+        # item nothing inside a region prices cannot change any walk through that region, so
+        # the question "is it still obtainable from here" has the same answer banned or not,
+        # and neither walk needs running. Global `priced` is far too coarse to skip on (most
+        # items are priced somewhere); region-local, KQ6's labyrinth and Realm price a handful.
+        own_by_room, alts_by_room = defaultdict(set), defaultdict(set)
+        for (_Rk, rk, _vk), own in self._inroom_own.items():
+            own_by_room[rk] |= set(own)
+        for (a2, _b2), metas in self._emeta.items():
+            for (_rq, _st, alts) in metas:
+                for alt in alts:
+                    alts_by_room[a2] |= set(alt)
+        live_cache = {}
+
+        def _live(R, ban):
+            """The states a player NOT holding the banned item can actually be in."""
+            if (R, ban) not in live_cache:
+                live_cache[(R, ban)] = set(self._walk(R, ban))
+            return live_cache[(R, ban)]
         for R in self.proj:
             states = self._pstates[R]
             vals = {v for (_r, v) in states}
@@ -3590,34 +3712,70 @@ class IrSccReach(SccReach):
                 # you stand in the throne room strands the letter regardless of the flip that
                 # could have happened in the letter's own room. Per-seed-room walks; the
                 # arrival exclusion and the causality conjunct apply per room, same as before.
-                per_room = {}
-                def _flip_at(r):
-                    if r not in per_room:
-                        a = {q for (q, _v) in self._walk(R, frozenset(), starts={(r, w)})}
-                        b0 = {(r2, v) for (r2, v) in states if r2 == r and v != w}
-                        b = ({q for (q, _v) in self._walk(R, frozenset(), starts=b0)}
+                per_room, region_priced = {}, {}
+
+                def _priced_in_region(r):
+                    """Items priced anywhere the post-flip player can walk. Banning anything
+                    else leaves both walks identical, which is what lets the loop below skip
+                    the whole (room, item) pair instead of walking it twice."""
+                    if r not in region_priced:
+                        rooms = _flip_at(r)[0]
+                        region_priced[r] = set().union(
+                            *(own_by_room[x] | alts_by_room[x] for x in rooms)) if rooms else set()
+                    return region_priced[r]
+
+                def _flip_at(r, ban=frozenset()):
+                    key = (r, ban)
+                    if key not in per_room:
+                        a = {q for (q, _v) in self._walk(R, ban, starts={(r, w)})}
+                        # ...and the pre-flip player must be one who can BE there without the
+                        # item. `states` is the permissive product; inside a sealed region it
+                        # contains arrivals no item-less player ever makes, and those vouch
+                        # for sources that are themselves inside the seal (KQ6's rm405 with
+                        # prev==410 "reaching" the coin at rm430, both in the labyrinth).
+                        b0 = ({(r2, v) for (r2, v) in states if r2 == r and v != w}
+                              & _live(R, ban))
+                        b = ({q for (q, _v) in self._walk(R, ban, starts=b0)}
                              if b0 else None)       # None: no pre-flip player -> an arrival
-                        per_room[r] = (a, b)
-                    return per_room[r]
+                        per_room[key] = (a, b)
+                    return per_room[key]
                 if goal and not (goal & rooms_after):
                     continue                        # already unwinnable: a dead end, not a softlock
                 for it in sorted(self.required):
                     srcs = self.sources.get(it, set())
                     if not srcs:
                         continue                    # never obtainable: not this detector's story
+                    ban = frozenset({it}) if it in priced else frozenset()
                     strand_at = []
                     for r in sorted(seed_rooms):
-                        a, b = _flip_at(r)
+                        # THE CHEAP ANSWER FIRST. If the permissive walk already reaches a
+                        # source and nothing in that region prices this item, the banned walk
+                        # reaches it too -- identical walk -- so the flip stranded nothing and
+                        # neither walk is worth running. Pure speed: the rows are the same
+                        # either way, and it is the difference between one walk pair per
+                        # (flip, room) and one per (flip, room, item).
+                        if (srcs & _flip_at(r)[0]) and it not in _priced_in_region(r):
+                            continue
+                        # ONE standard for both halves of the comparison. The question the row
+                        # asks is about a player who does NOT hold the item -- can they still
+                        # reach a source after the flip (`a`), could they before it (`b`) --
+                        # so both walks withhold it. Splitting them, which an earlier cut of
+                        # this change did to leave old rows untouched, keeps the very
+                        # circularity the ban exists to remove: LB2's pressPass rows survived
+                        # only because the pre-flip walk fetched the pass while holding it.
+                        a, b = _flip_at(r, ban)
                         if b is None:
-                            continue                # an arrival, owned by edge_strandings
+                            continue                # no item-less pre-flip player -> arrival
+                        if goal and not (goal & _flip_at(r, frozenset())[0]):
+                            continue                # that flip is a dead end, not a softlock
+                        #   ^ PERMISSIVE deliberately: a flip is a softlock only if some
+                        #     equipped player still wins; the item-less one provably cannot.
                         if (srcs & a) or not (srcs & b):
                             continue                # still obtainable, or never was from here
-                        if goal and not (goal & a):
-                            continue                # that flip is a dead end, not a softlock
                         if self.required[it] & a:
                             strand_at.append(r)
                     if strand_at:
-                        sealed = set().union(*(_flip_at(r)[0] for r in strand_at))
+                        sealed = set().union(*(_flip_at(r, ban)[0] for r in strand_at))
                         ahead = self.required[it] & sealed
                         out.append({"pattern": "register-flip-point-of-no-return",
                                     "register": R, "value": w, "item": it,
@@ -3626,7 +3784,8 @@ class IrSccReach(SccReach):
                                     "source_rooms": sorted(srcs),
                                     "still_needed_at": sorted(ahead),
                                     "_sealed": frozenset(sealed)})
-        return self._collapse_flips(out)
+        self._regstrand_cache = self._collapse_flips(out)
+        return self._regstrand_cache
 
     def _flip_seeds(self, R, w, states):
         """The reachable states where the flip INTO `w` can itself happen.

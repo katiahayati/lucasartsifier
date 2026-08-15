@@ -167,11 +167,8 @@
       "grapes@reg(12, 123)=(26, 5)->[750]",
       "grapes@reg(12, 123)=(520, 5)->[750]",
       "grapes@reg123=5->[520, 750]",
+      "pressPass@reg(12, 123)=(110, 1)->[335]",
       "pressPass@reg(12, 123)=(110, 2)->[335]",
-      "pressPass@reg(12, 123)=(26, 2)->[335]",
-      "pressPass@reg(12, 123)=(330, 3)->[335]",
-      "pressPass@reg123=2->[335]",
-      "pressPass@reg123=5->[335]",
       "redHair@reg(12, 123)=(454, 5)->[750]",
       "smellingSalts@reg(12, 123)=(26, 5)->[720]",
       "smellingSalts@reg123=5->[720]",
@@ -184,8 +181,7 @@
       "reg150==[0]@seal(12, 123)=(26, 5)->[730] via sRepelSnakes"
     ],
     "register_write_specs": [
-      "reg123=2: (gEgo has: 6) [REFUSED]",
-      "reg123=5: (and (gEgo has: 6) (gEgo has: 13) (gEgo has: 31)) [REFUSED]"
+      "reg123=5: (and (gEgo has: 13) (gEgo has: 31)) [REFUSED]"
     ],
     "sinks": [],
     "softlock_items": [

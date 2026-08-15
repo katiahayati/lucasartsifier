@@ -853,7 +853,20 @@ def register_flip_frontier(s):
         else:
             sites = flip_edges(R, V)
         need = set(r.get("still_needed_at") or ())
+        # ...AND THE EDGE MUST LAND WHERE THE FLIP STRANDS (2026-08-14). `flip_edges` selects
+        # by the WRITE -- an edge whose meta sets the value from a state that excludes it --
+        # and for a POSITIONAL register every edge out of a room performs that write, because
+        # `prev := a` is what leaving rm a means. The walk has already measured which of those
+        # arrivals actually seals the item (`flip_rooms`), and an edge landing anywhere else
+        # is a different crossing that happens to write the same value: it enters no seal, so
+        # it carries no demand. KQ5's cellar is the live instance -- the kidnap is one of
+        # several ways out of rm85, and only the arrival in rm86 strands the Hammer.
+        # `register_flip_strandings` rows carry no flip_rooms and are untouched (an empty set
+        # filters nothing, the permissive direction).
+        land = set(r.get("flip_rooms") or ())
         for (a, b) in sites:
+            if land and b not in land:
+                continue
             if need and s.crossing_retires_need(a, b, r["item"], need):
                 continue
             out[(a, b)]["items"].add(r["item"])
@@ -1530,12 +1543,35 @@ def guard_specs(s):
         # covers reads as an open gap when it is a closed one.
         edge_carried = sorted((a, b) for (a, b), rec in rff.items()
                               if set(items) & rec["items"])
+        refused = []
+        if edge_carried:
+            refused.append(f"superseded: the flip is edge-committed and the demand "
+                           f"rides the flip edge specs "
+                           f"({', '.join(f'rm{a}->rm{b}' for a, b in edge_carried)})")
+        elif not any(trap in vs for vs in (s._inroom.get(R) or {}).values()):
+            # A REGISTER THE GAME ONLY WRITES ON CROSSINGS HAS NO FREE-RUNNING WRITE TO HOLD
+            # (2026-08-14). The hold remedy freezes a write site until the sealed items are in
+            # hand -- and prevRoom's "write to 340" is the engine's room switch itself, not a
+            # statement anywhere. Emitting the spec as placeable sent the patcher hunting for
+            # a site that structurally cannot exist ("no free-running trap write found", an
+            # applied=False row beside a claim of coverage), which is the same defect the
+            # snapshot's REFUSED convention exists to prevent: a spec we cannot act on must
+            # say so itself. Model-level and VALUE-specific -- it asks whether THIS trap value
+            # has an in-room write, not whether the register has any: the letter's flag 338
+            # keeps its placed hold because the rFlag lowering puts its region-homed writes in
+            # `_inroom[338]`, while reg12's stray in-room writes name other values and vouch
+            # for nothing here.
+            #
+            # The message says only what is established. It does NOT claim another spec covers
+            # the demand: `edge_carried` above is precisely that claim, and we are in the
+            # branch where it is empty, so this row's demand is currently enforced NOWHERE.
+            # (The crossing that performs the flip is where such a demand would have to live;
+            # building that site is the interceptor work, not something this spec can assert.)
+            refused.append(f"no hold site: no in-room write sets register {R} to {trap}, so "
+                           f"the hold form has no target -- and no edge spec carries this "
+                           f"demand, so it is UNENFORCED")
         specs.append({"site": "register-write", "register": R, "trap": trap,
-                      "condition": cond, "items": items,
-                      "refused": ([f"superseded: the flip is edge-committed and the demand "
-                                   f"rides the flip edge specs "
-                                   f"({', '.join(f'rm{a}->rm{b}' for a, b in edge_carried)})"]
-                                  if edge_carried else [])})
+                      "condition": cond, "items": items, "refused": refused})
     return specs
 
 
@@ -1569,6 +1605,16 @@ def apply_guards(s, specs):
             out.append((rq, sets, tuple(base)))
         s._emeta[key] = out
     s._reob.clear(); s._rw.clear(); s._after.clear(); s._avoid.clear()
+    # ⛔ AND THE MOVEMENT MEMO ITSELF. `_psucc` is cached over `_emeta`, which the loop above has
+    # just rewritten -- a stale entry here would walk the UNGUARDED game, i.e. exactly the model
+    # this pass exists to stop trusting.
+    s._psucc_cache.clear()
+    # ...and the register-stranding rows, which are a cache over this same movement model.
+    # `verify` exists to prove a guard creates no NEW softlock, so a detector answering from
+    # its pre-guard result would report the one thing this pass must never miss. Nothing reads
+    # it after `apply_guards` today; that is the reason to clear it now rather than the reason
+    # not to ([[same-rule-two-places]] -- the four caches above learned this the hard way).
+    s._regstrand_cache = None
     # Over `proj`, NOT `regs`. `_pstates` is keyed by `self.proj` = regs + the death-trap JOINTS
     # (missability._build_product), and every reachability walk iterates `proj` -- so rebuilding it
     # from `regs` alone DELETES the joint keys and `rooms_after` dies with `KeyError: (12, 173)`.

@@ -270,15 +270,28 @@ MECHANISM_ROWS = {
     # `required_guards`). Demanding the pass at either break would have WALLED it -- the pass
     # is surrendered at the act-2 door, a required story step. rm26->rm330 stays: (335, act 2)
     # is live past that crossing, and its wrap is how the real act-1->2 carry is enforced.
+    # ⭐ THREE ROWS RETIRED 2026-08-14 (the pre-flip reachability tightening), and the USER's
+    # ruling the same day says they SHOULD go: *"the press pass in LB2 is not a real stranding:
+    # you can't even get the cab to go anywhere without it, so you're definitely not reaching
+    # the act break"* -- the pass is an act-1 GATE, the eveningGown class. `reg(12,123)=(330,3)`,
+    # `reg123=2` and `reg123=5` each rested on a pre-flip state no pass-less player can occupy,
+    # so the flip was never what stranded the pass; the tightening reads those as arrivals.
+    # ⚠️ The two joint rows below SURVIVE and, by that same ruling, are also not real strandings
+    # -- they are the standing §7am family, and retiring them needs the possession proof
+    # ("the crossing implies the item is already held", hops A/C/D in the memory), not this
+    # change. They stay pinned as the honest statement of where the model still over-claims.
     "pressPass": {
         "analyze: need@rm250 sources=[29, 235] "
         "frontier=rm210->rm250|rm26->rm330|rm280->rm250",
+        "register_strandings: reg(12, 123)=(110, 1)->[335]",
         "register_strandings: reg(12, 123)=(110, 2)->[335]",
-        "register_strandings: reg(12, 123)=(26, 2)->[335]",
-        "register_strandings: reg(12, 123)=(330, 3)->[335]",
-        "register_strandings: reg123=2->[335]",
-        "register_strandings: reg123=5->[335]",
     },
+    # ⚠️ THE VALUE IN A SURVIVING ROW'S NAME IS A LABEL, NOT A CLAIM. `_collapse_flips` merges
+    # every row whose SEALED REGION is identical -- the pass is seen stranded from ~24 prevRoom
+    # values, in two region classes -- and keeps whichever member it met first. `(26, 2)` was
+    # that member for one class until the tightening retired it; `(110, 1)`, an equivalent
+    # member of the same class, now carries the label. Measured pre-collapse the day it moved:
+    # both classes still say `flips=[26] needed=[335]`, i.e. the same two facts as before.
     # The four act-boundary carries (§7s counter monotonicity + §7y joint projections).
     "snakeOil": {"register_strandings: reg(12, 123)=(26, 5)->[730]"},
     "cheese": {"register_strandings: reg(12, 123)=(26, 5)->[740]"},

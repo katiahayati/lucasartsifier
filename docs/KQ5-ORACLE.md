@@ -127,9 +127,14 @@ needed at the cliffs (§4) — so the kidnap pocket is not only survivable-with-
 **mandatory**.
 
 **Verdict:** entering rm85's back area without the banked throw, or without the Hammer, is a
-TRUE softlock (death class). Detected today: **no row** — the trapped state is
-(room 86, prev = 85), and no detector walks (room, register-value) states. The gate itself is
-modeled; only the walk is missing.
+TRUE softlock (death class). **CAUGHT since 2026-08-14 (phase 2)**: the throw half by the
+rm86 fold rows (§1, phase 1), the Hammer half by `register_strandings` once its fetch walks
+banned the item they fetch — the trapped state (room 86, prev = 85) had always been walkable;
+the permissive source test was crossing the own(Hammer)-priced exit while judging the
+Hammer obtainable. Row: reg12=85, flip room 86, needed at 86. The row's hold-form spec is
+REFUSED by derivation (prev is only written by crossings, so there is no free-running write
+to hold); its enforcement site is the kidnap crossing itself — patch B's commit-interceptor
+at rm85's warn-and-bounce.
 
 ## 3. The sail (rm49 → 650/654) — the classic "board the boat unprepared" (tier 1 + 3)
 
@@ -205,6 +210,13 @@ rows should collapse either way.**
 
 ## Scorecard (2026-08-14)
 
+⛔ **This is a work in progress, not a finished oracle.** Four rows are MISSED with a declared
+red apiece, one is a false positive we still emit, and rows 9–12 rest on tier-3 or open
+verdicts. Two builds landed on 2026-08-14 (phase 1: owner-value death folds; phase 2:
+item-banned fetch walks) and the remaining phases are unbuilt. A passing test run means the
+catches listed as CAUGHT are still caught for the mechanism stated — it does not mean KQ5 is
+covered.
+
 | # | softlock | mechanism | status |
 |---|---|---|---|
 | 1 | temple pocket | consumed-opener toll | **CAUGHT** (toll) |
@@ -212,7 +224,7 @@ rows should collapse either way.**
 | 3 | Fishhook past the sail | one-way edge, carry demanded | **CAUGHT** (analyze + spec) |
 | 4 | cat window missed → inn death | one-shot window → ownedBy read → death | **CAUGHT** (phase 1: `ownedby_death_folds`, all four pool items demanded at rm86 under prev==85); the WINDOW half (flag 83 closes on arming) stays a declared red for phase 3 |
 | 5 | pool starved at the dog | exchange slots over one pool | PARTIAL (`dangerous_sinks`, disjunction-blind) |
-| 6 | kidnap without Hammer | (room, prev-value) trap; gate modeled | MISSED (no state walker; phase 2) |
+| 6 | kidnap without Hammer | (room, prev-value) trap; gate modeled | **CAUGHT** (phase 2: `register_strandings` with item-banned fetch walks — the permissive walk was assuming the hammer to fetch the hammer; row reg12=85, flip rm86, needed at rm86) |
 | 7 | rope on the branch | fatal use | **CAUGHT** (fatal_uses) |
 | 8 | tambourine near Dink | — | FP to cure (savior-condemned, arming polarity) |
 | 9 | needle to the fortune teller | exchange slot | MISSED |

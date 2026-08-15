@@ -204,12 +204,14 @@ KNOWN_RED = {
         # walkthroughs) with five caught softlocks pinned green and these five declared red the
         # same day. The first two share one root -- the (room, register-value) trapped state --
         # and the design for closing them is the oracle doc's §1/§2 three-phase plan.
-        "🔴 KNOWN GAP (KQ5): the inn-cellar corral demands the Hammer":
-            "The rm86->rm28 exit gate IS modelled (own(22) when prev==85, free otherwise -- the "
-            "green pin in the same file), but no detector walks (room, register-value) trapped "
-            "states, so entering the kidnap unhammered produces no row. Phase 2 of the window "
-            "plan: make register_strandings' point-of-no-return test own-alt-aware (a flip "
-            "seals when every way back demands an item with no source inside).",
+        # ✅ PHASE 2 LANDED 2026-08-14 -- "the inn-cellar corral demands the Hammer" is GREEN
+        # and no longer listed. register_strandings' fetch walks (post-flip and the pre-flip
+        # causality walk) now BAN the item they fetch -- the permissive walk was crossing the
+        # own(Hammer)-priced cellar exit while judging whether the Hammer was still
+        # obtainable, i.e. assuming the hammer to fetch the hammer, the exact assumption
+        # `_psucc`'s ban parameter documents as the parachute lesson. The `priced` precheck
+        # (items named by some edge alternative or in-room write cost) keeps every other
+        # item's walks bit-for-bit permissive. Row: reg12=85, flip room 86, needed at 86.
         # ✅ PHASE 1 LANDED 2026-08-14 -- "the cat-scene window reaches the kidnap read", "the
         # roc's-nest lamb fold is caught" and "the eagle's pie swallow strands the yeti's
         # counter-item" are GREEN and no longer listed. `missability.ownedby_death_folds`:
