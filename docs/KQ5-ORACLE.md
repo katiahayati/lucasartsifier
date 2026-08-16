@@ -13,9 +13,13 @@ below is tagged with its tier; a row resting on tier 3 alone says so.
 | 3 | `walkthroughking.com/text/kingsquest5.aspx` |
 | 3 | Telltale community "dead-ends in king's quest" thread (the only source that enumerates KQ5 dead ends as dead ends) |
 
-Anchors, all derived (`anchors.discover`): start rm48, goals {652, 673}, death signal g401.
-Two `state_musts` degradations (walkThruBoy, walkThruW3) existed at 20000 steps; the cap raise is
-measured separately.
+Anchors, all derived (`anchors.discover`): start **rm99** (the boot/speed-test room, whose own
+`cond` sends you to rm1 = Crispin's cottage or to the title screen), goals **{119, 673}**, death
+signal g401. ⛔ The "start rm48, goals {652,673}" recorded on 2026-08-14 is superseded: 650/654
+were Cedric's CD *view* numbers reaching the room universe through a temp-scope bug, and rm48 was
+a cluster no engine entry reaches. 119 is the title screen and is terminal only because
+`kq5Title` exits via `newRoom: (if local0 1 else 100)`, a computed conditional the extractor does
+not resolve — a known gap, not a goal. The `state_musts` degradations are gone (saturation fix).
 
 The world is a mostly-backtrackable SCC, so most items are re-obtainable and NOT strandings
 (tier 2: the pie and the cloak themselves are safe). KQ5's softlocks are **pockets, windows, and
@@ -206,6 +210,83 @@ against `theHenchMan` and `theCat`. This is the item-property store (the known t
 shadow of a mechanism the model cannot yet count. **Verdict open until that store exists; the
 rows should collapse either way.**
 
+## 10. The Wand — the one place that DOES take it from you, and why it still cannot strand you (2026-08-15, derived)
+
+USER 2026-08-14 ruled the Wand a false positive on the ground that "you start the game with the
+wand, so you always have it", and USER 2026-08-15 re-affirmed that ruling against the mechanism
+below. The ruling stands. The *reason* recorded for it did not survive the source, and this
+section replaces it: **"the one `put: 28` re-`get`s it 128 lines later, a use animation" is
+wrong.** It is a real spend, the wand really does leave inventory, and it really does stay
+where you left it across room exits. Three separate facts make it unstrandable anyway.
+
+**What it is.** `KQInv` element #28 is Crispin's wand, dead weight until the endgame. Granted at
+`cdIntro10.sc:547` and `rm099.sc:127` (the boot room's `global322` arm, which then sends you to
+rm1) — and, the fact the model is missing, **re-granted unconditionally in `rm001.sc:78`'s
+`init`**: `(if (not (global0 has: 28)) (global0 get: 28))`. Entering room 1 without the wand is
+not a state you can leave room 1 in.
+
+**The site that takes it.** Exactly one in 211 scripts. `rm066.sc:132`, `putCWandScript`:
+`(global0 put: 28 global11)` lays Crispin's wand on the machine tray in Mordack's laboratory.
+The wand's owner becomes the room, and `rm066.sc:55` re-inits the `cWand` prop iff
+`(== ((global9 at: 28) owner:) global11)` — the same *"is it still there?"* owner-store check the
+temple catch rests on (§8). It persists there while you walk the castle.
+
+**Why it is a round trip, not a loss.**
+1. **Drop and re-get are the same room.** `cWand`'s verb-3 handler (`rm066.sc:903`) runs
+   `getCWandScript` → `get: 28` (`rm066.sc:260`), and the prop re-arms from the owner check on
+   every entry. rm65↔rm66 is a free walk (`rm065` enters on a control colour, rm66's west edge
+   returns).
+2. **Every wandless path into the endgame is a DEATH, not a walking-dead state.** All four
+   `newRoom: 124` in the game are inside rm066. `battle.sc:84` sets flag 55 on
+   `(or (not (proc0_12 60)) (not (global0 has: 28)))`, and `mordOneScript` state 13 under flag 55
+   does `(= global330 318) (proc0_26)` — `Main.sc:757`, the Restore/Restart/Quit box. Mordack
+   catching you anywhere else in the castle is death too (`castle.sc:1583/1681`, message 657).
+   There is no "captured, wand left behind, game continues".
+3. **The trap that exists is a timer on that same screen.** Both wands on the trays plus the
+   cheese sets flag 60 and `local52 = 15`; rm066's `doit` cond takes the timer branch, which
+   **shadows the edge-exit branch below it**, and `User canControl: 0` — for fifteen seconds you
+   cannot walk out, you can only click the wand. At zero, `newRoom: 124` and the wandless death
+   above. This is the walkthroughs' "quickly take Crispin's wand and Mordack will appear"
+   (StrategyWiki, thecomputershow). Preventable on its own screen by the single click the game
+   just prompted — the same refinement that keeps KQ4's rm49 dog and KQ5's rm36 yeti chase out of
+   the surface — so it is NOT promoted. Recorded here so the next session does not rediscover it
+   as a candidate.
+
+**What the detector says, and where the cure is not.** Measured 2026-08-15:
+`sources[28] = {1, 99, 659}`, `drops[28] = {66}`, `required[28] = {66, 124}`, and two `analyze`
+`missing-prereq-before-gate` rows (need@rm66 and need@rm124) whose frontier is `rm40->rm41`, the
+roc. Both say "carry the Wand across the roc": true, and unfailable — the sources are all on the
+near side, and the only drop site is on the far side *and is the need room*. The model believes
+you can arrive wandless only because `_reach_without(28)` returns all 100 rooms: the banned walk
+assumes **you can decline rm1's handout**. `source_guards[28][1]` is exactly `GNot(own(28))`,
+emitted by the room object itself, which is the signature of a grant you cannot refuse.
+
+⛔ The cure is therefore NOT the never-strandable class this doc used to propose (a class shaped
+to protect a known answer, and refuted by fact 2 above: something *does* durably take it), and
+NOT `entry_musts` (two cures died there 2026-08-15; both make KQ6's `removeHoleScr` a second
+source and break an enforced fact). It is one general principle — **a source you cannot decline
+is not optional**, so `_reach_without` must not propagate through a room whose entry hands the
+item over under a guard entailing `¬own(X)`.
+
+**SHIPPED 2026-08-15** as `missability._unrefusable_grants` + a `barrier` argument to `_walk`,
+fed by a new `Acq.method` recorded in `extract.py` (the emitting method, which is what separates
+a handout from a pickup). Strict on both halves — the method must run with no player input
+(`init`/`doit`), and the guard's whole conjunct spine must be the idempotence check itself —
+because the failure direction is LOST FINDINGS: a barrier shrinks `_reach_without`, and a room
+dropped from it is a room no detector will judge. **Measured twice.** First simulated in the
+product under a deliberately looser reading (any site whose guard merely *entails* `¬own`, any
+method), which barriers 8 KQ4 sites, 4 KQ6, 2 LB2 and KQ5's own Amulet and Elf_Shoes: inert
+everywhere. Then built and re-measured against pre-change baselines — the FULL `snapshot.py`
+surface, placements included, is **byte-identical on LSL2, KQ4, KQ6 and LB2**, and KQ5 moves by
+exactly two lines:
+
+```diff
+-  "rm40->rm41: (and ... (gEgo has: 21) (gEgo has: 28) (gEgo has: 34) ...)",
++  "rm40->rm41: (and ... (gEgo has: 21)                (gEgo has: 34) ...)",
+   "Locket",
+-  "Wand",
+```
+
 ---
 
 ## Scorecard (2026-08-14)
@@ -220,8 +301,10 @@ covered.
 | # | softlock | mechanism | status |
 |---|---|---|---|
 | 1 | temple pocket | consumed-opener toll | **CAUGHT** (toll) |
-| 2 | Shell past the sail | one-way edge, carry demanded | **CAUGHT** (analyze + spec) |
-| 3 | Fishhook past the sail | one-way edge, carry demanded | **CAUGHT** (analyze + spec) |
+| 2 | ~~Shell past the sail~~ | — | **RETIRED 2026-08-15, not a softlock.** USER 2026-08-14: "you can sail from the hermit island to the harpy island again to get the shell." Its old row rested on the phantom cartoon edges of §8; the row went when its cause did |
+| 3 | Fishhook past the castle crossing | one-way edge, carry demanded | **CAUGHT** (analyze + spec). ⛔ The frontier is `rm44/45/46->rm113`, the hermit island's crossing to the far shore — NOT the old "sail rm49->650/654", whose rooms never existed (650/654 are Cedric's CD view numbers, which reached the room universe through a temp-scope bug). Re-pinned 2026-08-15 |
+| 3b | Cat_Fish up the castle stairs | one-way edge, carry demanded | **CAUGHT 2026-08-15** (analyze). Walkthrough: "Pick up the Fish and then walk up the stairs", then "Throw Fish at the cat and then use the Bag on the cat to catch it" — and "from here on out, if you see the cat, you must throw the fish to him". `castle.sc` (the region live in every castle room) dispatches `(37 → theThrowFishScript)` and `(24 → sack the cat)`. Source rm51 is outside the castle-side set and rm54's three exits are one-way |
+| 3c | roc point of no return | one-way edge, carry demanded | **CAUGHT 2026-08-15** (analyze). `rm40->rm41` is the roc carrying Graham off — KQ5's real point of no return. Harp (rm9 → rm90), Beeswax (rm24 → rm44) and Crystal (rm38 → rm52) must cross it; Iron_Bar (rm44 → rm54) rides the Fishhook's frontier; the Locket (rm42, the nest → rm57, Cassima's cell) crosses `rm42->rm43`. All five USER-RULED REAL 2026-08-15 |
 | 4 | cat window missed → inn death | one-shot window → ownedBy read → death | **CAUGHT** (phase 1: `ownedby_death_folds`, all four pool items demanded at rm86 under prev==85); the WINDOW half (flag 83 closes on arming) stays a declared red for phase 3 |
 | 5 | pool starved at the dog | exchange slots over one pool | PARTIAL (`dangerous_sinks`, disjunction-blind) |
 | 6 | kidnap without Hammer | (room, prev-value) trap; gate modeled | **CAUGHT** (phase 2: `register_strandings` with item-banned fetch walks — the permissive walk was assuming the hammer to fetch the hammer; row reg12=85, flip rm86, needed at rm86) |
@@ -230,7 +313,9 @@ covered.
 | 9 | needle to the fortune teller | exchange slot | MISSED |
 | 10 | forest without worn amulet | region-script death fold, flag 84 | MISSED (region scope) |
 | 11 | locket window missed | one-shot window (tier 3) | MISSED, unverified |
-| 12 | peas exhaustion | consumable | OPEN (13 noisy rows) |
+| 12 | peas exhaustion | consumable | OPEN (13 noisy rows). Note the emptied bag is REQUIRED — the walkthrough sacks the cat with it — so the peas are not pure flavour |
+| 12b | rm57->rm683 carry-in | requirement broadcast into a cutscene | **FP, declared red 2026-08-15.** rm683 is `cdCassimaToon`, a CD cutscene that tests no item at all; the own(37)/own(24) demands land there because `castle.sc` is walked into it as a region member. Curing it also flips `test_toll.py`'s two KQ5 assertions |
+| 12c | the Wand, anywhere | — | **FP, CURED 2026-08-15 (§10).** USER 2026-08-14, re-affirmed 2026-08-15: "you start the game with the wand, so you always have it." ⛔ The old reason was wrong — rm066's machine tray *does* take it (`putCWandScript`, `put: 28 gCurRoom`, and it stays there) — but the drop and the re-get are the same room and every wandless path into rm124 is a death. Cured by `_unrefusable_grants` (rm1's `init` grant), NOT by the never-strandable class this row used to propose |
 | 13 | lamb to the cat/dog → roc's nest death | exchange slots + ownedBy death fold (rm42) | **CAUGHT** (phase 1: rm42 `hatch` state-6 fork — its death chain sits behind a `(++ state)` skip the transition model now reads — plus the rm86 pool row) |
 | 14 | pie to the eagle → yeti unsurvivable | slot swallow + chase-death counter-item | **CAUGHT** (phase 1: rm35 `killEgo` entry fold, prev==36 — the yeti kill continuing across the edge. The rm36 chase itself makes no claim: a `Chase` state is a race the player can decline by leaving, the refinement that keeps KQ4's rm49 dog — flee-able in play — out of the surface) |
 | 15 | fish to the cat → flag 36 unsettable → bees | exchange slot + sole-writer window (rm11) | **CAUGHT on the demand half** (phase 1: the rm86 pool row names the Fish); the bees' flag-36 window closure stays a declared red for phase 3 |
@@ -245,3 +330,55 @@ by pure addition.
 
 Nothing in this file is a guard source ([[derived-only-no-declared-specs]]): it validates, it
 never feeds the patcher.
+
+## §8. Why none of this could be seen before 2026-08-15 — three defects under one symptom
+
+The [[session-2026-08-14d-handoff]] pinned KQ5's phantom connectivity on `cartoonCode`
+(script 763), the CD ending montage: one `cond` whose arms are `(proc999_5 gCurRoom <rooms>)`,
+one cartoon per place you can be standing, each closing with a real `newRoom:`. Thirteen rooms
+call it, so rm57 — Cassima's cell, inside Mordack's castle — acquired exits to the village, the
+elf, the ice queen and the ending, and no part of the castle was one-way. That reading of the
+symptom was right. The cause was two levels deeper, and the fix it proposed is a **no-op alone**
+(measured).
+
+1. **KQ5's IR was stale.** Emitted before our sci-tools fork learned to serialize the export
+   table, so **0 of its 211 scripts had `exports`** (LSL2 105/118, KQ4 147/159, KQ6 270/341,
+   LB2 191/255). `ir.script_id_target` therefore returned None for *every* `(ScriptID N M)` in
+   the game, and `extract._scriptid_scope` took its documented permissive fallback: seed EVERY
+   object of the target script with the call site's guard. Rebuilding takes ~2s and the `.sc`
+   output is **byte-identical** — the rebuild adds exports and nothing else.
+2. **Mention propagation was room-blind.** `_scriptid_scope` propagates a seeded object's
+   condition to the siblings it MENTIONS, copying that condition unchanged. A mention is a CALL
+   SITE with a path condition; where every site demands another `gCurRoom`, nothing in this room
+   reaches the sibling. Now `extract._object_mentions(sc, room)`, conservative: drop only where
+   the streaming walk accounted for every mention and all of them exclude this room.
+   ⛔ Fixes 1 and 2 are both required and neither works alone — with 1 only the toons re-enter
+   through mentions; with 2 only, `present` holds None and the propagation path is never taken.
+3. **The real blocker: `global322` was promoted as a mode register.** `edge_meta` reads
+   `!=`/relational demands against `reg_vals` as EXACT, on the stated ground that it is "the set
+   of values the MODEL can ever produce". KQ5 stores `polyList15`, `actor_1` and `cedric` in
+   global322 — values the model cannot represent — so its universe `{0,50,100,200}` was
+   incomplete. rm099, the boot room, branches on the bare truthiness
+   `(if global322 (gEgo get: 28) (gCurRoom newRoom: 1))`, which lowered to `∈ {50,100,200}`
+   while the start state holds 0, **so in that projection the walk could never leave the start
+   room**. `_reach_without` and `reobtainable_rooms` both INTERSECT over projections, so that one
+   dead projection emptied both for every item: `_reach_without(X) = {99,119}` for all X, and
+   **`analyze()` returned zero rows for all of KQ5 and could not have returned any.** Cured in
+   `missability.gating_registers` via `_object_valued_globals`. Measured inert elsewhere: LSL2
+   (8), KQ4 (10), KQ6 (26) and LB2 (20) all store objects in globals and none is promoted.
+
+**The regression that cure exposed, and its own cure.** Dropping the poisoned projection took
+`toll_strandings` 5 → 0 and lost the temple — because the temple catch had been *resting on the
+degenerate projection*, exactly as the Shell's catch rested on the phantom edges. `build_maps`
+records a machine `get:` under the state's path condition and drops the machine's ENTRY guard as
+"an item cost (`entry_musts`)". True of its `own(…)` conjuncts; **false of its owner-store (LOC)
+conjuncts**, which `entry_musts` never absorbs. `rm017.init` inits the staff prop under
+`(== ((gInv at: 7) owner:) 17)` — what `_loc_placed_required` already calls the *"is it still
+there?"* check and correctly discounts for the REQUIREMENT question. For a SOURCE's liveness it
+is the whole answer: rm214's door breaks the Staff with `put: 7 214`, which moves the owner and
+kills the site. `_entry_owner_conjuncts` puts the conjunct back into `source_guards`;
+`_spend_exhausts_sources` consumes it in `toll_strandings`. The temple returns for the right
+reason — and the Wand's toll row does not.
+
+**Corpus gate:** the full `snapshot.py` surface is BYTE-IDENTICAL on LSL2, KQ4, KQ6 and LB2;
+only KQ5 moves.

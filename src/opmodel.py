@@ -597,8 +597,7 @@ class OpEmitter:
                 # prints messages via a proc), NOT "splice the proc's effects here". Inlining it
                 # would erase the cue and PARK the state, so `_interp`'s proc-cue rule never fires.
                 return node
-            tgt = node.get("script", script)
-            name = node.get("name")
+            tgt, name = I.proc_ref(self.ir, node, script)
             body = self.procs_by.get((tgt, name))
             if tgt != 255 and body is not None and name not in seen:
                 return self._inline_calls(body, tgt, seen | {name}, depth + 1)
@@ -953,10 +952,11 @@ class OpEmitter:
             self._follow_call(room, script, node, pc, seen)
 
     def _follow_call(self, room, script, node, pc, seen):
-        tgt_script = node.get("script", script)   # PublicCall carries its script; Local = same
+        # PublicCall carries its script; Local = same. `proc_ref` resolves a local proc's
+        # REGISTRY key from the call's offset -- see ir.proc_ref.
+        tgt_script, name = I.proc_ref(self.ir, node, script)
         if tgt_script == 255:                      # script 255 = Print/Dialog: text, no effect
             return
-        name = node.get("name")
         body = self.procs_by.get((tgt_script, name))
         if body is None or name in seen:
             return
@@ -1021,8 +1021,7 @@ class OpEmitter:
                 if g is None:                    # unconditional -> also the initial value
                     self.init_writes.setdefault(room, {})[gi] = v
         elif tp in ("PublicCall", "LocalCall"):
-            tgt = node.get("script", script)
-            name = node.get("name")
+            tgt, name = I.proc_ref(self.ir, node, script)
             body = self.procs_by.get((tgt, name))
             if tgt != 255 and body is not None and name not in seen:
                 self._init_walk(room, tgt, body, pc, seen | {name})

@@ -39,6 +39,22 @@ SRC = os.path.join(_ROOT, "src")
 # the next reader can tell a known limitation from a broken test without opening the file.
 KNOWN_RED = {
     "test_toll.py": {
+        # 🔴 DECLARED 2026-08-15. Both assertions demand that KQ5's WHOLE toll set be the temple
+        # and nothing else, and KQ5 also emits two carry-in rows on the Locket toll rm57->rm683.
+        # They have been failing since the branch's world-model fixes; measured on the unedited
+        # branch the set was five items {Bag_of_Peas, Brass_Bottle, Cat_Fish, Gold_Coin, Wand},
+        # so this is a pre-existing red being DECLARED, not a new break -- and it is now four,
+        # the Wand row having gone when object-valued globals stopped being promoted. The
+        # remaining two rows are the rm683 cutscene broadcast owned by
+        # "🔴 KNOWN FP (KQ5): no carry-in demand rides the rm57->rm683 cutscene" below; these
+        # flip GREEN the day that FP is cured, which is the promotion contract working.
+        "KQ5 temple strands Brass_Bottle + Gold_Coin":
+            "asserts the KQ5 toll set is EXACTLY {Brass_Bottle, Gold_Coin}; the rm57->rm683 "
+            "carry-in FP adds Cat_Fish and Bag_of_Peas. The temple half is right and is pinned "
+            "green in test_kq5_ground_truth.",
+        "KQ5 toll item is the Staff via rm214->rm18":
+            "asserts every KQ5 toll row's edge is [214, 18]; the same two rm57->rm683 carry-in "
+            "rows carry toll_edge [57, 683]. Same FP, same cure.",
         # ✅ PROMOTED 2026-08-06 -- both mists REDs ("the carry-in demands rain-readiness
         # (global161==15), not just the lamp" and "the isle landing is guarded when the
         # shore-carry revisit is armed") are GREEN and no longer listed. Three derivations
@@ -235,6 +251,20 @@ KNOWN_RED = {
             "(rm006::doit) -- every producer of `owner == 6` sits inside a window that "
             "closes on arming, win or lose, and no row states the window. Phase 3; the same "
             "fact is patch A's hold site.",
+        "🔴 KNOWN FP (KQ5): no carry-in demand rides the rm57->rm683 cutscene":
+            "rm683 is `cdCassimaToon`, a CD cutscene script with no item test in it. The "
+            "own(Cat_Fish)/own(Bag_of_Peas) demands land there because castle.sc -- the region "
+            "live in every castle room -- is walked into rm683 as a member, so a requirement is "
+            "broadcast into a room where the player has no input. Cure = the region-broadcast "
+            "half of the peas' requirement-noise, not an oracle edit. The real Cat_Fish catch "
+            "(carry the fish up rm54's stairs) is pinned green.",
+        # ✅ PROMOTED 2026-08-15 -- "🔴 KNOWN FP (KQ5): no detector demands the Wand" is GREEN and
+        # no longer listed. `missability._unrefusable_grants`: rm001.sc:78 hands Crispin's wand to
+        # anyone entering room 1 without it, in `init`, under no other condition, so
+        # `_reach_without(28)` stops at rm1 and the two analyze rows (plus the Wand's conjunct in
+        # the rm40->rm41 spec) go with it. The full snapshot surface of LSL2, KQ4, KQ6 and LB2 is
+        # byte-identical, placements included. Mechanism in docs/KQ5-ORACLE.md §10 -- including
+        # the site that DOES take the wand (rm066's machine tray), which the old reason denied.
         "🔴 KNOWN GAP (KQ5): the fortune teller's needle substitution is caught":
             "rm13's amulet slot takes Gold_Coin(11) OR Golden_Needle(3); the needle's real "
             "consumer is the tailor (-> cloak). Exchange-slot class ([[exchange-slots-one-"

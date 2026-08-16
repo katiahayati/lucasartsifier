@@ -137,6 +137,54 @@ def _oneof_atom(n):
     return GOr(kids) if len(kids) > 1 else kids[0]
 
 
+def _curroom_demand(g):
+    """`{rooms}` if `g` asserts the CURRENT ROOM is one of them, else None.
+
+    Recognises the two spellings the games use: a bare `(== gCurRoom N)` and the disjunction
+    `_oneof_atom` lowers a membership test into. Anything else decides nothing."""
+    if isinstance(g, Pred) and g.kind == "CMP" and g.var == _CURROOM and g.op == "==":
+        try:
+            return {int(g.value)}
+        except (TypeError, ValueError):
+            return None
+    if isinstance(g, GOr):
+        out = set()
+        for k in g.kids:
+            v = _curroom_demand(k)
+            if v is None:
+                return None                # a disjunct we cannot read frees the whole OR
+            out |= v
+        return out
+    return None
+
+
+def _curroom_impossible(pc, room):
+    """Does this path condition require the player to be somewhere OTHER than `room`?
+
+    A script with no room of its own is walked once per room it runs in, and the ones that serve
+    many rooms SAY WHICH ARM BELONGS TO WHICH ROOM -- by testing the current-room global. Walking
+    every arm into every room therefore attributes each arm's effects to rooms whose own guard
+    excludes them, and for a `newRoom:` that fabricates movement outright.
+
+    KQ5's ending montage is the specimen and it cost the game its shape. `cartoonCode`
+    (script 763) is one `cond` whose arms are `(proc999_5 gCurRoom <rooms>)`, one cartoon per
+    place you can be standing; `rm057` calls it while giving Cassima the locket, so all seven
+    arms were attributed to rm57 and their closing `newRoom:`s became exits from Mordack's
+    castle to the village, the elf, the ice queen and the ending. With those, no part of the
+    castle is one-way and the Fishhook -- which you cannot go back for, USER 2026-08-14 --
+    cannot strand.
+
+    Narrow on purpose: only a demand on the AND spine, only when the demanded set is fully
+    readable, and only against the room the walk is already attributing to. `_oneof_atom`
+    supplies the disjunction spelling; games without a membership proc (LSL2/KQ4 derive none)
+    can still be caught by the bare compare, and neither game has one."""
+    for c in (pc or ()):
+        vals = _curroom_demand(c)
+        if vals is not None and room not in vals:
+            return True
+    return False
+
+
 _OPS = {"Eq": "==", "Ne": "!=", "Gt": ">", "Ge": ">=", "Lt": "<", "Le": "<=",
         "Ugt": ">", "Uge": ">=", "Ult": "<", "Ule": "<="}
 _REV = {"==": "==", "!=": "!=", ">": "<", ">=": "<=", "<": ">", "<=": ">="}
@@ -914,6 +962,10 @@ class Acq:
     item: int
     room: int
     guard: object = None
+    method: str = ""           # the METHOD that emitted it. `init` and `doit` run with no player
+    #   input; a `doVerb`, a `handleEvent` or a `changeState` needs the player to act. That is the
+    #   difference between a handout you cannot decline and a pickup you can walk past, which is
+    #   the whole question `missability._unrefusable_grants` asks.
     via: str = ""              # object whose method emitted it -- the same key `Edge.via` uses.
     #   A `get:` inside a `changeState` body is walked BOTH here (with the body's own path
     #   condition, i.e. nothing) and by the machine lift (which knows what it costs to arm the
@@ -1326,10 +1378,14 @@ class Extractor:
         self.ir = ir
         self.ts = TS()
         self._cur_obj = ""                  # object whose method is being walked
+        self._cur_method = ""               # ...and WHICH method -- see `Acq.method`
         self._armed = {}                    # room -> {object name: [guard, ...]}
         self._pending = pending_room_global(ir)
         self._list_loop = False             # inside a `for` that walks a linked list
         self._nowalk = None                 # rooms with the walk icon off -- see _no_walk_rooms
+        self._mentions = {}                 # script number -> (sites, total); a ScriptID-loaded
+        #   script is scoped once PER ROOM that loads it (KQ6 has 150 such scopes), and the walk
+        #   behind `_mention_sites` does not depend on the room.
         self.procs_by = {}
         for rn, s in ir.scripts.items():
             for name, body in s.procs.items():
@@ -1360,27 +1416,74 @@ class Extractor:
                                     out.setdefault(v, set()).add(rn)
         return out
 
-    def _object_mentions(self, sc):
-        """`object name -> the sibling objects its methods name`, from `{"t": "Object"}` nodes.
+    def _mention_sites(self, sc):
+        """`(sites, total)` for the sibling objects this script's methods name.
+
+        `sites[p][q]` is the list of PATH CONDITIONS under which `p` names `q`, from `walk_stream`;
+        `total[p][q]` is how many times a flat `I.walk` sees the same mention. The two are kept
+        apart for the same reason `_scriptid_scope` keeps `rows` and `present` apart: the streaming
+        walk carries conditions but does not reach every branch, so only where the counts AGREE is
+        the condition list a complete account of how `q` is reached.
 
         This is how one object in a script hands control to another without going through the
         export table: `(= next untieSelfAndStand)`, `(genie setScript: 0)`. Needed because
         `ScriptID` names ONE export but SCI loads the whole script, so the rest of it runs only if
         something inside reaches it."""
+        got = self._mentions.get(sc.number)
+        if got is not None:
+            return got
         names = {o.name for o in sc.objects}
-        out = {}
+        sites = {o.name: collections.defaultdict(list) for o in sc.objects}
+        total = {o.name: collections.Counter() for o in sc.objects}
         for o in sc.objects:
-            hit = set()
             for b in o.methods.values():
+                def leaf(n, pc, _o=o):
+                    if isinstance(n, dict) and n.get("t") == "Object":
+                        nm = n.get("name")
+                        if nm in names and nm != _o.name:
+                            sites[_o.name][nm].append(list(pc))
+                walk_stream(b, [], leaf)
                 for n in I.walk(b):
                     if isinstance(n, dict) and n.get("t") == "Object":
                         nm = n.get("name")
                         if nm in names and nm != o.name:
-                            hit.add(nm)
-            out[o.name] = hit
+                            total[o.name][nm] += 1
+        self._mentions[sc.number] = (sites, total)
+        return self._mentions[sc.number]
+
+    def _object_mentions(self, sc, room):
+        """`object name -> the siblings its methods name`, AS REACHED FROM `room`.
+
+        A mention is a CALL SITE and carries a path condition. Where every site that names `q`
+        says the player must be somewhere ELSE (`_curroom_impossible`), nothing in THIS room can
+        reach `q`, so it is not in this room's scope -- the same reading `_send_effect` already
+        applies to a single effect, applied one level up, to scope membership.
+
+        KQ5's ending montage is the specimen. `cartoonCode` (script 763) is one `cond` whose arms
+        are `(proc999_5 gCurRoom <rooms>)`, one cartoon per place you can be standing, and each
+        arm names its own sibling toon -- whose `doit` closes with a real `newRoom:`. Propagating
+        the SEED's condition unchanged gave every toon to all thirteen rooms that call the montage,
+        so rm57 (Cassima's cell, inside Mordack's castle) acquired exits to the village, the elf,
+        the ice queen and the ending, and no part of the castle was one-way. The Fishhook, which
+        you cannot go back for (USER 2026-08-14), could not strand.
+
+        CONSERVATIVE: the sibling is dropped only when the streaming walk accounted for EVERY
+        mention (`total`) and every one of them excluded this room. A mention the walk did not
+        reach decides nothing and keeps `q` in scope, because tightening this can only DELETE
+        effects -- the direction that lost KQ4's `readBook` when `_scriptid_scope` got it wrong."""
+        sites, total = self._mention_sites(sc)
+        out = {}
+        for p in total:
+            keep = set()
+            for q, n in total[p].items():
+                pcs = sites[p].get(q, [])
+                if len(pcs) == n and pcs and all(_curroom_impossible(pc, room) for pc in pcs):
+                    continue
+                keep.add(q)
+            out[p] = keep
         return out
 
-    def _scriptid_scope(self, sc, rows, present):
+    def _scriptid_scope(self, sc, rows, present, room):
         """`{object name -> guard}` for the objects of a ScriptID-loaded script that can RUN here.
 
         Two oracles, deliberately separate, because they fail in opposite directions:
@@ -1403,9 +1506,11 @@ class Extractor:
             non-literal index, an IR with no export table) falls back to seeding every object --
             the old behaviour, and the permissive direction.
           * SCI loads the script WHOLE, so anything a seeded object mentions can run too, under the
-            same condition; propagate to a fixpoint. A script-level PROCEDURE is not walked here,
-            but what it mentions is seeded with the script-wide disjunction, because we cannot see
-            whether the proc is called.
+            same condition; propagate to a fixpoint. Which siblings are reachable FROM THIS ROOM is
+            `_object_mentions`' question, not this one -- a mention whose every site demands
+            another current room hands nothing over here. A script-level PROCEDURE is not walked
+            here, but what it mentions is seeded with the script-wide disjunction, because we
+            cannot see whether the proc is called.
 
         Conditions from several sites are OR'd -- a script reached two ways runs if EITHER way was
         taken. Keeping one arbitrary site's condition (what `seen` used to do) is not an
@@ -1459,7 +1564,7 @@ class Extractor:
                 add(name, script_cond)
         if not conds:
             return {}
-        mentions = self._object_mentions(sc)
+        mentions = self._object_mentions(sc, room)
         # A procedure's body is not walked in this scope, but naming an object there still means
         # the object can be entered once the script is loaded.
         names = set(mentions)
@@ -1542,7 +1647,8 @@ class Extractor:
         for (tgt, room), rows in sites.items():    # first-touch order, as the old `seen` had
             sc = self.ir.scripts.get(tgt)
             if sc is not None:
-                out.append((tgt, room, self._scriptid_scope(sc, rows, present[(tgt, room)])))
+                out.append((tgt, room,
+                            self._scriptid_scope(sc, rows, present[(tgt, room)], room)))
         return out
 
     def run(self):
@@ -1563,10 +1669,11 @@ class Extractor:
                 for o in rs.objects:
                     self._cur_obj = o.name
                     for mname, meth_ast in o.methods.items():
+                        self._cur_method = mname
                         self._walk(room, meth_ast, [], rgn, set(),
                                    movement=(mname != "changeState"),
                                    verb_param=(_DOVERB_PARAM if mname == "doVerb" else None))
-                self._cur_obj = ""
+                self._cur_obj = self._cur_method = ""
         # SCRIPTS LOADED BY `ScriptID` -- see scriptid_refs. Walked with the referencing site's
         # path condition, in the scope that loaded them.
         for tgt, room, conds in self.scriptid_refs():
@@ -1582,10 +1689,11 @@ class Extractor:
                 g = conds[o.name]
                 self._cur_obj = o.name
                 for mname, meth_ast in o.methods.items():
+                    self._cur_method = mname
                     self._walk(room, meth_ast, [] if g is None else [g], tgt, set(),
                                movement=(mname != "changeState"),
                                verb_param=(_DOVERB_PARAM if mname == "doVerb" else None))
-            self._cur_obj = ""
+            self._cur_obj = self._cur_method = ""
         for n, s in room_scripts.items():
             self._nav_edges(n, s)
             self._newroom_override_edges(n, s)
@@ -1596,9 +1704,10 @@ class Extractor:
                     # duplicate them as free flat edges. Items still captured. Procedures
                     # are FOLLOWED in-context (below), not walked standalone -- a proc
                     # walked context-free would emit its newRoom as a free bypass.
+                    self._cur_method = mname
                     self._walk(n, meth_ast, [], n, set(), movement=(mname != "changeState"),
                                verb_param=(_DOVERB_PARAM if mname == "doVerb" else None))
-            self._cur_obj = ""
+            self._cur_obj = self._cur_method = ""
             self._inherit_arming(n)
         self._nav_hubs()
         # add any newRoom target we saw as a room
@@ -2280,8 +2389,7 @@ class Extractor:
                 self._nav_assignment(room, n, p)
                 self._pending_room_assignment(room, n, p)
             elif tp in ("PublicCall", "LocalCall"):
-                tgt = n.get("script", script)
-                name = n.get("name")
+                tgt, name = I.proc_ref(self.ir, n, script)
                 body = self.procs_by.get((tgt, name))
                 if tgt != 255 and body is not None and name not in seen:
                     # verb_param defaults to None: a followed proc is not a doVerb body, so its own
@@ -2362,6 +2470,11 @@ class Extractor:
                 self._armed.setdefault(room, {}).setdefault(t, []).append(_conj(pc))
 
     def _send_effect(self, room, node, pc, movement=True, script=None):
+        # An arm whose own guard says it belongs to another room does nothing HERE -- see
+        # `_curroom_impossible`. Checked before anything is recorded, because the same false
+        # attribution otherwise lands as an edge, an acquisition and a drop alike.
+        if _curroom_impossible(pc, room):
+            return
         self._record_arming(room, node, pc)
         recv, msgs = I.send_pairs(node)
         for sel, params in msgs:
@@ -2448,7 +2561,8 @@ class Extractor:
                 for tr in item_transfers(recv, sel, params):
                     if tr[1] == EGO:
                         self.ts.items.add(tr[0])
-                        self.ts.acqs.append(Acq(tr[0], room, _conj(pc), self._cur_obj))
+                        self.ts.acqs.append(Acq(tr[0], room, _conj(pc),
+                                                method=self._cur_method, via=self._cur_obj))
                     elif isinstance(tr[1], int) and tr[1] > 0:
                         # a transfer to a ROOM (not the ego, not -1/nowhere): the item is PLACED
                         # there. The owner state's transition to a location -- see TS.placed.
@@ -2489,10 +2603,26 @@ def var_room_values(ir, room, var):
     `(newRoom: local0)` in one state, so the act advance was orphaned from the act-break edge
     and rm26 became a free act-setter. One resolver, both callers.
 
-    The variable may be a GLOBAL or a script LOCAL/TEMP -- same idiom, different storage,
-    so the same scan answers both. Scoping the scan to THIS script is exact for a local
-    (that is all a script local can see) and is the deliberate narrowing we already chose
-    for the global case.
+    The variable may be a GLOBAL or a script LOCAL/TEMP -- same idiom, but NOT the same
+    storage. Scoping the scan to THIS script is exact for a local (that is all a script local
+    can see) and is the deliberate narrowing we already chose for the global case.
+
+    ⛔ A TEMP IS A STACK SLOT, so the script-wide scan is WRONG for one: `temp0` in one method
+    is a different variable from `temp0` in another, and reading them as one lets any method's
+    literal become another's destination. KQ5's rm049 is the specimen and the damage was not
+    subtle -- `sailInScript` assigns `temp0` 650 or 654 as CEDRIC'S VIEW NUMBER
+    (`cedric init: view: temp0`), while `rm049::doit` has its own `temp0` holding an
+    `edgeToRoom` result and does `newRoom: temp0`. The view numbers became room destinations,
+    and since 650/654 are the CD intro's scripts -- which exit into the whole game -- that
+    phantom pair was the only bridge from the game's start region to everything else, enough
+    to move the derived START ANCHOR onto the wrong side of the game.
+
+    So a Temp is scanned only within the method that CONTAINS this destination node, found by
+    identity. If it cannot be located (a copied or synthesised tree), the scan stays
+    script-wide: that is the pre-existing reading, and widening a destination set can only
+    invent movement, never hide a stranding. Measured corpus-wide: only KQ5 has a temp site
+    whose value set changes (rm36, rm49, rm124); LSL2, KQ4, KQ6 and the Dagger have none --
+    LB2's act break, the case this resolver was built for, routes through a script LOCAL.
 
     Returns {room: guard}, where the guard is the PATH CONDITION UNDER WHICH THE
     DESTINATION WAS ASSIGNED -- `None` meaning unconditional. That is what stops a routing
@@ -2533,22 +2663,26 @@ def var_room_values(ir, room, var):
             if v is not None and is_room(v):
                 seen.setdefault(v, []).append(_conj(pc))
 
-    for o in s.objects:
-        for _mn, ast in o.methods.items():
-            # TWO scans, because the two shapes need different walkers and conflating them
-            # cost LSL2 eight softlocks once already. `(switch <dest> ...)` is DATA -- the
-            # case labels ARE the values -- but walk_stream reads a Switch as control flow
-            # and never hands it to on_leaf, so that harvest has to run on the flat walk.
-            # The assignment shape genuinely needs the path condition, so it uses
-            # walk_stream. See test_walkers on Switch-as-data.
-            for n in I.walk(ast):
-                if n["t"] == "Switch" and is_dest(n["kids"][0]):
-                    for c in n["kids"][1:]:
-                        if c["t"] == "Case":
-                            v = I.as_int(c["kids"][0])
-                            if v is not None and is_room(v):
-                                seen.setdefault(v, []).append(None)
-            walk_stream(ast, [], on_leaf)
+    scan = [ast for o in s.objects for _mn, ast in o.methods.items()]
+    if vtype == "Temp":
+        owner = next((ast for ast in scan if any(n is var for n in I.walk(ast))), None)
+        if owner is not None:
+            scan = [owner]                 # stack slot: only this method's own assignments
+    for ast in scan:
+        # TWO scans, because the two shapes need different walkers and conflating them
+        # cost LSL2 eight softlocks once already. `(switch <dest> ...)` is DATA -- the
+        # case labels ARE the values -- but walk_stream reads a Switch as control flow
+        # and never hands it to on_leaf, so that harvest has to run on the flat walk.
+        # The assignment shape genuinely needs the path condition, so it uses
+        # walk_stream. See test_walkers on Switch-as-data.
+        for n in I.walk(ast):
+            if n["t"] == "Switch" and is_dest(n["kids"][0]):
+                for c in n["kids"][1:]:
+                    if c["t"] == "Case":
+                        v = I.as_int(c["kids"][0])
+                        if v is not None and is_room(v):
+                            seen.setdefault(v, []).append(None)
+        walk_stream(ast, [], on_leaf)
     return {v: (gs[0] if len(gs) == 1 else None) for v, gs in seen.items()}
 
 

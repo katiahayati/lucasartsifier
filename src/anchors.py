@@ -126,7 +126,19 @@ def discover_start(em, edges=None, entries=None):
     # when the two reaches share NO room, i.e. they are genuinely different components. Any overlap
     # means the same region and the candidate stays right: SQ3 rm900 shares 36 rooms with the wider
     # rm40; LSL2 rm11 lies inside rm10's reach. (A pure subset test would wrongly swap SQ3.)
-    widest = max(sorted(em.rooms), key=lambda r: len(reachable(edges, {r})), default=candidate)
+    # ...AND THE ROOM WE MIGHT SWAP TO MUST BE ONE THE ENGINE CAN PUT YOU IN. `widest` is
+    # "reaches the most rooms", which says nothing about whether the player can ever BE there:
+    # a component with no in-edge from anywhere -- and no root of its own, so no entry reaches
+    # it either -- can still out-reach the whole game through a single edge leading out of it.
+    # KQ5 is the case and it cost the entire analysis: the shipwreck cluster {48,49,50,90,91}
+    # is entered in play by a sail the extraction does not carry, `reached_by` scores it ZERO,
+    # and it none the less won this swap and became the start anchor -- so the game was
+    # analysed from the wrong end, with Crispin's cottage (the room every engine entry
+    # actually funnels into) passed over. Restricting the pool to rooms some entry reaches is
+    # the same claim `candidate` already rests on, applied to its rival.
+    placeable = [r for r in sorted(em.rooms) if reached_by.get(r)]
+    widest = max(placeable or sorted(em.rooms),
+                 key=lambda r: len(reachable(edges, {r})), default=candidate)
     cand_reach = reachable(edges, {candidate})
     wide_reach = reachable(edges, {widest})
     # Swap to the widest room in two cases. (a) DISJOINT component -- Camelot's intro reaches a

@@ -19,7 +19,8 @@ Flag 83 closes the cat window ON ARMING, not on success -- the one-shot-window c
 
 ⛔ KQ5 IS NOT A FINISHED ORACLE, and no run of this file should be reported as though it were.
 Four of the fifteen scorecard rows are still MISSED with a declared red apiece, one is a false
-positive we emit and have not cured, and several verdicts are open on their own terms (the peas
+positive we emit and have not cured (the tambourine; the Wand's was cured 2026-08-15, see below),
+and several verdicts are open on their own terms (the peas
 consumable waits on the item-property store; the locket window, the mountains' cold death and
 the Hammer's crystal site are unverified against the source). The checks below passing means
 the catches we HAVE are still there and still caught for the stated mechanism -- nothing more.
@@ -30,6 +31,11 @@ and pie reds. Phase 2, item-banned fetch walks in `register_strandings`, retired
 Their rows are mechanism-pinned below. STILL RED: the two window-closure halves (phase 3 -- flag
 83 closes on arming, flag 36's writer needs the fish), the fortune teller's needle slot, the
 region-scope amulet fold, and the tambourine false positive.
+
+A third build landed 2026-08-15: `missability._unrefusable_grants`, which retired the WAND false
+positive. A room that hands you an item in `init` under nothing but `not (has: X)` is a handout
+you cannot decline, so `_reach_without` stops there -- KQ5's rm1 does exactly that with Crispin's
+wand. The full snapshot surface of LSL2, KQ4, KQ6 and LB2 is byte-identical across it.
 """
 import os
 import sys
@@ -45,11 +51,33 @@ EXPECTED_CAUGHT = {
     # (`put: 7 214`); the bottle and coin are inside the one-visit pocket. Golden since July.
     "Brass_Bottle",
     "Gold_Coin",
-    # The sail: rm49->650/654 is the beach region's one-way frontier. Shell used at rm46 (the
-    # hermit scene branches on `has: 23`); Fishhook used at rm67 (`lookInMseHole` -> the cheese).
-    # First caught 2026-08-14, the day KQ5 was re-measured on the post-KQ6/LB2 engine.
-    "Shell",
+    # ⛔ SHELL LEFT THIS LIST 2026-08-15, on the USER'S OWN RULING (2026-08-14): "you can sail
+    # from the hermit island to the harpy island again to get the shell" -- re-obtainable, so not
+    # a stranding. Its old row rested on the phantom cartoon edges (see below); it is not a
+    # dropped catch, it is a false positive that went away with its cause.
+    #
+    # THE FISHHOOK: source rm90, used at rm67 (`lookInMseHole` -> the Moldy_Cheese), and you
+    # cannot go back for it -- USER 2026-08-14, "once you are in mordack's lair you can't get back
+    # out to get the fishhook". First caught 2026-08-14; RE-PINNED 2026-08-15 with the USER'S OK
+    # after three defects were cured together (docs/KQ5-ORACLE.md §8). The old pin named the
+    # frontier `rm49->rm650|rm49->rm654`, and those rooms DO NOT EXIST: 650/654 are Cedric's CD
+    # view numbers, which reached the room universe through a temp-scope bug. The real frontier is
+    # the hermit island's crossing to the far shore.
     "Fishhook",
+    # ✅ PROMOTED 2026-08-15, USER-RULED REAL, all five: the model could not have emitted ANY of
+    # these before, because one poisoned register projection (`global322`, an object-valued
+    # scratch slot) emptied `_reach_without` for every item and `analyze()` returned zero rows for
+    # all of KQ5 -- see `missability._object_valued_globals`. Two frontiers carry them:
+    #   * rm40->rm41 is THE ROC carrying you off, KQ5's real point of no return -- Harp (rm9 ->
+    #     needed rm90), Beeswax (rm24 -> rm44) and Crystal (rm38 -> rm52) must cross it;
+    #   * rm44/45/46->rm113 is the hermit island's crossing to the far shore -- Iron_Bar
+    #     (rm44 -> rm54) shares it with the Fishhook.
+    # The Locket (rm42, the roc's nest -> needed rm57, Cassima's cell) crosses rm42->rm43.
+    "Harp",
+    "Beeswax",
+    "Crystal",
+    "Locket",
+    "Iron_Bar",
     # Rope on the branch at rm30 kills you (the ledge is the survivable target; walkthrough-
     # confirmed "the branch is too weak"). fatal_uses' row names the machine.
     "Rope",
@@ -72,6 +100,18 @@ EXPECTED_CAUGHT = {
     # obtainable" dissolved and the kidnap corral emits its row: reg12=85, flip room 86,
     # needed at 86 (the cellar door). The row's context is exactly patch B's demand.
     "Hammer",
+    # ✅ PROMOTED 2026-08-15 from the WALKTHROUGHS, at the user's instruction to check them.
+    # gamerwalkthroughs.com/kings-quest-5: "Pick up the Fish and then walk up the stairs" -- on
+    # Mordack's island, BEFORE the castle -- then "Keep going back and forth until you see a cat.
+    # Throw Fish at the cat and then use the Bag on the cat to catch it"; the Fandom and eristic
+    # walkthroughs add "from here on out, if you see the cat, you must throw the fish to him".
+    # Source-confirmed: castle.sc, the REGION live in every castle room, dispatches
+    # `(37 (= global332 2) (setScript: theThrowFishScript))` and `(24 ... theCat setScript: ...)`.
+    # Measured: the source rm51 is NOT in the castle-side set {55..67, 124, 612, 670..673, 683},
+    # and rm54's three exits are one-way, so walking up those stairs fishless is unrecoverable.
+    # The same class as the Fishhook, one room over. Its rm683 carry-in row is NOT this catch --
+    # see the declared red below.
+    "Cat_Fish",
 }
 
 # B -- REAL, PARTIALLY CAUGHT: the sink rows name the right sites (spending a pool item at the
@@ -91,6 +131,13 @@ ALLOWED_OPEN = {"Bag_of_Peas"}
 # (`giveTamboScript`, `put: 34`, drops the Hairpin) is the escape from that very machine.
 # Holding it there is mandatory for progress, so the row's advice is unfollowable. The dedicated
 # red below owns this; the item sits in ALLOWED so the suspicion check does not double-count it.
+#
+# ✅ THE WAND LEFT THIS SET 2026-08-15, CURED -- see the green pin below and docs/KQ5-ORACLE.md
+# §10. It had been emitted since before the oracle existed. The cure is NOT the never-strandable
+# class this file used to propose (a class shaped to protect a known answer, and refuted by the
+# source: rm66's machine tray really does take the wand, it just hands it straight back), but
+# `missability._unrefusable_grants` -- rm1's `init` gives Crispin's wand to anyone who does not
+# have it, so no state past rm1 lacks it, and `_reach_without` no longer walks through it.
 FP_EMITTED = {"Tambourine"}
 
 ALLOWED = EXPECTED_CAUGHT | ALLOWED_PARTIAL | ALLOWED_OPEN | FP_EMITTED
@@ -108,13 +155,34 @@ MECHANISM_ROWS = {
         "'toll_item_name': 'Staff', 'toll_reg': None, 'toll_edge': [214, 18], "
         "'pocket': [18], 'source_rooms': [18]}",
     },
-    "Shell": {"analyze: need@rm46 sources=[49] frontier=rm49->rm650|rm49->rm654"},
-    "Fishhook": {"analyze: need@rm67 sources=[90] frontier=rm49->rm650|rm49->rm654"},
+    "Fishhook": {"analyze: need@rm67 sources=[90] frontier=rm44->rm113|rm45->rm113|"
+                 "rm46->rm113|rm46->rm661|rm660->rm663"},
+    "Harp": {"analyze: need@rm90 sources=[9] frontier=rm40->rm41"},
+    "Beeswax": {"analyze: need@rm44 sources=[24] frontier=rm40->rm41"},
+    "Crystal": {"analyze: need@rm52 sources=[38] frontier=rm40->rm41"},
+    "Locket": {"analyze: need@rm57 sources=[42] frontier=rm42->rm43"},
+    "Iron_Bar": {"analyze: need@rm54 sources=[44] frontier=rm44->rm113|rm45->rm113|"
+                 "rm46->rm113|rm46->rm661|rm660->rm663"},
+    # The catch is the FIRST row -- carry the fish up the castle stairs or the cat wins. The
+    # SECOND is pinned because it is emitted, not because it is right: it is the same rm683
+    # carry-in the red below owns. Pinning it keeps a future shape change loud; the red keeps the
+    # row's wrongness loud. [[oracle-must-pin-the-mechanism]]
+    "Cat_Fish": {
+        "analyze: need@rm57 sources=[51] frontier=rm54->rm55|rm54->rm59|rm54->rm67",
+        "toll_strandings: {'pattern': 'one-visit-pocket-carry-in', 'toll_item': 25, "
+        "'toll_item_name': 'Locket', 'toll_reg': None, 'toll_edge': [57, 683], "
+        "'pocket': [683], 'source_rooms': [51], 'need_rooms': [683], "
+        "'why': 'it sets reg331:=2, and that write outlives the use'}",
+    },
     "Rope": {"fatal_uses: {'room': 30, 'machine': 'ropeOnBranch', 'states': [0]}"},
     # The three phase-1 catches, pinned to their fold rows. The rm86 row is ONE fact stated
     # for each pool member: the demand is the disjunction (`demand_group`), the context is
     # the kidnap arrival (prev == 85).
     "Leg_of_Lamb": {
+        # RE-PINNED 2026-08-15 with the USER'S OK: both fold rows are unchanged and this row is
+        # ADDITIVE -- the lamb's source is the inn cupboard (rm28, in town) and the nest that
+        # demands it is rm42, so the roc carries you across the boundary between them.
+        "analyze: need@rm42 sources=[28] frontier=rm40->rm41",
         "ownedby_death_folds: {'dest': 34, 'need_room': 42, 'machine': 'hatch', 'state': 6, "
         "'pattern': 'state-fork', 'demand_group': [(19, 34)], 'context': {}}",
         "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
@@ -127,6 +195,12 @@ MECHANISM_ROWS = {
         "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
     },
     "Pie": {
+        # RE-PINNED 2026-08-15 with the USER'S OK: the fold row is unchanged and this one is
+        # ADDITIVE -- Main's `proc0_21` inventory dispatch EATS the pie (`put: 2 1`), a room-0
+        # scope the model widens to wherever you are standing, and the yeti at rm36 still needs
+        # it. Same fact as the confirmed pie ruling, seen from the sink side.
+        "dangerous_sinks: {'room': 0, 'script': 0, 'dest': 1, 'at_room': 38, "
+        "'still_needed_at': [36]}",
         "ownedby_death_folds: {'dest': 36, 'need_room': 35, 'machine': 'killEgo', "
         "'state': None, 'pattern': 'entry-fold', 'demand_group': [(2, 36)], "
         "'context': {12: 36}}",
@@ -334,6 +408,40 @@ def run():
           "tambourine, and giving it is the escape -- the sixth savior-condemned correction, "
           "new polarity (the item rides the arming guard, not a branch). Cure the detector; "
           "do not edit this oracle row.")
+
+    toon_carryins = [(n, r) for (n, d, r) in raw_rows
+                     if d == "toll_strandings" and r.get("toll_edge") == [57, 683]]
+    check("🔴 KNOWN FP (KQ5): no carry-in demand rides the rm57->rm683 cutscene",
+          not toon_carryins,
+          "rm683 is `cdCassimaToon`, a CD cutscene script that tests NO item at all -- grep it "
+          "for has:/get:/put: and there is nothing. The own(37)/own(24) demands attributed there "
+          "come from castle.sc, the REGION live in every castle room, walked into rm683 as a "
+          "member; you cannot throw a fish at a cat during a non-interactive toon. Requirement "
+          "broadcast into a cutscene room, the peas' noise shape. The REAL Cat_Fish catch is its "
+          "analyze row (rm54's stairs) and is green above. Curing this also flips test_toll.py's "
+          "two KQ5 assertions, which demand the toll set be exactly the temple.")
+
+    # ✅ PROMOTED 2026-08-15 (was 🔴 KNOWN FP). The Wand is unstrandable, and the reason is NOT
+    # the one this test used to give: rm066's machine tray IS a real spend -- `putCWandScript`
+    # (rm066:132) lays Crispin's wand down, the owner becomes the room, and it stays there while
+    # you walk the castle. What makes it safe is that the drop and the re-get are the SAME room
+    # (`cWand` verb 3 -> `getCWandScript`, rm066:903/260, re-armed from the owner check on every
+    # entry), and that every wandless path into rm124 is a DEATH rather than a walking-dead state
+    # (`battle.sc:84` sets flag 55, `mordOneScript` state 13 runs `proc0_26`). USER RE-AFFIRMED
+    # the FP ruling against that mechanism on 2026-08-15; the 15-second grab window in rm066 is
+    # preventable on its own screen and is deliberately NOT promoted. docs/KQ5-ORACLE.md §10.
+    #
+    # ⛔ The two `entry_musts` cures of 2026-08-15 stay dead (both make KQ6's rm230
+    # `removeHoleScr` a second source and break an enforced KQ6 fact). What landed instead is
+    # `missability._unrefusable_grants`: rm001.sc:78 hands the wand over in `init` under nothing
+    # but `not (has: 28)`, so `_reach_without(28)` stops there. Measured corpus-wide -- LSL2,
+    # KQ4, KQ6 and LB2 byte-identical on the FULL snapshot surface, placements included.
+    wand_rows = [r for (n, d, r) in raw_rows if n == "Wand"]
+    check("no detector demands the Wand (unrefusable rm1 grant)", not wand_rows,
+          "REGRESSION: the Wand is back. It is granted at rm099/rm001/cdIntro10 and the one "
+          "site that takes it (rm066's machine tray) hands it back in the same room, so no "
+          "crossing can strand it -- USER-RULED 2026-08-14 and re-affirmed 2026-08-15. Rows: "
+          f"{wand_rows}. Check `_unrefusable_grants` still sees rm1's init grant.")
 
     print(f"  {len(PASS)} passed, {len(FAIL)} failed")
     return not FAIL

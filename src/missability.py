@@ -141,8 +141,106 @@ def _conj_spine(guard):
     return [guard]
 
 
+#: methods that run without the player doing anything -- the room hands you the item on arrival
+#: (`init`) or while you stand there (`doit`). Everything else (`doVerb`, `handleEvent`,
+#: `changeState`) needs an act, and an act can be declined.
+_NO_INPUT_METHODS = ("init", "doit")
+
+
+def _unrefusable_grants(em):
+    """item -> {room}: handouts you cannot decline.
+
+    A source is normally a CHOICE, which is exactly what `_reach_without`'s banned walk models:
+    you can walk past a thing and not pick it up, so the rooms beyond it are rooms you can stand
+    in lacking the item. A grant emitted by a room's `init` under no condition but the
+    idempotence check is not a choice -- the game runs it before you can act and re-runs it on
+    every entry, so there is NO state past that room in which you lack the item.
+
+    KQ5's `rm001.sc:78` is the case that named this: `(if (not (global0 has: 28)) (global0 get:
+    28))` in the first room of the game. Without it the Wand -- which Crispin hands Graham in the
+    intro, and which exactly one site in 211 scripts ever takes back (the machine tray in rm66,
+    where the same room hands it straight back) -- read as an item you can walk to the endgame
+    without, and drew two `analyze` rows plus a carry demand on the roc's one-way edge saying
+    "carry the thing you cannot not carry".
+
+    STRICT on both halves, because the failure direction here is LOST FINDINGS (a barrier
+    shrinks `_reach_without`, and a room dropped from it is a room no detector will judge):
+      * the method must run with no player input, and
+      * the guard's whole conjunct spine must be the `not (has: X)` itself. One extra conjunct
+        means the handout has a condition, and a condition is a way to be past the room without
+        the item.
+    Measured 2026-08-15 against the deliberately LOOSER reading -- any site whose guard merely
+    entails not-own, any method -- which barriers 8 KQ4 sites, 4 KQ6, 2 LB2 and KQ5's own Amulet
+    and Elf_Shoes: the full snapshot surface of LSL2, KQ4, KQ6 and LB2 is BYTE-IDENTICAL either
+    way, and KQ5 moves by exactly the two Wand rows and the Wand's conjunct in the rm40->rm41
+    spec."""
+    out = {}
+    for a in getattr(getattr(em, "ts", None), "acqs", ()):
+        if getattr(a, "method", "") not in _NO_INPUT_METHODS:
+            continue
+        spine = _conj_spine(a.guard)
+        if (len(spine) == 1 and isinstance(spine[0], GNot)
+                and isinstance(spine[0].kid, Pred) and spine[0].kid.kind == "OWN"
+                and spine[0].kid.var == a.item):
+            out.setdefault(a.item, set()).add(a.room)
+    return out
+
+
 def _is_owner_atom(g):
     return isinstance(g, Pred) and g.kind == "LOC" and g.op == "ownedBy"
+
+
+
+def _spend_exhausts_sources(s, X, a):
+    """Having SPENT X at room `a`, is every source of X now dead?
+
+    `reobtainable_rooms(X)` answers the never-picked-it-up question: banning X, can the walk reach
+    a place that hands X over. It is deliberately permissive there -- the SOURCE FLOOR keeps a site
+    whose condition nothing satisfies, because ignorance about how a condition is established is
+    not evidence that the item cannot be had. A TOLL knows strictly more: `put: X a` wrote
+    `owner(X) := a`, and a site guarded `owner(X) == r` offers X only while it still RESTS at r, so
+    every such site with `r != a` is dead the moment the toll is paid. That is the "is it still
+    there?" check `_loc_placed_required` names and correctly discounts for the REQUIREMENT
+    question; for a SOURCE's liveness it is the whole answer.
+
+    KQ5's temple is the case, and it is the reason this exists. The Staff's one source is rm17,
+    whose prop inits under `(== ((gInv at: 7) owner:) 17)`; rm214's door breaks the Staff with
+    `put: 7 214`. Walking back to rm17 afterwards finds nothing there, so rm18 really is one-visit
+    and the Brass_Bottle and Gold_Coin inside it really are stranded -- both USER-CONFIRMED, and
+    both were being kept only by a degenerate register projection until `gating_registers` stopped
+    promoting object-valued globals (see `_object_valued_globals`).
+
+    REFUSES on any site that could still be live: one with no resting-place demand at all (a
+    factory, not a resting place), or one that offers X from `a` itself. A surface with no
+    `source_guards` -- the duck-typed fakes the toll unit tests build -- refuses outright, which is
+    the pre-existing behaviour."""
+    rooms = (getattr(s, "source_guards", None) or {}).get(X) or {}
+    if not rooms:
+        return False
+    for _room, gs in rooms.items():
+        for g in gs:
+            demands = [c for c in _conj_spine(g) if _is_owner_atom(c) and c.var == X]
+            if not demands or any(c.value == a for c in demands):
+                return False
+    return True
+
+
+def _entry_owner_conjuncts(info, K):
+    """The owner-store atoms EVERY arming of state `K` agrees on, as a conjunct list.
+
+    Same discipline as `entry_musts`, and for the same reason: entries are ALTERNATIVES, so one
+    that carries no owner demand frees the whole disjunction. State 0's armings are the machine's
+    own way in; a later state reached only by its own entry carries that one."""
+    alts = [eg for (k, eg) in info.get("entries", ()) if k in (0, K)]
+    if not alts:
+        return []
+    common = None
+    for eg in alts:
+        here = {repr(g): g for g in _conj_spine(eg) if _is_owner_atom(g)}
+        common = here if common is None else {k: v for k, v in common.items() if k in here}
+        if not common:
+            return []
+    return list((common or {}).values())
 
 
 def _fold_demands(guard, placed):
@@ -492,13 +590,24 @@ def build_maps(em):
             for (g, w, gg, c, tr) in paths:
                 # ...and what EVERY way of arming this machine demands you already hold.
                 must = em_.get(K, frozenset())
+                # ...and, of the arming, the part `entry_musts` does NOT absorb: its OWNER-STORE
+                # conjuncts. `entry_musts` reads item COSTS, so an `own(X)` in the entry is
+                # accounted for above and rightly left out of the condition below; a
+                # `LOC(X ownedBy R)` is not a cost and was dropped outright. It is what
+                # `_loc_placed_required` calls the "is it still there?" check, and for a SOURCE it
+                # is the whole answer -- the site offers the item only while the item still rests
+                # there. KQ5's temple: `rm017.init` inits the staff prop under
+                # `(== ((gInv at: 7) owner:) 17)`, so breaking the Staff on rm214's door
+                # (`put: 7 214`) moves the owner and the source dies with it.
+                own_at = _entry_owner_conjuncts(info, K)
                 for it in gg:
                     if it not in must | _own_required(g):
                         sources[it].add(info["room"])
                         # The state's own path condition, NOT the machine's arming: the arming is
                         # an item cost (`entry_musts`, already applied above), while what a
                         # register walk needs is the condition under which this statement runs.
-                        source_guards.setdefault(it, {}).setdefault(info["room"], []).append(g)
+                        source_guards.setdefault(it, {}).setdefault(info["room"], []).append(
+                            GAnd(_conj_spine(g) + own_at) if own_at else g)
 
     # BULK transfers -- the whole inventory at once, written as a walk of the Inv list setting
     # each item's `owner:`. KQ4 confiscates everything at rm92 (captured) and rm81 (the wedding
@@ -817,7 +926,49 @@ def gating_registers(em):
     prev = prev_room_reg(em)
     if prev is not None:
         written.add(prev)
-    return sorted(compared & written)
+    return sorted((compared & written) - _object_valued_globals(em))
+
+
+def _object_valued_globals(em):
+    """Globals the game stores an OBJECT in -- not numeric registers, whatever else they hold.
+
+    `edge_meta` reads a `!=`/relational demand against `reg_vals` as EXACT, on the stated ground
+    that the universe is "the set of values the MODEL can ever produce". That is true only while
+    every write is readable. An object pointer is a value the value-model cannot represent at all,
+    so such a register's universe is necessarily INCOMPLETE -- and the complement reading of
+    `!= 0` is then wrong in the RESTRICTIVE direction: it blocks movement the game allows.
+
+    KQ5's `global322` is the specimen and it cost the game its whole edge analysis. It is a
+    scratch slot holding `polyList15` (rm5), `actor_1` (rm67) and `cedric` (script 202), and also
+    a plain counter (rm212/213) and the constant 50 (rm12); the constants and the compared values
+    made a universe of {0, 50, 100, 200}. rm099 -- the boot room -- branches on the bare
+    truthiness `(if global322 (gEgo get: 28) (gCurRoom newRoom: 1))`, which lowered to
+    `global322 in {50, 100, 200}` while the start state holds 0, so in THAT projection the walk
+    could never leave the start room. `_reach_without` and `reobtainable_rooms` both INTERSECT
+    over projections, so one dead projection emptied both for every item: `analyze()` returned
+    zero rows for all of KQ5 and could not have returned any.
+
+    Structural and measured, with no game knowledge: LSL2 (8), KQ4 (10), KQ6 (26) and LB2 (20) all
+    store objects in globals and NONE of those is promoted, so this is inert on the four; KQ5's
+    global322 is the only promoted one in the corpus."""
+    got = getattr(em, "_objvalued", None)
+    if got is not None:
+        return got
+    out = set()
+    ir = getattr(em, "ir", None)             # the duck-typed emitters the unit tests build carry
+    if ir is None:                           #   no IR; with no scripts to read, nothing is refused
+        return out
+    for _rn, sc in ir.scripts.items():
+        bodies = list(sc.procs.values()) + [b for o in sc.objects for b in o.methods.values()]
+        for b in bodies:
+            for n in I.walk(b):
+                if not (isinstance(n, dict) and n.get("t") == "Assignment"):
+                    continue
+                ks = n.get("kids") or []
+                if len(ks) >= 2 and I.is_global(ks[0]) and ks[1].get("t") == "Object":
+                    out.add(ks[0]["index"])
+    em._objvalued = out
+    return out
 
 
 def all_machines(em):
@@ -1279,10 +1430,62 @@ def state_musts(info, regs):
     out = {}                                       # (K, loc-key) -> {R: set(values)}
     work = []
 
+    # ⭐ THE NODE IS SPLIT BY THE LOCALS THIS MACHINE ACTUALLY CONSULTS, AND ONLY THOSE.
+    # Splitting on a local no guard here reads cannot change an answer -- `loc` is used for
+    # exactly two things, `C._ctr_holds` on this machine's own path guards and `_Musts.at`'s
+    # filter, both of which ask about locals the machine COMPARES -- but it does change the
+    # size of the walk, without limit. KQ4's `deadTimer` is the specimen: 11 states, no counter
+    # guard at all, and an unbounded `(++ local3)` nothing ever reads, so every increment minted
+    # a fresh valuation and the walk ran to its 200000-step cap and then threw away everything
+    # it had learned (the honest fallback below). Eleven states cost 200000 steps and shipped
+    # UNKNOWN musts.
+    #
+    # Measured on KQ4 the day the local-proc fix made those bodies bigger: with the projection
+    # the machine converges in a handful of steps and the degradation goes away. An untracked
+    # local is simply absent from the valuation, which `_ctr_holds` already reads as UNKNOWN --
+    # the permissive direction, and the same reading an unestablished local has always had.
+    # ...AND A COUNTER IS ONLY DISTINGUISHABLE UP TO THE CONSTANTS IT IS COMPARED AGAINST, so
+    # values past them SATURATE. `==`, `!=` and the relationals against a constant set C all
+    # give the same answer for every value above max(C), so collapsing them loses nothing and
+    # is what makes an incremented counter's space finite at all. Without it a `(++ local)`
+    # inside a loop mints a fresh valuation forever and the walk can only ever end at its cap.
+    def _ctr_keys(g, acc):
+        if isinstance(g, (list, tuple)) and not (isinstance(g, tuple) and g and g[0] == "CTR"):
+            for x in g:
+                _ctr_keys(x, acc)
+        elif isinstance(g, tuple) and g and g[0] == "CTR":
+            acc.setdefault(g[1], set()).add(g[3] if isinstance(g[3], int) else 0)
+        elif isinstance(g, GNot):
+            _ctr_keys(g.kid, acc)
+        elif isinstance(g, (GAnd, GOr)):
+            for k in g.kids:
+                _ctr_keys(k, acc)
+        return acc
+
+    tracked = {}
+    for _K, paths in (info.get("states") or {}).items():
+        for p in paths:
+            _ctr_keys(p[0], tracked)
+    for (_K, eg) in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+        _ctr_keys(eg, tracked)
+    limit = {k: max(abs(v) for v in vs) + 1 for k, vs in tracked.items()}
+
+    def proj(loc):
+        got = {}
+        for k, v in loc.items():
+            if k not in tracked:
+                continue                           # nothing here reads it
+            lim = limit[k]
+            if isinstance(v, int):
+                v = lim if v > lim else (-lim if v < -lim else v)
+            got[k] = v
+        return got
+
     def key(loc):
         return tuple(sorted(loc.items(), key=repr))
 
     def seed(K, loc):
+        loc = proj(loc)
         k = (K, key(loc))
         if k not in out:
             out[k] = {}
@@ -1321,7 +1524,7 @@ def state_musts(info, regs):
                 dst = tr[1] + 1
             else:
                 continue
-            nloc = C._apply_counters(loc, c or ())
+            nloc = proj(C._apply_counters(loc, c or ()))
             dk = (dst, key(nloc))
             if dk in out:
                 merged = {R: out[dk][R] | nxt[R] for R in set(out[dk]) & set(nxt)}
@@ -1928,7 +2131,27 @@ def entry_musts(info):
     positive mention of own(X) anywhere in the guard is evidence the action presupposes X. That is
     a mention, not a proof, so it can over-state -- which is why it is intersected over every
     alternative, and why the consumers that subtract on it (a source, a register's cost) keep the
-    room or the write whenever ANY other site is free."""
+    room or the write whenever ANY other site is free.
+
+    ⛔ TWO CURES MEASURED AND REVERTED HERE, 2026-08-15, both aimed at KQ5's Wand FP (rm066 puts
+    the wand down with `put: 28 gCurRoom` and `getCWandScript` picks it back up, so rm66 sits in
+    `drops[28]` while this function's mention reading keeps it OUT of `sources[28]`):
+
+      * reading one entry with `_own_required` (OR-branches intersect) -- drops KQ6's
+        **holeInTheWall** outright, because rm420..440's `lookInHole` carries own(18) inside a
+        large register OR, so every labyrinth cell became a source and the rm420->rm435 carry-in
+        toll died;
+      * subtracting only an item the entry says is LYING IN THIS ROOM (a positive
+        `LOC(X ownedBy room)` disjunct, the "is it still there?" atom read on the arming side) --
+        narrower, and it leaves all five frozen surfaces byte-identical, but it still adds rm230
+        to `sources[18]`, breaking the enforced KQ6 fact that the hole has ONE source. rm230's
+        `removeHoleScr` is "take the hole back off the wall": the SAME put-then-get shape as the
+        wand, already ruled not-a-source. The two are not distinguishable by arming structure, so
+        there is nothing here to fix -- the Wand wants the NEVER-STRANDABLE class instead.
+
+    Note the second attempt was invisible to `snapshot.py`: `sources` is not in the frozen surface,
+    so only test_kq6_ground_truth's structural pin caught it. Detector-adjacent state needs its own
+    assertions."""
     ea = entry_alts(info)
     return {K: (frozenset(set.intersection(*[set(a) for a in alts])) if alts else frozenset())
             for K, alts in ea.items()}
@@ -2669,8 +2892,12 @@ class IrSccReach(SccReach):
                                   else sets.get(Ri, st[i]) for i, Ri in enumerate(Rs))))
         return out
 
-    def _walk(self, R, banned, starts=None, commit=frozenset()):
-        """Forward reachable (room, value) states in projection R."""
+    def _walk(self, R, banned, starts=None, commit=frozenset(), barrier=frozenset()):
+        """Forward reachable (room, value) states in projection R.
+
+        `barrier` rooms are entered and not left: the walk keeps the state but expands no
+        successor. Its one caller is `_reach_without`, where a room that hands the banned item
+        over unrefusably ends the "without it" story -- see `_unrefusable_grants`."""
         if starts:
             seen = set(starts)
         else:
@@ -2686,6 +2913,8 @@ class IrSccReach(SccReach):
         q = list(seen)
         while q:
             u = q.pop()
+            if u[0] in barrier:
+                continue
             for v in self._psucc(R, u, banned, commit):
                 if v not in seen:
                     seen.add(v)
@@ -2957,13 +3186,24 @@ class IrSccReach(SccReach):
 
         A room whose own(item) guard can only be reached BY holding item isn't a stranding site
         at all -- you can never stand there lacking it. rm61 tests own(Airline_Ticket) but every
-        route in already spends the ticket, which is why the ticket looked missable."""
+        route in already spends the ticket, which is why the ticket looked missable.
+
+        ...and a room that HANDS THE ITEM OVER unrefusably ends the walk for the same reason from
+        the other side: you can arrive there without it, and you cannot leave without it. See
+        `_unrefusable_grants` -- KQ5's rm1 gives Graham Crispin's wand on every entry, so no
+        state past rm1 lacks it."""
         ban = item if isinstance(item, frozenset) else frozenset({item})
         if ban in self._rw:
             return self._rw[ban]
+        grants = getattr(self, "_unref", None)
+        if grants is None:
+            grants = self._unref = _unrefusable_grants(getattr(self, "em", None))
+        barrier = set()
+        for it in ban:
+            barrier |= grants.get(it, set())
         out = None
         for R in self.proj:
-            rooms = {r for r, _ in self._walk(R, ban)}
+            rooms = {r for r, _ in self._walk(R, ban, barrier=barrier)}
             out = rooms if out is None else (out & rooms)
         self._rw[ban] = out if out is not None else set(self.reach_rooms)
         return self._rw[ban]
@@ -4753,7 +4993,8 @@ class IrSccReach(SccReach):
                         #   it. Everything downstream (the carry-out rows, and the carry-in rows
                         #   below) is then reasoning about a room the player can walk back into.
                     spent = a in self.drops.get(X, set()) or a in placed.get(X, set())
-                    if not spent or a in self.reobtainable_rooms(X):
+                    if not spent or (a in self.reobtainable_rooms(X)
+                                     and not _spend_exhausts_sources(self, X, a)):
                         continue                 # not spent here, or spent but re-gettable -> benign
                 cut = {u: (v - {b} if u == a else v) for u, v in self.edges.items()}
                 pocket = full - reachable(cut, {start})

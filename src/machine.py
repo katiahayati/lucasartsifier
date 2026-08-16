@@ -853,8 +853,7 @@ class MachineBuilder:
                     if k is not None:
                         self._add_entry(m, k, _conj(pc), {}, source == "init")
         elif tp in ("PublicCall", "LocalCall"):
-            tgt = node.get("script", script)
-            name = node.get("name")
+            tgt, name = I.proc_ref(self.ir, node, script)
             body = self.procs_by.get((tgt, name))
             if tgt != 255 and body is not None and name not in seen:
                 self._entries(body, pc, m, tgt, seen | {name}, source, is_self_obj)
