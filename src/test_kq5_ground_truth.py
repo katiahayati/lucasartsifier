@@ -163,16 +163,12 @@ MECHANISM_ROWS = {
     "Locket": {"analyze: need@rm57 sources=[42] frontier=rm42->rm43"},
     "Iron_Bar": {"analyze: need@rm54 sources=[44] frontier=rm44->rm113|rm45->rm113|"
                  "rm46->rm113|rm46->rm661|rm660->rm663"},
-    # The catch is the FIRST row -- carry the fish up the castle stairs or the cat wins. The
-    # SECOND is pinned because it is emitted, not because it is right: it is the same rm683
-    # carry-in the red below owns. Pinning it keeps a future shape change loud; the red keeps the
-    # row's wrongness loud. [[oracle-must-pin-the-mechanism]]
+    # ONE row now, and it is the catch: carry the fish up the castle stairs or the cat wins.
+    # ✅ RE-PINNED 2026-08-16 -- the second row, the rm683 carry-in toll, is GONE with the FP it
+    # belonged to (see the promoted red below). It was pinned because it was emitted, not because
+    # it was right. [[oracle-must-pin-the-mechanism]]
     "Cat_Fish": {
         "analyze: need@rm57 sources=[51] frontier=rm54->rm55|rm54->rm59|rm54->rm67",
-        "toll_strandings: {'pattern': 'one-visit-pocket-carry-in', 'toll_item': 25, "
-        "'toll_item_name': 'Locket', 'toll_reg': None, 'toll_edge': [57, 683], "
-        "'pocket': [683], 'source_rooms': [51], 'need_rooms': [683], "
-        "'why': 'it sets reg331:=2, and that write outlives the use'}",
     },
     "Rope": {"fatal_uses: {'room': 30, 'machine': 'ropeOnBranch', 'states': [0]}"},
     # The three phase-1 catches, pinned to their fold rows. The rm86 row is ONE fact stated
@@ -409,17 +405,28 @@ def run():
           "new polarity (the item rides the arming guard, not a branch). Cure the detector; "
           "do not edit this oracle row.")
 
+    # ✅ PROMOTED 2026-08-16 (was 🔴 KNOWN FP), and it took test_toll.py's two KQ5 assertions
+    # green with it, exactly as the red predicted. rm683 is `cdCassimaToon`, a CD cutscene that
+    # tests NO item at all; the own(37)/own(24) demands were attributed there because `castle.sc`
+    # is the region live in all 16 castle rooms and `theCat` had no presence condition to narrow
+    # it -- the cat's bagged arm is `(and (== global332 7) (== global338 gCurRoom))`, and one
+    # disjunct nothing could read freed the whole OR.
+    #
+    # The cure is `extract.room_valued_globals`: a global whose every write is a literal or the
+    # current-room global holds a ROOM, so `(== gX gCurRoom)` lowers to the disjunction over the
+    # rooms it can hold. Deriving those rooms needs a LEAST fixpoint based at false -- the machine
+    # that writes global338 is armed from the cat's own handler, so a greatest fixpoint keeps
+    # rm683 alive by self-reference. Measured g338 -> {57,58,59,60,61,63,64}.
+    #
+    # The assertion stays live: it is the shape of the FP, and a shape change should be loud.
     toon_carryins = [(n, r) for (n, d, r) in raw_rows
                      if d == "toll_strandings" and r.get("toll_edge") == [57, 683]]
-    check("🔴 KNOWN FP (KQ5): no carry-in demand rides the rm57->rm683 cutscene",
+    check("no carry-in demand rides the rm57->rm683 cutscene",
           not toon_carryins,
-          "rm683 is `cdCassimaToon`, a CD cutscene script that tests NO item at all -- grep it "
-          "for has:/get:/put: and there is nothing. The own(37)/own(24) demands attributed there "
-          "come from castle.sc, the REGION live in every castle room, walked into rm683 as a "
-          "member; you cannot throw a fish at a cat during a non-interactive toon. Requirement "
-          "broadcast into a cutscene room, the peas' noise shape. The REAL Cat_Fish catch is its "
-          "analyze row (rm54's stairs) and is green above. Curing this also flips test_toll.py's "
-          "two KQ5 assertions, which demand the toll set be exactly the temple.")
+          "REGRESSION: a requirement is being broadcast into a cutscene room again. rm683 has no "
+          "item test in it; the demand can only have come from castle.sc, the region live in "
+          f"every castle room. Rows: {toon_carryins}. Check that `room_valued_globals` still "
+          "derives global338, and that theCat's presence condition still reads as seven rooms.")
 
     # ✅ PROMOTED 2026-08-15 (was 🔴 KNOWN FP). The Wand is unstrandable, and the reason is NOT
     # the one this test used to give: rm066's machine tray IS a real spend -- `putCWandScript`

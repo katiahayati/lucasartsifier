@@ -39,22 +39,16 @@ SRC = os.path.join(_ROOT, "src")
 # the next reader can tell a known limitation from a broken test without opening the file.
 KNOWN_RED = {
     "test_toll.py": {
-        # 🔴 DECLARED 2026-08-15. Both assertions demand that KQ5's WHOLE toll set be the temple
-        # and nothing else, and KQ5 also emits two carry-in rows on the Locket toll rm57->rm683.
-        # They have been failing since the branch's world-model fixes; measured on the unedited
-        # branch the set was five items {Bag_of_Peas, Brass_Bottle, Cat_Fish, Gold_Coin, Wand},
-        # so this is a pre-existing red being DECLARED, not a new break -- and it is now four,
-        # the Wand row having gone when object-valued globals stopped being promoted. The
-        # remaining two rows are the rm683 cutscene broadcast owned by
-        # "🔴 KNOWN FP (KQ5): no carry-in demand rides the rm57->rm683 cutscene" below; these
-        # flip GREEN the day that FP is cured, which is the promotion contract working.
-        "KQ5 temple strands Brass_Bottle + Gold_Coin":
-            "asserts the KQ5 toll set is EXACTLY {Brass_Bottle, Gold_Coin}; the rm57->rm683 "
-            "carry-in FP adds Cat_Fish and Bag_of_Peas. The temple half is right and is pinned "
-            "green in test_kq5_ground_truth.",
-        "KQ5 toll item is the Staff via rm214->rm18":
-            "asserts every KQ5 toll row's edge is [214, 18]; the same two rm57->rm683 carry-in "
-            "rows carry toll_edge [57, 683]. Same FP, same cure.",
+        # ✅ PROMOTED 2026-08-16 -- "KQ5 temple strands Brass_Bottle + Gold_Coin" and "KQ5 toll
+        # item is the Staff via rm214->rm18" are GREEN and no longer listed. Both demanded that
+        # KQ5's WHOLE toll set be the temple and nothing else, and both were held red by the two
+        # rm57->rm683 carry-in rows the cutscene FP produced. `extract.room_valued_globals` now
+        # reads `(== global338 gCurRoom)` -- the bagged cat is in the room where you bagged it --
+        # so `theCat` is in the cast in seven castle rooms rather than all sixteen, and the toll
+        # set is the temple's two items on the edge rm214->rm18, exactly as declared. This is the
+        # promotion contract working: the red was declared 2026-08-15 with the cure named, and
+        # curing it turned both green in the same commit. LSL2, KQ4, KQ6 and LB2 byte-identical
+        # on the full snapshot surface, placements included.
         # ✅ PROMOTED 2026-08-06 -- both mists REDs ("the carry-in demands rain-readiness
         # (global161==15), not just the lamp" and "the isle landing is guarded when the
         # shore-carry revisit is armed") are GREEN and no longer listed. Three derivations
@@ -241,6 +235,23 @@ KNOWN_RED = {
         # surfaces byte-identical plus the new empty key; KQ5 moved by pure addition.
         # The fish flipped with the same rows (its rm86 demand); the BEES half is the
         # narrower red below.
+        # 🔴 DECLARED 2026-08-16, AWAITING A RULING -- not a modelling gap, an UNBLESSED
+        # COVERAGE CHANGE. Commit f623aa2 made the three sites that attribute an object's methods
+        # to a room agree, and KQ5's two `dangerous_sinks` rows `Shoe@rm12` / `Stick@rm12`
+        # ("throwing it at the dog starves the cat scene") went with the broken correlation they
+        # rested on: the dog's throw handler arms a machine, and the two were only ever classified
+        # as accomplishing-nothing consumptions because the handler and the machine entry carried
+        # different guards. Both items are still CAUGHT -- their rm86 `ownedby_death_folds` row is
+        # unchanged, which is why `softlock_items` did not move -- but the "spending it at the dog"
+        # half of the mechanism is now stated nowhere, and these two pins still name the retired
+        # rows. Re-pinning them is a ground-truth edit ([[dont-flip-enumerated-ground-truth]]), so
+        # they stay red until the user rules on it. See docs/KQ5-ORACLE.md §1.
+        "mechanism pinned: Shoe":
+            "pins the retired `dangerous_sinks {'room': 12, ..., 'still_needed_at': [6]}` row "
+            "beside the (unchanged) rm86 fold row. Awaiting the user's ruling on the coverage "
+            "change f623aa2 made.",
+        "mechanism pinned: Stick":
+            "the same row, the same ruling.",
         "🔴 KNOWN GAP (KQ5): the bees' flag-36 window closure is caught":
             "flag 36's only writer is bearScript (runs only while `has: 5` spawns the bear); "
             "the hive arms deathByBees under not-flag36, so the honeycomb -> beeswax -> boat "
@@ -251,13 +262,19 @@ KNOWN_RED = {
             "(rm006::doit) -- every producer of `owner == 6` sits inside a window that "
             "closes on arming, win or lose, and no row states the window. Phase 3; the same "
             "fact is patch A's hold site.",
-        "🔴 KNOWN FP (KQ5): no carry-in demand rides the rm57->rm683 cutscene":
-            "rm683 is `cdCassimaToon`, a CD cutscene script with no item test in it. The "
-            "own(Cat_Fish)/own(Bag_of_Peas) demands land there because castle.sc -- the region "
-            "live in every castle room -- is walked into rm683 as a member, so a requirement is "
-            "broadcast into a room where the player has no input. Cure = the region-broadcast "
-            "half of the peas' requirement-noise, not an oracle edit. The real Cat_Fish catch "
-            "(carry the fish up rm54's stairs) is pinned green.",
+        # ✅ PROMOTED 2026-08-16 -- "🔴 KNOWN FP (KQ5): no carry-in demand rides the rm57->rm683
+        # cutscene" is GREEN and no longer listed, and it took `test_toll.py`'s two KQ5
+        # assertions green with it, as the red said it would. rm683 is `cdCassimaToon`, a CD
+        # cutscene that tests no item at all; the own(Cat_Fish)/own(Bag_of_Peas) demands were
+        # broadcast into it because `castle.sc` is the region live in all 16 castle rooms and
+        # `theCat` had NO presence condition -- its bagged arm is
+        # `(and (== global332 7) (== global338 gCurRoom))` and an unreadable disjunct frees the
+        # whole OR. `extract.room_valued_globals` derives what such a global can hold (least
+        # fixpoint based at false, because the machine that writes it is armed from the cat's own
+        # handler) and lowers the compare to the room disjunction it means. Measured:
+        # g338 -> {57,58,59,60,61,63,64}, the rm57->rm683 toll rows and their patch guard gone,
+        # every other KQ5 row unmoved; LSL2, KQ4, KQ6 and LB2 byte-identical on the FULL surface
+        # with placements (KQ4 and LB2 derive a room-valued global of their own and do not move).
         # ✅ PROMOTED 2026-08-15 -- "🔴 KNOWN FP (KQ5): no detector demands the Wand" is GREEN and
         # no longer listed. `missability._unrefusable_grants`: rm001.sc:78 hands Crispin's wand to
         # anyone entering room 1 without it, in `init`, under no other condition, so

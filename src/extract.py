@@ -207,6 +207,284 @@ def _curroom_impossible(pc, room):
     return False
 
 
+# --- A GLOBAL THAT ONLY EVER HOLDS A ROOM ----------------------------------------------------
+_ROOMVALS = {}      # ir id -> {global index: frozenset(rooms)}; see room_valued_globals
+_ROOMVAL = {}       # ...the one installed for the game being extracted. Keyed by ir like the
+#   other per-game derivations in this module, so `install_vocabulary` can restore it: the
+#   derivation has to run BEFORE `extract()`, and `extract()` re-installs the vocabulary.
+
+
+def install_room_valued(ir, m):
+    """Publish `room_valued_globals`' answer where `_cmp_atom` will read it."""
+    global _ROOMVAL
+    _ROOMVAL = {gi: frozenset(v) for gi, v in (m or {}).items()}
+    _ROOMVALS[id(ir)] = _ROOMVAL
+    return _ROOMVAL
+
+
+def _roomval_atom(gi):
+    """`(== gX gCurRoom)` -> the disjunction over the rooms gX can hold. An EMPTY set is the
+    base of the fixpoint spelled as a guard -- an impossible room -- and is only ever seen
+    while `room_valued_globals` is settling; a global that settles on nothing is dropped."""
+    kids = [Pred("CMP", var=_CURROOM, op="==", value=str(r)) for r in sorted(_ROOMVAL[gi])]
+    if not kids:
+        return Pred("CMP", var=_CURROOM, op="==", value="-1")
+    return kids[0] if len(kids) == 1 else GOr(kids)
+
+
+def _scopes(script):
+    """`(scope, body)` for every method and procedure of a script, where a scope is
+    `("obj", instance, method)` or `("proc", name, None)`. The two differ in how they answer
+    "which rooms does this run in?", which is all of `_ScopeRooms`."""
+    for o in script.objects:
+        for mn, body in o.methods.items():
+            yield ("obj", o.name, mn), body
+    for pn, body in script.procs.items():
+        yield ("proc", pn, None), body
+
+
+def _curroom_compared(ir):
+    """Globals some guard compares `==` against the current-room global. Nothing else is worth
+    deriving a value set for: that comparison is the map's only consumer."""
+    out = set()
+    for s in ir.scripts.values():
+        for _scope, body in _scopes(s):
+            for n in I.walk(body):
+                if n.get("t") != "Eq":
+                    continue
+                ks = n.get("kids") or []
+                if len(ks) < 2:
+                    continue
+                for x, y in ((ks[0], ks[1]), (ks[1], ks[0])):
+                    if I.is_global(x, _CURROOM) and I.is_global(y) and y["index"] != _CURROOM:
+                        out.add(y["index"])
+    return out
+
+
+def _global_write_sites(ir, want):
+    """`gi -> [(script, scope, kind, value, pc)]` for every write to a global in `want`.
+
+    `kind` is "lit" (a literal), "cur" (the current-room global) or "other" -- anything whose
+    value we cannot read, `++`/`--` included. ONE "other" and the global is not enumerable, so
+    this has to see every write: the identity "the value set is the union of the writes" is the
+    whole basis of the lowering, exactly as `local_write_conditions` says of its own values."""
+    out = {}
+
+    def leaf(n, pc, scope, sn):
+        t = n.get("t")
+        if t in ("Increment", "Decrement"):
+            d = (n.get("kids") or [None])[0]
+            if isinstance(d, dict) and I.is_global(d) and d["index"] in want:
+                out.setdefault(d["index"], []).append((sn, scope, "other", None, None))
+            return
+        if t != "Assignment":
+            return
+        dst, src = (n.get("kids") or [None, None])[:2]
+        if not (isinstance(dst, dict) and I.is_global(dst) and dst["index"] in want):
+            return
+        v = I.as_int(src)
+        if v is not None:
+            kind, val = "lit", v
+        elif isinstance(src, dict) and I.is_global(src, _CURROOM):
+            kind, val = "cur", None
+        else:
+            kind, val = "other", None
+        out.setdefault(dst["index"], []).append((sn, scope, kind, val, _conj(pc)))
+
+    for sn, s in ir.scripts.items():
+        for scope, body in _scopes(s):
+            walk_stream(body, [], lambda n, pc, _sc=scope, _sn=sn: leaf(n, pc, _sc, _sn))
+    return out
+
+
+class _ScopeRooms:
+    """`of(script, scope)` -- the rooms a body can run in, or None for "cannot say".
+
+    Every answer is an OVER-approximation, which is what makes the fixpoint below sound: a room
+    this fails to exclude only widens the value set, and a widened value set only weakens the
+    guard the map lowers. "Cannot say" drops the global entirely.
+
+    Three readings, and none of them is new:
+      * a PROCEDURE has no room of its own -- it runs because something called it, so its rooms
+        are its call sites'. That is `MachineBuilder.proc_calls`' rule ("a machine armed inside a
+        procedure has no way in of its own") asked about the room instead of the path condition,
+        and [[a-procedure-is-not-a-handler]] is the same fact from the other side;
+      * a ROOM SCRIPT's own code runs in its room. This is not a new claim: it is the attribution
+        the whole extraction already rests on -- `Extractor._walk` files every edge, acquisition
+        and effect of a room script under that room;
+      * anything else -- an object in a region, in Main, in a shared script -- runs where the
+        OBJECT is, which is its presence condition, and if it is a `changeState`, also where the
+        machine can be ARMED. Both are already computed; both are read through `_curroom_demand`,
+        so a scope that says nothing about where you are says None here too."""
+
+    def __init__(self, ir, cast_of, entries_of):
+        self.ir, self.cast_of, self.entries_of = ir, cast_of, entries_of
+        self.callers = {}
+        for sn, s in ir.scripts.items():
+            for scope, body in _scopes(s):
+                for n in I.walk(body):
+                    if n.get("t") in ("PublicCall", "LocalCall") and n.get("name"):
+                        self.callers.setdefault(I.proc_ref(ir, n, sn), []).append((sn, scope))
+        self._entries = {}
+
+    def reset(self):
+        """Between rounds: the entries were computed under the PREVIOUS map."""
+        self._entries.clear()
+
+    def _entry_guard(self, sn, inst):
+        if sn not in self._entries:
+            s = self.ir.scripts.get(sn)
+            self._entries[sn] = {} if s is None else self.entries_of(s)
+        return self._entries[sn].get(inst)
+
+    def of(self, sn, scope, _seen=()):
+        s = self.ir.scripts.get(sn)
+        if s is None:
+            return None
+        # The procedure test comes FIRST, before the room-script one: a procedure declared in a
+        # room script but called from elsewhere does not run in that room, and resolving it
+        # through its callers gives the same answer when it is called from home.
+        if scope[0] == "proc":
+            key = (sn, scope[1])
+            if key in _seen:
+                return None                    # a call cycle: no claim
+            sites = self.callers.get(key)
+            if not sites:
+                return None                    # nothing we can see calls it
+            out = set()
+            for csn, cscope in sites:
+                r = self.of(csn, cscope, _seen + (key,))
+                if r is None:
+                    return None                # one caller we cannot place frees the union
+                out |= r
+            return out
+        if _room_object(s, self.ir) is not None:
+            return {sn}
+        got = []
+        pres = _curroom_demand(cast_guard(self.cast_of(s), scope[1]))
+        if pres is not None:
+            got.append(pres)
+        if scope[2] == "changeState":
+            eg = _curroom_demand(self._entry_guard(sn, scope[1]))
+            if eg is not None:
+                got.append(eg)
+        if not got:
+            return None
+        out = set(got[0])
+        for r in got[1:]:
+            out &= r                           # both are upper bounds, so is their meet
+        return out
+
+
+def room_valued_globals(ir, cast_of, entries_of, install, rounds=8):
+    """`{global index: frozenset(rooms)}` -- globals that only ever hold a ROOM NUMBER.
+
+    `(== <global> gCurRoom)` is a guard that says WHERE YOU ARE, in the one spelling
+    `_curroom_demand` cannot read: the room is not written down, it is REMEMBERED. Lowering it
+    to the disjunction it means is the same move `_oneof_atom` makes for a membership test, and
+    it needs the same thing first -- knowing what the subject can hold.
+
+    KQ5's Mordack castle is what that costs. `theCat`'s presence disjunction has an arm
+
+        (if (and (== global332 7) (== global338 global11))     ; castle.sc:154
+            (theCat init: ignoreActors: 0 setScript: catInBag))
+
+    -- "the bagged cat is in the room where you bagged it" -- and an unreadable disjunct frees
+    the whole OR, so the cat joins the cast in all 16 castle rooms. Everything its handler
+    offers goes with it: throwing the Cat_Fish and sacking it with the Bag_of_Peas were recorded
+    as acts available in rm683, `cdCassimaToon` -- the cutscene after Cassima takes the locket,
+    which tests no item at all -- and `toll_strandings` then demanded the player carry both into
+    it. Both items are destroyed by the cat puzzle, so that guard is unsatisfiable for exactly
+    the player who solved it as designed.
+
+    THREE PARTS, and the third is why this is not a lookup:
+
+      1. CLASSIFY. Every write must be a literal or the current-room global, or the value set is
+         not enumerable and the compare stays opaque. This gate is what keeps the failure
+         direction "we learn nothing" rather than "we exclude a room the player can be in".
+      2. ATTRIBUTE each `= gX gCurRoom` write to the rooms it can RUN in -- the value it writes
+         IS the room it runs in. See `_ScopeRooms`.
+      3. LEAST FIXPOINT, BASED AT FALSE. KQ5's bagging machine writes the global, and it is
+         armed from the cat's own handler -- whose presence condition contains the very arm
+         being derived. A greatest fixpoint keeps rm683 alive by self-reference; the least one
+         starts from "the compare is never true", settles in one round, and rm683 is out. Sound
+         because each round only over-approximates where a write can run, so the limit
+         over-approximates what the global can hold.
+
+    `!=` IS NOT LOWERED (see `_cmp_atom`): an over-approximation of the value set says nothing
+    about the rooms outside it, so "not the remembered room" remains opaque.
+
+    Measured on the corpus, full snapshot surface with placements. Three games spell the idiom
+    and two of the three were already understood by the rest of the model:
+        KQ5   g338 -> {57,58,59,60,61,63,64}  the bagged cat's room -- the rm683 carry-in goes
+        KQ4   g124 -> {20,26,27,99,333}       which room the unicorn was randomised into
+        LB2   g571 -> {210,240,250,260,280,300,330}
+        LSL2, KQ6                              no candidate at all (their only gCurRoom-compared
+                                               global is the pending-room one, written from
+                                               another variable)
+    LSL2, KQ4, KQ6 and LB2 are BYTE-IDENTICAL on the full surface.
+
+    `cast_of(script)` -> `cast_conditions`; `entries_of(script)` -> `{instance: entry
+    disjunction}`; `install(map)` publishes a round's answer where the next round's guard
+    lowering will read it -- the fixpoint's feedback path -- and is what the caller uses to
+    drop whatever it cached under the previous one."""
+    want = _curroom_compared(ir)
+    if not want:
+        return install(ir, {})
+    writes = _global_write_sites(ir, want)
+    cands = {}
+    for gi in sorted(want):
+        ws = writes.get(gi) or []
+        if ws and not any(k == "other" for _sn, _sc, k, _v, _pc in ws):
+            cands[gi] = ws
+    if not cands:
+        return install(ir, {})
+    scope = _ScopeRooms(ir, cast_of, entries_of)
+    rooms = _room_numbers(ir)
+    while cands:
+        got = _settle_room_valued(ir, scope, install, rooms, cands, rounds)
+        empty = {gi for gi, v in got.items() if not v}
+        if not empty:
+            return install(ir, got)
+        # "the compare is never true" is a claim, and an empty set only ever comes from the BASE
+        # of the fixpoint. Drop it back to opaque and re-settle, so that what the extraction
+        # finally reads is the map the surviving answers were computed under.
+        for gi in empty:
+            cands.pop(gi, None)
+    return install(ir, {})
+
+
+def _settle_room_valued(ir, scope, install, rooms, cands, rounds):
+    cur = {gi: frozenset() for gi in cands}
+    for _round in range(rounds):
+        install(ir, cur)
+        scope.reset()
+        nxt, dropped = {}, set()
+        for gi, ws in cands.items():
+            vals = set()
+            for sn, sc, kind, val, pc in ws:
+                if kind == "lit":
+                    vals.add(val)
+                    continue
+                r = scope.of(sn, sc)
+                here = _curroom_demand(pc)     # the write's own branch may name its room
+                if here is not None:
+                    r = here if r is None else (r & here)
+                if r is None:
+                    dropped.add(gi)            # a write we cannot place: no claim at all
+                    break
+                vals |= r
+            else:
+                nxt[gi] = frozenset(v for v in vals if v in rooms)
+        for gi in dropped:
+            cands.pop(gi, None)
+            cur.pop(gi, None)
+        if nxt == cur:
+            return cur
+        cur = nxt
+    return {}                                  # did not settle: say nothing
+
+
 _OPS = {"Eq": "==", "Ne": "!=", "Gt": ">", "Ge": ">=", "Lt": "<", "Le": "<=",
         "Ugt": ">", "Uge": ">=", "Ult": "<", "Ule": "<="}
 _REV = {"==": "==", "!=": "!=", ">": "<", ">=": "<=", "<": ">", "<=": ">="}
@@ -227,6 +505,16 @@ def _cmp_atom(n, tp):
         return Pred("CMP", var=a["index"], op=op, value=str(I.as_int(b)))
     if I.is_global(b) and I.as_int(a) is not None:
         return Pred("CMP", var=b["index"], op=_REV[op], value=str(I.as_int(a)))
+    # GLOBAL vs the CURRENT-ROOM global -- "you are in the room this one REMEMBERS", the only
+    # room test whose room is not written down. Lowered to the disjunction it means over the
+    # rooms the global can hold, so `_curroom_demand` and every other consumer read it as the
+    # ordinary room test it is; `room_valued_globals` is what earns the value set, and a global
+    # it did not derive falls through to opaque. `==` only: the value set is an
+    # OVER-approximation, so `!=` says nothing about the rooms outside it.
+    if op == "==":
+        for x, y in ((a, b), (b, a)):
+            if I.is_global(x, _CURROOM) and I.is_global(y) and y["index"] in _ROOMVAL:
+                return _roomval_atom(y["index"])
     # `register` vs literal -- which job this Script was armed for. See REG_KEY.
     for x, y in ((a, b), (b, a)):
         if _is_register(x) and I.as_int(y) is not None:
@@ -410,7 +698,12 @@ def install_vocabulary(ir):
     from the store wrapper's holder globals and the Game loop respectively, so the extraction reads
     the game's own layout instead of assuming the SCI template's 0/11. Both fall back to the
     template default only when a game has no derivable store or Game loop."""
-    global _VOCAB, _IPROPS, _EGO, _CURROOM, _ITEM_MSG, _ONEOF, _MENUS
+    global _VOCAB, _IPROPS, _EGO, _CURROOM, _ITEM_MSG, _ONEOF, _MENUS, _ROOMVAL
+    # The room-valued globals are derived BEFORE the extraction (they change what a guard means,
+    # so nothing may read one first) and this runs again inside `extract()`. Restore this game's
+    # answer rather than clearing it -- and clear it for a game that has not derived one, so a
+    # process holding two games never lowers one game's compare with the other's rooms.
+    _ROOMVAL = _ROOMVALS.get(id(ir), {})
     _VOCAB = V.Vocabulary.from_ir(ir)
     _IPROPS = (V.item_property_registers(ir, _VOCAB.store_class, _VOCAB.prop, _at_item)
                if _VOCAB else {})

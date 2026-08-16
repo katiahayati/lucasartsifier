@@ -73,9 +73,12 @@ Three facts follow, and they are the reason this section matters more than its s
 1. **The Fish's only competing consumer is the bear (rm11), not the dog.** So "spending the
    Fish at the cat strands you" is a SINGLE-ITEM claim — nothing else can cover the rm11 need
    — unlike the Shoe/Stick rows, which stay disjunction-blind in either framing because the
-   dog accepts three items. The `Fish@rm6 → still needed at [11]` row is therefore the one
-   row in this family that is clean, and it is emitted ONLY once handler walks carry their
-   object's cast condition (see §11).
+   dog accepts three items. ⛔ A `Fish@rm6 → still needed at [11]` row was reported on
+   2026-08-15 as the gain the cast-gating fix would bring, and **it does not exist**: it was
+   an artifact of half that fix, naming a true item for a false reason. With the three
+   attribution sites made consistent (`f623aa2`) the Shoe/Stick rm12 rows go and nothing
+   replaces them on either side. The fish-at-cat walking dead is still stated only through
+   the rm86 fold row and the bees' declared red (§1a).
 2. **The scenes arm on {8,16} but accept {8,16,19,5}.** Sierra guaranteed a safe option is in
    hand before either encounter can start, then let the player improvise a fatal one. The
    trap springs only on cleverness.
@@ -102,9 +105,13 @@ parks into `walkingDead` (60 seconds, `proc0_26`).
 - *Miss the cat window (never arm it, or lose the race) then enter the inn's back room* —
   **TRUE softlock (death class), the worst in the game.** Tier 1 end to end.
 - *Spend your last cat-compatible throwable at the dog* — **TRUE, but conditional**: fatal only
-  when it leaves the pool empty for the cat with the window still open. The shipped
-  `dangerous_sinks` rows (Shoe@rm12, Stick@rm12) name the right sites and are blind to the
-  disjunction; they over-warn, they do not under-warn.
+  when it leaves the pool empty for the cat with the window still open. ⚠️ **NOT STATED BY THE
+  TOOL SINCE 2026-08-16 (`f623aa2`) — awaiting a ruling.** The `dangerous_sinks` rows
+  Shoe@rm12 / Stick@rm12 named the right sites and were disjunction-blind; they rested on the
+  dog's throw handler and the machine it arms carrying DIFFERENT guards, and went when the two
+  were made to agree. Both items remain caught by their rm86 `ownedby_death_folds` row, so
+  `softlock_items` did not move — but the "spending it at the dog" half of the mechanism is now
+  stated nowhere. `test_kq5_ground_truth`'s two pins are declared red until the user rules.
 - *Skip the dog scene* — needle chain lost (→ no cloak). The cloak-need is tier 3 only
   ("when you start to shiver wear the cloak"); the freeze-death mechanism is not yet
   source-verified. **Open: verify the mountains' cold-death read.**
@@ -341,7 +348,7 @@ covered.
 | 10 | forest without worn amulet | region-script death fold, flag 84 | MISSED (region scope) |
 | 11 | locket window missed | one-shot window (tier 3) | MISSED, unverified |
 | 12 | peas exhaustion | consumable | OPEN (13 noisy rows). Note the emptied bag is REQUIRED — the walkthrough sacks the cat with it — so the peas are not pure flavour |
-| 12b | rm57->rm683 carry-in | requirement broadcast into a cutscene | **FP, declared red 2026-08-15.** rm683 is `cdCassimaToon`, a CD cutscene that tests no item at all; the own(37)/own(24) demands land there because `castle.sc` is walked into it as a region member. Curing it also flips `test_toll.py`'s two KQ5 assertions |
+| 12b | rm57->rm683 carry-in | requirement broadcast into a cutscene | **FP, CURED 2026-08-16 (§11).** rm683 is `cdCassimaToon`, a CD cutscene that tests no item at all; the own(37)/own(24) demands landed there because `castle.sc` is the region live in all 16 castle rooms and `theCat` had no presence condition. `extract.room_valued_globals` reads the cat's bagged arm `(== global338 gCurRoom)` — the bagged cat is where you bagged it — and the presence narrows to seven rooms. Flipped `test_toll.py`'s two KQ5 assertions with it, as declared |
 | 12c | the Wand, anywhere | — | **FP, CURED 2026-08-15 (§10).** USER 2026-08-14, re-affirmed 2026-08-15: "you start the game with the wand, so you always have it." ⛔ The old reason was wrong — rm066's machine tray *does* take it (`putCWandScript`, `put: 28 gCurRoom`, and it stays there) — but the drop and the re-get are the same room and every wandless path into rm124 is a death. Cured by `_unrefusable_grants` (rm1's `init` grant), NOT by the never-strandable class this row used to propose |
 | 13 | lamb to the cat/dog → roc's nest death | exchange slots + ownedBy death fold (rm42) | **CAUGHT** (phase 1: rm42 `hatch` state-6 fork — its death chain sits behind a `(++ state)` skip the transition model now reads — plus the rm86 pool row) |
 | 14 | pie to the eagle → yeti unsurvivable | slot swallow + chase-death counter-item | **CAUGHT** (phase 1: rm35 `killEgo` entry fold, prev==36 — the yeti kill continuing across the edge. The rm36 chase itself makes no claim: a `Chase` state is a race the player can decline by leaving, the refinement that keeps KQ4's rm49 dog — flee-able in play — out of the surface) |
@@ -409,3 +416,69 @@ reason — and the Wand's toll row does not.
 
 **Corpus gate:** the full `snapshot.py` surface is BYTE-IDENTICAL on LSL2, KQ4, KQ6 and LB2;
 only KQ5 moves.
+
+## §11. The bagged cat's room — how the wedding-cutscene carry-in was cured (2026-08-16, derived)
+
+**What the tool said about the game.** "Before you may walk from Mordack's hall (rm57) into the
+cutscene where Cassima takes the locket (rm683), you must be carrying the Bag of Peas and the
+Cat Fish." Emitted as a patch guard, `rm57->rm683: (and (has 24) (has 37))`. It is not merely
+wrong, it is backwards: both items are destroyed by the cat puzzle (`put:` with one argument sets
+the owner to −1, `User.sc:175`), the fish's source rm51 lies past rm54's one-way stairs, and the
+bag's cupboard prop re-inits only while its owner is still 56 — **so the guard is unsatisfiable
+for exactly the player who solved the puzzle as designed, and satisfiable only for one who never
+met the cat.** rm683 is `cdCassimaToon`; grep it for `has:`, `get:` or `put:` and there is
+nothing. There is no input during it at all.
+
+**Where the demand came from.** `castle.sc` is the REGION live in all 16 castle rooms, and
+`theCat` lives in it. Its handler answers the fish with `theThrowFishScript` and the pea bag with
+the bagging script, so those two acts were attributed to every room the region serves — rm683
+included — and `toll_strandings` then demanded the items be carried in.
+
+**Why four earlier fixes each measured as zero.** The demand rested on a CONJUNCTION of four
+gaps, so any partial fix moved nothing and read as a dead end (2026-08-15b filed one that way).
+Three of them landed on 2026-08-16 as `f623aa2` and `1799f90`: handler walks and machine
+`changeState:` entries now carry the object's cast condition (only the `setScript:` scan did),
+`_curroom_demand` reads a `GAnd` by intersecting its readable kids, `req()` will not file a
+requirement in a room the site guard excludes, and an object init'ed across scripts by export
+index (`((ScriptID 550 3) init:)` — the henchman, Mordack) finally has a presence condition.
+None of it moved the row, because the union of presences was dominated by `theCat`, whose own
+presence condition still read "always".
+
+**The fourth gap, and the actual cure.** The cat has two ways into the cast. `proc550_16` places
+it inside a `switch gCurRoom`, which the model already reads. The other is
+
+    (if (and (== global332 7) (== global338 global11))          ; castle.sc:154
+        (theCat init: ignoreActors: 0 setScript: catInBag))
+
+— "the bagged cat is sitting in the room where you bagged it". `_cmp_atom` had no reading for a
+global compared against another global, so that arm was opaque, and **one unreadable disjunct
+frees the whole OR**.
+
+`extract.room_valued_globals` gives it one. A global every write of which is a literal or the
+current-room global holds a ROOM, so `(== gX gCurRoom)` lowers to the disjunction over the rooms
+it can hold — the same move `_oneof_atom` makes for a membership test. Deriving those rooms has
+three parts, and the third is the interesting one:
+
+1. **Classify.** One write we cannot read (a computed value, a `++`) and the global is not
+   enumerable; the compare stays opaque. The failure direction is "we learn nothing", never "we
+   exclude a room the player can stand in".
+2. **Attribute** each `= gX gCurRoom` write to the rooms it can RUN in — the value it writes IS
+   the room it runs in. A procedure's rooms are its CALL SITES' (`proc550_16` is called only from
+   rm60, rm61 and rm63); a room script's are its own; anything else runs where the OBJECT is,
+   which is its presence condition, and a `changeState` also where the machine can be ARMED.
+3. **Least fixpoint, based at false.** `global338`'s third writer is `theBagCatScript` state 3,
+   and that machine is armed from the cat's own handler — whose presence condition contains the
+   arm being derived. A greatest fixpoint keeps rm683 alive by self-reference. Starting from "the
+   compare is never true" settles in one round.
+
+Measured: **g338 → {57, 58, 59, 60, 61, 63, 64}**, rm683 excluded. The `rm57->rm683` toll rows
+and their patch guard are gone, the peas' exhaustion rows narrow to the rooms the cat and the
+henchman are actually in, and every other KQ5 row is unmoved. `Bag_of_Peas` leaves
+`softlock_items`; it was there only on the FP (row 12 of the scorecard, verdict still open).
+
+**Corpus gate.** LSL2, KQ4, KQ6 and LB2 are BYTE-IDENTICAL on the full snapshot surface,
+placements included. Two of them spell the idiom themselves and still do not move — KQ4's
+`global124` is which of rooms 20/26/27 the unicorn was randomised into, LB2's `global571` covers
+seven rooms — which is the evidence that the rule is general rather than shaped around KQ5.
+LSL2 and KQ6 have no candidate at all: their only global compared against the current room is the
+pending-room one, written from another variable and so not enumerable.

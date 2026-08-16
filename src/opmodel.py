@@ -114,10 +114,18 @@ class OpEmitter:
         self.ir = ir
         self.cfg = cfg
         self.is_death = is_death
+        # ORDER MATTERS HERE, and it is the reverse of what it looks like. The room-valued
+        # globals change what `(== gX gCurRoom)` MEANS (see extract.room_valued_globals), so
+        # they have to be settled before any guard is lowered -- including the extraction's own.
+        # The builder is constructed first because the derivation asks it where an object is in
+        # the cast; `prime` comes last because it is the NARROWING pass and must run against the
+        # settled map.
+        self.mb = M.MachineBuilder(ir, is_death)
+        self.mb.derive_room_valued()
         self.ts = extract(ir)
         # `prime` settles the casts/entries mutual recursion before anything reads either, so the
         # machines this emitter lifts are the second-pass ones. See MachineBuilder.prime.
-        self.mb = M.MachineBuilder(ir, is_death).prime()
+        self.mb.prime()
         self.n_opaque = 0
         self._collect()
 

@@ -748,16 +748,43 @@ class MachineBuilder:
         for _round in range(2):
             eg = {}
             for rn, s in self.ir.scripts.items():
-                for m in self.machines(s):
-                    # Alternatives, and permissive (None) if any of them is unconditional -- the
-                    # same reading `any_guard` gives everywhere else.
-                    eg[(rn, m.inst)] = X.any_guard([g for _k, g in m.entries]) if m.entries else None
+                for inst, g in self.entry_guards(s).items():
+                    eg[(rn, inst)] = g
             if eg == self._entry_guard:
                 break
             self._entry_guard = eg
             self._cast_cache.clear()
             self._local_cache.clear()     # derived from the casts, so it goes stale with them
         return self
+
+    def entry_guards(self, script):
+        """`{instance: the machine's ENTRY disjunction}` for one script.
+
+        Alternatives, and permissive (None) if any of them is unconditional -- the same reading
+        `any_guard` gives everywhere else. Two callers: `prime`, which feeds it back as
+        `machine_guard`, and `extract.room_valued_globals`, which asks it where a machine can be
+        armed. Stated once ([[same-rule-two-places]])."""
+        return {m.inst: X.any_guard([g for _k, g in m.entries]) if m.entries else None
+                for m in self.machines(script)}
+
+    def derive_room_valued(self):
+        """Settle `extract.room_valued_globals` against THIS builder and install it.
+
+        MUST run before anything reads a guard -- the map changes what `(== gX gCurRoom)` MEANS,
+        so an extraction that ran first would carry the opaque reading. `OpEmitter.__init__` is
+        the one caller and does it between constructing this builder and `extract.extract`; a
+        builder that never calls this simply keeps the opaque reading everywhere.
+
+        Unprimed on purpose. The derivation asks this builder where an object is in the cast and
+        where a machine can be armed, and pass 0's answers are the PERMISSIVE ones -- wider
+        scopes, wider value sets, weaker lowering. Priming afterwards is the narrowing pass, and
+        it runs against the settled map."""
+        def install(ir, m):
+            got = X.install_room_valued(ir, m)
+            self._cast_cache.clear()      # both are derived from guards this map now lowers
+            self._local_cache.clear()
+            return got
+        return X.room_valued_globals(self.ir, self._cast, self.entry_guards, install)
 
     def _cast(self, script):
         """`cast_conditions` for a script, computed once -- `_build` runs per machine."""
