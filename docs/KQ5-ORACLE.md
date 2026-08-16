@@ -71,17 +71,18 @@ draw on the same set after all:
 Three facts follow, and they are the reason this section matters more than its size suggests:
 
 1. **The Fish's only competing consumer is the bear (rm11), not the dog.** So "spending the
-   Fish at the cat strands you" is a SINGLE-ITEM claim — nothing else can cover the rm11 need
-   — unlike the Shoe/Stick rows, which stay disjunction-blind in either framing because the
-   dog accepts three items. ⛔ A `Fish@rm6 → still needed at [11]` row was reported on
-   2026-08-15 as the gain the cast-gating fix would bring, and **it does not exist**: it was
-   an artifact of half that fix, naming a true item for a false reason. With the three
-   attribution sites made consistent (`f623aa2`) the Shoe/Stick rm12 rows go and nothing
-   replaces them on either side. The fish-at-cat walking dead is still stated only through
-   the rm86 fold row and the bees' declared red (§1a).
+   Fish at the cat strands you" is a SINGLE-ITEM claim — nothing else can cover the rm11 need.
+   The Shoe and the Stick have no competing consumer at all, which is what makes them the safe
+   ammunition and their old rm12 sink rows false positives (see the verdicts). ⛔ A
+   `Fish@rm6 → still needed at [11]` row was reported on 2026-08-15 as the gain the cast-gating
+   fix would bring, and **it does not exist**: it was an artifact of half that fix, naming a
+   true item for a false reason. The fish-at-cat walking dead is still stated only through the
+   rm86 fold row and the bees' declared red (§1a).
 2. **The scenes arm on {8,16} but accept {8,16,19,5}.** Sierra guaranteed a safe option is in
    hand before either encounter can start, then let the player improvise a fatal one. The
-   trap springs only on cleverness.
+   trap springs only on cleverness — and, read the other way, **the arming is why the pool
+   cannot be starved**: an empty-handed visit does not start the scene, so the window is still
+   open when you come back armed.
 3. **Only the safe throws score.** `proc0_27 4` fires for Shoe and Stick; Leg_of_Lamb and Fish
    award nothing and are otherwise identical — same animation, same rescued mouse, same
    `put: <item> 6`. The score is the only in-game tell that you just spent the wrong item,
@@ -104,14 +105,20 @@ parks into `walkingDead` (60 seconds, `proc0_26`).
 **Verdicts:**
 - *Miss the cat window (never arm it, or lose the race) then enter the inn's back room* —
   **TRUE softlock (death class), the worst in the game.** Tier 1 end to end.
-- *Spend your last cat-compatible throwable at the dog* — **TRUE, but conditional**: fatal only
-  when it leaves the pool empty for the cat with the window still open. ⚠️ **NOT STATED BY THE
-  TOOL SINCE 2026-08-16 (`f623aa2`) — awaiting a ruling.** The `dangerous_sinks` rows
-  Shoe@rm12 / Stick@rm12 named the right sites and were disjunction-blind; they rested on the
-  dog's throw handler and the machine it arms carrying DIFFERENT guards, and went when the two
-  were made to agree. Both items remain caught by their rm86 `ownedby_death_folds` row, so
-  `softlock_items` did not move — but the "spending it at the dog" half of the mechanism is now
-  stated nowhere. `test_kq5_ground_truth`'s two pins are declared red until the user rules.
+- *Spend the Shoe or the Stick at the dog* — ⭐ **NOT A SOFTLOCK. USER-RULED 2026-08-16b**, and
+  the earlier "TRUE, but conditional" verdict here is **WITHDRAWN**: *"you can't skip the bear…
+  use your shoe on the dog, that's okay, finish the bear, get the stick, and use that on the cat.
+  it's not a softlock."* **The pool cannot be starved, and the source says why:** `rm006.sc:112`
+  inits the cat and the rat only under `(or (has: 8) (has: 16))`, and flag 83 — the window — is
+  set by `rm006::doit` only once the rat is on screen. Walk into rm6 empty-handed and the scene
+  does not start: nothing is spent, nothing closes, and it is still waiting when you come back
+  with the Stick. **The encounter IS the hold we would otherwise have to patch in.** The two
+  `dangerous_sinks` rows Shoe@rm12 / Stick@rm12 were therefore FALSE POSITIVES; they went with
+  `f623aa2` (the dog's throw arms `throwStick`, so it was never a "consumption that accomplishes
+  nothing"), and their going is a CURE. Both items are pinned to their rm86 pool-demand row alone
+  and sit in `EXPECTED_CAUGHT`. **The genuinely dangerous throws are the other two** — the Lamb
+  at either scene (demanded at rm42) and the Fish at the cat (demanded at rm11); neither has a
+  sink row at its spend site, and each is caught elsewhere (§1a, and the bees' declared red).
 - *Skip the dog scene* — needle chain lost (→ no cloak). The cloak-need is tier 3 only
   ("when you start to shiver wear the cloak"); the freeze-death mechanism is not yet
   source-verified. **Open: verify the mountains' cold-death read.**
@@ -340,7 +347,7 @@ covered.
 | 3b | Cat_Fish up the castle stairs | one-way edge, carry demanded | **CAUGHT 2026-08-15** (analyze). Walkthrough: "Pick up the Fish and then walk up the stairs", then "Throw Fish at the cat and then use the Bag on the cat to catch it" — and "from here on out, if you see the cat, you must throw the fish to him". `castle.sc` (the region live in every castle room) dispatches `(37 → theThrowFishScript)` and `(24 → sack the cat)`. Source rm51 is outside the castle-side set and rm54's three exits are one-way |
 | 3c | roc point of no return | one-way edge, carry demanded | **CAUGHT 2026-08-15** (analyze). `rm40->rm41` is the roc carrying Graham off — KQ5's real point of no return. Harp (rm9 → rm90), Beeswax (rm24 → rm44) and Crystal (rm38 → rm52) must cross it; Iron_Bar (rm44 → rm54) rides the Fishhook's frontier; the Locket (rm42, the nest → rm57, Cassima's cell) crosses `rm42->rm43`. All five USER-RULED REAL 2026-08-15 |
 | 4 | cat window missed → inn death | one-shot window → ownedBy read → death | **CAUGHT** (phase 1: `ownedby_death_folds`, all four pool items demanded at rm86 under prev==85); the WINDOW half (flag 83 closes on arming) stays a declared red for phase 3 |
-| 5 | pool starved at the dog | exchange slots over one pool | PARTIAL (`dangerous_sinks`, disjunction-blind) |
+| 5 | ~~pool starved at the dog~~ | — | ⭐ **NOT A SOFTLOCK — USER-RULED 2026-08-16b, row withdrawn.** Both scenes wait for ammunition (`rm006.sc:112`), so an empty-handed visit spends nothing and closes nothing: Shoe on the dog → clear the bear → Stick on the cat. The two `dangerous_sinks` rows were FPs and went with `f623aa2`; Shoe and Stick are pinned to the rm86 pool demand alone. The real trap in this family is throwing the **Lamb or the Fish**, rows 13 and 15 |
 | 6 | kidnap without Hammer | (room, prev-value) trap; gate modeled | **CAUGHT** (phase 2: `register_strandings` with item-banned fetch walks — the permissive walk was assuming the hammer to fetch the hammer; row reg12=85, flip rm86, needed at rm86) |
 | 7 | rope on the branch | fatal use | **CAUGHT** (fatal_uses) |
 | 8 | tambourine near Dink | — | FP to cure (savior-condemned, arming polarity) |

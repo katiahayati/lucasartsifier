@@ -85,7 +85,8 @@ EXPECTED_CAUGHT = {
     # VALUE with an unpreventable death on the losing arm. Three softlocks flipped together:
     #   * the POOL at the kidnap read -- rm86's `yourStuck` (pure-timer death) arms unless
     #     some throwable's owner is 6, so all four pool items carry the rm86 demand under
-    #     prev == 85 (Shoe and Stick keep their sink rows too; Leg_of_Lamb and Fish join here);
+    #     prev == 85. That row is the catch for ALL FOUR, and for Shoe and Stick it is the ONLY
+    #     one -- see the 2026-08-16b ruling below;
     #   * the roc's-nest lamb fold -- rm42 `hatch` state 6 forks on owner(19) == 34, the
     #     losing arm hidden behind a `(++ state)` skip the transition model now reads;
     #   * the pie at the yeti's door -- rm35 arriving from rm36 with the yeti unfed is the
@@ -112,13 +113,25 @@ EXPECTED_CAUGHT = {
     # The same class as the Fishhook, one room over. Its rm683 carry-in row is NOT this catch --
     # see the declared red below.
     "Cat_Fish",
+    # ✅ PROMOTED 2026-08-16b, USER-RULED, out of the old column B. Shoe and Stick are the SAFE
+    # ammunition -- one source each (`rm015` bootInSand, `rm011` getStick), no other consumer --
+    # and they are caught by the rm86 pool demand above and by nothing else, which is now their
+    # whole pinned mechanism.
+    #
+    # ⛔ THE ROWS THAT USED TO SIT BESIDE IT WERE FALSE POSITIVES, and this is the ruling that
+    # says so. `dangerous_sinks` claimed "spending the Shoe at the dog leaves it needed at the
+    # cat". USER 2026-08-16b: *"you can't skip the bear... use your shoe on the dog, that's okay,
+    # finish the bear, get the stick, and use that on the cat."* Source agrees and says why the
+    # pool cannot be starved at all: `rm006.sc:112` inits the cat and the rat only under
+    # `(or (has: 8) (has: 16))`, and flag 83 -- the window -- is set by `rm006::doit` only once
+    # the rat is on screen. Walk into rm6 empty-handed and the scene does not start, so nothing
+    # is spent and nothing closes; come back with the Stick and it is still waiting. The
+    # encounter IS the hold we would otherwise have to patch in. The rows went with commit
+    # f623aa2 (the dog's throw arms `throwStick`, so it was never a "consumption that
+    # accomplishes nothing"), and their going is a CURE, not a coverage loss.
+    "Shoe",
+    "Stick",
 }
-
-# B -- REAL, PARTIALLY CAUGHT: the sink rows name the right sites (spending a pool item at the
-# dog starves the cat scene) but are blind to the disjunction -- fatal only when it empties the
-# pool with the cat window still open. Their PRESENCE is expected; their SHAPE is pinned below;
-# the full window detection is the KNOWN GAP red further down.
-ALLOWED_PARTIAL = {"Shoe", "Stick"}
 
 # C -- OPEN RULING: the peas are a counted consumable spelled as the ITEM'S OWN `cel` property
 # (castle.sc increments `((global9 at: 24) cel:)` per throw) -- the item-property store, which
@@ -140,7 +153,7 @@ ALLOWED_OPEN = {"Bag_of_Peas"}
 # have it, so no state past rm1 lacks it, and `_reach_without` no longer walks through it.
 FP_EMITTED = {"Tambourine"}
 
-ALLOWED = EXPECTED_CAUGHT | ALLOWED_PARTIAL | ALLOWED_OPEN | FP_EMITTED
+ALLOWED = EXPECTED_CAUGHT | ALLOWED_OPEN | FP_EMITTED     # column B is empty since 2026-08-16b
 
 # --- MECHANISM PINS [[oracle-must-pin-the-mechanism]]: every column-A item pins its FULL row
 # set, so an FP that happens to NAME an oracle item cannot score as the catch.
@@ -204,19 +217,16 @@ MECHANISM_ROWS = {
     "Hammer": {
         "register_strandings: reg12=85->[86]",
     },
-    # The partial catches are pinned too -- if the disjunction-aware cure changes their shape,
-    # that is a mechanism change to confirm, not silent churn. Since phase 1 they also carry
-    # their rm86 fold rows.
+    # ✅ RE-PINNED 2026-08-16b with the USER'S RULING: ONE row each, the rm86 pool demand. The
+    # `dangerous_sinks {'room': 12, ..., 'still_needed_at': [6]}` row that used to sit beside it
+    # was a FALSE POSITIVE and is pinned OUT -- see the EXPECTED_CAUGHT note above. A single row
+    # here is the assertion that it stays out.
     "Shoe": {
-        "dangerous_sinks: {'room': 12, 'script': 12, 'dest': 12, 'at_room': 12, "
-        "'still_needed_at': [6]}",
         "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
         "'state': None, 'pattern': 'entry-fold', "
         "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
     },
     "Stick": {
-        "dangerous_sinks: {'room': 12, 'script': 12, 'dest': 12, 'at_room': 12, "
-        "'still_needed_at': [6]}",
         "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
         "'state': None, 'pattern': 'entry-fold', "
         "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",

@@ -235,23 +235,17 @@ KNOWN_RED = {
         # surfaces byte-identical plus the new empty key; KQ5 moved by pure addition.
         # The fish flipped with the same rows (its rm86 demand); the BEES half is the
         # narrower red below.
-        # 🔴 DECLARED 2026-08-16, AWAITING A RULING -- not a modelling gap, an UNBLESSED
-        # COVERAGE CHANGE. Commit f623aa2 made the three sites that attribute an object's methods
-        # to a room agree, and KQ5's two `dangerous_sinks` rows `Shoe@rm12` / `Stick@rm12`
-        # ("throwing it at the dog starves the cat scene") went with the broken correlation they
-        # rested on: the dog's throw handler arms a machine, and the two were only ever classified
-        # as accomplishing-nothing consumptions because the handler and the machine entry carried
-        # different guards. Both items are still CAUGHT -- their rm86 `ownedby_death_folds` row is
-        # unchanged, which is why `softlock_items` did not move -- but the "spending it at the dog"
-        # half of the mechanism is now stated nowhere, and these two pins still name the retired
-        # rows. Re-pinning them is a ground-truth edit ([[dont-flip-enumerated-ground-truth]]), so
-        # they stay red until the user rules on it. See docs/KQ5-ORACLE.md §1.
-        "mechanism pinned: Shoe":
-            "pins the retired `dangerous_sinks {'room': 12, ..., 'still_needed_at': [6]}` row "
-            "beside the (unchanged) rm86 fold row. Awaiting the user's ruling on the coverage "
-            "change f623aa2 made.",
-        "mechanism pinned: Stick":
-            "the same row, the same ruling.",
+        # ✅ RULED AND RE-PINNED 2026-08-16b -- "mechanism pinned: Shoe" / "Stick" were
+        # declared red earlier the same day pending this ruling, and are GREEN. They pinned the
+        # `dangerous_sinks Shoe@rm12 / Stick@rm12` rows ("spending it at the dog leaves it needed
+        # at the cat"), which f623aa2 retired. USER: *"you can't skip the bear... use your shoe on
+        # the dog, that's okay, finish the bear, get the stick, and use that on the cat. it's not
+        # a softlock."* The source agrees and says why the pool cannot be starved at all:
+        # `rm006.sc:112` inits the cat and the rat only under `(or (has: 8) (has: 16))`, and
+        # flag 83 -- the window -- is set by `rm006::doit` only once the rat is on screen, so
+        # walking in empty-handed neither spends anything nor closes anything. The rows were
+        # FALSE POSITIVES; both items are now pinned to the rm86 pool demand alone and sit in
+        # EXPECTED_CAUGHT. docs/KQ5-ORACLE.md §1.
         "🔴 KNOWN GAP (KQ5): the bees' flag-36 window closure is caught":
             "flag 36's only writer is bearScript (runs only while `has: 5` spawns the bear); "
             "the hive arms deathByBees under not-flag36, so the honeycomb -> beeswax -> boat "
