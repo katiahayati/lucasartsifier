@@ -1,5 +1,11 @@
 # KQ5 play-test sheet — the throwable pool: can the Fish go to the dog?
 
+> ## ✅ ANSWERED 2026-08-16 — T1 CONFIRMED, stock game, USER
+> **No.** The dog refuses the Fish: *"that wouldn't divert the dog's attention"* — message 280,
+> the `else` arm of `rm012.sc:672`, exactly as predicted. The pool is **asymmetric**; the Fish
+> belongs to the cat and the bear only. Ruling recorded in `docs/KQ5-ORACLE.md` §1. The rest of
+> this sheet is kept as the derivation and for T3/T4, which are still unrun.
+
 Derived from source 2026-08-15 (`rm006.sc`, `rm011.sc`, `rm012.sc`, `Main.sc`). Everything
 below is a PREDICTION from the scripts; the point of the test is to confirm or refute it in
 play. Console syntax is carried over from `docs/KQ6-RETEST-V22-CONSOLE-SHEET.md` — the

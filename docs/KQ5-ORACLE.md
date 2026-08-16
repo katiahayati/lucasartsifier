@@ -57,6 +57,33 @@ dedicated flag. If the cat's `Chase` motion completes first (`local0` set), thro
 accepts Stick(16), Shoe(8), Leg_of_Lamb(19) — each `put: <item> 12` — and repays via the ants
 (the golden needle in the haystack, → tailor → cloak). Flag 106 likewise marks the scene done.
 
+**⭐ THE POOL IS ASYMMETRIC — PLAY-CONFIRMED IN THE STOCK GAME, USER 2026-08-16.** The dog
+**refuses the Fish(5)**: *"that wouldn't divert the dog's attention"* (`rm012.sc:672`, the
+`else` arm, message 280 — no `put:`, the item stays in inventory). So the two scenes do not
+draw on the same set after all:
+
+| | Shoe 8 | Stick 16 | Leg_of_Lamb 19 | Fish 5 |
+|---|---|---|---|---|
+| cat (rm6) | ✅ +4 pts | ✅ +4 pts | ✅ silent | ✅ silent |
+| dog (rm12) | ✅ | ✅ | ✅ | ❌ refused |
+| arms either scene | ✅ | ✅ | ❌ | ❌ |
+
+Three facts follow, and they are the reason this section matters more than its size suggests:
+
+1. **The Fish's only competing consumer is the bear (rm11), not the dog.** So "spending the
+   Fish at the cat strands you" is a SINGLE-ITEM claim — nothing else can cover the rm11 need
+   — unlike the Shoe/Stick rows, which stay disjunction-blind in either framing because the
+   dog accepts three items. The `Fish@rm6 → still needed at [11]` row is therefore the one
+   row in this family that is clean, and it is emitted ONLY once handler walks carry their
+   object's cast condition (see §11).
+2. **The scenes arm on {8,16} but accept {8,16,19,5}.** Sierra guaranteed a safe option is in
+   hand before either encounter can start, then let the player improvise a fatal one. The
+   trap springs only on cleverness.
+3. **Only the safe throws score.** `proc0_27 4` fires for Shoe and Stick; Leg_of_Lamb and Fish
+   award nothing and are otherwise identical — same animation, same rescued mouse, same
+   `put: <item> 6`. The score is the only in-game tell that you just spent the wrong item,
+   and it is a tell you would have to be watching the counter to notice.
+
 **The read (rm86, the inn cellar — kidnapped arrival only):** `rm086::init` under
 `(== global12 85)`:
 
