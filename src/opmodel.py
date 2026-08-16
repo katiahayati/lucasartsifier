@@ -442,6 +442,21 @@ class OpEmitter:
                 continue
             for room in targets:
                 for o in s.objects:
+                    # THE WALK STARTS AT THE OBJECT'S PRESENCE CONDITION -- the third and last
+                    # site that attributes an object's methods, and the second that was missing
+                    # it (see machine._build's two entry scans). An object that is not `init:`ed
+                    # cannot be clicked, so its handler's effects are gated on whatever gated
+                    # its init; walking the body from an EMPTY path condition asserts instead
+                    # that every object in a script is live in every room the script serves.
+                    #
+                    # KQ5's Mordack-castle region is what this costs. `castle.sc` runs in all
+                    # 16 castle rooms, `theCat`'s handleEvent answers the fish with
+                    # `(gRoom setScript: theThrowFishScript)` and the pea bag with the bagging
+                    # script -- so BOTH items were recorded as used in every one of those rooms,
+                    # rm683 (`cdCassimaToon`, the cutscene after Cassima takes the locket)
+                    # included, and `toll_strandings` demanded the player carry them into it.
+                    # The cat is placed by `proc550_16` in three rooms and is nowhere near.
+                    og = X.cast_guard(self.mb._cast(s), o.name)
                     for mn, body in o.methods.items():
                         # changeState -> machine; init -> forced entry write. EVERY other
                         # method's effects captured here (globals + locals + gets),
@@ -480,7 +495,7 @@ class OpEmitter:
                         # that kills the minotaur as UNGUARDED, so the escape from the catacombs
                         # needs no red scarf and the whole carry-IN class cannot strand.
                         with verb_param_scope(mn):
-                            self._hwalk(room, rn, body, [], set())
+                            self._hwalk(room, rn, body, [] if og is None else [og], set())
                 # ...AND A PROCEDURE IS NOT A HANDLER. The engine dispatches METHODS -- `doit`,
                 # `handleEvent`, `doVerb`, `changeState`; nothing ever dispatches a script-level
                 # procedure, which runs only where something CALLS it. `_hwalk` (and the machine

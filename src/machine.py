@@ -489,19 +489,30 @@ class MachineBuilder:
         # entries: ANY object's init/handleEvent/doit that does `(<inst> changeState: K)`
         # (guarded) -- the machine is often started/redirected by the ROOM object, not by
         # itself (rm65.init -> rm65Script changeState: survive-or-die on gCurrentStatus).
+        #
+        # ...UNDER THE ARMING OBJECT'S PRESENCE CONDITION, exactly as the `setScript:` scan
+        # below has always done (`owner=`). This path did not, and an object's methods went
+        # through the two paths with DIFFERENT conditions -- which broke the invariant
+        # `_clause_key` rests on ("a clause and the state it arms necessarily share" their
+        # positive item preconditions, missability.py). KQ5 rm12 is the specimen: the dog's
+        # throw handler does `(gRoom setScript: throwStick)`, so the machine entry carried the
+        # dog's cast `(or (has 8) (has 16))` while the handler's own `put: <item> 12` did not,
+        # the two keys diverged, and the throw -- which plainly arms a machine -- was classified
+        # by `pure_sinks` as a consumption that ACCOMPLISHES NOTHING.
+        cast = self._cast(script)
         for other in script.objects:
             is_self = (other.name == m.inst)   # `self` in other's method means `other`,
             #   so a `(self changeState:K)` is an entry to THIS machine ONLY when other IS it.
             #   Cross-object starts must name the instance: `(<m.inst> changeState:K)`.
+            og = X.cast_guard(cast, other.name)
             for mn in ("init", "handleEvent", "doit"):
                 if mn in other.methods:
-                    self._entries(other.methods[mn], [], m, script.number, set(),
-                                  source=mn, is_self_obj=is_self)
+                    self._entries(other.methods[mn], [] if og is None else [og], m,
+                                  script.number, set(), source=mn, is_self_obj=is_self)
         # setScript entries: `(actor setScript: <m or (m new:)>)` in ANY method (incl a
         # changeState body -- hench1Script state1 -> henchScript). These START m at state 0.
         # The extractor dropped them, so setScript-driven machines (the henchmen chasers, the
         # bottle) never ran -- which is WHY the absent-start fall-through hack was needed.
-        cast = self._cast(script)
         for other in script.objects:
             owner = X.cast_guard(cast, other.name)   # in the cast only when...? see cast_conditions
             for mn, body in other.methods.items():

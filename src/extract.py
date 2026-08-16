@@ -155,6 +155,28 @@ def _curroom_demand(g):
                 return None                # a disjunct we cannot read frees the whole OR
             out |= v
         return out
+    if isinstance(g, GAnd):
+        # A conjunction says where you are through whichever kids say anything at all: every
+        # kid must hold, so the answer is their INTERSECTION, and a kid that decides nothing
+        # simply fails to narrow it. Note the asymmetry with the OR above and why it is the
+        # safe direction in both cases -- there, an unreadable disjunct is another way the
+        # guard could be true and so frees it; here, an unreadable conjunct is one more thing
+        # that must ALSO hold, so ignoring it can only leave the answer too WIDE. A room this
+        # returns is therefore never wrongly excluded, which is what `_curroom_impossible`
+        # needs to delete anything.
+        #
+        # An object's presence condition is the shape that wants this: `cast_conditions` emits
+        # one arm per init site, and a site inside a `switch gCurRoom` carries its room as a
+        # conjunct next to the rest of the arming (KQ5 `proc550_16`, which places Mordack's cat
+        # -- `(and <placement junk> (!= global332 7) (== gCurRoom 60))`). Read kid by kid, each
+        # arm names its room; read as an opaque whole, the cat may be anywhere.
+        got = [v for v in (_curroom_demand(k) for k in g.kids) if v is not None]
+        if not got:
+            return None
+        out = set(got[0])
+        for v in got[1:]:
+            out &= v
+        return out
     return None
 
 

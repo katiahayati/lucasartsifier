@@ -19,6 +19,7 @@ import opmodel as E
 import vocab
 import grid
 from guard_ast import GAnd, GOr, GNot, Pred
+from extract import _curroom_impossible
 from scc_core import tarjan_scc, reachable, SccReach
 
 # Item names are a reporting nicety; the IR JSON carries only the raw instance name, so derive the
@@ -729,6 +730,19 @@ def build_maps(em):
 
     def req(guard, room, script=None, only=None):
         if script is not None and script in globalsc:
+            return
+        # ...AND A REQUIREMENT IS NOT FILED IN A ROOM ITS OWN GUARD EXCLUDES. Evidence is filed
+        # under the room the walk attributed it to, and a script with no room of its own is
+        # walked into every room it serves -- so an arm that SAYS which room it belongs to was
+        # being recorded in all the others too. `_curroom_impossible` is the same test the
+        # extraction walk already applies to `newRoom:` (KQ5's ending montage, whose seven
+        # `gCurRoom`-keyed arms otherwise became exits out of Mordack's castle); it is owed here
+        # for the same reason and on the same evidence.
+        #
+        # This is the `global_homed` rule above, one scope down and with a place to stand. The
+        # icon bar has NO room, so its guards cannot be filed anywhere; a region does have rooms,
+        # and its objects say which ones -- so the fix is to read that, not to drop the scope.
+        if _curroom_impossible([guard], room):
             return
         for it in _own_required(guard):     # OR-branch items are NOT required -- see _own_required
             if only is None or it in only:
