@@ -392,14 +392,31 @@ def main(argv=None):
     # --strict, because skipping is correct on a machine that does not have the game.
     bad = bool(unexpected or crashed or promoted or silent or (strict and skipped))
     if not bad:
-        for f, red in KNOWN_RED.items():
-            if f in names:
-                for name in red:
-                    print(f"  \033[2mknown-red\033[0m  {f}: {name}")
-        print("\n\033[32mThe suite agrees with KNOWN_RED.\033[0m"
-              + ("" if not skipped else
-                 f"  \033[33m({len(skipped)} section(s) skipped -- those gates did not run; "
-                 f"`--strict` fails on them)\033[0m"))
+        # ⛔ "AGREES WITH KNOWN_RED" IS NOT "GREEN", AND SAYING SO IN GREEN WAS A LIE OF TONE.
+        # USER 2026-08-16: "I don't like that we report a suite green when we're in the process of
+        # building a game and there are still 6 reds." The contract this file exists to enforce is
+        # about MOVEMENT -- no undeclared failure, no silent promotion -- and it is satisfied
+        # whether the declared set holds one gap or twenty. That is worth an exit code, not a
+        # colour. So the outstanding gaps are COUNTED and the closing line only turns green when
+        # there are none left to count.
+        outstanding = [(f, name) for f, red in KNOWN_RED.items() if f in names for name in red]
+        for f, name in outstanding:
+            print(f"  \033[2mknown-red\033[0m  {f}: {name}")
+        skip_note = ("" if not skipped else
+                     f"  \033[33m({len(skipped)} section(s) skipped -- those gates did not run; "
+                     f"`--strict` fails on them)\033[0m")
+        if outstanding:
+            by_file = {}
+            for f, _name in outstanding:
+                by_file[f] = by_file.get(f, 0) + 1
+            where = ", ".join(f"{f.removeprefix('test_').removesuffix('.py')} {n}"
+                              for f, n in sorted(by_file.items()))
+            print(f"\n\033[33mNo movement: the failing set is exactly the declared one. "
+                  f"{len(outstanding)} declared gap(s) still open ({where}) -- this run is NOT "
+                  f"a clean bill of health.\033[0m" + skip_note)
+        else:
+            print("\n\033[32mThe suite is green: nothing failed and nothing is "
+                  "declared red.\033[0m" + skip_note)
         return 0
     if strict and skipped and not (unexpected or crashed or promoted or silent):
         print("\n\033[31m--strict: the run is red because gates were SKIPPED, not because "
