@@ -18,8 +18,9 @@ fork -- `rescue` (which still demands the Hammer) vs `yourStuck` (an unpreventab
 Flag 83 closes the cat window ON ARMING, not on success -- the one-shot-window class.
 
 ⛔ KQ5 IS NOT A FINISHED ORACLE, and no run of this file should be reported as though it were.
-Four of the fifteen scorecard rows are still MISSED with a declared red apiece, one is a false
-positive we emit and have not cured (the tambourine; the Wand's was cured 2026-08-15, see below),
+Two of the fifteen scorecard rows are still MISSED with a declared red apiece (the bees' window,
+the fortune teller's slot), one is a false positive we emit and have not cured (the tambourine;
+the Wand's was cured 2026-08-15 and the witch amulet's verdict was corrected 2026-08-16b),
 and several verdicts are open on their own terms (the peas
 consumable waits on the item-property store; the locket window, the mountains' cold death and
 the Hammer's crystal site are unverified against the source). The checks below passing means
@@ -28,9 +29,15 @@ the catches we HAVE are still there and still caught for the stated mechanism --
 Two builds landed 2026-08-14. Phase 1, `ownedby_death_folds` (an arrival forks on an owner
 value and the losing arm is a death the player cannot dodge), retired the kidnap-read, lamb-fold
 and pie reds. Phase 2, item-banned fetch walks in `register_strandings`, retired the Hammer red.
-Their rows are mechanism-pinned below. STILL RED: the two window-closure halves (phase 3 -- flag
-83 closes on arming, flag 36's writer needs the fish), the fortune teller's needle slot, the
-region-scope amulet fold, and the tambourine false positive.
+Their rows are mechanism-pinned below. Phase 3 landed 2026-08-16b as `window_closures` (with
+`extract.feature_adders`), retiring the cat-window red. STILL RED: the bees' half of phase 3
+(flag 36's writer needs the fish -- an ITEM axis, not a register one), the fortune teller's
+needle slot, and the tambourine false positive.
+
+⭐ THE WITCH AMULET IS NOT A SOFTLOCK (USER-RULED 2026-08-16b) -- you need it, but rm19 is one
+screen into the forest and you can walk back to rm13 for another. Its red demanded the wrong row
+and is rebuilt as two green pins: the DEMAND reaches all seven forest rooms, and no detector
+claims a stranding.
 
 A third build landed 2026-08-15: `missability._unrefusable_grants`, which retired the WAND false
 positive. A room that hands you an item in `init` under nothing but `not (has: X)` is a handout
@@ -439,12 +446,31 @@ def run():
           f"(rm006::doit), so every producer of `owner == 6` sits behind a window that closes "
           f"on arming, win or lose. docs/KQ5-ORACLE.md §1.")
 
+    # ✅ REWRITTEN 2026-08-16b, USER-RULED -- this red demanded the WRONG ROW. It asserted that
+    # some detector flags the Amulet, on the oracle's old verdict that entering the dark forest
+    # without it is a softlock. USER: *"on rm19 you can get back out. I don't think you can get
+    # more than 1 screen into the forest, but that's fine. so you need the amulet but it's not a
+    # stranding."* Measured agreement: from rm19, 98 of 100 reachable rooms are still reachable,
+    # rm13 (the fortune teller) among them, and rm680 -- the amulet handover -- is entered only
+    # from rm13. A stranding row would be a FALSE POSITIVE.
+    #
+    # So the pin is the pair of facts that ARE true: the demand reaches the forest, and no row
+    # claims a stranding. The first half is what `(+= state 4)` bought (docs/KQ5-ORACLE.md §13):
+    # `zapHim` state 4 survives on `(and (has: 27) flag84)` by skipping the death chain, and with
+    # that bump unread BOTH arms fell into state 8's `proc0_26` -- the fork was not a fork and the
+    # amulet was demanded nowhere.
+    WITCH_ROOMS = {19, 20, 21, 22, 24, 25, 26}
     amulet_rows = [n for (n, _d, _r) in raw_rows if n == "Amulet"]
-    check("🔴 KNOWN GAP (KQ5): the witch-region worn-amulet death fold is caught",
-          bool(amulet_rows),
-          "witchRegion.sc survives the fireball only under `(and (has: 27) flag84)`; the fold "
-          "lives in a REGION script, outside the current death-fold scope -- "
-          "docs/KQ5-ORACLE.md §7.")
+    check("the worn-amulet fireball fork demands the Amulet in every forest room",
+          WITCH_ROOMS <= set(s.required.get(27, ())),
+          f"required[27] = {sorted(s.required.get(27, ()))} -- expected all of "
+          f"{sorted(WITCH_ROOMS)}. If this shrank, check that `(+= state N)` is still read as a "
+          f"relative setstate in BOTH compile._interp and machine._op_leaf: unread, zapHim's "
+          f"surviving arm stops skipping the death chain and the fork stops being a fork.")
+    check("no detector claims the Amulet is STRANDED", not amulet_rows,
+          f"rows={amulet_rows} -- the amulet is REQUIRED in the forest and re-obtainable from "
+          f"it (rm13 is 1 screen away; USER-RULED 2026-08-16b). A row here is a false positive "
+          f"to investigate, not a catch. docs/KQ5-ORACLE.md §7.")
 
     tambo_fatal = [r for (n, d, r) in raw_rows if n == "Tambourine" and d == "fatal_uses"]
     check("🔴 KNOWN FP (KQ5): fatal_uses does not condemn the tambourine", not tambo_fatal,

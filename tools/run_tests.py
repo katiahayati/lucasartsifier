@@ -288,11 +288,24 @@ KNOWN_RED = {
             "consumer is the tailor (-> cloak). Exchange-slot class ([[exchange-slots-one-"
             "statement-one-item]]) -- the detector for 'a slot consumed by an item another "
             "slot demands' does not exist yet.",
-        "🔴 KNOWN GAP (KQ5): the witch-region worn-amulet death fold is caught":
-            "witchRegion.sc's fireball is survived only under `(and (has: 27) flag84)` -- worn "
-            "IS modelled (flag 84, the ordinary bit store), but the fold lives in a REGION "
-            "script and the death-fold scope stops at rooms. Extending it to setRegions "
-            "scripts is the build.",
+        # ✅ RETIRED 2026-08-16b, USER-RULED -- "🔴 KNOWN GAP (KQ5): the witch-region worn-amulet
+        # death fold is caught" is gone because it DEMANDED THE WRONG ROW, not because a build
+        # landed. It asserted that some detector flags the Amulet, on the oracle's old verdict
+        # that walking into the dark forest without it strands you. USER: "on rm19 you can get
+        # back out. I don't think you can get more than 1 screen into the forest, but that's
+        # fine. so you need the amulet but it's not a stranding." Measured agreement: from rm19,
+        # 98 of the 100 reachable rooms are still reachable -- rm13, the fortune teller, among
+        # them -- and rm680, the amulet handover, is entered only from rm13.
+        #
+        # ⛔ AND ITS STATED REASON WAS WRONG TOO: region scope was never the blocker; script
+        # 200's machines are attributed to rm19-26 and always were. What hid the fork was an
+        # unread `(+= state 4)` -- the relative setstate with a stride -- which sent BOTH arms of
+        # the fireball fork into state 8's proc0_26. Fixed in compile._interp and
+        # machine._op_leaf; `required[27]` went [0, 13] -> all seven forest rooms.
+        #
+        # Rebuilt GREEN as two pins: "the worn-amulet fireball fork demands the Amulet in every
+        # forest room" (the demand, which is what the fix bought) and "no detector claims the
+        # Amulet is STRANDED" (the FP guard, same shape as the Wand's). docs/KQ5-ORACLE.md §7.
         "🔴 KNOWN FP (KQ5): fatal_uses does not condemn the tambourine":
             "hugScript (Dink's hug, proc0_26 death) arms under own(34) because Dink only "
             "EXISTS while you hold the tambourine, and giving it (giveTamboScript, the "

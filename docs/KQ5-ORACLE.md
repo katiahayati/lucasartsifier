@@ -223,16 +223,30 @@ with the needle makes the game unwinnable (the needle's real consumer is the tai
 This is a pure **exchange-slot** hazard: two items competing for one slot, one of them demanded
 elsewhere. **Verdict: TRUE (tier 3 on the consequence; tier 1 on both puts). Not detected.**
 
-## 7. The witch and the worn amulet (tier 1) — and the region-script gap
+## 7. The witch and the worn amulet (tier 1) — REQUIRED, but NOT a stranding
 
 `witchRegion.sc`: surviving the witch's fireball requires `(and (has: 27) (proc0_12 84))` —
 **"worn" is flag 84**, an ordinary bit-store register our flag lowering already models; there is
-no own/worn extraction gap. What keeps this out of the surface is that the death fold lives in a
-**region script**, not a room. The dark forest is one-way on entry (tier 3: "you won't be able
-to get out again the way you came"; **open: verify the one-way mechanism in source**), the
-amulet's sole source is rm13 (§6). **Verdict: entering the dark forest without the amulet
-(or without wearing it) is a TRUE softlock (death class). Not detected; blocked on the
-region-script scope.**
+no own/worn extraction gap. The fork is `zapHim` state 4 and its losing arm walks into state 8's
+`(proc0_26 249)`, a death you cannot act against once it starts (§13).
+
+**⭐ VERDICT CORRECTED 2026-08-16b, USER-RULED — this is NOT a softlock.** *"on rm19 you can get
+back out. I don't think you can get more than 1 screen into the forest, but that's fine. so you
+need the amulet but it's not a stranding."* The model agrees and says it precisely: measured from
+rm19, **98 of the 100 reachable rooms are still reachable**, rm13 (the fortune teller) among
+them, and rm680 — `cdMushkaToon`, the amulet handover — is entered ONLY from rm13. An
+amulet-less player who steps into the forest steps back out and goes shopping. The tier-3
+walkthrough line "you won't be able to get out again the way you came" does not describe rm19.
+
+**⛔ The earlier verdict here ("a TRUE softlock, blocked on the region-script scope") was wrong
+on BOTH halves**, and the second half is the instructive one: region scope was never the
+blocker — script 200's machines are attributed to rm19-26 and always were. What actually hid the
+fork was an unread `(+= state 4)` (§13).
+
+**What the tool should say, and now does:** the amulet is REQUIRED at every forest room
+(`required[27]` covers 19, 20, 21, 22, 24, 25, 26 since §13's fix) and NO detector emits a
+stranding row for it. Both halves are pinned in `test_kq5_ground_truth` — the demand green, the
+absence of a row green. A future Amulet row is an FP to investigate, not a catch.
 
 ## 8. The roc's nest locket (tier 3) — the second one-shot window
 
@@ -352,7 +366,7 @@ covered.
 | 7 | rope on the branch | fatal use | **CAUGHT** (fatal_uses) |
 | 8 | tambourine near Dink | — | FP to cure (savior-condemned, arming polarity) |
 | 9 | needle to the fortune teller | exchange slot | MISSED |
-| 10 | forest without worn amulet | region-script death fold, flag 84 | MISSED (region scope) |
+| 10 | ~~forest without worn amulet~~ | possession death fold, flag 84 | ⭐ **NOT A SOFTLOCK — USER-RULED 2026-08-16b.** You need the amulet, but rm19 is one screen in and you can walk back out to rm13 for one (98/100 rooms still reachable). The DEMAND is modelled (`required[27]` covers all seven forest rooms since the `(+= state N)` fix, §13) and no stranding row is emitted — both pinned green. ⛔ The old "MISSED (region scope)" reading was wrong twice: region scope was never the blocker |
 | 11 | locket window missed | one-shot window (tier 3) | MISSED, unverified |
 | 12 | peas exhaustion | consumable | OPEN (13 noisy rows). Note the emptied bag is REQUIRED — the walkthrough sacks the cat with it — so the peas are not pure flavour |
 | 12b | rm57->rm683 carry-in | requirement broadcast into a cutscene | **FP, CURED 2026-08-16 (§11).** rm683 is `cdCassimaToon`, a CD cutscene that tests no item at all; the own(37)/own(24) demands landed there because `castle.sc` is the region live in all 16 castle rooms and `theCat` had no presence condition. `extract.room_valued_globals` reads the cat's bagged arm `(== global338 gCurRoom)` — the bagged cat is where you bagged it — and the presence narrows to seven rooms. Flipped `test_toll.py`'s two KQ5 assertions with it, as declared |
