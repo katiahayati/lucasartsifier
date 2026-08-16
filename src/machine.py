@@ -312,6 +312,43 @@ class MachineBuilder:
                         tgt = _setscript_target(params[0], ir)
                         if tgt and tgt[0] is not None and tgt[0] != rn:
                             self.arms.setdefault(tgt, []).append((rn, _oname, mn, body))
+        # ...AND AN OBJECT IS OFTEN PUT ON SCREEN BY A SCRIPT THAT DOES NOT DECLARE IT:
+        # `((ScriptID 550 3) init:)`, SCI's dynamic load addressed by EXPORT INDEX.
+        # `cast_conditions` collects only the init sites written in the object's own script, so
+        # such an object has no presence condition at all -- `any_guard` reads "no site found"
+        # as "always", and its methods are then attributed to every room its script serves.
+        #
+        # KQ5's Mordack henchman is the case, and he is the reason the pea bag was demanded in
+        # the wedding cutscene: `theHenchMan` lives in `castle.sc` (the region, live in all 16
+        # castle rooms) but is init'ed only by rm54, 58, 59, 60, 61 and 67, so "throw the peas
+        # at him" read as an act available anywhere in the castle. Mordack (`theWizard`,
+        # 9 rooms), `theAura`, `theMagicDoor` and `theRings` are all the same shape.
+        #
+        # The site's own path condition comes with it, conjoined with the CALLING SCRIPT'S ROOM
+        # -- an unconditional init in rm58 means "present in 58", not "present". A caller that
+        # is not a room (Main, another region) contributes None, i.e. the permissive answer this
+        # already gives everywhere else: a scope with no room cannot say where you are.
+        self.foreign_inits = {}
+        for rn, s in ir.scripts.items():
+            room = X._room_object(s, ir)
+            here = (Pred("CMP", var=X._CURROOM, op="==", value=str(rn))
+                    if room is not None else None)
+            bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+            for body in bodies:
+                def leaf(n, pc, _here=here):
+                    if n.get("t") != "Send":
+                        return
+                    recv, msgs = I.send_pairs(n)
+                    if (not isinstance(recv, dict) or recv.get("t") != "KernelCall"
+                            or recv.get("name") != "ScriptID"):
+                        return
+                    hit = ir.script_id_target(recv)
+                    if not hit or hit[0] is None or hit[1] is None:
+                        return
+                    for sel, _params in msgs:
+                        g = None if _here is None else _conj(list(pc) + [_here])
+                        self.foreign_inits.setdefault(hit[0], []).append((hit[1], sel, g))
+                walk_stream(body, [], leaf)
 
     def machines(self, script):
         out = []
@@ -730,7 +767,8 @@ class MachineBuilder:
                 script, proc_guard=lambda pn: X.any_guard(self.proc_calls.get(pn)),
                 machine_guard=lambda on: self._entry_guard.get((script.number, on)),
                 init_sels=X.init_selectors(self.ir),
-                delegate_sels=X.delegate_slots(self.ir))
+                delegate_sels=X.delegate_slots(self.ir),
+                foreign_inits=self.foreign_inits.get(script.number))
         return c
 
     def _scan_setscript(self, node, pc, m, source, armer=None, owner=None, selfobj=None):

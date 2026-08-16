@@ -717,7 +717,7 @@ def _object_departures(script):
 
 
 def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None,
-                    delegate_sels=None):
+                    delegate_sels=None, foreign_inits=None):
     """`objname -> [guard|None]`: the conditions under which this script puts an object IN THE CAST.
 
     An object that is not `init:`ed does not exist for the player -- it cannot be clicked, cued or
@@ -831,6 +831,16 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None,
             continue                     # a departing init: the object exists but is never
                                          # clickable from this site -- see _object_departures
         out.setdefault(rname, []).append(g)
+    # ...and the init sites in OTHER scripts, which reach this one by export index
+    # (`((ScriptID 550 3) init:)`) and so name no object this walk can see. Supplied by
+    # `MachineBuilder.foreign_inits`, which carries each site's path condition conjoined with
+    # its own room; filtered here against the same `declared` selector map, so an `x:` read of a
+    # foreign object is not mistaken for putting it on screen. Without these, an object declared
+    # in a region and init'ed by its member rooms has NO presence condition -- which reads as
+    # "always", and hands every room the script serves an act the player cannot perform there.
+    for rname, sel, g in (foreign_inits or ()):
+        if sel in declared.get(rname, ()):
+            out.setdefault(rname, []).append(g)
     return out
 
 
