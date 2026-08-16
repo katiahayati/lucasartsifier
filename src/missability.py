@@ -3767,6 +3767,118 @@ class IrSccReach(SccReach):
                                     _emit(info, [[(a.var, a.value)]], [], state=K)
         return out
 
+    def window_closures(self):
+        """Demands whose PRODUCERS all die when a register flips -- the one-shot window.
+
+        `ownedby_death_folds` states the demand: arriving at KQ5's rm86 from the kidnap, some
+        throwable must be owned by room 6 or `yourStuck` is a pure-timer death. It does not state
+        that the only way to satisfy it is behind a door that shuts by itself, and that is the
+        half a player actually loses the game to. rm006 is the case and it is the game's worst
+        softlock:
+
+            (if (and (or (has: 8) (has: 16)) (not (proc0_12 83)))   ; the cat and the rat exist
+                (rat init:) (cat init:))                            ; only while the window is open
+            ...
+            ((and (global5 contains: rat) (> (gEgo x:) 290) ...)    ; rm006::doit -- the trigger
+                (proc0_9 83) (self setScript: catAndMouse))         ; SETS 83 as the chase STARTS
+
+        Flag 83 goes up when the chase begins, not when it is won, so losing the race is silently
+        terminal -- and what kills you is a timer in a cellar hours later and half the map away.
+
+        THE CONJUNCT A ROOM-REACHABILITY TEST CANNOT SUPPLY is producer liveness. rm6 stays
+        walkable forever; what stops being possible is the throw. So a producer is read through
+        `guard_reqs` against the register being flipped: a site whose own guard needs R to be
+        anything but `w` is dead in the post-flip world, and a row needs EVERY producer dead --
+        one survivor and there is no closure.
+
+        The rest is `register_strandings`' three conjuncts, unchanged in meaning and for the same
+        reasons: the flip must be REACHABLE (`_flip_seeds`, not "every room ever seen at w"), the
+        room that READS the demand must still be ahead of the post-flip player (a read behind you
+        demands nothing), and the goal must still be reachable (else this is a dead end, which is
+        a different finding). The pre-flip conjunct is the causality one: if no producer was
+        reachable before the flip either, the flip did not close anything.
+
+        ⚠️ DEPENDS ON `extract.feature_adders`, and would be blind without it. Three of the seven
+        `put: <item> 6` sites live on `catStrip`, which reaches the cast only through
+        `(gGame setFeatures: catStrip)` inside the chase's own state 0; read without that cast
+        event they carry none of the scene's arming, three producers look alive at flag 83 = 1,
+        and the closure disappears.
+
+        Rows are per demand-group MEMBER, like the fold rows they extend, and carry every closer
+        found rather than the first: KQ5's window has two, flag 83 (closes on ARMING) and rm6's
+        `local0` (closes on LOSING the race, after which the throws answer "too late"). Both are
+        true and a remedy has to know about both."""
+        out = []
+        goal = self.goal_rooms_set()
+        demands = {}
+        for r in self.ownedby_death_folds():
+            key = (tuple(sorted(tuple(x) for x in r["demand_group"])), r["need_room"])
+            demands.setdefault(key, r)
+        for (group, need_room), row in sorted(demands.items(), key=lambda kv: kv[0][1]):
+            gset = {tuple(x) for x in group}
+            prods = [(rm, g) for (rm, _sc, it, g, dst) in self.em.handler_drops
+                     if (it, dst) in gset]
+            if not prods:
+                continue                       # nothing we can see produces it: no claim
+            prod_rooms = {rm for rm, _g in prods}
+            closers, flips = [], set()
+            for R in self.proj:
+                if not isinstance(R, int):
+                    continue                   # scalars; a joint closure has no instance yet
+                states = self._pstates.get(R) or set()
+                vals = {v for (_r, v) in states}
+                if len(vals) < 2:
+                    continue
+                for w in sorted(vals):
+                    if any(self._producer_live(g, R, w) for _rm, g in prods):
+                        continue               # a producer survives this value: no closure
+                    seeds = self._flip_seeds(R, w, states)
+                    if not seeds:
+                        continue
+                    after = {q for (q, _v) in self._walk(R, frozenset(), starts=seeds)}
+                    if goal and not (goal & after):
+                        continue               # already unwinnable: a dead end, not a softlock
+                    if need_room not in after:
+                        continue               # the read is behind you; nothing is demanded
+                    pre = {(q, v) for (q, v) in states if v != w}
+                    if not pre:
+                        continue               # never seen at another value: an arrival, not a flip
+                    before = {q for (q, _v) in self._walk(R, frozenset(), starts=pre)}
+                    if not (prod_rooms & before):
+                        continue               # unreachable before too: the flip closed nothing
+                    closers.append((R, w))
+                    flips |= {q for (q, _v) in seeds}
+            if not closers:
+                continue
+            for (it, dst) in sorted(gset):
+                out.append({"pattern": "window-closure",
+                            "item": it, "item_name": self.g.item_name(it), "dest": dst,
+                            "need_room": need_room,
+                            "demand_group": sorted(gset),
+                            "producer_rooms": sorted(prod_rooms),
+                            "closes_on": sorted(closers),
+                            "flip_rooms": sorted(flips)})
+        return out
+
+    def _producer_live(self, guard, R, w):
+        """Can this producer still fire while register `R` holds `w`?
+
+        `guard_reqs` is the one reading of "what does this guard demand of a register" this
+        codebase keeps ([[same-rule-two-places]]), and its permissiveness is the right direction
+        here too: a guard it cannot read constrains nothing, so the producer counts as ALIVE and
+        the closure is not claimed.
+
+        NO DOMAIN IS PASSED, deliberately. With one, `guard_reqs` also lowers `!=` and the
+        relational ops ("not v" is "one of the others"), which would let more guards be judged
+        dead -- and killing a producer is the direction that INVENTS a closure. Positive
+        equalities are enough for the shape this detector is about: SCI writes a closed window as
+        `(not (proc0_12 <flag>))`, and a negated `!=` is already read as the positive equality it
+        is. KQ5's seven producers all yield `485: {0}` without a domain."""
+        if guard is None:
+            return True
+        req = guard_reqs(guard, {R})
+        return w in req[R] if R in req else True
+
     def dangerous_sinks(self):
         """Consumptions that COST you the game: the item is still needed somewhere you can still
         reach, and once wasted it cannot be re-obtained. The action-shaped sibling of a room-gate

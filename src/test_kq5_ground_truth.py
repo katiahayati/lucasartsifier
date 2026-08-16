@@ -197,11 +197,25 @@ MECHANISM_ROWS = {
         "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
         "'state': None, 'pattern': 'entry-fold', "
         "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
+        # ✅ THE WINDOW, added 2026-08-16b by `window_closures`: the fold row above says the
+        # bank is DEMANDED at the kidnap; this one says the only way to fill it shuts by
+        # itself. Two closers, both real -- flag 83 (reg 485) goes up as the chase ARMS, and
+        # rm6's `local0` (reg 565) when you LOSE the race and the throws answer "too late".
+        "window_closures: {'pattern': 'window-closure', 'dest': 6, 'need_room': 86, "
+        "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'producer_rooms': [6], "
+        "'closes_on': [(485, 1), (565, 1)], 'flip_rooms': [6]}",
     },
     "Fish": {
         "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
         "'state': None, 'pattern': 'entry-fold', "
         "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
+        # ✅ THE WINDOW, added 2026-08-16b by `window_closures`: the fold row above says the
+        # bank is DEMANDED at the kidnap; this one says the only way to fill it shuts by
+        # itself. Two closers, both real -- flag 83 (reg 485) goes up as the chase ARMS, and
+        # rm6's `local0` (reg 565) when you LOSE the race and the throws answer "too late".
+        "window_closures: {'pattern': 'window-closure', 'dest': 6, 'need_room': 86, "
+        "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'producer_rooms': [6], "
+        "'closes_on': [(485, 1), (565, 1)], 'flip_rooms': [6]}",
     },
     "Pie": {
         # RE-PINNED 2026-08-15 with the USER'S OK: the fold row is unchanged and this one is
@@ -225,17 +239,31 @@ MECHANISM_ROWS = {
         "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
         "'state': None, 'pattern': 'entry-fold', "
         "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
+        # ✅ THE WINDOW, added 2026-08-16b by `window_closures`: the fold row above says the
+        # bank is DEMANDED at the kidnap; this one says the only way to fill it shuts by
+        # itself. Two closers, both real -- flag 83 (reg 485) goes up as the chase ARMS, and
+        # rm6's `local0` (reg 565) when you LOSE the race and the throws answer "too late".
+        "window_closures: {'pattern': 'window-closure', 'dest': 6, 'need_room': 86, "
+        "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'producer_rooms': [6], "
+        "'closes_on': [(485, 1), (565, 1)], 'flip_rooms': [6]}",
     },
     "Stick": {
         "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
         "'state': None, 'pattern': 'entry-fold', "
         "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
+        # ✅ THE WINDOW, added 2026-08-16b by `window_closures`: the fold row above says the
+        # bank is DEMANDED at the kidnap; this one says the only way to fill it shuts by
+        # itself. Two closers, both real -- flag 83 (reg 485) goes up as the chase ARMS, and
+        # rm6's `local0` (reg 565) when you LOSE the race and the throws answer "too late".
+        "window_closures: {'pattern': 'window-closure', 'dest': 6, 'need_room': 86, "
+        "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'producer_rooms': [6], "
+        "'closes_on': [(485, 1), (565, 1)], 'flip_rooms': [6]}",
     },
 }
 
 DETECTORS = ("analyze", "joint_strandings", "resource_exhaustion", "dangerous_sinks",
              "register_flip_strandings", "toll_strandings", "fatal_uses", "register_strandings",
-             "ownedby_death_folds")
+             "ownedby_death_folds", "window_closures")
 
 # The throwable pool (rm6's cat handlers and rm86's rescue fork agree on exactly these four).
 POOL = {"Shoe", "Stick", "Leg_of_Lamb", "Fish"}
@@ -392,14 +420,24 @@ def run():
           "Phase 3 (window closure: a demanded value whose every producer is guarded on a "
           "flag the producers' own trigger sets). docs/KQ5-ORACLE.md §1a.")
 
+    # ✅ PROMOTED 2026-08-16b (phase 3, `missability.window_closures`). The fold rows say the bank
+    # is DEMANDED at the kidnap; these say the only way to fill it shuts by itself. A producer is
+    # read through `guard_reqs` against the register being flipped -- rm6 stays walkable forever,
+    # what stops being possible is the THROW -- and a row needs every producer dead at that value.
+    # Both closers are pinned above: flag 83 (reg 485) goes up as the chase ARMS, rm6's `local0`
+    # (reg 565) when you LOSE the race. It took `extract.feature_adders` with it: three of the
+    # seven `put: <item> 6` sites live on `catStrip`, which reaches the cast only through
+    # `(gGame setFeatures: catStrip)`, and without that cast event they carry none of the scene's
+    # arming and three producers look alive at flag 83 = 1.
     window_closed = [r for (n, _d, r) in raw_rows if n in POOL
                      and r.get("pattern") == "window-closure"]
-    check("🔴 KNOWN GAP (KQ5): the cat window's closure on arming is caught",
-          bool(window_closed),
-          "flag 83 is set the moment the chase STARTS (rm006::doit), so every producer of "
-          "`owner == 6` is behind a window that closes on arming, win or lose -- the rm86 "
-          "demand rows exist (green above) but no row states the window. Phase 3; also the "
-          "site patch A holds. docs/KQ5-ORACLE.md §1.")
+    check("the cat window's closure on arming is caught",
+          {n for (n, _d, r) in raw_rows if n in POOL and r.get("pattern") == "window-closure"}
+          == POOL and all(r.get("need_room") == 86 for r in window_closed),
+          f"rows={window_closed!r} -- expected one window-closure row per pool member, all "
+          f"naming the kidnap read at rm86. flag 83 is set the moment the chase STARTS "
+          f"(rm006::doit), so every producer of `owner == 6` sits behind a window that closes "
+          f"on arming, win or lose. docs/KQ5-ORACLE.md §1.")
 
     amulet_rows = [n for (n, _d, _r) in raw_rows if n == "Amulet"]
     check("🔴 KNOWN GAP (KQ5): the witch-region worn-amulet death fold is caught",

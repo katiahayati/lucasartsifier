@@ -840,6 +840,101 @@ def init_selectors(ir):
     return _INIT_SELECTORS[key]
 
 
+_FEATURE_ADDERS = {}        # ir id -> selectors whose OBJECT ARGUMENTS join the cast
+
+
+def feature_adders(ir):
+    """Selectors whose OBJECT ARGUMENTS put those objects IN THE CAST.
+
+    The third spelling, and the one in between the two this module already reads: `init:` puts an
+    object on screen, `delegate_slots` hands it a dispatch slot, and this is the room ADDING it to
+    the list the engine walks when a click arrives.
+
+        (method (setFeatures param1 &tmp temp0)          ; KQ5 Game.sc:672
+            (for ((= temp0 0)) (< temp0 argc) ((++ temp0))
+                (global32 add: [param1 temp0])))
+
+    `global32` holds `features`, an instance of `EventHandler of Set`, whose `handleEvent`
+    forwards the event to every element. So an object handed to `setFeatures:` becomes clickable
+    at that moment and one that never is has no click window at all -- which is a presence
+    condition, and the reason this is not cosmetic.
+
+    KQ5's cat scene is what it costs. Three of the seven sites that bank a thrown item with
+    `put: <item> 6` -- the fact rm86's kidnap fork reads hours later -- live on `catStrip`, which
+    joins the cast only through `(global2 setFeatures: catStrip)` inside `catAndMouse` state 0.
+    Read without that, those three carry none of the scene's arming, so the window that closes on
+    flag 83 looks like it has three producers still open behind it and `window_closures` cannot
+    see the closure at all.
+
+    DERIVED in three structural steps off the class table, the same discipline as
+    `init_selectors`:
+      1. DISPATCH CLASSES -- a class that forwards `handleEvent:` to elements pulled OUT of a
+         collection (the receiver is a variable, not an object it knows by name), plus everything
+         that inherits from one;
+      2. HOLDERS -- globals assigned an instance of a dispatch class;
+      3. ADDERS -- any method that sends `add:` to such a holder with one of its OWN PARAMETERS.
+         Its selector is then a cast event for its object arguments.
+
+    Measured corpus-wide: KQ5 and QFG-VGA derive `setFeatures` (89 and 26 call sites naming a
+    declared object); KQ4 derives the selector and has ZERO such sites; LSL2, KQ6 and LB2 derive
+    none at all -- SCI1.1 rooms use `addToPic`, which `init_selectors` already reads. All five
+    frozen surfaces are byte-identical with this in."""
+    key = id(ir)
+    if key in _FEATURE_ADDERS:
+        return _FEATURE_ADDERS[key]
+    classes = {o.species: o for s in ir.scripts.values() for o in s.objects if o.is_class}
+    disp = set()
+    for sp, o in classes.items():
+        for _mn, body in o.methods.items():
+            for n in I.walk(body):
+                if n.get("t") != "Send":
+                    continue
+                recv, msgs = I.send_pairs(n)
+                if (any(sel == "handleEvent" for sel, _p in msgs) and isinstance(recv, dict)
+                        and recv.get("t") in ("Variable", "KernelCall")):
+                    disp.add(sp)
+    grew = True
+    while grew:                                  # ...and every class that inherits from one
+        grew = False
+        for sp, o in classes.items():
+            if sp not in disp and o.super in disp:
+                disp.add(sp)
+                grew = True
+    insts = {o.name for s in ir.scripts.values() for o in s.objects
+             if not o.is_class and o.super in disp}
+    holders = set()
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for _mn, body in o.methods.items():
+                for n in I.walk(body):
+                    if n.get("t") != "Assignment":
+                        continue
+                    d, src = (n.get("kids") or [None, None])[:2]
+                    if (isinstance(src, dict) and src.get("name") in insts
+                            and isinstance(d, dict) and I.is_global(d)):
+                        holders.add(d["index"])
+    out = set()
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for mn, body in o.methods.items():
+                for n in I.walk(body):
+                    if n.get("t") != "Send":
+                        continue
+                    recv, msgs = I.send_pairs(n)
+                    if not (isinstance(recv, dict)
+                            and ((I.is_global(recv) and recv.get("index") in holders)
+                                 or recv.get("name") in insts)):
+                        continue
+                    for sel, params in msgs:
+                        if sel == "add" and any(
+                                any(k.get("vtype") == "Parameter"
+                                    for k in I.walk(p) if isinstance(k, dict))
+                                for p in params if isinstance(p, dict)):
+                            out.add(mn)
+    _FEATURE_ADDERS[key] = frozenset(out)
+    return _FEATURE_ADDERS[key]
+
+
 def delegate_slots(ir):
     """Property names the game DISPATCHES a verb through: `((<x> P:) doVerb: ...)` -- a send
     whose RECEIVER is itself a property read. SCI1.1's approach system is the shape's home:
@@ -1010,7 +1105,7 @@ def _object_departures(script):
 
 
 def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None,
-                    delegate_sels=None, foreign_inits=None):
+                    delegate_sels=None, foreign_inits=None, add_sels=None):
     """`objname -> [guard|None]`: the conditions under which this script puts an object IN THE CAST.
 
     An object that is not `init:`ed does not exist for the player -- it cannot be clicked, cued or
@@ -1098,8 +1193,9 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None,
                 for p in params:
                     if isinstance(p, dict) and p.get("name") in declared:
                         armed.add((p["name"], key))
-            if delegate_sels and sel in delegate_sels:
-                # assigned as a dispatch delegate -- a cast event for the VALUE object
+            if (delegate_sels and sel in delegate_sels) or (add_sels and sel in add_sels):
+                # assigned as a dispatch delegate, or ADDED to the room's event-dispatch list
+                # (`feature_adders`) -- either way a cast event for the object named as the value
                 for p in params:
                     if isinstance(p, dict) and p.get("name") in declared:
                         pend.append((p["name"], key, _conj(pc)))

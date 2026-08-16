@@ -81,6 +81,13 @@ ACCEPTED = {
                    "arrival taxi, the street seal). A single-purpose lifecycle reader, not "
                    "control flow: no other walker asks where an object ENDS.",
     "setRegions":  "region membership is built once, in opmodel.",
+    "handleEvent": "two different questions wearing one name. machine/opmodel DISPATCH it -- "
+                   "`handleEvent` is one of the methods whose body they walk for armings and "
+                   "effects -- while extract.feature_adders reads it as a CLASS-TABLE FACT: a "
+                   "class that forwards `handleEvent:` to elements pulled out of a collection is "
+                   "SCI's EventHandler, so adding an object to that collection is a cast event "
+                   "(KQ5's `(gGame setFeatures: catStrip)`). Nothing to drift: one asks whose "
+                   "body to walk, the other asks which collection the engine clicks through.",
     "Add":         "arithmetic appears in guard atoms (extract) and in counter detection (vocab).",
     "Sub":         "as Add.",
     "Eq":          "comparison node types are guard-atom concerns: extract builds atoms, vocab "

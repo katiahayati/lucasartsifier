@@ -346,7 +346,7 @@ covered.
 | 3 | Fishhook past the castle crossing | one-way edge, carry demanded | **CAUGHT** (analyze + spec). ⛔ The frontier is `rm44/45/46->rm113`, the hermit island's crossing to the far shore — NOT the old "sail rm49->650/654", whose rooms never existed (650/654 are Cedric's CD view numbers, which reached the room universe through a temp-scope bug). Re-pinned 2026-08-15 |
 | 3b | Cat_Fish up the castle stairs | one-way edge, carry demanded | **CAUGHT 2026-08-15** (analyze). Walkthrough: "Pick up the Fish and then walk up the stairs", then "Throw Fish at the cat and then use the Bag on the cat to catch it" — and "from here on out, if you see the cat, you must throw the fish to him". `castle.sc` (the region live in every castle room) dispatches `(37 → theThrowFishScript)` and `(24 → sack the cat)`. Source rm51 is outside the castle-side set and rm54's three exits are one-way |
 | 3c | roc point of no return | one-way edge, carry demanded | **CAUGHT 2026-08-15** (analyze). `rm40->rm41` is the roc carrying Graham off — KQ5's real point of no return. Harp (rm9 → rm90), Beeswax (rm24 → rm44) and Crystal (rm38 → rm52) must cross it; Iron_Bar (rm44 → rm54) rides the Fishhook's frontier; the Locket (rm42, the nest → rm57, Cassima's cell) crosses `rm42->rm43`. All five USER-RULED REAL 2026-08-15 |
-| 4 | cat window missed → inn death | one-shot window → ownedBy read → death | **CAUGHT** (phase 1: `ownedby_death_folds`, all four pool items demanded at rm86 under prev==85); the WINDOW half (flag 83 closes on arming) stays a declared red for phase 3 |
+| 4 | cat window missed → inn death | one-shot window → ownedBy read → death | **CAUGHT, BOTH HALVES.** Phase 1 (`ownedby_death_folds`) demands the banked throw at rm86 under prev==85; **phase 3 (`window_closures`, 2026-08-16b) states the window** — every producer of `owner == 6` is dead once flag 83 (reg 485) or rm6's `local0` (reg 565) flips, and rm86 is still ahead. Four rows, one per pool member. See §12 |
 | 5 | ~~pool starved at the dog~~ | — | ⭐ **NOT A SOFTLOCK — USER-RULED 2026-08-16b, row withdrawn.** Both scenes wait for ammunition (`rm006.sc:112`), so an empty-handed visit spends nothing and closes nothing: Shoe on the dog → clear the bear → Stick on the cat. The two `dangerous_sinks` rows were FPs and went with `f623aa2`; Shoe and Stick are pinned to the rm86 pool demand alone. The real trap in this family is throwing the **Lamb or the Fish**, rows 13 and 15 |
 | 6 | kidnap without Hammer | (room, prev-value) trap; gate modeled | **CAUGHT** (phase 2: `register_strandings` with item-banned fetch walks — the permissive walk was assuming the hammer to fetch the hammer; row reg12=85, flip rm86, needed at rm86) |
 | 7 | rope on the branch | fatal use | **CAUGHT** (fatal_uses) |
@@ -489,3 +489,50 @@ placements included. Two of them spell the idiom themselves and still do not mov
 seven rooms — which is the evidence that the rule is general rather than shaped around KQ5.
 LSL2 and KQ6 have no candidate at all: their only global compared against the current room is the
 pending-room one, written from another variable and so not enumerable.
+
+## §12. The cat window — stating the closure, not just the demand (2026-08-16b, derived)
+
+**What the tool said, and what it left out.** Phase 1 gave the demand: *arriving in the inn
+cellar from the kidnap, some throwable must be owned by room 6, or `yourStuck` is a pure-timer
+death you cannot act against.* True, and useless on its own — it does not say that the only way
+to satisfy it shuts by itself, hours earlier and half the map away. That is the half a player
+actually loses the game to, and it is the game's worst softlock.
+
+**The mechanism, in one read of `rm006.sc`.** The cat and the rat are placed only while
+`(and (or (has: 8) (has: 16)) (not (proc0_12 83)))`; `rm006::doit` sets flag 83 the moment the
+chase STARTS — not when it is won — and the throws that bank `put: <item> 6` all sit inside it.
+There is a second closer: lose the race and `catAndMouse` state 1 sets `local0`, after which
+every throw answers "too late" (`proc0_29 215`). Both are one-way.
+
+**`missability.window_closures`.** For each `ownedby_death_folds` demand, collect the producers of
+any member of its group and ask whether some reachable register flip kills *all* of them while the
+room that reads the demand is still ahead.
+
+The conjunct that makes it work — and the one a room-reachability test structurally cannot supply
+— is **producer liveness**. rm6 stays walkable for the whole game; what stops being possible is
+the throw. So each producer is read through `guard_reqs` against the register being flipped: a
+site whose own guard needs that register to be anything but `w` is dead in the post-flip world,
+and a row needs EVERY producer dead. One survivor and there is no closure, which is what keeps
+this from firing on ordinary plot advances. The remaining three conjuncts are
+`register_strandings`' own, unchanged in meaning: the flip must be reachable (`_flip_seeds`), the
+pre-flip player must have been able to do what the post-flip one cannot (causality), and the goal
+must still be reachable (else it is a dead end, a different finding).
+
+Measured: **4 rows, one per pool member**, `need_room` 86, `closes_on [(485, 1), (565, 1)]` —
+flag 83 and rm6's `local0`.
+
+**⚠️ It needed a second derivation to see anything at all: `extract.feature_adders`.** Three of
+the seven `put: <item> 6` sites live on `catStrip`, which never appears in an `init:` — it joins
+the cast through `(gGame setFeatures: catStrip)` inside the chase's own state 0. Read without that
+cast event those three carry none of the scene's arming, three producers look alive at flag 83 = 1,
+and there is no closure to find. `setFeatures` is derived off the class table in three structural
+steps (a class that forwards `handleEvent:` to the elements of a collection → the globals holding
+an instance of one → any method that `add:`s a parameter to such a holder), the same discipline as
+`init_selectors`. Corpus: KQ5 89 call sites, QFG-VGA 26, KQ4 derives the selector with ZERO sites,
+LSL2/KQ6/LB2 derive none (SCI1.1 uses `addToPic`, already read). Byte-identical everywhere.
+
+**⛔ The bees are NOT this build.** Row 15's closure is a different axis: flag 36's only producer
+is `bearScript`, armed under `own(5)`, so what closes that window is an ITEM being spent
+elsewhere, not a register flipping. It pairs with row 9 (the fortune teller's slot), and a
+prototype of that pairing re-created the Shoe@rm12 false positive this oracle just retired — see
+§1's verdicts. Left red on purpose.

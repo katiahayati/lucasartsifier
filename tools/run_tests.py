@@ -251,11 +251,18 @@ KNOWN_RED = {
             "the hive arms deathByBees under not-flag36, so the honeycomb -> beeswax -> boat "
             "chain dies with the wasted fish. Phase 3 (window closure): a demanded value "
             "whose every producer is guarded on a flag the producers' own trigger sets.",
-        "🔴 KNOWN GAP (KQ5): the cat window's closure on arming is caught":
-            "The rm86 demand rows are green, but flag 83 is set the moment the chase STARTS "
-            "(rm006::doit) -- every producer of `owner == 6` sits inside a window that "
-            "closes on arming, win or lose, and no row states the window. Phase 3; the same "
-            "fact is patch A's hold site.",
+        # ✅ PROMOTED 2026-08-16b -- "🔴 KNOWN GAP (KQ5): the cat window's closure on arming is
+        # caught" is GREEN and no longer listed. `missability.window_closures` is phase 3: the
+        # fold rows state that the kidnap DEMANDS a banked throw, and these state that the only
+        # way to bank one shuts by itself. The conjunct a room-reachability test cannot supply is
+        # PRODUCER LIVENESS -- rm6 stays walkable forever, what stops being possible is the throw
+        # -- so each producer is read through `guard_reqs` against the register being flipped and
+        # a row needs every one of them dead at that value. Two closers, both real: flag 83 goes
+        # up as the chase ARMS (rm006::doit, win or lose) and rm6's `local0` when you LOSE the
+        # race. It landed with `extract.feature_adders`, without which three of the seven
+        # `put: <item> 6` sites -- `catStrip`, which joins the cast only via
+        # `(gGame setFeatures: catStrip)` -- carry none of the scene's arming and the closure is
+        # invisible. Four rows, one per pool member, mechanism-pinned.
         # ✅ PROMOTED 2026-08-16 -- "🔴 KNOWN FP (KQ5): no carry-in demand rides the rm57->rm683
         # cutscene" is GREEN and no longer listed, and it took `test_toll.py`'s two KQ5
         # assertions green with it, as the red said it would. rm683 is `cdCassimaToon`, a CD

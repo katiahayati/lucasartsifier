@@ -795,6 +795,7 @@ class MachineBuilder:
                 machine_guard=lambda on: self._entry_guard.get((script.number, on)),
                 init_sels=X.init_selectors(self.ir),
                 delegate_sels=X.delegate_slots(self.ir),
+                add_sels=X.feature_adders(self.ir),
                 foreign_inits=self.foreign_inits.get(script.number))
         return c
 
