@@ -965,6 +965,17 @@ class MachineBuilder:
                 out.append(Op("SETSTATE", g, state_k + (1 if tp == "Increment" else -1)))
             else:
                 self._counter_op(dst, "inc" if tp == "Increment" else "dec", None, g, out)
+        elif tp in ("AssignmentAdd", "AssignmentSub") and state_k is not None:
+            # ...and the same bump WITH A STRIDE, `(+= state 4)`. Kept in step with
+            # `compile._interp`, which is the authority for what a state body means -- this walk
+            # is the debug view, and the two drifting apart is exactly what the `(++ state)` fix
+            # of 2026-08-14 had to correct ([[same-rule-two-places]]). STATE only here too: the
+            # counter models are the Increment branch's business.
+            dst = node["kids"][0]
+            amt = I.as_int(node["kids"][1]) if len(node["kids"]) > 1 else None
+            if amt is not None and dst.get("t") == "Property" and dst.get("name") == "state":
+                out.append(Op("SETSTATE", g,
+                              state_k + (amt if tp == "AssignmentAdd" else -amt)))
 
     def _send_op(self, node, g, out, room=None):
         recv, msgs = I.send_pairs(node)

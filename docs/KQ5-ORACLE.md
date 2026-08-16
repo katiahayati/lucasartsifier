@@ -490,6 +490,48 @@ seven rooms — which is the evidence that the rule is general rather than shape
 LSL2 and KQ6 have no candidate at all: their only global compared against the current room is the
 pending-room one, written from another variable and so not enumerable.
 
+## §13. The witch's fireball — the fork that was not a fork (2026-08-16b, derived)
+
+**The mechanism (tier 1, `witchRegion.sc`).** `zapHim` state 4:
+
+    (if (and (global0 has: 27) (proc0_12 84))     ; carrying AND wearing the amulet
+        (fireball loop: 9 ... setCycle: End self)
+        (+= state 4)                              ; skip the death chain
+    else
+        (fireball dispose:) ...)                  ; -> 5 -> 6 -> 7 -> 8: (proc0_26 249), DEATH
+
+**⛔ THE RED'S STATED REASON WAS STALE.** It said the fold "lives in a REGION script and the
+death-fold scope stops at rooms". Measured: script 200's machines ARE attributed to their member
+rooms (`zapHim` appears at rm19, 20, 21, 22, 24, 25, 26). Region scope is not the problem.
+
+**The real cause: `(+= state 4)` was unread.** `compile._interp` knew `(= state k)` (absolute) and
+`(++ state)` / `(-- state)` (relative, ±1, the fix of 2026-08-14 that recovered rm42's roc-nest
+death chain) but not the SAME relative setstate with a stride. So the survive arm's skip did
+nothing, both arms fell through to state 8's `proc0_26`, and the fork was not a fork — the death
+read as unavoidable on every path and nothing could ask what surviving costs. Fixed in both places
+that read a state body (`compile._interp`, the authority, and `machine._op_leaf`, the debug view —
+[[same-rule-two-places]], the trap the ++ fix already fell into once). Corpus: KQ6 49 sites, KQ5
+10, LSL2/KQ4/LB2 zero. **All five snapshot surfaces byte-identical.**
+
+**What it bought.** The fork is a fork: survive `JUMP 10`, die `JUMP 7 → 8 DEATH`. And
+`required[27]` went from `[0, 13]` to **`[0, 13, 19, 20, 21, 22, 24, 25, 26]`** — the amulet is
+now demanded in all seven forest rooms, straight out of the world model.
+
+**⚠️ WHAT IS STILL OPEN, AND IT IS A GROUND-TRUTH QUESTION, NOT A BUILD.**
+1. No detector emits an Amulet ROW, and the reason is not scope: `ownedby_death_folds` reads
+   OWNER-VALUE atoms (`_is_owner_atom` is LOC/`ownedBy`), and this fork is on POSSESSION
+   (`own(27) ∧ flag84`) — a different vocabulary, and a compound rather than a single atom.
+   Teaching the fold detector to speak possession is a real build, not the scope extension the
+   red implied.
+2. **And it may not be a stranding at all.** Measured from rm19: rm13 (the fortune teller),
+   rm12, rm6, rm5 and rm1 are ALL still reachable — 98 of 100 rooms are — and rm680
+   (`cdMushkaToon`, the amulet handover) is entered only from rm13. So a player who walks into
+   the forest without the amulet can walk back out and buy one. On the model's own reachability
+   a STRANDING row would be a false positive; only a DEMAND row (the shape rm86's fold rows
+   have) is defensible. The July open question — *"where is the amulet FIRST obtained, and is
+   that before a one-way point past which the death occurs?"* — is still the one that decides
+   it, and it is the user's to answer.
+
 ## §12. The cat window — stating the closure, not just the demand (2026-08-16b, derived)
 
 **What the tool said, and what it left out.** Phase 1 gave the demand: *arriving in the inn

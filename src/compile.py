@@ -170,6 +170,23 @@ def _interp(path, is_death, state_k=None):
                     st.trans = ("SETSTATE", k); fixed = True
             elif dst.get("t") == "Variable" and dst["vtype"] in ("Local", "Temp"):
                 st.counters.append(((dst["vtype"][0], dst["index"]), "set", I.as_int(src)))
+        elif tp in ("AssignmentAdd", "AssignmentSub") and not fixed and state_k is not None:
+            # `(+= state 4)` is `(++ state)` WITH A STRIDE -- the same relative setstate in the
+            # spelling this read did not know. KQ5 spells it ten times and one of them decides a
+            # death: the witch's `zapHim` survives its fireball on `(and (has: 27) flag84)` by
+            # doing `(+= state 4)` to skip the death chain, and with the bump unread BOTH arms
+            # fell through to state 8's `proc0_26`. The fork was not a fork, the death read as
+            # unavoidable on every path, and no detector could ask what the surviving arm costs.
+            #
+            # STATE ONLY, deliberately. The Increment/Decrement branch below also feeds the local
+            # and global COUNTER models, and `(+= gX n)` reaching those is a separate widening on
+            # a hot path (LB2's act advance is `(++ global123)`); it is not what this is about and
+            # it is not measured here.
+            d, amt = node["kids"][0], (I.as_int(node["kids"][1]) if len(node["kids"]) > 1 else None)
+            if (amt is not None and d.get("t") == "Property" and d.get("name") == "state"):
+                st.trans = ("SETSTATE",
+                            state_k + (amt if tp == "AssignmentAdd" else -amt))
+                fixed = True
         elif tp in ("Increment", "Decrement"):
             d = node["kids"][0]
             delta = 1 if tp == "Increment" else -1
