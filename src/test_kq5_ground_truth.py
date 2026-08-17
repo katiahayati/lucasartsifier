@@ -574,6 +574,24 @@ def run():
           f"specs={yeti_spec!r} -- the killEgo fold names prev==36, so its demand belongs on "
           f"that crossing and nowhere else.")
 
+    # ✅ THE TEMPLE'S GUARD, added 2026-08-18 (USER: \"we absolutely 100% need to do the temple
+    # pocket\"). The toll rows (rm214->rm18, Staff spent on the door) had been detected since
+    # phase 1 with NO guard emitted: `_carryout_frontier` refused every pocket whose exits name
+    # no register (\"no seal to judge in\"), which is the REGISTER-toll spelling. An ITEM toll is
+    # its own seal -- the spent Staff is exactly the toll-edge deletion `csucc` already
+    # performs -- so the committed walk runs in the prev dimension and the teacup's exit half
+    # finally ships for KQ5: leave the temple only with the loot the door will never again
+    # open onto.
+    temple_spec = [sp for sp in all_specs if sp["site"] == "edge"
+                   and sp.get("from_room") == 18 and sp.get("to_room") == 214]
+    check("the temple pocket's exit demands both treasures (carry-out, item-toll seal)",
+          len(temple_spec) == 1
+          and temple_spec[0]["condition"] == "(and (gEgo has: 6) (gEgo has: 11))"
+          and not temple_spec[0]["refused"],
+          f"specs={temple_spec!r} -- expected exactly one placeable rm18->rm214 edge spec "
+          f"demanding Brass_Bottle(6) AND Gold_Coin(11); an empty list is the pre-2026-08-18 "
+          f"state (detected, unguarded).")
+
     def _rooms_mentioned(r):
         out = {x for x in (r.get("still_needed_at") or ()) if isinstance(x, int)}
         if isinstance(r.get("need_room"), int):

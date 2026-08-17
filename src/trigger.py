@@ -1107,6 +1107,59 @@ def _find_region(text, header_re):
     return _block_span(text, m.start())
 
 
+def _turnback_emit(guard_sexpr, body, og, tb, refuse, site):
+    """The turn-back wrap + its Script instance TEMPLATE, shared by every positional-refusal
+    kind (arm-clause armings, positional direct exits) so the two cannot drift
+    ([[same-rule-two-places]]). `body` is the clause body being held. The returned instance
+    text carries two `%s` slots for the caller's derived safe target (xe, ye)."""
+    ego = og.get("ego", "global0")
+    room = og.get("room", "global2")
+    game = og.get("game", "global1")
+    forms = site.forms()
+    if forms is None:
+        wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{body}\n\t\t\telse\n"
+                   f"\t\t\t\t(if (not ({room} script:))\n"
+                   f"\t\t\t\t\t({room} setScript: {tb})\n"
+                   f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
+    else:
+        # The turn-back IS this kind's refusal; the mark rides its once-per-approach
+        # arming gate (doit re-fires every cycle -- the gate is what keeps the
+        # turn-back, and so the mark, from machine-gunning). In lite-once-warned the
+        # warned line prints and the body arms the crossing as the game built it.
+        allow, warn, mark = forms
+        wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{body}\n\t\t\telse\n"
+                   f"\t\t\t\t(if {allow}\n"
+                   f"\t\t\t\t\t{warn}\n"
+                   f"\t\t\t\t\t{body.strip()}\n"
+                   f"\t\t\t\telse\n"
+                   f"\t\t\t\t\t(if (not ({room} script:))\n"
+                   f"\t\t\t\t\t\t({room} setScript: {tb})\n"
+                   f"\t\t\t\t\t\t{mark}\n"
+                   f"\t\t\t\t\t)\n"
+                   f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
+    # THE INPUT LOCK IS SPOKEN IN THE GAME'S OWN TONGUE, or not at all. The template
+    # said `(gGame handsOff:)` unconditionally, and KQ5 -- the first game outside the
+    # LSL2/KQ4 dialect to receive a turn-back -- never sends that selector anywhere in
+    # its 211 scripts, so the guard was the one script in the game that could not
+    # compile. The caller derives the pair (`obj_globals["hands"]`): the handsOff:
+    # spelling where the game speaks it, its own idiom otherwise (KQ5 locks input with
+    # `(User canControl: 0)` -- rm012's lamb throw does exactly that), and NO lock when
+    # neither is spoken -- a brief uncontrolled walk-back beats an uncompilable file.
+    hands = og.get("hands", (f"({game} handsOff:)", f"({game} handsOn:)"))
+    h_off = ("\t\t\t\t%s\n" % hands[0]) if hands else ""
+    h_on = ("\t\t\t\t%s\n" % hands[1]) if hands else ""
+    instance_tpl = (
+        "\n(instance %s of Script\n\t(properties)\n\n"
+        "\t(method (changeState param1)\n"
+        "\t\t(switch (= state param1)\n"
+        "\t\t\t(0\n%s\t\t\t\t%s  ; softlock-guard line\n"
+        "\t\t\t\t(= cycles 1)\n\t\t\t)\n"
+        "\t\t\t(1\n\t\t\t\t(%s setMotion: MoveTo %%s %%s self)\n\t\t\t)\n"
+        "\t\t\t(2\n%s\t\t\t\t(self dispose:)\n\t\t\t)\n"
+        "\t\t)\n\t)\n)\n" % (tb, h_off, refuse, ego, h_on))
+    return wrapped, instance_tpl
+
+
 def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site=None):
     """Wrap the controllable trigger's `(self changeState: K)` (scoped to the
     right instance+method) in the item guard. For a 'direct' placement, wrap the
@@ -1144,6 +1197,45 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
             return text, 0
         clause = _enclosing_clause_body(region, m.start())
         bs, be = clause if clause else (m.start(), m.end())
+        if placement.get("positional"):
+            # A POSITIONAL direct exit machine-guns under a spoken refusal: `doit` re-fires
+            # every cycle the ego stands on the control (finding #12 -- KQ5's temple door,
+            # rediscovered in the emitted source with the naked `guarded_wrap` below). The
+            # refusal must be the turn-back: say the line once, walk the ego somewhere PROVEN
+            # SAFE, hand the controls back. Two derivable targets, in order: the clause's own
+            # coordinate boundary (its literal names the zone's edge), else THE ROOM'S OWN
+            # WALK-IN POSITION -- the spot the game itself stands the ego on at init, which a
+            # positional exit's control strip cannot contain (the player walked here from
+            # there). Neither derivable, or no refusal line -> the silent whole-clause gate:
+            # nothing runs, nothing spams, and the player walks off the strip themselves.
+            og = placement.get("obj_globals") or {}
+            ego_g = og.get("ego", "global0")
+            head = enclosing_clause_head(region, m.start()) or ""
+            bm = re.search(r"\(([<>])=?\s*\(%s\s+([xy]):\)\s+(-?\d+)\)" % re.escape(ego_g),
+                           head)
+            tgt = None
+            if bm:
+                op, axis, k = bm.group(1), bm.group(2), int(bm.group(3))
+                esc = k + 15 if op == "<" else k - 15
+                tgt = ((f"({ego_g} x:)", str(esc)) if axis == "y"
+                       else (str(esc), f"({ego_g} y:)"))
+            else:
+                init_rel = _find_region(text[span[0]:span[1]], r"\(method\s+\(init\b")
+                init_txt = (text[span[0] + init_rel[0]:span[0] + init_rel[1]]
+                            if init_rel else "")
+                im = re.search(r"\(%s\b(?:[^()]|\([^()]*\))*?posn:\s+(-?\d+)\s+(-?\d+)"
+                               % re.escape(ego_g), init_txt, re.S)
+                if im:
+                    tgt = (im.group(1), im.group(2))
+            tb = "sgTurnBack"
+            if refuse and tgt and tb not in text:
+                wrapped, instance_tpl = _turnback_emit(guard_sexpr, region[bs:be], og, tb,
+                                                       refuse, site)
+                new_text = text[:i0] + region[:bs] + wrapped + region[be:] + text[i1:]
+                return new_text + (instance_tpl % tgt), 1
+            wrapped = (f"(if {stock_or(guard_sexpr)}\n\t\t\t\t{region[bs:be]}\n\t\t\t)"
+                       f"  ; softlock-guard: positional gate, silent by design")
+            return text[:i0] + region[:bs] + wrapped + region[be:] + text[i1:], 1
         wrapped = guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
         return text[:i0] + region[:bs] + wrapped + region[be:] + text[i1:], 1
     if placement["kind"] == "proc-call":
@@ -1315,50 +1407,10 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
                 else:
                     xe = f"({'+' if tx < 160 else '-'} ({ego} x:) 35)"
                     ye = f"({ego} y:)"
-            forms = site.forms()
-            if forms is None:
-                wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
-                           f"\t\t\t\t(if (not ({room} script:))\n"
-                           f"\t\t\t\t\t({room} setScript: {tb})\n"
-                           f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
-            else:
-                # The turn-back IS this kind's refusal; the mark rides its once-per-approach
-                # arming gate (doit re-fires every cycle -- the gate is what keeps the
-                # turn-back, and so the mark, from machine-gunning). In lite-once-warned the
-                # warned line prints and the body arms the crossing as the game built it.
-                allow, warn, mark = forms
-                wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
-                           f"\t\t\t\t(if {allow}\n"
-                           f"\t\t\t\t\t{warn}\n"
-                           f"\t\t\t\t\t{region[bs:be].strip()}\n"
-                           f"\t\t\t\telse\n"
-                           f"\t\t\t\t\t(if (not ({room} script:))\n"
-                           f"\t\t\t\t\t\t({room} setScript: {tb})\n"
-                           f"\t\t\t\t\t\t{mark}\n"
-                           f"\t\t\t\t\t)\n"
-                           f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
-            # THE INPUT LOCK IS SPOKEN IN THE GAME'S OWN TONGUE, or not at all. The template
-            # said `(gGame handsOff:)` unconditionally, and KQ5 -- the first game outside the
-            # LSL2/KQ4 dialect to receive a turn-back -- never sends that selector anywhere in
-            # its 211 scripts, so the guard was the one script in the game that could not
-            # compile. The caller derives the pair (`obj_globals["hands"]`): the handsOff:
-            # spelling where the game speaks it, its own idiom otherwise (KQ5 locks input with
-            # `(User canControl: 0)` -- rm012's lamb throw does exactly that), and NO lock when
-            # neither is spoken -- a brief uncontrolled walk-back beats an uncompilable file.
-            hands = og.get("hands", (f"({game} handsOff:)", f"({game} handsOn:)"))
-            h_off = ("\t\t\t\t%s\n" % hands[0]) if hands else ""
-            h_on = ("\t\t\t\t%s\n" % hands[1]) if hands else ""
-            instance_txt = (
-                "\n(instance %s of Script\n\t(properties)\n\n"
-                "\t(method (changeState param1)\n"
-                "\t\t(switch (= state param1)\n"
-                "\t\t\t(0\n%s\t\t\t\t%s  ; softlock-guard line\n"
-                "\t\t\t\t(= cycles 1)\n\t\t\t)\n"
-                "\t\t\t(1\n\t\t\t\t(%s setMotion: MoveTo %s %s self)\n\t\t\t)\n"
-                "\t\t\t(2\n%s\t\t\t\t(self dispose:)\n\t\t\t)\n"
-                "\t\t)\n\t)\n)\n" % (tb, h_off, refuse, ego, xe, ye, h_on))
+            wrapped, instance_tpl = _turnback_emit(guard_sexpr, region[bs:be], og, tb,
+                                                   refuse, site)
             new_text = text[:m0] + region[:bs] + wrapped + region[be:] + text[m1:]
-            return new_text + instance_txt, 1
+            return new_text + (instance_tpl % (xe, ye)), 1
         wrapped = (f"(if {stock_or(guard_sexpr)}\n\t\t\t\t{region[bs:be]}\n\t\t\t)"
                    f"  ; softlock-guard: positional gate, silent by design")
         return text[:m0] + region[:bs] + wrapped + region[be:] + text[m1:], 1

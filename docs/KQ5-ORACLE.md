@@ -1066,3 +1066,29 @@ locked during the walk — the game's own warn-bounce idiom, given a condition. 
 approach the inn with Hammer + a banked throwable → kidnapped, exactly as stock; approach
 without → turned back at the door; fetch, return, kidnapped. The kidnap stays mandatory —
 the guard defers it, never removes it.
+
+## §19. The temple pocket's guard — an item toll is its own seal (2026-08-18, derived; USER: "we absolutely 100% need to do the temple pocket")
+
+The FIRST user-confirmed KQ5 stranding (the Gold_Coin and the Brass_Bottle behind the Staff-broken
+door) had been detected since phase 1 — both `one-visit-toll-pocket` rows, `rm214 -> rm18` — and
+guarded by NOTHING: `_carryout_frontier` refused every pocket whose exits name no register ("no
+seal to judge in"), which is the REGISTER-toll spelling (KQ6's Realm). An ITEM toll is its own
+seal: the fact that makes rm18 one-visit — the Staff is SPENT opening the door — is exactly the
+toll-edge deletion the function already performs (`csucc` drops rm214 -> rm18 from the committed
+successor graph). Only a register toll needs a register dimension to judge in; an item toll needs
+only the committed walk, and `prev` — promoted in every game — is the dimension the funnel walk
+already uses. One added branch; LSL2/KQ4/KQ6/LB2 byte-identical (their tolls all carry registers
+or don't exist).
+
+The spec: **`rm18 -> rm214: (and (gEgo has: 6) (gEgo has: 11))`** — the teacup's exit half in the
+item-toll spelling: leave the temple only with the loot the door will never again open onto.
+
+**Placement found finding #12 again, in a new costume.** rm18's exit is a POSITIONAL direct
+`newRoom:` (`(& (gEgo onControl: 0) $4000)` in `doit`), and the direct wrap's naked refusal
+machine-guns there — `doit` re-fires every cycle the ego stands on the strip. The positional
+direct now takes the same turn-back as arm-clause (one shared emission, `_turnback_emit`, so the
+two cannot drift), with a NEW derivable safe target for mask-form zones: **the room's own walk-in
+position** — the spot the game itself stands the ego on at init (`rm018` posn 76 71), which a
+positional exit's control strip cannot contain, because the player walked here from there. The
+clause's own coordinate boundary still takes precedence when a literal names it; neither
+derivable → the silent whole-clause gate, which cannot spam.

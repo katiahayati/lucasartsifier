@@ -1004,6 +1004,17 @@ def _carryout_frontier(s, item, pocket, toll_reg=None, toll_edge=None):
         named.add(toll_reg)
     if prev in s.regs and split:
         named.add(prev)
+    if not named and toll_edge is not None and prev in s.regs:
+        # AN ITEM TOLL IS ITS OWN SEAL. "No seal to judge in" was written for the register
+        # spelling (KQ6's Realm), and refused the ITEM spelling outright -- KQ5's temple, where
+        # the Staff is SPENT opening the door (`put: 7 214`), had both its carry-out rows
+        # detected and NO guard emitted, because rm18's exits name no register. But the fact
+        # that makes the pocket one-visit is already in this function's hands: `csucc` below
+        # deletes the toll edge from the successor graph, which IS "the toll is spent, the door
+        # will not reopen". Only a register toll needs a register dimension; an item toll needs
+        # only the committed walk, and `prev` -- promoted in every game -- is the dimension the
+        # funnel walk already uses.
+        named.add(prev)
     if not named:
         return []                             # no seal to judge in -- nothing provable, refuse
     J = tuple(sorted(named)) if len(named) > 1 else next(iter(named))

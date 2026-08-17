@@ -2761,11 +2761,14 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                                    "would be silent"})
                 continue
             text = open(path, errors="replace").read()
-            if placement["kind"] == "arm-clause":
+            if placement["kind"] == "arm-clause" or \
+                    (placement["kind"] == "direct" and placement.get("positional")):
                 # the turn-back variant speaks and moves the ego; give the wrapper the game's
                 # own object-global spellings, and the file the class scripts it will need.
                 # The INPUT-LOCK pair rides along in the game's own tongue -- see the template
-                # in trigger.py for why an unspoken selector must never be emitted.
+                # in trigger.py for why an unspoken selector must never be emitted. The
+                # positional DIRECT exit takes the same turn-back (a naked refusal in a doit
+                # clause machine-guns -- KQ5's temple door), so it needs the same spellings.
                 placement = {**placement,
                              "obj_globals": {"ego": "global%d" % _EGO,
                                              "room": "global%d" % _ROOM,
@@ -2777,8 +2780,8 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                 out.append({**sp, "applied": False, "why": "trigger found but no site rewritten",
                             "placement": placement})
                 continue
-            if placement["kind"] == "arm-clause" and "sgTurnBack" in new_text:
-                new_text = _ensure_refusal_use(new_text, titles_by_num)
+            if "sgTurnBack" in new_text:       # any kind that emitted the turn-back needs its
+                new_text = _ensure_refusal_use(new_text, titles_by_num)     # classes declared
                 new_text = _ensure_use(new_text, "Motion")
                 if "(User canControl:" in new_text:
                     new_text = _ensure_use(new_text, "User")   # the derived input-lock's class
