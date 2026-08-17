@@ -202,13 +202,16 @@ KQ5's Shell/Fishhook headline and the first automatic catch of this class in thi
 - **Rope@rm30 (`ropeOnBranch`) — TRUE.** Tier 3: throw the rope onto the pointed rock ledge,
   *not* the branch; "the branch is too weak." The branch arm is an unsurvivable machine; the
   detector's row and its `action_spec` guard `(not (has: 20))` name the right site.
-- **Tambourine@rm55 (`hugScript`) — FALSE POSITIVE, savior-condemned variant.** Dink is only
-  initialized while `own(34)` holds, so the hug-death's arming context carries `own(34)` — but
-  giving the tambourine (`giveTamboScript`, `put: 34`, drops the Hairpin) is the *escape* from
-  that very machine, and holding the tambourine there is mandatory for progress. This is the
-  sixth member of the family the five `fatal_uses` corrections were built for, with a new
-  polarity: the item rides the arming guard (the monster's existence condition) rather than a
-  branch. **Do not ship; cure in the detector, not the oracle.**
+- **Tambourine@rm55 (`hugScript`) — FALSE POSITIVE, ✅ CURED 2026-08-16b (§14).** Dink is only
+  `init:`ed while `own(34)` holds (`rm055` `localproc_5`), so the hug-death's arming context
+  carried `own(34)` — but giving the tambourine (`giveTamboScript`, `put: 34`, drops the
+  Hairpin) is the *escape* from that very machine, and holding it there is mandatory for
+  progress. The sixth member of the family the five earlier `fatal_uses` corrections were built
+  for, with a new polarity: the item rode the ARMING CONTEXT (the monster's existence condition)
+  rather than a branch. ⚠️ **And it was not just a noisy row — the tool SHIPPED
+  `action_specs: Tambourine@rm55: (not (gEgo has: 34))`, a patch refusing the item that saves
+  you.** Cured by blaming `entry_site` (what was DONE at the arming site) instead of the entry
+  guard the strengthening passes had grown.
 
 ## 5. The temple toll (tier 1 + 2, golden since July)
 
@@ -364,7 +367,7 @@ covered.
 | 5 | ~~pool starved at the dog~~ | — | ⭐ **NOT A SOFTLOCK — USER-RULED 2026-08-16b, row withdrawn.** Both scenes wait for ammunition (`rm006.sc:112`), so an empty-handed visit spends nothing and closes nothing: Shoe on the dog → clear the bear → Stick on the cat. The two `dangerous_sinks` rows were FPs and went with `f623aa2`; Shoe and Stick are pinned to the rm86 pool demand alone. The real trap in this family is throwing the **Lamb or the Fish**, rows 13 and 15 |
 | 6 | kidnap without Hammer | (room, prev-value) trap; gate modeled | **CAUGHT** (phase 2: `register_strandings` with item-banned fetch walks — the permissive walk was assuming the hammer to fetch the hammer; row reg12=85, flip rm86, needed at rm86) |
 | 7 | rope on the branch | fatal use | **CAUGHT** (fatal_uses) |
-| 8 | tambourine near Dink | — | FP to cure (savior-condemned, arming polarity) |
+| 8 | tambourine near Dink | savior-condemned, arming polarity | ✅ **FP CURED 2026-08-16b (§14).** `fatal_uses` now blames what the arming SITE required, not what the inherited chain did; the row and its `(not (has: 34))` action spec are gone, and KQ6's skull is untouched |
 | 9 | needle to the fortune teller | exchange slot | MISSED |
 | 10 | ~~forest without worn amulet~~ | possession death fold, flag 84 | ⭐ **NOT A SOFTLOCK — USER-RULED 2026-08-16b.** You need the amulet, but rm19 is one screen in and you can walk back out to rm13 for one (98/100 rooms still reachable). The DEMAND is modelled (`required[27]` covers all seven forest rooms since the `(+= state N)` fix, §13) and no stranding row is emitted — both pinned green. ⛔ The old "MISSED (region scope)" reading was wrong twice: region scope was never the blocker |
 | 11 | locket window missed | one-shot window (tier 3) | MISSED, unverified |
@@ -592,3 +595,35 @@ is `bearScript`, armed under `own(5)`, so what closes that window is an ITEM bei
 elsewhere, not a register flipping. It pairs with row 9 (the fortune teller's slot), and a
 prototype of that pairing re-created the Shoe@rm12 false positive this oracle just retired — see
 §1's verdicts. Left red on purpose.
+
+## §14. The tambourine — an item you were CARRYING is not an item you USED (2026-08-16b, derived)
+
+**What the tool said about the game.** *"Using the Tambourine at rm55 kills you"* — and it did not
+stop at saying it. It emitted `action_specs: Tambourine@rm55: (not (gEgo has: 34))` and placed it:
+a shipped patch that **refuses the player the one item that gets them out of that room alive**.
+That is the Spinach_Dip shape, the failure this project treats as its worst.
+
+**The mechanism.** `rm055` `localproc_5` returns 0 unless `(global0 has: 34)`; only past that does
+it `(dink init: setScript: mainDinkScript)`. Dink's own script arms `hugScript`, whose state 5 is
+`(proc0_26 545)` — the hug kills you. So `own(34)` is in the lethal arming's guard as **Dink's
+existence condition**: the monster is there *because* you are carrying the tambourine. The
+tambourine's actual USE is `giveTamboScript` — you hand it over, Dink leaves, and the Hairpin
+drops. The item is the escape.
+
+**Why the five earlier corrections could not catch it.** Every one of them assumed the item is
+named because the player DID something: a branch (`throwSkull` vs `useBrick`), an entry state
+(LSL2's bore), an unconditional sibling arming (`emptyHandedDeath`), a register that makes one
+machine two. Here the item is named because of who was in the room.
+
+**The cure, and it is one word: SITE.** `Machine.entry_site` records each entry's guard as built
+at the arming site, before `_chain_entries` conjoins the armer's preconditions and before
+`_inherit_local_continuations` conjoins the latch writes. `entries[i]` answers *what must hold for
+this machine to run*; `entry_site[i]` answers *what the player did here*, and `fatal_uses` was
+asking the first question while meaning the second. Blaming the site, an item that reached the
+arming through inherited context is no longer a "use".
+
+**Measured.** KQ5 loses the `fatal_uses` row, the `action_specs` guard and its placement, and
+keeps `Rope@rm30/ropeOnBranch` — the true positive, where the rope IS thrown at the branch.
+**KQ6 keeps `throwSkull@rm420`**, the corpus's other row and the one the whole detector exists
+for: the skull's `own` comes from `theGears doVerb 51`, at the site. LSL2, KQ4, KQ6 and LB2
+byte-identical on the full snapshot surface, placements included.

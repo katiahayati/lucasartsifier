@@ -210,6 +210,29 @@ KNOWN_RED = {
     # the check is a permanent green pin. docs/LB2-ORACLE.md §7ag.
 
     "test_kq5_ground_truth.py": {
+        # 🔴 DECLARED 2026-08-16b, AWAITING A RULING -- and it is not a new row, it is a row the
+        # ALLOW-LIST WAS HIDING. Curing the tambourine's `fatal_uses` FP emptied `FP_EMITTED`, and
+        # with the item off the allow-list the suspicion check finally sees what `analyze` has
+        # been saying about it all along:
+        #
+        #     Tambourine: need@rm55 sources=[13] frontier=rm40->rm41
+        #
+        # Verified pre-existing, not caused by the cure: `Tambourine` is in `softlock_items` and
+        # `has: 34` is a conjunct of the `rm40->rm41` edge spec in the snapshots taken BEFORE the
+        # cure (this morning's and this evening's alike), and the cure's own five-game diff shows
+        # only removals. The claim is that the tambourine's source (rm13, the fortune teller) is
+        # on the far side of the ROC -- the same frontier carrying Harp, Beeswax, Crystal and
+        # Locket, all four USER-RULED REAL on 2026-08-15 -- while its use (giving it to Dink for
+        # the Hairpin) is at rm55, past it. Structurally identical to four confirmed catches.
+        #
+        # ⚠️ AN FP ENTRY IN AN ALLOW-LIST SUPPRESSES EVERY ROW FOR THAT ITEM, including true ones.
+        # That is the lesson worth keeping from this one.
+        "no UNEXPECTED item flagged (suspicion)":
+            "the Tambourine's analyze row (need@rm55, source rm13, frontier rm40->rm41) is "
+            "visible for the first time now that the cured fatal_uses FP no longer allow-lists "
+            "the item. Same shape as four user-ruled catches on the same frontier. Promote or "
+            "refute with the user; do not edit EXPECTED_CAUGHT unilaterally.",
+
         # KQ5's oracle landed 2026-08-14 (docs/KQ5-ORACLE.md: game source + three independent
         # walkthroughs) with five caught softlocks pinned green and these five declared red the
         # same day. The first two share one root -- the (room, register-value) trapped state --
@@ -306,12 +329,18 @@ KNOWN_RED = {
         # Rebuilt GREEN as two pins: "the worn-amulet fireball fork demands the Amulet in every
         # forest room" (the demand, which is what the fix bought) and "no detector claims the
         # Amulet is STRANDED" (the FP guard, same shape as the Wand's). docs/KQ5-ORACLE.md §7.
-        "🔴 KNOWN FP (KQ5): fatal_uses does not condemn the tambourine":
-            "hugScript (Dink's hug, proc0_26 death) arms under own(34) because Dink only "
-            "EXISTS while you hold the tambourine, and giving it (giveTamboScript, the "
-            "hairpin's source) is the escape from that very machine. Savior-condemned family, "
-            "sixth member, NEW POLARITY: the item rides the arming guard, not a branch. The "
-            "cure belongs in fatal_uses' survivability reading, not in the oracle.",
+        # ✅ PROMOTED 2026-08-16b -- "🔴 KNOWN FP (KQ5): fatal_uses does not condemn the
+        # tambourine" is GREEN and no longer listed. The SIXTH savior-condemned correction, and
+        # the first where the item was named by WHO WAS IN THE ROOM rather than by anything the
+        # player did: Dink is init:ed only under `(has: 34)`, his script arms `hugScript`, and
+        # hugScript's state 5 is a death -- so own(34) sat in the lethal entry as the monster's
+        # existence condition. Giving the tambourine is the ESCAPE, so the row became
+        # `action_specs: Tambourine@rm55: (not (has: 34))` -- a SHIPPED PATCH WITHHOLDING THE
+        # ITEM THAT SAVES YOU, the Spinach_Dip shape. Cured by `Machine.entry_site`: the guard as
+        # built at the arming site, before `_chain_entries` and `_inherit_local_continuations`
+        # strengthen it. `entries[i]` is what must hold; `entry_site[i]` is what the player did,
+        # and fatal_uses wanted the second. KQ6's skull survives (its own() comes from
+        # `theGears doVerb 51`, at the site); LSL2/KQ4/KQ6/LB2 byte-identical.
     },
 }
 

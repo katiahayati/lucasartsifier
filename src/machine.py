@@ -84,6 +84,13 @@ class Machine:
     entry_sources: list = field(default_factory=list)   # PARALLEL to entries: the METHOD the
     #   arming was found in ("init", "doit", "cue", a proc, ...). A `cue` is not a way IN -- see
     #   MachineBuilder._drop_continuation_entries.
+    entry_site: list = field(default_factory=list)      # PARALLEL to entries: the guard AS BUILT
+    #   AT THE ARMING SITE, before `_chain_entries` conjoined the armer's preconditions and before
+    #   `_inherit_local_continuations` conjoined the latch writes. `entries[i]` is what must HOLD
+    #   for the machine to run; this is what the player DID here, and the two are not the same
+    #   question. `fatal_uses` needs the second one: an item is a fatal USE only if using it is
+    #   what armed the death -- an item that reaches the arming through inherited context was
+    #   carried, not used. KQ5's tambourine is the case (docs/KQ5-ORACLE.md §14).
     restores_control: set = field(default_factory=set)  # states whose body sends a derived
     #   control-restore selector (SCI1.1's handsOn -- vocab.derive_control_selectors): the player
     #   is free to act while this state waits. What lets fatal_uses treat a wait-on-the-clock
@@ -708,6 +715,7 @@ class MachineBuilder:
         m.entry_armers = [m.entry_armers[i] for i in keep]
         m.entry_sources = [m.entry_sources[i] for i in keep]
         m.entry_recv = [m.entry_recv[i] for i in keep]
+        m.entry_site = [m.entry_site[i] for i in keep]
         # `init_entry_idx` points INTO `entries`, so re-index it here or the arrival copies
         # would later be restated from whatever entry slid into the dropped row's place. A
         # dropped row is always a `cue` arming and an init entry never is, so nothing an init
@@ -883,6 +891,8 @@ class MachineBuilder:
         m.entry_armers.append(armer)
         m.entry_sources.append(source)
         m.entry_recv.append(recv)
+        m.entry_site.append(guard)        # frozen here; the strengthening passes rewrite
+        #   `entries[i]` and deliberately leave this alone. See Machine.entry_site.
         if is_init:
             m.init_entries.append((state, guard))
             m.init_entry_locals.append(dict(locals_))

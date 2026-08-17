@@ -3653,7 +3653,7 @@ class IrSccReach(SccReach):
                 # PER ENTRY, because the state an arming enters at decides whether it is
                 # survivable: LSL2's bore talks you to death from state 0 and is SHUT UP by
                 # `(boreScript changeState: 10)`, which is what giving him the pamphlet does.
-                lethal = [(K, g) for K, g in (info.get("entries") or ())
+                lethal = [(i, K, g) for i, (K, g) in enumerate(info.get("entries") or ())
                           if not _survivable(info, unavoidable, handoff, start=K,
                                              preempt=_preempt(info))]
                 if not lethal:
@@ -3668,12 +3668,33 @@ class IrSccReach(SccReach):
                 #
                 # (`_own_required` inside each, for the usual reason: an item in one arm of an OR
                 # is a way to arm this, not a thing you must hold.)
-                blame = set.intersection(*[set(_own_required(g)) for _K, g in lethal])
+                #
+                # ...AND READ AT THE ARMING SITE, NOT THROUGH THE INHERITED CHAIN -- the SIXTH
+                # correction, and it is a new polarity. Every one before it assumed the item is
+                # named because the player DID something with it. `entries[i]` is not that: the
+                # strengthening passes conjoin the armer's preconditions (`_chain_entries`) and
+                # the latch writes onto it, so an item that merely had to be in your pocket for
+                # the SCENE to exist lands in the same conjunction as one you clicked.
+                #
+                # KQ5's tambourine is the case and the row it produced was advice you cannot
+                # follow. Dink is `init:`ed only under `(has: 34)` (rm055 `localproc_5`), his own
+                # script arms `hugScript`, and hugScript's state 5 is `(proc0_26 545)` -- so
+                # own(34) reached the lethal entry as DINK'S EXISTENCE CONDITION. Meanwhile the
+                # tambourine's actual use, `giveTamboScript`, is the ESCAPE from that machine and
+                # the hairpin's source. Blaming the item told the player to drop the one thing
+                # that saves them -- the same shape as condemning the hole-in-the-wall, one scope
+                # further out. `entry_site` is the guard as built at the site, so the item has to
+                # be part of what was DONE here to be blamed. Falls back to the full entry guard
+                # when a machine predates the field, which is the previous reading.
+                sites = info.get("entry_site") or ()
+                blame = set.intersection(*[
+                    set(_own_required(sites[i] if i < len(sites) else g))
+                    for i, _K, g in lethal])
                 for it in blame:
                     if (it, room) not in seen:
                         seen.add((it, room))
                         out.append({"item": it, "room": room, "machine": info["inst"],
-                                    "states": sorted(K for K, _g in lethal)})
+                                    "states": sorted(K for _i, K, _g in lethal)})
         return out
 
     def ownedby_death_folds(self):

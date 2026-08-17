@@ -145,12 +145,13 @@ EXPECTED_CAUGHT = {
 # does not exist yet. The 13 exhaustion rows are its coarse shadow; tolerated, not demanded.
 ALLOWED_OPEN = {"Bag_of_Peas"}
 
-# F -- FALSE POSITIVE TO CURE, savior-condemned with a NEW POLARITY: Dink inits only while
-# `own(34)` holds, so hugScript's unsurvivable arming carries the tambourine in its ENTRY guard
-# (the monster's existence condition) rather than a branch -- and giving the tambourine
-# (`giveTamboScript`, `put: 34`, drops the Hairpin) is the escape from that very machine.
-# Holding it there is mandatory for progress, so the row's advice is unfollowable. The dedicated
-# red below owns this; the item sits in ALLOWED so the suspicion check does not double-count it.
+# F -- FALSE POSITIVES WE EMIT. ✅ EMPTY SINCE 2026-08-16b: the Tambourine was the last one and
+# it is CURED. Dink inits only while `own(34)` holds, so hugScript's unsurvivable arming carried
+# the tambourine as the monster's EXISTENCE CONDITION rather than as anything the player did --
+# and giving it (`giveTamboScript`, `put: 34`, drops the Hairpin) is the escape from that very
+# machine. `fatal_uses` now blames `entry_site` (what the arming site required) instead of the
+# entry guard the strengthening passes had grown; KQ6's skull, whose own() comes from
+# `theGears doVerb 51` at the site, is untouched. docs/KQ5-ORACLE.md §14.
 #
 # ✅ THE WAND LEFT THIS SET 2026-08-15, CURED -- see the green pin below and docs/KQ5-ORACLE.md
 # §10. It had been emitted since before the oracle existed. The cure is NOT the never-strandable
@@ -158,7 +159,7 @@ ALLOWED_OPEN = {"Bag_of_Peas"}
 # source: rm66's machine tray really does take the wand, it just hands it straight back), but
 # `missability._unrefusable_grants` -- rm1's `init` gives Crispin's wand to anyone who does not
 # have it, so no state past rm1 lacks it, and `_reach_without` no longer walks through it.
-FP_EMITTED = {"Tambourine"}
+FP_EMITTED = set()
 
 ALLOWED = EXPECTED_CAUGHT | ALLOWED_OPEN | FP_EMITTED     # column B is empty since 2026-08-16b
 
@@ -472,12 +473,19 @@ def run():
           f"it (rm13 is 1 screen away; USER-RULED 2026-08-16b). A row here is a false positive "
           f"to investigate, not a catch. docs/KQ5-ORACLE.md §7.")
 
+    # ✅ PROMOTED 2026-08-16b (was 🔴 KNOWN FP) -- the sixth savior-condemned correction. The row
+    # was not merely noise: the tool SHIPPED `action_specs: Tambourine@rm55: (not (has: 34))`,
+    # a patch refusing the player the item that gets them out of rm55 alive. `fatal_uses` now
+    # blames what the arming SITE required (`Machine.entry_site`), not what `_chain_entries` and
+    # `_inherit_local_continuations` had grown onto the entry guard -- so an item that reached the
+    # arming as Dink's existence condition is no longer read as a use. The assertion stays live:
+    # this is the family that keeps producing new polarities.
     tambo_fatal = [r for (n, d, r) in raw_rows if n == "Tambourine" and d == "fatal_uses"]
-    check("🔴 KNOWN FP (KQ5): fatal_uses does not condemn the tambourine", not tambo_fatal,
-          "hugScript's arming carries own(34) because Dink EXISTS only while you hold the "
-          "tambourine, and giving it is the escape -- the sixth savior-condemned correction, "
-          "new polarity (the item rides the arming guard, not a branch). Cure the detector; "
-          "do not edit this oracle row.")
+    check("fatal_uses does not condemn the tambourine", not tambo_fatal,
+          f"REGRESSION, and a dangerous one -- rows={tambo_fatal}. Dink EXISTS only while you "
+          f"hold the tambourine and giving it is the escape, so a row here becomes a patch that "
+          f"withholds the item that saves the player. Check that fatal_uses still reads "
+          f"`entry_site` rather than `entries`. docs/KQ5-ORACLE.md §14.")
 
     # ✅ PROMOTED 2026-08-16 (was 🔴 KNOWN FP), and it took test_toll.py's two KQ5 assertions
     # green with it, exactly as the red predicted. rm683 is `cdCassimaToon`, a CD cutscene that
