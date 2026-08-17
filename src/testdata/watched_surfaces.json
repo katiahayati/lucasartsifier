@@ -50,6 +50,7 @@
       "mint or peppermint@750"
     ],
     "joint": [],
+    "market": [],
     "ownedby_death_folds": [],
     "placements": [
       "Main/mint: applied=True kind=None",
@@ -151,6 +152,7 @@
     ],
     "groups": [],
     "joint": [],
+    "market": [],
     "ownedby_death_folds": [],
     "placements": [
       "rm210: applied=True kind=setscript sites=1",
