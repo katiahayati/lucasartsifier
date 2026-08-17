@@ -389,41 +389,40 @@ KNOWN_RED = {
         # marks Sierra's intended pairing. We already knew that tell is not a softlock signal --
         # the Lamb and the Fish score nothing at the cat and still save the mouse.
         #
-        # 🔴 AND THE ROW THAT REPLACES IT, declared the same day. USER, immediately after refuting
-        # the single-payment claim: *"yes but you CAN ... waste your gold on the toy maker and the
-        # cloak"*. The gypsy's slot is {Golden_Needle 3, Gold_Coin 11} and nothing else fills it,
-        # so spending BOTH at slots that merely accept them leaves the Amulet unbuyable -> no
-        # forest -> no rm24 -> no Beeswax, which rms 44-47 need.
-        # 🔴 AND THE HEART, declared the same day. USER: *"you need the heart for something else,
-        # so that would be a sink too"* -- and they are right, on exactly the Fish's argument: the
-        # enchanted princess at rm9 (`rm009.sc:936/990`) dispatches item 9 ALONE, she is the Harp's
-        # sole source, and the Harp is required at rm90/92/682 across the roc's point of no return.
-        # So unlike the needle and the gold coin, paying a shopkeeper with the Heart is a ONE-
-        # payment walking dead. We miss it because the shop payments are MACHINE drops and
-        # `destroying_sinks` walks only `handler_drops`.
-        # ⛔ THE ONE-LINE WIDENING WAS TRIED AND MEASURED AND IS NOT SHIPPABLE: walking
-        # `machine_moves` finds the 3 Heart rows and NINETEEN false ones on KQ5 -- 13 Cat_Fish + 3
-        # Beeswax where the spend and the need are the same region-homed site seen once per room,
-        # and a `Wand@rm66` that re-creates the FP the user ruled on 2026-08-15 through a detector
-        # it never came through before. ⛔⛔ AND IT MOVES A GOLDEN: KQ4 gains three
-        # `Shakespeare_Book@rm13/14/19` rows, the same region-broadcast family (script 203 serves
-        # all three rooms). LSL2, KQ6 and LB2 were unmoved. A same-scope conjunct (a consumer
-        # inside the spend's own script is one event, not two competing ones) cures both broadcast
-        # families and NOT the Wand, so the cure is at least two pieces. Do not ship it alone.
-        "🔴 KNOWN GAP (KQ5): spending the Heart at a shop is condemned by the Harp it costs":
-            "the tailor, toy maker and baker all accept the Heart(9), but its other consumer -- "
-            "the enchanted princess at rm9 -- accepts nothing else and is the Harp's only source. "
-            "Needs `destroying_sinks` to walk `machine_moves`; measured, that alone costs 19 "
-            "false positives including a re-created Wand FP.",
-        "🔴 KNOWN GAP (KQ5): the shop market squeeze is caught":
-            "the gypsy's slot {3,11} can be emptied by the toy maker and the tailor, which the "
-            "USER confirmed 2026-08-17 is a real dead end. Two payments, so no single-spend "
-            "detector can state it. The shape is GROUP STARVATION -- Hall's condition over the "
-            "four slots `disjunctive_groups` already derives -- and the conjunct that separates "
-            "it from the throwable pool is ARMING: the cat and dog scenes refuse to start without "
-            "ammunition (`rm006.sc:112`), the shops take your last token happily. ⛔ NOT "
-            "`group_strandings`, which asks about reachability to SOURCES, not competing "
-            "consumption.",
+        # ✅ BOTH 2026-08-17 REDS PROMOTED 2026-08-17b -- "the shop market squeeze is caught" and
+        # "spending the Heart at a shop is condemned by the Harp it costs" are GREEN and no longer
+        # listed, closed by ONE detector because they were never two problems. The USER's framing,
+        # verbatim: "the 3 vendors and the gypsy each accepting some payments that can starve
+        # other merchants, when everything you get from the merchants is required."
+        # `missability.market_squeezes` derives the market (who must be paid, out of which
+        # one-copy tokens -- four requiredness readings, each corpus-witnessed, see its
+        # docstring) and condemns a payment exactly when the residual has no perfect matching.
+        # KQ5 9 rows: the heart at any shop (the princess starves -- the Harp's sole source),
+        # the needle/gold coin at the toy maker or baker (the gypsy-tailor-princess triangle
+        # drops to two tokens for three purchases), and the pie eaten or fed to the eagle (the
+        # yeti's rm35 fold, restated from the matching side). MEASURED: LSL2 0, KQ4 0, KQ6 0,
+        # LB2 0. Every user-ruled safe play is silent: needle->gypsy, coin->tailor, the pool.
+        #
+        # ⚠️ The squeeze's old "needs TWO payments" framing was SHARPENED by the user's cloak
+        # ruling ("the cloak is needed", 2026-08-17b): with all five products required the
+        # needle/coin rows are ONE-payment dead ends -- the old two-payment story rested on the
+        # heart covering the tailor, which the Heart ruling itself removed.
+        #
+        # ⛔ The Heart red's DECLARED CURE was wrong, and it was measured twice and rejected
+        # twice: widening `destroying_sinks` over `machine_moves` cost 19 FPs on 2026-08-17,
+        # and after the region-broadcast and put-HERE causes were fixed it still cost 8 KQ6
+        # rows (the pawn shop reading intended uses as competing with the rm280 counter) and
+        # 2 LB2 pressPass rows CARRYING TWO SHIPPED PLACEMENTS -- and KQ6 is GOLDEN, exactly
+        # like LSL2/KQ4 (user, "as I've said many times"). The market states the same Heart
+        # facts with zero movement anywhere else. [[re-derive-a-reds-premise]], for a cure.
+        #
+        "🔴 KNOWN GAP (KQ5): eating the lamb is condemned by the eagle it starves":
+            "the eagle's consumer IS derived (the rm42 fold demands owner(19) == 34), but the "
+            "lamb reads restockable -- its cupboard pickup (rm028 openCup, gated on owner == 28) "
+            "is not owner-gated in the model, the same acquisition gap as the Coin and the "
+            "Marionette -- so the consumer is auto-satisfiable and exerts no pressure. USER-ruled "
+            "real 2026-08-17b (\"you need both the pie and the lamb\"). The cure is at the "
+            "acquisition read, not in the detector.",
         # ✅ RETIRED 2026-08-16b, USER-RULED -- "🔴 KNOWN GAP (KQ5): the witch-region worn-amulet
         # death fold is caught" is gone because it DEMANDED THE WRONG ROW, not because a build
         # landed. It asserted that some detector flags the Amulet, on the oracle's old verdict

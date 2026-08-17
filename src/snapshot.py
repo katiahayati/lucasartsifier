@@ -47,7 +47,8 @@ def snapshot(cfg, with_placements=False):
                    | {d["item"] for d in s.dangerous_sinks()}
                    | {f["item"] for f in s.fatal_uses()}
                    | {r["item"] for r in s.register_strandings()}
-                   | {r["item"] for r in s.ownedby_death_folds()})
+                   | {r["item"] for r in s.ownedby_death_folds()}
+                   | {r["item"] for r in s.market_squeezes()})
     # REGISTER-VALUE strandings, unconditional like every other detector -- see the note at the
     # bottom of this comment block for what used to be here and why it went.
     #
@@ -78,6 +79,12 @@ def snapshot(cfg, with_placements=False):
         "softlock_items": [s.g.item_name(i) for i in items],
         "groups": sorted(" or ".join(r["item_names"]) + f"@{r['need_room']}"
                          for r in s.group_strandings()),
+        # The market squeezes (2026-08-17b): a payment that leaves some merchant unpayable,
+        # frozen with WHOM it starves -- a row that keeps its rooms but starves someone else is
+        # a different claim and must read as one. Empty on LSL2/KQ4/KQ6/LB2 (measured at birth);
+        # KQ5 carries the town market and the yeti's pie.
+        "market": sorted(f"{r['item_name']}@rm{r['at_room']}/{r['script']}"
+                         f"->starves rm{r['starves']}" for r in s.market_squeezes()),
         "exhaustion": sorted(f"{r['item_name']}@{r.get('at_rooms', r['at_room'])}"
                              f"->{r['still_needed_at']}" for r in s.resource_exhaustion()),
         "joint": sorted(f"{f['item_name']}@{f['stranded_at']}" for f in s.joint_strandings()),

@@ -270,18 +270,26 @@ And the escape hatch that exists on paper is closed in practice — the tailor's
 Heart(9), is sourced at rm21, two screens inside the forest the Amulet opens.
 
 **Verdict: TRUE softlock (walking-dead class), tier 1 on every `put:` and tier 2 on the
-consequence. MISSED — declared red.** The shape to build is **group starvation**: a disjunctive
-group is starvable when the other slots that accept its members can absorb all of them and no
-arming holds them back — Hall's condition over the market, on top of the four slots
-`disjunctive_groups` already derives. ⛔ Not `group_strandings`, which asks whether a group is
-faced past a point of no return to all its *sources* — a reachability question that says nothing
-about competing consumption.
+consequence. ✅ CAUGHT 2026-08-17b — `missability.market_squeezes`**, which asks the whole
+question at once: every required consumer must be assigned a DISTINCT one-copy token it accepts,
+and a payment is fatal exactly when the residual market has no perfect matching. Four rows carry
+this squeeze — the needle or the gold coin at the toy maker (`getSled`) or the baker (`getPie`),
+each starving the gypsy–tailor–princess triangle `{3, 9, 11}` (two tokens left, three required
+purchases).
 
-**What the tool should say, and now does:** the market is read as four alternative-sets
-(`disjunctive_groups`: rm13 `{3,11}`, rm5 `{3,9,11}` and `{3,9,11,12}`, rm206 `{3,4,9,11}`) and
-**no detector strands a token**. Both halves are pinned green in `test_kq5_ground_truth` — the
-same shape §7's amulet ruling took. A future Golden_Needle or Gold_Coin stranding row is a false
-positive to investigate, not a catch.
+⭐ **SHARPENED by the cloak ruling (USER 2026-08-17b: *"the cloak is needed"*): these are
+ONE-payment dead ends, not two.** The old "needs two payments" framing rested on the Heart
+covering the tailor — and the user's own Heart ruling removed that cover (the Heart must reach
+the princess, §6b). Pay the toy maker with the needle and the gypsy can still be paid with the
+coin, but then the tailor's only remaining option is the Heart, which the Harp needs. The
+USER-PLAYED pair — needle→gypsy, coin→tailor — emits nothing, as it must. ⛔ Not
+`group_strandings`, which asks whether a group is faced past a point of no return to all its
+*sources* — a reachability question that says nothing about competing consumption.
+
+**What the tool says:** the market is read as four alternative-sets (`disjunctive_groups`: rm13
+`{3,11}`, rm5 `{3,9,11}` and `{3,9,11,12}`, rm206 `{3,4,9,11}`), no detector strands a *token*
+(the played pair stays silent), and the four squeeze rows above are pinned per-item in
+`test_kq5_ground_truth`. MEASURED: LSL2 0, KQ4 0, KQ6 0, LB2 0, KQ5 9.
 
 ⛔ **The scoring tell is not evidence.** `proc0_27 3` fires only for coin→gypsy and `proc0_27 4`
 only for needle→tailor, marking Sierra's intended pairing — and §1 already established that this
@@ -303,12 +311,24 @@ five consumers, zero slack:**
 | baker, rm206 → Pie | 3 · 11 · 9 · Coin(4) |
 | enchanted princess, rm9 → Harp | **9 alone** (`rm009.sc:936/990`) |
 
-Every product is required (`required[]` carries Amulet, Cloak, Sled, Pie; the Harp at rm90/92/682),
-so all five consumers must be satisfied and the only assignments that work are
-Marionette→toy maker, Coin→baker, Heart→princess, and {Needle, Gold_Coin} split between gypsy and
-tailor either way. **That last freedom is exactly the pair of plays the user made on 2026-08-17**
-(needle→gypsy then coin→cloak), which is why the single-payment row was correctly retired: one
-payment can always be absorbed by the swap, and only a second one breaks the market.
+Every product is required (`required[]` carries Amulet, Cloak, Sled, Pie; the Harp at rm90/92/682;
+the Cloak USER-CONFIRMED 2026-08-17b: *"the cloak is needed"*), so all five consumers must be
+satisfied and the only assignments that work are Marionette→toy maker, Coin→baker, Heart→princess,
+and {Needle, Gold_Coin} split between gypsy and tailor either way. **That last freedom is exactly
+the pair of plays the user made on 2026-08-17** (needle→gypsy then coin→cloak) — the ONLY freedom
+the market has. Any payment outside those assignments breaks it, which is §6a's nine rows.
+
+✅ **CAUGHT 2026-08-17b — `missability.market_squeezes` derives all of this**, with no oracle
+input: the consumers via four readings (the tailor/toy maker/baker SELL a required product; the
+gypsy from the walk — banning `{3,11}` seals rm680, the amulet handover, and rm13 is the boundary;
+the princess from the OWNER STORE — the Harp's one acquisition guard demands `owner(Heart) ∈
+{9, 21}`, paid-to-her or still-at-the-witch's, so a shop counter is a value it can never return
+from), the tokens via `drop_is_permanent` plus the toll-pocket read (the Gold_Coin is restockable
+by `rm018::init` — what makes yours the only one is that the temple door ate the Staff), and the
+verdict via a perfect matching over the residual. The toy maker and baker participate as
+AUTO-SATISfiable consumers (their Marionette/Coin still read restockable — an acquisition-side
+gap, not a market one), which changes no verdict: their edges are tested, their pressure is not
+needed.
 
 ⭐ So §6a is not a special fact about the gypsy — it is what a tight market does. Guarding it is
 guarding the tight set, not the assignment matrix ([[kq5-market-squeeze-patch-design]]).
@@ -329,6 +349,15 @@ is what makes the eagle's `{2,19}` a genuine starvation target rather than a fre
 spend of either token elsewhere strands somebody.** The Pie's other absorber is the Main-script
 EAT verb (`Main.sc:1041`, `(gEgo put: 2 1)`); the Lamb's are the cat, the dog, and eating it a
 second time (`Main.sc:1054/1058` — the first bite hands you a half lamb back, the second does not).
+
+**Status, split by token (2026-08-17b).** The PIE half is ✅ CAUGHT twice over — `dangerous_sinks`
+(Pie@rm1 eaten, Pie@rm34 fed to the eagle, both golden'd) and now `market_squeezes` (the same two
+spends starving the yeti, whose consumer is DERIVED from the rm35 fold: reading (d), a death
+fold's surviving arm demanding `owner(Pie) == 36` is "the yeti must have been paid"). The LAMB
+half is 🔴 a DECLARED RED: the eagle's consumer derives the same way (rm42, `owner(19) == 34`),
+but the Lamb still reads restockable — `rm028`'s cupboard pickup is not owner-gated in the model,
+the same acquisition gap as the Coin and the Marionette — so the consumer is auto-satisfiable and
+eating the lamb emits nothing. The cure is at the acquisition read, not in the detector.
 
 ## 7. The witch and the worn amulet (tier 1) — REQUIRED, but NOT a stranding
 
@@ -453,10 +482,11 @@ exactly two lines:
 
 ## Scorecard (2026-08-14)
 
-⛔ **This is a work in progress, not a finished oracle.** Four rows are MISSED with a declared
-red apiece, one is a false positive we still emit, and rows 9–12 rest on tier-3 or open
-verdicts. Two builds landed on 2026-08-14 (phase 1: owner-value death folds; phase 2:
-item-banned fetch walks) and the remaining phases are unbuilt. A passing test run means the
+⛔ **This is a work in progress, not a finished oracle.** One row is MISSED with a declared red
+(9c, the lamb — an acquisition-read gap, not a detector one), and rows 11–12 rest on tier-3 or
+open verdicts. Builds: 2026-08-14 (phase 1 owner-value death folds; phase 2 item-banned fetch
+walks), 2026-08-16b (`window_closures`), 2026-08-17 (`dangerous_sinks` via the owner graph),
+2026-08-17b (`market_squeezes` — the market as one matching). A passing test run means the
 catches listed as CAUGHT are still caught for the mechanism stated — it does not mean KQ5 is
 covered.
 
@@ -473,7 +503,9 @@ covered.
 | 7 | rope on the branch | fatal use | **CAUGHT** (fatal_uses) |
 | 8 | tambourine near Dink | savior-condemned, arming polarity | ✅ **FP CURED 2026-08-16b (§14).** `fatal_uses` now blames what the arming SITE required, not what the inherited chain did; the row and its `(not (has: 34))` action spec are gone, and KQ6's skull is untouched |
 | 9 | ~~needle to the fortune teller~~ | — | ⭐ **NOT A SOFTLOCK — USER-RULED IN THE GAME 2026-08-17, row withdrawn.** The gypsy takes the needle, and the tailor then sells the cloak for the gold coin. The stated reason was already source-refuted (`tailorShop.sc:143–151` takes needle *or* gold coin *or* heart): KQ5 runs a five-token market over four purchases in which every token is reachable before the amulet is, so a perfect assignment survives any single payment and emitting nothing is CORRECT. Rebuilt as two green pins (the market reads as four alternative-sets; no single payment is condemned). Superseded by row 9a, which is the dead end this row was groping at. See §6 |
-| 9a | **the shop market squeeze** | group starvation (Hall's condition) | **TRUE, MISSED — declared red 2026-08-17.** USER: *"you CAN … waste your gold on the toy maker and the cloak."* The gypsy's slot `{3,11}` has no other filler, so spending both tokens at slots that merely accept them leaves the Amulet unbuyable → no forest → no rm24 → no Beeswax. Two payments, so no single-spend detector reaches it. ⭐ What separates it from the retired throwable-pool FP is ARMING: the cat/dog scenes refuse to start without ammunition (`rm006.sc:112`); the shops take your last token happily, and the tailor's third option (the Heart) is inside the forest the Amulet opens. See §6a |
+| 9a | **the shop market squeeze** | the market: perfect matching over required consumers | ✅ **CAUGHT 2026-08-17b (`market_squeezes`).** USER 2026-08-17: *"you CAN … waste your gold on the toy maker and the cloak"*; SHARPENED 2026-08-17b by the cloak ruling into ONE-payment dead ends. Four rows: needle/gold coin at the toy maker or baker, each starving the gypsy–tailor–princess triangle. The played pair (needle→gypsy, coin→tailor) emits nothing. LSL2/KQ4/KQ6/LB2 all 0. See §6a/§6b |
+| 9b | **the Heart at any shop** | the market: the princess accepts item 9 alone | ✅ **CAUGHT 2026-08-17b (`market_squeezes`), same detector, same fact.** USER 2026-08-17: *"you need the heart for something else, so that would be a sink too."* Three rows — tailor, toy maker, baker — each starving the princess, the Harp's sole source; her requiredness is DERIVED from the owner store (the Harp's acquisition demands `owner(Heart) ∈ {9, 21}`). ⛔ The red's declared cure (widen `destroying_sinks` over `machine_moves`) was measured twice and rejected twice — 19 FPs, then 8 KQ6 rows + 2 LB2 rows with shipped placements, and KQ6 is GOLDEN. See §6b |
+| 9c | **eating the lamb → eagle starves** | the market: the rm42 fold is the eagle's consumer | 🔴 **TRUE, MISSED — declared red 2026-08-17b.** USER: *"you need both the pie (for the yeti) and the lamb (for the eagle)."* The consumer derives (reading (d), `owner(19) == 34`), but the Lamb reads restockable — `rm028`'s cupboard pickup is not owner-gated in the model — so it exerts no pressure. Cure at the acquisition read. See §6c |
 | 10 | ~~forest without worn amulet~~ | possession death fold, flag 84 | ⭐ **NOT A SOFTLOCK — USER-RULED 2026-08-16b.** You need the amulet, but rm19 is one screen in and you can walk back out to rm13 for one (98/100 rooms still reachable). The DEMAND is modelled (`required[27]` covers all seven forest rooms since the `(+= state N)` fix, §13) and no stranding row is emitted — both pinned green. ⛔ The old "MISSED (region scope)" reading was wrong twice: region scope was never the blocker |
 | 11 | locket window missed | one-shot window (tier 3) | MISSED, unverified |
 | 12 | peas exhaustion | consumable | OPEN (13 noisy rows). Note the emptied bag is REQUIRED — the walkthrough sacks the cat with it — so the peas are not pure flavour |

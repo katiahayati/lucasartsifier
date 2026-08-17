@@ -580,9 +580,13 @@ class OpEmitter:
                 for (_g, _w, gg, _c, _tr) in paths:
                     for it in gg:
                         self.machine_gets.add((info["room"], info["inst"], it))
-        # EVERY item transfer a machine makes, destination kept: (room, script, item, guard, dest),
-        # the shape `handler_moves` already uses so a reader can concatenate the two without
-        # caring which scope moved the item. A cutscene that hands an item BACK to the world --
+        # EVERY item transfer a machine makes, destination kept:
+        # `(room, script, item, guard, dest, inst)` -- `handler_moves`' shape plus the INSTANCE,
+        # so a reader can concatenate the two without caring which scope moved the item and can
+        # still tell one site from a copy of itself. The instance is what makes a REGION-HOMED
+        # spend nameable: `castle.sc` is live in fourteen rooms and contributes one row per room
+        # for the same statement, which read as fourteen competing consumptions.
+        # A cutscene that hands an item BACK to the world --
         # KQ4's Cupid parking his bow in limbo 202 until he next flies past -- is invisible in
         # `machine_gets` (item only, and this one is not a get) and in `handler_moves` (it is not
         # a handler), so the only reading of "the item went somewhere" was the flat one that
@@ -590,7 +594,8 @@ class OpEmitter:
         self.machine_moves = []
         for info in self.machines:
             for (it, dest, g) in info.get("moves", ()):
-                self.machine_moves.append((info["room"], info["script"], it, g, dest))
+                self.machine_moves.append((info["room"], info["script"], it, g, dest,
+                                           info["inst"]))
 
         # Control-map oracle FIRST (reads the PIC control plane + VIEW cels, not declared):
         #  - prop-gate  (rm82): machine EXIT->83 requires causedEruption (the aDoor Prop covers

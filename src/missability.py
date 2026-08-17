@@ -2536,6 +2536,31 @@ def blocked(alts, banned):
     return bool(alts) and all(a & banned for a in alts)
 
 
+def _saturating_matching(left, adj):
+    """Assign every node in `left` a DISTINCT partner from `adj[node]`, or None if impossible.
+
+    Textbook Kuhn augmenting-path matching. The distinctness IS the content: one shopkeeper
+    eats one token, which is what separates a market from a mere disjunction. Deterministic --
+    callers pass `left` and each `adj` list sorted -- so a reported witness does not wander
+    between runs."""
+    matchL, matchR = {}, {}
+
+    def augment(u, seen):
+        for v in adj.get(u, ()):
+            if v in seen:
+                continue
+            seen.add(v)
+            if v not in matchR or augment(matchR[v], seen):
+                matchR[v], matchL[u] = u, v
+                return True
+        return False
+
+    for u in left:
+        if not augment(u, set()):
+            return None
+    return matchL
+
+
 def edge_meta(em, regs):
     """(a,b) -> [(req, sets, alts)] for the discovered gating `regs`.
 
@@ -4045,7 +4070,7 @@ class IrSccReach(SccReach):
                 out[src].add(E.EGO)
         moves = [(room, g, dest) for room, script, it, g, dest in self.em.handler_drops
                  if it == item]
-        moves += [(room, g, dest) for room, script, it, g, dest
+        moves += [(room, g, dest) for room, script, it, g, dest, _inst
                   in getattr(self.em, "machine_moves", ()) if it == item and dest != E.EGO]
         for (room, g, dest) in moves:
             for src in (_loc_values(g, item, room) or {None}):
@@ -5478,6 +5503,280 @@ class IrSccReach(SccReach):
                              "items": sorted(G),
                              "item_names": [self.g.item_name(i) for i in sorted(G)],
                              "need_room": R, "source_rooms": sorted(srcs)})
+        return rows
+
+    def _market(self):
+        """The game's MARKET: who must be paid, out of which one-copy tokens.
+
+        A CONSUMER is a site that permanently absorbs an item and must be satisfied on every
+        winning path. A TOKEN is a single-copy item some consumer accepts. KQ5's town is the
+        motivating instance and the USER's own framing (2026-08-17b): four merchants and the
+        enchanted princess, five one-use tokens, zero slack --
+
+            gypsy   {Needle, Gold_Coin}          -> the Amulet
+            tailor  {Needle, Gold_Coin, Heart}   -> the Cloak
+            toy maker  + Marionette              -> the Sled
+            baker      + Coin                    -> the Pie
+            princess {Heart, and nothing else}   -> the Harp
+
+        Returns (consumers, tokens): consumers as a list of dicts with `accept` / `rooms` /
+        `dests` / `keys` (the (kind, script, inst) site identities behind it) / `why`, split by
+        `constrains` -- a consumer whose accept-set contains a RESTOCKABLE token can never
+        starve, so it exerts no pressure on the matching and is kept only so its own payment
+        edges read as satisfaction rather than as waste.
+
+        HOW A SITE BECOMES A CONSUMER -- one absorbing-site sweep, then four independent
+        derivations of "must be satisfied", each with its corpus witness:
+
+          (a) it SELLS a required product: the machine that takes the fee also performs the
+              `get:` of an item `required` somewhere (KQ5's tailor -- `soldCloak` takes
+              needle/coin/heart and hands over the Cloak, demanded at rm29/30).
+          (b) banning its whole accept-set SEALS a required item, and this site is on the
+              BOUNDARY of the sealed region (its rooms are in the lost region or open the door
+              into it). The gypsy: without ever holding {3, 11} the walk never reaches rm680,
+              the amulet handover, and rm13 is the door. ⛔ The boundary conjunct is the
+              attribution: banning a token kills EVERY consumer of it at once, and without the
+              conjunct KQ6's gears DEATH TRAP inherited the night mare's skull requirement.
+          (c) every acquisition of a required item happens AT THIS SITE and demands one of its
+              tokens (KQ5's toy chain: the Marionette is acquired at rm10 and every acquisition
+              demands the Spinning_Wheel).
+          (c2) an acquisition READS THE OWNER STORE as "paid here or still unspent": the Harp's
+              one acquisition guard demands owner(Heart) in {9, 21} -- given to the princess, or
+              still at the witch's house -- so a foreign spend (owner := a shop) makes it
+              permanently false. The game wrote the market constraint down itself.
+          (d) a DEATH FOLD is a consumer: `ownedby_death_folds` rows demand owner(t) == dest on
+              the surviving arm -- "the yeti must have been thrown the Pie" (rm35), "the eagle
+              must have been fed the Lamb" (rm42). Same read as (c2) with the death standing in
+              for the acquisition.
+
+        Sites are merged twice: alternative armings of one purchase (same rooms + accept --
+        changePrincess/slowChangePrincess), then machine/fold views of one counter (a shared
+        POSITIVE destination with overlapping accepts -- the rm86 fold and the rm6 cat handler
+        are one bank). ⛔ -1/limbo is not a counter and never merges: "everything ever destroyed"
+        is not a consumer, and merging on it swallowed KQ6's `useBrick` whole."""
+        if getattr(self, "_market_cache", None) is not None:
+            return self._market_cache
+        pockets = self._single_copy_pockets()
+        single = lambda t: self.destroyed_is_permanent(t) or t in pockets
+        lost = lambda it, dest: dest != E.EGO and (
+            dest in self.NOWHERE or self.drop_is_permanent(it, dest) or it in pockets)
+        mg = getattr(self.em, "machine_gets", set())
+
+        raw = {}
+        for info in self.em.machines:
+            ents = list(info.get("entries", ())) + list(info.get("init_entries", ()))
+            spend = {it for (it, dest, g) in info.get("moves", ()) if lost(it, dest)}
+            if not spend or not ents:
+                continue
+            accept = set()
+            for K, eg in ents:
+                accept |= _own_required(eg)
+            if not (accept & spend):
+                continue
+            c = raw.setdefault(("m", info["script"], info["inst"]),
+                               {"accept": set(), "rooms": set(), "products": set(),
+                                "dests": set(), "fold": None})
+            c["accept"] |= accept
+            c["rooms"].add(info["room"])
+            c["dests"] |= {d for (it, d, g) in info.get("moves", ()) if d != E.EGO}
+            c["products"] |= {it for (r, i, it) in mg
+                              if r == info["room"] and i == info["inst"]}
+        for room, script, it, g, dest in self.em.handler_drops:
+            if lost(it, dest):
+                c = raw.setdefault(("h", script, dest),
+                                   {"accept": set(), "rooms": set(), "products": set(),
+                                    "dests": {dest}, "fold": None})
+                c["accept"].add(it)
+                c["rooms"].add(room)
+        for r in self.ownedby_death_folds():
+            by_dest = defaultdict(set)
+            for (t, d) in r.get("demand_group", ()):
+                by_dest[d].add(t)
+            for d, ts in by_dest.items():
+                c = raw.setdefault(("f", d, None),
+                                   {"accept": set(), "rooms": set(), "products": set(),
+                                    "dests": {d}, "fold": None})
+                c["accept"] |= ts
+                c["rooms"].add(r["need_room"])
+                c["fold"] = "the rm%s death fold demands owner in %s" % (
+                    r["need_room"], sorted(ts))
+
+        merged = {}
+        for key, c in sorted(raw.items(), key=str):
+            sig = (frozenset(c["rooms"]), frozenset(c["accept"]))
+            if sig in merged:
+                merged[sig]["keys"].append(key)
+                for f in ("products", "dests"):
+                    merged[sig][f] |= c[f]
+                merged[sig]["fold"] = merged[sig]["fold"] or c["fold"]
+            else:
+                merged[sig] = {**c, "keys": [key]}
+        by_dest, out = {}, []
+        for sig, c in sorted(merged.items(), key=str):
+            real = sorted(d for d in c["dests"] if isinstance(d, int) and d > 0)
+            hit = next((by_dest[d] for d in real
+                        if d in by_dest and (by_dest[d]["accept"] & c["accept"])), None)
+            if hit is not None:
+                for f in ("accept", "rooms", "products", "dests"):
+                    hit[f] |= c[f]
+                hit["keys"] += c["keys"]
+                hit["fold"] = hit["fold"] or c["fold"]
+            else:
+                out.append(c)
+            for d in real:
+                by_dest.setdefault(d, hit if hit is not None else c)
+
+        consumers = []
+        for c in out:
+            why = self._required_consumer(c)
+            if why is None:
+                continue
+            restock = sorted(t for t in c["accept"] if not single(t))
+            c["constrains"] = not restock
+            c["why"] = why if not restock else why + " [auto-satisfiable: %s restock]" % (
+                [self.g.item_name(t) for t in restock])
+            consumers.append(c)
+        tokens = sorted({t for c in consumers if c["constrains"] for t in c["accept"]})
+        self._market_cache = (consumers, tokens)
+        return self._market_cache
+
+    def _single_copy_pockets(self):
+        """Items whose ONE copy is one-visit-pocketed: the second way a world holds one of a
+        thing. `drop_is_permanent` asks the owner graph, and for KQ5's Gold_Coin it honestly
+        answers NO -- `rm018::init` re-inits the coin on every entry and nothing gates
+        `getCoin`. What makes yours the only one is that the temple door already ate the Staff:
+        `toll_strandings`' one-visit-toll-pocket rows, which is the only store that knows."""
+        if getattr(self, "_pocketed", None) is None:
+            self._pocketed = frozenset(t["item"] for t in self.toll_strandings()
+                                       if t.get("pattern") == "one-visit-toll-pocket")
+        return self._pocketed
+
+    def _required_consumer(self, c):
+        """Why this absorbing site must be satisfied on every winning path, or None."""
+        A = frozenset(c["accept"])
+        if c.get("fold"):
+            return "(d) " + c["fold"]
+        for P in sorted(c["products"]):
+            if self.required.get(P) and self.sources.get(P):
+                return "(a) sells %s" % self.g.item_name(P)
+        for P in sorted(self.required):
+            if P in A or not (self.sources.get(P, set()) & self.reach_rooms):
+                continue
+            dem = []
+            for (g, r) in self._acq_guards(P):
+                dem.append((r, set(_own_required([g] if g is not None
+                                                 and not isinstance(g, list) else (g or [])))))
+            dem = [d for d in dem if d[0] in self.reach_rooms]
+            if dem and all(r in c["rooms"] and (d & A) for (r, d) in dem):
+                return "(c) every acquisition of %s is here and demands the tokens" % (
+                    self.g.item_name(P))
+            for t in sorted(A):
+                good = {d for d in c["dests"] if isinstance(d, int)} | \
+                    self.sources.get(t, set())
+                ok = []
+                for (g, r) in self._acq_guards(P):
+                    if g is None:
+                        ok = []
+                        break
+                    V = _loc_values(g, t, r)
+                    if not V or not (V & c["dests"]) or not (V <= good):
+                        ok = []
+                        break
+                    ok.append(sorted(V, key=str))
+                if ok:
+                    return "(c2) %s's acquisition reads owner(%s) in %s" % (
+                        self.g.item_name(P), self.g.item_name(t), ok[0])
+        rw = self._reach_without(A)
+        for P in sorted(self.required):
+            srcs = self.sources.get(P, set())
+            if P in A or not (srcs & self.reach_rooms):
+                continue
+            if not (srcs & rw):
+                lost_rooms = (self.reach_rooms - rw) | srcs
+                boundary = {a for (a, b) in self._emeta if b in lost_rooms and a in rw}
+                if c["rooms"] & (lost_rooms | boundary):
+                    return "(b) banning the slot seals %s; this site is the boundary" % (
+                        self.g.item_name(P))
+        return None
+
+    def market_squeezes(self):
+        """A payment that leaves some merchant UNPAYABLE -- the market squeeze.
+
+        THE SHAPE, in the USER's framing (2026-08-17b): *"the 3 vendors and the gypsy each
+        accepting some payments that can starve other merchants, when everything you get from
+        the merchants is required."* No single-spend detector can state this -- every token is
+        excused by its siblings at its own slot -- and no per-group detector states it either
+        without re-deriving half the market. The whole question is one matching: the game is
+        winnable iff every required consumer can be assigned a DISTINCT token it accepts, and
+
+            a spend is FATAL iff the residual market has no such assignment.
+
+        Residual: spending token t at a consumer that accepts it satisfies that consumer (remove
+        both); spending t anywhere else -- a merchant that merely tolerates it, an EAT verb --
+        removes t alone. First-order from the fresh market, which is exactly the guard question:
+        with the Cloak, the Harp and the pies all required, KQ5's seven fatal payments are fatal
+        from the very first token, not only after an earlier mistake.
+
+        ⛔ A spend you do not SURVIVE is excluded (`fatal_uses` sites): there is no surviving
+        world to starve, and the harm is already stated -- and remedied -- as a fatal use. KQ6's
+        skull-into-the-gears is a death, not a payment.
+
+        MEASURED 2026-08-17b: LSL2 0, KQ4 0, KQ6 0, LB2 0, KQ5 9 -- the squeeze (needle/gold
+        coin to the toy maker or baker starves the gypsy-tailor-princess triangle), the Heart at
+        any shop (starves the princess, the Harp's sole source), and the pie eaten or fed to the
+        eagle (starves the yeti, riding the rm35 fold). Every USER-ruled safe play stays silent:
+        needle->gypsy, coin->tailor, marionette->toy maker, heart->princess, the whole throwable
+        pool. KNOWN LIMIT: eating the Lamb (twice) starves the eagle's rm42 fold, but the Lamb
+        still reads restockable (its cupboard pickup is not owner-gated in the model, the same
+        gap as the Coin and Marionette), so its consumer is auto-satisfiable and the row waits
+        on that acquisition read -- not on this detector."""
+        consumers, tokens = self._market()
+        cons = [c for c in consumers if c["constrains"]]
+
+        def pm(cs, toks):
+            adj = {i: sorted(c["accept"] & set(toks)) for i, c in enumerate(cs)}
+            return _saturating_matching(list(range(len(cs))), adj)
+
+        if pm(cons, tokens) is None:
+            # the fresh market is already unsolvable: that is a defect in THIS derivation (an
+            # over-included consumer), never a finding. Loud, and no rows.
+            _degraded_model("market_squeezes: no baseline matching -- consumer derivation "
+                            "over-includes; emitting nothing")
+            return []
+        fatal_sites = {(f["room"], f["machine"]) for f in self.fatal_uses()}
+        edges = [(it, room, script, None, dest)
+                 for room, script, it, g, dest in self.em.handler_drops]
+        edges += [(it, room, script, inst, dest)
+                  for room, script, it, g, dest, inst in self.em.machine_moves]
+        rows, seen = [], set()
+        for (it, room, script, inst, dest) in sorted(edges, key=str):
+            if it not in tokens or (room, inst) in fatal_sites:
+                continue
+            if not (dest != E.EGO and (dest in self.NOWHERE
+                                       or self.drop_is_permanent(it, dest)
+                                       or it in self._single_copy_pockets())):
+                continue
+            ekey = ("m", script, inst) if inst is not None else ("h", script, dest)
+            sat = [c for c in consumers if ekey in c["keys"]]
+            rest = [c for c in cons if c not in sat]
+            toks = [t for t in tokens if t != it]
+            if pm(rest, toks) is not None:
+                continue
+            sig = (it, script, inst)
+            if sig in seen:
+                continue
+            seen.add(sig)
+            starved = [c for c in rest
+                       if pm([x for x in rest if x is not c], toks) is not None]
+            rows.append({
+                "pattern": "market-squeeze", "item": it,
+                "item_name": self.g.item_name(it),
+                "at_room": room, "script": script, "inst": inst,
+                "pays": sorted(str(k[2] if k[2] is not None else k[1])
+                               for c in sat for k in c["keys"])[:3],
+                "starves": sorted({r for c in starved for r in c["rooms"]}),
+                "starved_accepts": sorted({t for c in starved for t in c["accept"]}),
+            })
         return rows
 
     def free_running_traps(self):

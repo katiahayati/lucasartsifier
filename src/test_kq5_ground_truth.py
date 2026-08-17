@@ -18,10 +18,12 @@ fork -- `rescue` (which still demands the Hammer) vs `yourStuck` (an unpreventab
 Flag 83 closes the cat window ON ARMING, not on success -- the one-shot-window class.
 
 ⛔ KQ5 IS NOT A FINISHED ORACLE, and no run of this file should be reported as though it were.
-One scorecard row is MISSED with a declared red: the SHOP MARKET SQUEEZE (§6a), which the user
-confirmed 2026-08-17 and which replaced the fortune-teller row the same day -- that one was ruled
-not a softlock at all, and the dead end it was groping at needs TWO payments rather than one.
-Column F -- false positives we emit -- is EMPTY as of 2026-08-17:
+The MARKET landed 2026-08-17b (`missability.market_squeezes`, §6a/§6b: the squeeze and the Heart
+promoted together -- they were one problem), but its reach is bounded by what reads as
+single-copy: EATING THE LAMB starves the eagle's rm42 fold (§6c, USER-ruled "you need both the
+pie and the lamb") and emits nothing today, because the lamb's cupboard pickup is not owner-gated
+in the model and the eagle's slot therefore reads restockable -- the same acquisition gap as the
+Coin and the Marionette. Column F -- false positives we emit -- is EMPTY as of 2026-08-17:
 the Wand's was cured 2026-08-15, the witch amulet's verdict was corrected 2026-08-16b, and the
 tambourine's went with the snake gate below. Several verdicts are open on their own terms (the peas
 consumable waits on the item-property store; the locket window, the mountains' cold death and
@@ -146,6 +148,22 @@ EXPECTED_CAUGHT = {
     # accomplishes nothing"), and their going is a CURE, not a coverage loss.
     "Shoe",
     "Stick",
+    # ✅ PROMOTED 2026-08-17b, USER-RULED across two sessions, caught by `market_squeezes`. The
+    # town is a five-token MARKET with zero slack -- gypsy {3,11} -> Amulet, tailor {3,9,11} ->
+    # Cloak, toy maker (+12) -> Sled, baker (+4) -> Pie, princess {9 alone} -> Harp -- and the
+    # USER confirmed every product is required (*"the cloak is needed"*, 2026-08-17b; the harp,
+    # sled and pie were already enumerated). So a payment is fatal exactly when the residual
+    # market has no perfect matching:
+    #   * the SQUEEZE (USER 2026-08-17: "you CAN ... waste your gold on the toy maker and the
+    #     cloak"): the needle or the gold coin at the toy maker or the baker;
+    #   * the HEART (USER 2026-08-17: "you need the heart for something else, so that would be
+    #     a sink too"): the heart at ANY shop starves the princess, the Harp's sole source.
+    # ⚠️ With the Cloak required, the needle/coin rows are ONE-payment dead ends -- the old §6
+    # "any single payment survives" claim rested on the heart covering the tailor, which the
+    # heart ruling itself removed. The USER-PLAYED pair (needle->gypsy, coin->tailor) emits
+    # nothing, as it must.
+    "Golden_Needle",
+    "Heart",
 }
 
 # C -- OPEN RULING: the peas are a counted consumable spelled as the ITEM'S OWN `cel` property
@@ -183,6 +201,41 @@ MECHANISM_ROWS = {
         "toll_strandings: {'pattern': 'one-visit-toll-pocket', 'toll_item': 7, "
         "'toll_item_name': 'Staff', 'toll_reg': None, 'toll_edge': [214, 18], "
         "'pocket': [18], 'source_rooms': [18]}",
+        # ✅ THE MARKET, added 2026-08-17b: spend the gold coin at the toy maker or the baker
+        # and the gypsy-tailor-princess triangle {3, 9, 11} is down to two tokens for three
+        # required purchases. The toll row above is what makes the coin single-copy at all --
+        # `rm018::init` would restock it, but the temple ate the Staff.
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 5, 'script': 204, "
+        "'inst': 'getSled', 'pays': ['getSled'], 'starves': [5, 9, 13], "
+        "'starved_accepts': [3, 9, 11]}",
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 206, 'script': 206, "
+        "'inst': 'getPie', 'pays': ['getPie'], 'starves': [5, 9, 13], "
+        "'starved_accepts': [3, 9, 11]}",
+    },
+    # ✅ ADDED 2026-08-17b with the market. The needle's two rows mirror the gold coin's --
+    # either token at the toy maker or the baker starves the triangle -- and they exist at all
+    # only because the ants' repayment is owner-gated (`searchHay` state 5 demands the needle
+    # still in the hay), so a spent needle is gone for good.
+    "Golden_Needle": {
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 5, 'script': 204, "
+        "'inst': 'getSled', 'pays': ['getSled'], 'starves': [5, 9, 13], "
+        "'starved_accepts': [3, 9, 11]}",
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 206, 'script': 206, "
+        "'inst': 'getPie', 'pays': ['getPie'], 'starves': [5, 9, 13], "
+        "'starved_accepts': [3, 9, 11]}",
+    },
+    # ✅ ADDED 2026-08-17b with the market. The heart at ANY shop starves the princess -- her
+    # slot takes item 9 and nothing else (`rm009.sc:936/990`), she is the Harp's sole source,
+    # and the Harp is required at rm90/92/682 past the roc. Derived by reading (c2): the Harp's
+    # one acquisition guard demands owner(Heart) in {9, 21} -- paid to her, or still at the
+    # witch's house -- so a shop's counter is a value it can never come back from.
+    "Heart": {
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 5, 'script': 203, "
+        "'inst': 'soldCloak', 'pays': ['soldCloak'], 'starves': [9], 'starved_accepts': [9]}",
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 5, 'script': 204, "
+        "'inst': 'getSled', 'pays': ['getSled'], 'starves': [9], 'starved_accepts': [9]}",
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 206, 'script': 206, "
+        "'inst': 'getPie', 'pays': ['getPie'], 'starves': [9], 'starved_accepts': [9]}",
     },
     "Fishhook": {"analyze: need@rm67 sources=[90] frontier=rm44->rm113|rm45->rm113|"
                  "rm46->rm113|rm46->rm661|rm660->rm663"},
@@ -264,6 +317,13 @@ MECHANISM_ROWS = {
         "ownedby_death_folds: {'dest': 36, 'need_room': 35, 'machine': 'killEgo', "
         "'state': None, 'pattern': 'entry-fold', 'demand_group': [(2, 36)], "
         "'context': {12: 36}}",
+        # ✅ THE MARKET, added 2026-08-17b: the rm35 fold IS a consumer (the yeti must be
+        # thrown the pie), so eating the pie or feeding it to the eagle starves him -- the
+        # same two facts the dangerous_sinks rows above state, derived from the matching side.
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 0, 'script': 0, "
+        "'inst': None, 'pays': [], 'starves': [35, 36], 'starved_accepts': [2]}",
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 34, 'script': 34, "
+        "'inst': None, 'pays': [], 'starves': [35, 36], 'starved_accepts': [2]}",
     },
     "Hammer": {
         "register_strandings: reg12=85->[86]",
@@ -300,7 +360,7 @@ MECHANISM_ROWS = {
 
 DETECTORS = ("analyze", "joint_strandings", "resource_exhaustion", "dangerous_sinks",
              "register_flip_strandings", "toll_strandings", "fatal_uses", "register_strandings",
-             "ownedby_death_folds", "window_closures")
+             "ownedby_death_folds", "window_closures", "market_squeezes")
 
 # The throwable pool (rm6's cat handlers and rm86's rescue fork agree on exactly these four).
 POOL = {"Shoe", "Stick", "Leg_of_Lamb", "Fish"}
@@ -521,68 +581,76 @@ def run():
           f"rows={token_sinks} -- USER-RULED 2026-08-17, in the game: the gypsy takes the needle "
           f"AND the tailor then sells the cloak for the gold coin, so no one payment strands you. "
           f"A `dangerous_sinks` row on either is the false positive this red used to demand. "
-          f"(The two-payment squeeze below is a DIFFERENT shape and must not arrive here: it is a "
-          f"claim about a GROUP being emptied, not about one spend site.)")
+          f"(The market rows below are a DIFFERENT claim and must not arrive here: they name the "
+          f"SITE -- the toy maker or the baker -- while this pin protects the played pair, which "
+          f"the market correctly leaves silent.)")
 
-    # ⭐ THE HEART IS THE EXCEPTION, and the USER named it: *"you need the heart for something
-    # else, so that would be a sink too"*. It is a shop token like the others -- tailor, toy maker
-    # and baker all take it -- but its OTHER consumer accepts nothing else: the enchanted princess
-    # at rm9 (`rm009.sc:936/990`, `wFace` and `wArm` dispatch item 9 alone, and
-    # `disjunctive_groups[9]` is correctly empty) is the Harp's SOLE source, and the Harp is
-    # required at rm90/92/682 across the roc's point of no return. So paying any shopkeeper with
-    # the Heart is a one-payment walking dead, on exactly the Fish's argument (§16).
+    # ✅ BOTH REDS PROMOTED 2026-08-17b -- the Heart's and the squeeze's -- by ONE detector,
+    # `missability.market_squeezes`, because they were never two problems. The USER's framing,
+    # verbatim: *"the 3 vendors and the gypsy each accepting some payments that can starve other
+    # merchants, when everything you get from the merchants is required."* Every required
+    # consumer must be assigned a DISTINCT one-copy token it accepts, so a payment is fatal
+    # exactly when the residual market has no perfect matching:
+    #   * the HEART at any shop starves the princess (her slot takes item 9 alone,
+    #     `rm009.sc:936/990`; she is the Harp's sole source) -- the old Heart red;
+    #   * the NEEDLE or the GOLD COIN at the toy maker or the baker leaves {3, 9, 11} two
+    #     tokens for three purchases (gypsy, tailor, princess) -- the old squeeze red,
+    #     SHARPENED: with the Cloak required (USER 2026-08-17b: "the cloak is needed"), these
+    #     are ONE-payment dead ends. The old "needs TWO payments" framing rested on the heart
+    #     covering the tailor, which the Heart ruling itself removed.
+    # The rows are pinned per-item in MECHANISM_ROWS; the checks here are the two game-facing
+    # facts and the silences that keep the detector honest.
     #
-    # It is invisible because the shop payments are MACHINE drops -- the tailor takes his fee in
-    # `soldCloak` state 0, a `changeState` body -- and `destroying_sinks` walks only
-    # `handler_drops`. `opmodel.machine_moves` (added for the owner graph) already has all four.
-    #
-    # ⚠️ THE ONE-LINE WIDENING WAS TRIED AND MEASURED 2026-08-17, AND IT IS NOT SHIPPABLE. Walking
-    # `machine_moves` too yields the 3 Heart rows this check wants AND NINETEEN false ones:
-    #   * 13 `Cat_Fish` and 3 `Beeswax` rows where the spend and the "still needed" use are THE
-    #     SAME SITE, seen once per room the region serves -- `castle.sc` is live in all the castle
-    #     rooms, so spending at rm54 reads as stranding rm57..rm683. A same-scope conjunct (a
-    #     consumer inside the spend's own script is one event, not two competing ones) would cure
-    #     this family.
-    #   * `Wand@rm66 -> [124]`, which RE-CREATES the false positive the user ruled on 2026-08-15
-    #     (oracle §10) through a detector that one never went through. The same-scope conjunct does
-    #     NOT cover it -- rm66 and rm124 are different scripts -- so the cure is at least two
-    #     pieces, and shipping the first alone would trade one catch for a known FP.
-    heart_sinks = {r.get("at_room") for (n, d, r) in raw_rows
-                   if n == "Heart" and d == "dangerous_sinks" and r.get("still_needed_at") == [9]}
-    check("🔴 KNOWN GAP (KQ5): spending the Heart at a shop is condemned by the Harp it costs",
-          {5, 206} <= heart_sinks,
-          f"Heart sink rooms needing rm9 = {sorted(heart_sinks)} -- expected the shops at rm5 "
-          f"(tailor, toy maker) and rm206 (baker). USER 2026-08-17: *\"you need the heart for "
-          f"something else, so that would be a sink too\"*. Needs `destroying_sinks` to walk "
-          f"`machine_moves`, which alone costs 19 false positives -- see the note above.")
+    # ⛔ The Heart red's declared mechanism -- "needs `destroying_sinks` to walk
+    # `machine_moves`" -- was WRONG, and building it was measured twice and rejected twice
+    # (19 FPs on 2026-08-17; 8 KQ6 rows + 2 LB2 rows with shipped placements on a 2026-08-17b
+    # re-measure -- and KQ6 is GOLDEN). The market states the same three Heart facts with zero
+    # movement on any other game. [[re-derive-a-reds-premise]], applied to a red's cure.
+    squeezes = {(n, r["at_room"], r.get("inst")) for (n, d, r) in raw_rows
+                if d == "market_squeezes"}
+    check("the market squeeze is caught: needle/gold coin at the toy maker or baker",
+          {("Golden_Needle", 5, "getSled"), ("Golden_Needle", 206, "getPie"),
+           ("Gold_Coin", 5, "getSled"), ("Gold_Coin", 206, "getPie")} <= squeezes,
+          f"rows={sorted(squeezes)} -- USER-CONFIRMED 2026-08-17 (\"you CAN ... waste your gold "
+          f"on the toy maker and the cloak\") and sharpened 2026-08-17b by the cloak ruling. "
+          f"docs/KQ5-ORACLE.md §6a.")
+    check("the Heart at any shop is condemned by the princess it starves",
+          {("Heart", 5, "soldCloak"), ("Heart", 5, "getSled"),
+           ("Heart", 206, "getPie")} <= squeezes,
+          f"rows={sorted(squeezes)} -- USER 2026-08-17: *\"you need the heart for something "
+          f"else, so that would be a sink too\"*. The princess is the Harp's sole source. "
+          f"docs/KQ5-ORACLE.md §6b.")
+    # ...and the SILENCES, each one a user ruling the matching must keep honoring: the played
+    # pair (needle->gypsy, coin->tailor), the intended payments, the heart to the princess,
+    # and the whole throwable pool (rm6/rm12 -- the pool's competing consumers never outnumber
+    # it, which is Hall's condition answering the 2026-08-16b Shoe/Stick ruling by counting).
+    bad_silence = [t for t in squeezes
+                   if t[1] in (13, 6, 12, 9)                # gypsy, cat, dog, princess
+                   or (t[0], t[2]) in {("Golden_Needle", "soldCloak"),
+                                       ("Gold_Coin", "soldCloak")}]
+    check("every user-ruled safe play stays silent (gypsy, tailor's 3/11, princess, the pool)",
+          not bad_silence,
+          f"rows={bad_silence} -- a market row landed on a payment the USER ruled or played "
+          f"safe: needle->gypsy and coin->tailor are THE winning pair (2026-08-17), the "
+          f"heart->princess is the intended move, and the pool cannot be starved (2026-08-16b). "
+          f"A row here is the false-positive family the distinct-token matching exists to "
+          f"prevent.")
 
-    # 🔴 DECLARED RED 2026-08-17, and this is the row the retired one should always have been.
-    # USER, having refuted the single-payment claim: *"yes but you CAN ... waste your gold on the
-    # toy maker and the cloak"*. That is the real dead end, and it takes TWO payments: the gypsy's
-    # slot is `{Golden_Needle 3, Gold_Coin 11}` and nothing else fills it, so spending BOTH tokens
-    # at slots that merely ACCEPT them -- toyMaker{3,9,11,12}, tailor{3,9,11}, baker{3,4,9,11} --
-    # leaves the Amulet unbuyable. No amulet, no forest, no rm24, no Beeswax, which rms 44-47 need.
-    #
-    # ⭐ WHY IT IS NOT THE THROWABLE POOL, and this is the conjunct that makes it a finding rather
-    # than an FP: the cat and dog scenes CANNOT be starved because they arm on `(or (has: 8)
-    # (has: 16))` -- `rm006.sc:112`, the scene waits for ammunition, which is the user's own
-    # 2026-08-16b ruling. The shops have no such arming: the toy maker will happily take your last
-    # amulet-token, and the Heart -- the tailor's third option -- is two screens inside the forest
-    # the Amulet opens, so it cannot be fetched to cover the loss.
-    #
-    # THE SHAPE TO BUILD: group starvation / Hall's condition over the market. `disjunctive_groups`
-    # already derives the four slots (pinned green above); what is missing is the COUNTING -- a
-    # group is starvable when the other slots that accept its members can absorb all of them and
-    # no arming holds them back. ⛔ Do NOT reach for `group_strandings`: that asks whether a group
-    # is faced past a point of no return to all its SOURCES, which is a reachability question and
-    # says nothing about competing consumption.
-    squeeze_rows = [(n, d) for (n, d, r) in raw_rows
-                    if n in TOKENS and 13 in _rooms_mentioned(r)]
-    check("🔴 KNOWN GAP (KQ5): the shop market squeeze is caught", bool(squeeze_rows),
-          "nothing reports that the gypsy's {Golden_Needle, Gold_Coin} slot can be emptied by the "
-          "toy maker and the tailor, which USER-CONFIRMED 2026-08-17 is a real dead end. Needs a "
-          "group-starvation detector (Hall's condition over the slots `disjunctive_groups` "
-          "already derives), not a single-spend one. docs/KQ5-ORACLE.md §6.")
+    # 🔴 DECLARED RED 2026-08-17b, the market's known reach limit. USER, same day: *"yes, you
+    # need both the pie (for the yeti) and the lamb (for the eagle)"* -- so eating the lamb
+    # (Main's EAT verb destroys it on the second bite, `put: 19 1`) starves the rm42 fold, whose
+    # surviving arm demands owner(19) == 34 and nothing else. The eagle's consumer IS derived
+    # (reading (d), the rm42 fold), but the lamb still reads RESTOCKABLE -- its cupboard pickup
+    # (`rm028 openCup`, gated on `owner == 28`) is not owner-gated in the model, the same
+    # acquisition gap as the Coin and the Marionette -- so the consumer is auto-satisfiable and
+    # exerts no pressure. The cure is at the ACQUISITION read, not in the detector.
+    lamb_market = [r for (n, d, r) in raw_rows
+                   if n == "Leg_of_Lamb" and d == "market_squeezes" and 42 in r["starves"]]
+    check("🔴 KNOWN GAP (KQ5): eating the lamb is condemned by the eagle it starves",
+          bool(lamb_market),
+          "no market row ties the lamb's destruction to the rm42 fold -- the lamb reads "
+          "restockable because its cupboard acquisition is not owner-gated in the model. "
+          "USER-ruled real 2026-08-17b. docs/KQ5-ORACLE.md §6c.")
 
     # ✅ PROMOTED 2026-08-17 -- "the bees' flag-36 window closure is caught" is GREEN. The Fish is
     # the one throwable whose OTHER consumer accepts nothing else: `rm011::init` puts the bear in
