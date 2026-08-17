@@ -210,28 +210,33 @@ KNOWN_RED = {
     # the check is a permanent green pin. docs/LB2-ORACLE.md §7ag.
 
     "test_kq5_ground_truth.py": {
-        # 🔴 DECLARED 2026-08-16b, AWAITING A RULING -- and it is not a new row, it is a row the
-        # ALLOW-LIST WAS HIDING. Curing the tambourine's `fatal_uses` FP emptied `FP_EMITTED`, and
-        # with the item off the allow-list the suspicion check finally sees what `analyze` has
-        # been saying about it all along:
+        # 🔴 DECLARED 2026-08-16b, USER-REFUTED -- an FP whose cause is named. Curing the
+        # tambourine's `fatal_uses` FP emptied `FP_EMITTED`, and with the item off the allow-list
+        # the suspicion check sees a row `analyze` had been emitting all along (verified
+        # pre-existing: `Tambourine` was in `softlock_items` and `has: 34` was a conjunct of the
+        # rm40->rm41 edge spec before the cure, whose own diff is removals only):
         #
         #     Tambourine: need@rm55 sources=[13] frontier=rm40->rm41
         #
-        # Verified pre-existing, not caused by the cure: `Tambourine` is in `softlock_items` and
-        # `has: 34` is a conjunct of the `rm40->rm41` edge spec in the snapshots taken BEFORE the
-        # cure (this morning's and this evening's alike), and the cure's own five-game diff shows
-        # only removals. The claim is that the tambourine's source (rm13, the fortune teller) is
-        # on the far side of the ROC -- the same frontier carrying Harp, Beeswax, Crystal and
-        # Locket, all four USER-RULED REAL on 2026-08-15 -- while its use (giving it to Dink for
-        # the Hairpin) is at rm55, past it. Structurally identical to four confirmed catches.
+        # USER: "you can't go outside of the town unless you use the tambourine on the snake. so
+        # by construction once you go out of the town you have the tambourine." Source agrees --
+        # `rm002::init` puts the snake on screen while flag 47 is clear, `snake::doit` arms
+        # `strike` (`proc0_26 243`, a death) inside 30 pixels, and using the tambourine sets
+        # flag 47 with NO `put:`, so you keep it. You cannot be past the roc without it.
         #
-        # ⚠️ AN FP ENTRY IN AN ALLOW-LIST SUPPRESSES EVERY ROW FOR THAT ITEM, including true ones.
-        # That is the lesson worth keeping from this one.
+        # THE CAUSE IS RANKED: all four exits from rm2 read FREE, because the snake blocks by
+        # KILLING YOU AT A DISTANCE rather than by guarding an edge -- the CONTROL-MAP/positional
+        # gap, #1 in the modelling-gap census, and an unusually clean instance (the disarming
+        # condition is an ordinary flag we already track). Goes green the day that lands.
+        #
+        # ⚠️ THE REMEDY IS NOT TO ALLOW-LIST THE ITEM AGAIN. An FP entry in an allow-list
+        # suppresses EVERY row for that item, true ones included -- which is exactly what hid
+        # this row, and the cured fatal_uses FP's own sibling, for weeks. docs/KQ5-ORACLE.md §15.
         "no UNEXPECTED item flagged (suspicion)":
-            "the Tambourine's analyze row (need@rm55, source rm13, frontier rm40->rm41) is "
-            "visible for the first time now that the cured fatal_uses FP no longer allow-lists "
-            "the item. Same shape as four user-ruled catches on the same frontier. Promote or "
-            "refute with the user; do not edit EXPECTED_CAUGHT unilaterally.",
+            "the Tambourine's analyze row (need@rm55, source rm13, frontier rm40->rm41) is a "
+            "FALSE POSITIVE -- USER-RULED: the snake gates the road out of town and charming it "
+            "does not consume the tambourine, so nobody is past the roc without one. The model "
+            "cannot see it because the snake is a positional death, not an edge guard.",
 
         # KQ5's oracle landed 2026-08-14 (docs/KQ5-ORACLE.md: game source + three independent
         # walkthroughs) with five caught softlocks pinned green and these five declared red the

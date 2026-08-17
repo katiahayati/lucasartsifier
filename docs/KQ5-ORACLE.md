@@ -596,6 +596,41 @@ elsewhere, not a register flipping. It pairs with row 9 (the fortune teller's sl
 prototype of that pairing re-created the Shoe@rm12 false positive this oracle just retired — see
 §1's verdicts. Left red on purpose.
 
+## §15. The snake is the town gate, and it is a POSITIONAL DEATH (2026-08-16b, USER-RULED)
+
+**USER 2026-08-16b:** *"yes you need to give the tambourine to get the hairpin. however, you
+can't go outside of the town unless you use the tambourine on the snake. so by construction once
+you go out of the town you have the tambourine."*
+
+**Source, `rm002` (the road out of town):**
+
+    (if (not (proc0_12 47))                       ; init: the snake is there while flag 47 is clear
+        (snake cycleSpeed: 4 cel: 0 init: stopUpd:) ...)
+
+    (method (doit)                                ; snake::doit -- a DISTANCE trigger
+      (cond ... ((< (= temp0 (gEgo distanceTo: self)) 30)
+                    (gRoom setScript: strike))))  ; strike st2: (= global330 178) (proc0_26 243)
+
+    (34 (proc0_15 0) (proc0_9 47) (proc0_27 3)    ; using the tambourine: flag 47, +3 points
+        (gRoom setScript: shakeTambourine))       ; ⭐ NO `put:` -- YOU KEEP IT
+
+So the tambourine is a **gate on leaving town** that does not consume the item: everyone past
+rm2 is carrying it, which is exactly the user's ruling, derived.
+
+**⛔ VERDICT: the `analyze` row `Tambourine: need@rm55 sources=[13] frontier=rm40->rm41` is a
+FALSE POSITIVE.** It claims you might cross the roc without the tambourine and be unable to go
+back for it. You cannot: you could not have left town.
+
+**Its cause is named and ranked.** All four exits from rm2 read FREE in the model
+(`_emeta[(2, 1|3|7|29)]` = `({}, [12], [[]])`), because the snake blocks by KILLING YOU AT A
+DISTANCE rather than by guarding an edge. That is the CONTROL-MAP / positional gap — #1 in the
+modelling-gap census — and this is a clean, small instance of it: a distance-triggered death whose
+disarming condition is an ordinary flag the model already tracks.
+
+⚠️ **The remedy is NOT to allow-list the Tambourine again.** That is precisely what hid this row
+(and the cured `fatal_uses` FP's true sibling) for weeks — see §14. The suspicion check stays
+DECLARED RED naming the snake, so the day positional gates are modelled it goes green by itself.
+
 ## §14. The tambourine — an item you were CARRYING is not an item you USED (2026-08-16b, derived)
 
 **What the tool said about the game.** *"Using the Tambourine at rm55 kills you"* — and it did not
