@@ -147,6 +147,16 @@ def snapshot(cfg, with_placements=False):
         f"{s.g.item_name(sp['item'])}@script{sp['script']}/{sp.get('machine') or 'handler'}"
         + (" [REFUSED]" if sp["refused"] else "")
         for sp in specs if sp["site"] == "market")
+    # The one-shot window remedies (2026-08-18, the cat-window build): one per window, carrying
+    # the full bank condition, the durable holds and the per-visit closers -- any of those
+    # moving is a mechanism change. Empty everywhere `window_closures` finds nothing (all four
+    # frozen games today), the same ran-and-found-nothing record as every other key.
+    snap["window_specs"] = sorted(
+        f"rm{sp['need_room']}<-{sorted(sp['items'])}: {sp['condition']}"
+        f" holds={[(h['register'], h['trap']) for h in sp['holds']]}"
+        f" self_resetting={[r for r, _why in sp['self_resetting']]}"
+        + (" [REFUSED]" if sp["refused"] else "")
+        for sp in specs if sp["site"] == "window")
     snap["register_write_specs"] = sorted(
         f"reg{sp.get('register')}={sp.get('trap')}: {sp['condition']}"
         + (" [REFUSED]" if sp["refused"] else "")

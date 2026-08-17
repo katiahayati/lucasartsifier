@@ -1420,6 +1420,96 @@ def market_remedies(s):
     return out
 
 
+def window_remedies(s):
+    """Re-open the one-shot window until its demand is BANKED -- one spec per `window_closures`
+    window, the remedy half of the fold+closure pair.
+
+    KQ5's cat chase is the case: flag 83 goes up when the chase STARTS (rm006::doit), not when
+    it is won, so losing the race closes the only door to the state rm86's kidnap fork demands
+    (some throwable owned by room 6) -- and the punishment is a timer death in a cellar hours
+    later. The design is the USER-shaped two-clause form (2026-08-14, clause 2 ruled REQUIRED):
+
+      1. HOLD every durable closer's raise behind V, the bank test -- the flip waits until the
+         demand it would seal is already banked. The chase still plays; losing no longer closes
+         anything, so the player can walk out and try again.
+      2. Conjoin the SAME V, disjunctively, onto every READ of the closer -- "the window has
+         closed" becomes "the window has closed OR the bank is filled". With 1, that is the
+         whole meaning correction: the closer flag stops meaning "the chase started" and starts
+         meaning "the mouse business is settled". It is also what enforces the standing rule
+         that ⛔ a patched chase must NEVER replay after success: the arming that tests the
+         closer now refuses while V holds.
+
+    V is spelled in the CONSUMER'S OWN idiom -- rm086 reads the bank as
+    `(== ((gInv at: 8) owner:) 6)` over the pool, and the guard repeats that reading exactly,
+    which is [[a-trade-is-a-destruction]]'s owner graph paying off at run time a second time
+    (the market's re-obtainability conjunct was the first).
+
+    A window is remediable only when EVERY closer is accounted for -- one unheld closer still
+    shuts it and the patch would claim a cure it does not deliver. Two accounts exist:
+      - DURABLE: a lowered boolean flag raised to its closing value; hold its raise (the set
+        proc the flag derivation already named) and strengthen its reads. Only the raise
+        polarity (w == 1) has a derived spelling today; anything else is refused, not guessed.
+      - PER-VISIT: a lowered ROOM LOCAL whose recorded entry reset differs from the closing
+        value -- the script reloads on entry and the latch re-opens by itself (rm006's local0,
+        "you lost this race", holds only until the player walks back in). No hold is needed,
+        and none would have a cross-script spelling anyway.
+    Anything else -- an un-spellable store, a local with no differing reset, a clear-polarity
+    closer -- lands in `refused` and the whole spec ships unplaceable rather than half-held.
+
+    The holds are SILENT guard kinds (nothing is refused to the player's face; a scene arms or
+    does not), so lite behaves as full and only stock bypasses -- the patcher applies that
+    dispatch at placement time; the conditions emitted here stay mode-free (test_mode pins
+    this file out of the mode machinery)."""
+    rows = s.window_closures()
+    if not rows:
+        return []
+    ir = getattr(s.em, "ir", None)
+    rli = getattr(ir, "_room_local_index", None) or {}
+    resets = getattr(ir, "_room_local_resets", None) or {}
+    base = getattr(ir, "flag_synth_base", None)
+    known = getattr(ir, "flag_indices", None) or frozenset()
+    setp = getattr(ir, "flag_set_proc", None)
+    testp = getattr(ir, "flag_test_proc", None)
+    windows = {}
+    for r in rows:
+        key = (tuple(tuple(x) for x in r["demand_group"]), r["need_room"])
+        windows.setdefault(key, r)
+    out = []
+    for (group, need_room), row in sorted(windows.items(), key=lambda kv: kv[0][1]):
+        members = sorted({tuple(x) for x in group})
+        conds = ["(== ((gInv at: %d) owner:) %d)" % (it, dst) for it, dst in members]
+        vcond = conds[0] if len(conds) == 1 else "(or %s)" % " ".join(conds)
+        holds, per_visit, refused = [], [], []
+        for (R, w) in sorted({tuple(c) for c in row["closes_on"]}):
+            if R in rli:
+                sn, idx = rli[R]
+                init = resets.get(sn, {}).get(R)
+                if init is not None and init != w:
+                    per_visit.append([R, "local%d of script %d resets to %d on entry"
+                                      % (idx, sn, init)])
+                else:
+                    refused.append("closer reg%d: room local with no differing entry reset -- "
+                                   "nothing re-opens it" % R)
+                continue
+            if (base is not None and R >= base and (R - base) in known
+                    and w == 1 and setp and testp):
+                holds.append({"register": R, "trap": w, "flag": R - base,
+                              "set_proc": setp, "test_proc": testp})
+                continue
+            refused.append("closer reg%d=%d has no holdable spelling" % (R, w))
+        if not holds and not refused:
+            refused.append("every closer resets on re-entry -- no durable closure to hold")
+        out.append({"site": "window", "need_room": need_room,
+                    "items": [it for it, _d in members],
+                    "banked_at": sorted({dst for _it, dst in members}),
+                    "producer_rooms": row["producer_rooms"],
+                    "condition": vcond, "holds": holds, "self_resetting": per_visit,
+                    "why": ("the window these items are banked through closes by itself; "
+                            "hold the closure until banked, and never re-arm once banked"),
+                    "refused": refused})
+    return out
+
+
 def resource_remedies(s):
     """Prevent RESOURCE-EXHAUSTION softlocks by deleting the WASTEFUL degradation write -- the
     fourth store's analogue of `sink_remedies` (which deletes a wasteful item DROP).
@@ -1519,6 +1609,9 @@ def guard_specs(s):
     # ...and the market's fatal payments (KQ5's shops, the lamb's wastes) -- refusals of a
     # (site, token) pair, placed on the token's own dispatch case. See market_remedies.
     specs.extend(market_remedies(s))
+    # ...and the one-shot windows (`window_closures`): hold each durable closer's raise until
+    # the demand it seals is banked, and never re-arm a banked scene. See window_remedies.
+    specs.extend(window_remedies(s))
     for gt in survival_gates(s):
         cp, cn, rest = factor(gt["alts"])
         pos_spec = render(cp, set(), rest)

@@ -92,6 +92,17 @@ def stock_or(cond):
     return "(or (== global%d 2) %s)" % (MODE["g"], cond)
 
 
+def stock_and(cond):
+    """`cond`, WITHDRAWN in stock mode -- the conjunctive twin of `stock_or`, for the sites
+    that ADD a condition rather than demand one. A strengthened flag READ becomes
+    `(or <test> <cond>)`; under stock the added disjunct must contribute nothing, so it
+    carries this wrapper and evaluates false while the mode global says stock. Same silent-kind
+    doctrine as `stock_or`: these never speak, so lite behaves as full."""
+    if MODE is None:
+        return cond
+    return "(and (not (== global%d 2)) %s)" % (MODE["g"], cond)
+
+
 def guarded_wrap(guard_sexpr, body, refuse, site=None, deny_extra=(),
                  indent="\t\t\t", marker="; softlock-guard"):
     """The refusal-bearing wrap, in one place for every kind that says no.

@@ -726,6 +726,34 @@ def run():
           f"(rm006::doit), so every producer of `owner == 6` sits behind a window that closes "
           f"on arming, win or lose. docs/KQ5-ORACLE.md §1.")
 
+    # ✅ THE REMEDY, added 2026-08-18 (`guards.window_remedies`, the cat-window patch). The
+    # closure rows above state the disease; this pins the cure byte-exactly, because every
+    # field is a decision someone argued for: V is the CONSUMER'S OWN reading of the bank
+    # (rm086's `(== ((gInv at: X) owner:) 6)` disjunction, all four pool members); flag 83 is
+    # the one DURABLE closer and its raise is held (set proc + test proc are the flag
+    # derivation's own names); rm6's local0 is PER-VISIT (entry reset 0 != closing 1 -- losing
+    # the race only shuts the window until you walk back in); and `refused` is EMPTY -- every
+    # closer accounted for, so the spec ships. The two-clause shape is the USER's
+    # (2026-08-14, clause 2 ruled REQUIRED: ⛔ a patched chase must NEVER replay after
+    # success -- the strengthened read is what enforces it).
+    wr = G.window_remedies(s)
+    want_spec = {
+        "site": "window", "need_room": 86, "items": [5, 8, 16, 19], "banked_at": [6],
+        "producer_rooms": [6],
+        "condition": "(or (== ((gInv at: 5) owner:) 6) (== ((gInv at: 8) owner:) 6) "
+                     "(== ((gInv at: 16) owner:) 6) (== ((gInv at: 19) owner:) 6))",
+        "holds": [{"register": 485, "trap": 1, "flag": 83,
+                   "set_proc": "proc0_9", "test_proc": "proc0_12"}],
+        "self_resetting": [[565, "local0 of script 6 resets to 0 on entry"]],
+    }
+    got_spec = [{k: v for k, v in sp.items() if k in want_spec} for sp in wr]
+    check("the cat window's remedy derives whole: hold flag 83 until banked, "
+          "local0 self-resets, nothing refused",
+          got_spec == [want_spec] and not wr[0]["refused"] if wr else False,
+          f"specs={wr!r} -- expected exactly one placeable window spec. A lost hold replays "
+          f"nothing but leaves losing terminal; a lost self-resetting entry means local0 "
+          f"stopped being per-visit; a REFUSED spec ships no patch at all.")
+
     # ✅ REWRITTEN 2026-08-16b, USER-RULED -- this red demanded the WRONG ROW. It asserted that
     # some detector flags the Amulet, on the oracle's old verdict that entering the dark forest
     # without it is a softlock. USER: *"on rm19 you can get back out. I don't think you can get

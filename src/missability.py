@@ -6398,6 +6398,10 @@ def _build(cfg, ir_path):
         # register R is flag `R - synth_base`, tested by the proc the derivation already named.
         ir.flag_synth_base = synth_base
         ir.flag_test_proc = next((n for n, op in flags[1].items() if op == "test"), None)
+        # ...and the SET spelling, for the WRITE side of the same reversal: a window remedy
+        # holds the closer flag's raise (`(proc0_9 83)`) until the demand is banked, and the
+        # proc that performs a raise is a fact the derivation already named.
+        ir.flag_set_proc = next((n for n, op in flags[1].items() if op == "set"), None)
     # SECOND flag store: the same bit-in-a-word abstraction kept in an object's PROPERTY words
     # instead of a global array (SCI1.1 regions do this). Lowered to the same synthetic globals,
     # after lower_flags so the two synthetic blocks cannot overlap. Games without it are

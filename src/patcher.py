@@ -1753,6 +1753,80 @@ def guard_register_write(text, register, trap, cond):
     return text, 0
 
 
+_INV_CACHE = {}
+
+
+def _inv_form(dest):
+    """The inventory-list global, IN THIS GAME'S OWN SPELLING, or None.
+
+    A window guard's bank test reads an item's owner -- `(== ((gInv at: 8) owner:) 6)` -- and
+    the spelling of `gInv` is the game's, not ours. Scanned once from the owner-test idiom the
+    game already speaks (`((globalN at: <item>) owner:)` -- KQ5's rm086 kidnap fork reads the
+    bank exactly this way), same discipline as `_hands_forms`: derive the idiom from the
+    assembled sources, refuse when the game never speaks it."""
+    if dest in _INV_CACHE:
+        return _INV_CACHE[dest]
+    src = os.path.join(dest, "src")
+    counts = defaultdict(int)
+    for fn in os.listdir(src):
+        if not fn.endswith(".sc"):
+            continue
+        t = open(os.path.join(src, fn), errors="replace").read()
+        for m in re.finditer(r"\(\(global(\d+)\s+at:\s+\d+\)\s+owner:\)", t):
+            counts[int(m.group(1))] += 1
+    got = max(counts, key=counts.get) if counts else None
+    _INV_CACHE[dest] = got
+    return got
+
+
+def guard_flag_proc_write(text, set_proc, flag, cond):
+    """Hold a boolean-flag RAISE spelled as a set-proc call -- `(proc0_9 83)` -- until `cond`.
+
+    The third flag-store spelling's write side (the first two: a global assignment,
+    `guard_register_write`; a property-word setFlag:, `guard_prop_flag_write`). The window
+    remedy's clause 1: the closer flag stops going up when the chase starts and goes up only
+    once the demand it would seal is banked -- so losing the race closes nothing and the
+    player can walk out and try again. Stock mode lets the stock raise through (`stock_or`);
+    the hold is silent, so lite behaves as full.
+
+    A multi-flag raise (`(proc0_9 82 83)`) is SPLIT, not wrapped whole: the sibling flags keep
+    their unconditional raise and only the held flag moves under the guard -- wrapping the
+    whole call would hold state this spec knows nothing about, the same discipline as
+    `guard_prop_flag_write`'s exact-mask rule."""
+    edits = []
+    for m in re.finditer(r"\(%s((?:\s+\d+)+)\s*\)" % re.escape(set_proc), text):
+        args = [int(x) for x in m.group(1).split()]
+        if flag not in args:
+            continue
+        rest = [a for a in args if a != flag]
+        guarded = ("(if %s (%s %d))  ; softlock-guard: hold the closer until banked"
+                   % (stock_or(cond), set_proc, flag))
+        if rest:
+            indent = re.search(r"[ \t]*$", text[:m.start()]).group(0)
+            guarded = "(%s %s)\n%s%s" % (set_proc, " ".join(str(a) for a in rest),
+                                         indent, guarded)
+        edits.append((m.start(), m.end(), guarded))
+    for bs, be, rep in sorted(edits, reverse=True):
+        text = text[:bs] + rep + text[be:]
+    return text, len(edits)
+
+
+def strengthen_flag_reads(text, test_proc, flag, cond):
+    """Rewrite every READ of a flag -- `(proc0_12 83)` -- into `(or (proc0_12 83) <cond>)`.
+
+    The window remedy's clause 2, and the half that carries the meaning correction: with the
+    raise held (`guard_flag_proc_write`), "the flag is up" becomes "the flag is up OR the bank
+    is filled", i.e. the closer stops meaning "the chase started" and starts meaning "the
+    business is settled". At the arming that tests it negatively this is exactly
+    `(and (not <test>) (not <cond>))` -- a banked scene never re-arms, which is the standing
+    rule a patched chase must obey. The added disjunct is withdrawn in stock mode
+    (`stock_and`); no comment is emitted because a read sits mid-expression."""
+    pat = r"\(%s\s+%d\s*\)" % (re.escape(test_proc), flag)
+    wrapped = lambda m: "(or %s %s)" % (m.group(0), T.stock_and(cond))   # noqa: E731
+    new, n = re.subn(pat, wrapped, text)
+    return new, n
+
+
 def guard_prop_flag_write(text, sel, word, bit, recv_src, cond):
     """Hold a property-word flag SET (`(<recv> setFlag: <word> <mask>)`) until `cond` holds.
 
@@ -2373,6 +2447,53 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
         if not placed:
             out.append({**sp, "applied": False, "why": "no free-running trap write found",
                         "from_room": None, "to_room": None})
+    # ONE-SHOT WINDOWS (`guards.window_remedies`) -- hold the durable closer's raise until the
+    # demand it seals is banked, and strengthen its reads so a banked scene never re-arms. The
+    # two halves are applied ATOMICALLY: the hold alone leaves the closer permanently down, so
+    # the chase would replay after success (the exact shape the standing rule forbids); the
+    # read strengthen alone cures nothing (losing the race still raises the closer). Either
+    # both land or neither, and a partial landing is reported, not shipped.
+    for sp in specs:
+        if sp["site"] != "window" or sp["refused"]:
+            continue
+        inv = _inv_form(dest)
+        if inv is None:
+            out.append({**sp, "applied": False,
+                        "why": "no owner-test spelling derives for this game"})
+            continue
+        cond = to_source_syntax(sp["condition"]).replace("(gInv at:", "(global%d at:" % inv)
+        edits = {}                     # path -> rewritten text, flushed only when both halves land
+        held = reads = 0
+        for t2 in sorted(set(titles_by_num.values())):
+            p2 = os.path.join(dest, "src", t2 + ".sc")
+            if not os.path.exists(p2):
+                continue
+            tx = edits.get(p2)
+            if tx is None:
+                tx = open(p2, errors="replace").read()
+            changed = False
+            for h in sp["holds"]:
+                tx2, n2 = guard_flag_proc_write(tx, h["set_proc"], h["flag"], cond)
+                if n2:
+                    tx, held, changed = tx2, held + n2, True
+                tx2, n3 = strengthen_flag_reads(tx, h["test_proc"], h["flag"], cond)
+                if n3:
+                    tx, reads, changed = tx2, reads + n3, True
+            if changed:
+                edits[p2] = tx
+        if held and reads:
+            for p2, tx in sorted(edits.items()):
+                open(p2, "w").write(tx)
+            titles = sorted(os.path.basename(p)[:-3] for p in edits)
+            out.append({**sp, "applied": True, "sites": held + reads,
+                        "title": ", ".join(titles),
+                        "placement": {"kind": "window", "instance": ", ".join(titles),
+                                      "holds": held, "reads_strengthened": reads}})
+        else:
+            out.append({**sp, "applied": False, "title": "window@rm%d" % sp["need_room"],
+                        "why": "window halves incomplete (holds=%d, reads=%d) -- one half "
+                               "alone replays the chase after success or cures nothing"
+                               % (held, reads)})
     for title, group in sorted((k, v) for k, v in by_title.items() if k):
         for sp in group:
             # ONE WARNED BIT PER SPEC ROW. A row is wrapped at more sites than one -- extra

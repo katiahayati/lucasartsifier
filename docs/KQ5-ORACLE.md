@@ -972,3 +972,53 @@ which is the user's own 2026-08-16b ruling — and the Fish loses it.
 This is the same rule as [[an-item-some-armings-demand-is-not-a-gate]]: **a filter must use its
 consumer's reading.**
 
+
+## §17. The cat window's remedy — hold the closer until banked, and a banked scene never re-arms (2026-08-18, derived)
+
+§12 stated the disease: flag 83 goes up when the chase STARTS (`rm006::doit`), so the only door
+to the state rm86's kidnap fork demands shuts on arming, win or lose. `guards.window_remedies`
+now emits the cure — the two-clause form the user shaped on 2026-08-14, with clause 2 ruled
+REQUIRED (*"the chase definitely must not play again once you've saved the mouse"*):
+
+1. **Hold every durable closer's raise behind V**, the bank test. `(proc0_9 83)` becomes
+   `(if V (proc0_9 83))` — the chase still plays, losing no longer closes anything, and the
+   player can walk out and try again.
+2. **Strengthen every READ of the closer with V, disjunctively.** `(proc0_12 83)` becomes
+   `(or (proc0_12 83) V)`; at rm006's arming, which tests it under a `not`, that is exactly
+   `¬flag83 ∧ ¬V` — a banked scene never re-arms. With clause 1 this is a *meaning
+   correction*: the flag stops saying "the chase started" and starts saying "the mouse
+   business is settled."
+
+**V is the consumer's own reading.** rm086's kidnap fork spells the bank
+`(== ((gInv at: X) owner:) 6)` over the four pool members, and the guard repeats that spelling
+verbatim (the patcher derives the game's `gInv` global — KQ5's `global9` — from the owner-test
+idiom the sources already speak, the `_hands_forms` discipline). The owner graph pays off at
+run time a second time; the market's re-obtainability conjunct was the first.
+
+**Closers split into DURABLE and PER-VISIT, and both must be accounted for.** Flag 83
+(reg 485) is a lowered boolean flag: durable, held. rm6's `local0` (reg 565) is a lowered
+room local whose recorded entry reset (0) differs from its closing value (1): the script
+reloads when the player walks back in and the latch re-opens by itself — losing the race only
+shuts the window until re-entry, so no hold is needed and none would have a cross-script
+spelling anyway. A closer fitting neither account refuses the whole spec: one unheld closer
+still shuts the window, and a patch that holds the others would claim a cure it does not
+deliver.
+
+**The two halves are placed ATOMICALLY** (`patcher.guard_flag_proc_write` +
+`strengthen_flag_reads`, both new spellings of the flag store's write and read sides). The
+hold alone leaves the closer permanently down — the chase would replay after success, the
+exact shape the standing rule forbids; the read-strengthen alone cures nothing. Either both
+land or neither, and a partial landing reports itself. Both are SILENT guard kinds (a scene
+arms or does not; nothing is refused to the player's face), so lite behaves as full and stock
+bypasses each half in its own polarity (`stock_or` on the hold, the new `stock_and` on the
+added disjunct).
+
+Measured: LSL2, KQ4, KQ6 and LB2 gain exactly `"window_specs": []` on the full surface with
+placements — `window_closures` finds nothing there, so the remedy emits nothing. KQ5 emits the
+one spec (`rm86 <- [5, 8, 16, 19]`, holds flag 83, local0 self-resetting, nothing refused) and
+places it at rm006 with sites=2. Post-patch play shape: lose the race → leave → re-enter with
+a throwable → the scene re-arms and the trigger re-fires (flag 83 was never raised); save the
+mouse → the bank holds owner==6 forever → `¬V` keeps the scene down on every later visit.
+What this patch does NOT do: save a player who gets kidnapped having never banked anything —
+that is the rm85 warn-bounce interceptor (patch B), which this build is the stated
+precondition for.
