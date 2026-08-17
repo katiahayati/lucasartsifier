@@ -1910,6 +1910,256 @@ def _survivable(info, unavoidable, handoff, start=None, preempt=frozenset()):
     return start not in states or start in safe
 
 
+_NEAR_OPS = {"Lt": 0, "Le": 1}          # `< n` bounds the distance by n, `<= n` by n+1
+
+
+def _negate(g):
+    """De Morgan, COLLAPSING the double negation -- there is no canonical negation in guard_ast.
+
+    It matters because `guard_reqs` deliberately reads nothing under a `GNot` (`_must_hold`), so
+    a `GNot(GNot(x))` built by wrapping is not "x", it is a guard that constrains nothing. The
+    first cut of the hazard gate did exactly that and lowered its demand to the empty set --
+    silently, since an empty requirement is also what a genuinely free edge produces."""
+    if isinstance(g, GNot):
+        return g.kid
+    if isinstance(g, GAnd):
+        return GOr([_negate(k) for k in g.kids])
+    if isinstance(g, GOr):
+        return GAnd([_negate(k) for k in g.kids])
+    return GNot(g)
+
+
+def _temp_measurements(ast):
+    """`Temp index -> the expression it was assigned`, for temps assigned exactly ONCE.
+
+    Sierra measures a distance into a temp in one `cond` arm and re-reads the temp in the next:
+
+        (cond ((> (= temp0 (gEgo distanceTo: self)) 70) <settle down>)
+              ((< temp0 30) <strike>))
+
+    so the lethal arm's own test is a bare `(< temp0 30)` and the measurement is two arms up.
+    Assigned twice, the binding is not a fact about the method and the temp is dropped."""
+    seen = defaultdict(list)
+    for n in I.walk(ast):
+        if isinstance(n, dict) and n.get("t") == "Assignment":
+            ks = n.get("kids") or []
+            if len(ks) > 1 and isinstance(ks[0], dict) and ks[0].get("vtype") == "Temp":
+                seen[ks[0].get("index")].append(ks[1])
+    return {k: v[0] for k, v in seen.items() if len(v) == 1}
+
+
+def _unwrap_assign(n):
+    while isinstance(n, dict) and n.get("t") == "Assignment":
+        ks = n.get("kids") or []
+        n = ks[1] if len(ks) > 1 else None
+    return n
+
+
+def _distance_subject(n):
+    """The OTHER party of an ego `distanceTo:` send -- `"SELF"` or an object name.
+
+    Both spellings, because Sierra uses them interchangeably in the same game: KQ6's rm630 asks
+    `(gEgo distanceTo: self)` and its rm660 asks `(self distanceTo: gEgo)`."""
+    if not (isinstance(n, dict) and n.get("t") == "Send"):
+        return None
+    try:
+        recv, msgs = I.send_pairs(n)
+    except Exception:                                       # noqa: BLE001
+        return None
+    for sel, ps in msgs:
+        if sel != "distanceTo" or not ps:
+            continue
+        if I.is_global(recv, 0):
+            other = ps[0]
+        elif isinstance(ps[0], dict) and I.is_global(ps[0], 0):
+            other = recv
+        else:
+            continue
+        if isinstance(other, dict):
+            if other.get("t") == "Self":
+                return "SELF"
+            if other.get("t") in ("Object", "Ident"):
+                return other.get("name")
+    return None
+
+
+def _near_bounds(node, binds, out):
+    """Collect `(subject, radius)` for every "the ego is within N of X" this condition ASSERTS.
+
+    Descends `And` only. An `Or` asserts nothing about either side, and a negation asserts the
+    complement -- both are the permissive readings, and both keep a zone out of the set, which
+    is the direction that does not invent a wall."""
+    if not isinstance(node, dict):
+        return
+    if node.get("t") == "And":
+        for k in (node.get("kids") or []):
+            _near_bounds(k, binds, out)
+        return
+    if node.get("t") in _NEAR_OPS:
+        ks = node.get("kids") or []
+        if len(ks) != 2:
+            return
+        lhs = _unwrap_assign(ks[0])
+        if isinstance(lhs, dict) and lhs.get("vtype") == "Temp":
+            lhs = _unwrap_assign(binds.get(lhs.get("index")))
+        r, who = I.as_int(ks[1]), _distance_subject(lhs)
+        if who and r is not None:
+            out.append((who, r + _NEAR_OPS[node["t"]]))
+
+
+def _conjuncts(node):
+    """A condition flattened at its `And`s -- the only connective that composes into "must"."""
+    if isinstance(node, dict) and node.get("t") == "And":
+        out = []
+        for k in (node.get("kids") or []):
+            out += _conjuncts(k)
+        return out
+    return [node]
+
+
+def _is_distance_cmp(node, binds):
+    """Any comparison of the ego's distance against a literal, in either direction."""
+    if not (isinstance(node, dict) and node.get("t") in ("Lt", "Le", "Gt", "Ge")):
+        return False
+    ks = node.get("kids") or []
+    if len(ks) != 2:
+        return False
+    lhs = _unwrap_assign(ks[0])
+    if isinstance(lhs, dict) and lhs.get("vtype") == "Temp":
+        lhs = _unwrap_assign(binds.get(lhs.get("index")))
+    return _distance_subject(lhs) is not None
+
+
+def _is_script_running(node):
+    """`(<obj> script:)` or a bare `script` property -- IS A CUTSCENE RUNNING RIGHT NOW.
+
+    The one condition allowed to sit on a lethal arm without disqualifying it, and the reason
+    is not convenience: this is transient INTERPRETER state, not game state. The modeling-gap
+    census classifies it FREE for exactly this reason ("is a cutscene currently running on this
+    object", ~70 of 91 bare-property edge gates), and a player cannot arrange to have a script
+    permanently running -- every one of them ends. So "the snake does not strike while a
+    cutscene plays" is not a way past the snake."""
+    n = node
+    while isinstance(n, dict) and n.get("t") == "Not":
+        n = (n.get("kids") or [None])[0]
+    if isinstance(n, dict) and n.get("t") in ("Eq", "Ne"):
+        n = (n.get("kids") or [None])[0]
+    if isinstance(n, dict) and n.get("t") == "Property":
+        return n.get("name") == "script"
+    if not (isinstance(n, dict) and n.get("t") == "Send"):
+        return False
+    try:
+        _r, msgs = I.send_pairs(n)
+    except Exception:                                       # noqa: BLE001
+        return False
+    return any(sel == "script" for sel, _ in msgs)
+
+
+def _unconditionally_lethal(conds, binds):
+    """Does this arm say "inside the radius, FULL STOP", or only "inside the radius, and..."?
+
+    A gate built on this claims the disc is ground the player may not cross. If the arm carries
+    any OTHER condition -- a room local, a view, a `status`, an `onControl` -- then the disc is
+    only sometimes lethal, and barring the exit outright over-states it. So anything that is
+    not a distance comparison or a cutscene-running test disqualifies the arm, in either
+    polarity: this is a syntactic "mentions nothing else" test, which is the reading that
+    refuses rather than the one that reasons.
+
+    ⭐ MEASURED, and this is what makes it a rule rather than a preference: of the 17 corpus
+    arms that arm something, EXACTLY ONE passes -- KQ5's snake. Every other one is conditional.
+    KQ6's `zombie` needs `(not local73)`, its `deadGuy` pair need `(not local61)` and a mover,
+    LB2's `rat3` needs `(== (gEgo view:) 732)` and `(not local5)`, QFG's `antwerp` needs
+    `(== status 1)`. Those hazards are real, but "walk here and die" is not what their scripts
+    say, and a wall is not what we may build out of them."""
+    for (test, _pol) in conds:
+        for a in _conjuncts(test):
+            if not (_is_distance_cmp(a, binds) or _is_script_running(a)):
+                return False
+    return True
+
+
+def positional_hazards(ir, script):
+    """[(objname, radius, [machine names])] -- this room's "come closer and it happens" triggers.
+
+    A `doit` runs every game cycle whether the player wants it to or not, so a `doit` branch
+    whose condition bounds the ego's DISTANCE to an object is the script saying "walk within N
+    pixels of this and the following is done to you". When the following is an unsurvivable
+    death, the object is not scenery: it is a wall with a body count, and the disc of radius N
+    around it is ground the player may not cross. That is the CONTROL-MAP / POSITIONAL gap --
+    #1 by frequency in the modeling-gap census -- in its cleanest form, because nothing here
+    is opaque: the radius is a literal, the position is a property, and (for the snake that
+    motivated it) the disarming condition is an ordinary flag we already track.
+
+    This is only the SYNTAX, plus `_unconditionally_lethal`. Whether the armed machine actually
+    kills, whether the object stands still, and whether the disc actually seals an exit are
+    three separate questions asked by `_apply_hazard_gates`, `_room_unavoidable` and
+    `polygons.hazard_barred_exits`.
+
+    MEASURED corpus-wide: 27 `doit` arms bound the ego's distance (KQ5 8, KQ6 6, QFG-VGA 8,
+    LB2 5); 17 of those ARM something (6/5/4/2); ONE of the 17 is unconditionally lethal. LSL2
+    and KQ4 have none at all: SCI0 spells the same idea as `inRect` over the PIC control plane,
+    which is `control_oracle.crossing_gates`' half of this rule."""
+    out = []
+    for o in script.objects:
+        doit = o.methods.get("doit")
+        if not doit:
+            continue
+        binds = _temp_measurements(doit)
+        for n in I.walk(doit):
+            shape = I.control_shape(n)
+            if shape[0] != "branch":
+                continue
+            for conds, body in shape[1]:
+                if body is None:
+                    continue
+                zones = []
+                for (test, pol) in conds:
+                    if pol:                        # a FAILED prior arm says the ego is FAR, and
+                        _near_bounds(test, binds, zones)     # far is not a hazard
+                if not zones or not _unconditionally_lethal(conds, binds):
+                    continue
+                armed = []
+                for send in I.sends(body):
+                    try:
+                        _r, msgs = I.send_pairs(send)
+                    except Exception:              # noqa: BLE001
+                        continue
+                    armed += [ps[0]["name"] for sel, ps in msgs if sel == "setScript"
+                              and ps and isinstance(ps[0], dict) and ps[0].get("name")]
+                if not armed:
+                    continue
+                for (who, r) in zones:
+                    out.append((o.name if who == "SELF" else who, r, armed))
+    return out
+
+
+def _hazard_is_stationary(script, name):
+    """Is this object's `(x, y)` a PLACE, or just where it happens to start?
+
+    A lethal disc is drawn around the object's declared position, so an object anything ever
+    gives a motion to -- or re-`posn:`s, or assigns `x`/`y` -- has no fixed disc and gets none.
+    A SECOND, INDEPENDENT reason KQ6's catacombs are out: measured before `_unconditionally_
+    lethal` existed (which now refuses them first), `deadGuy`, `deadGuy2`, `zombie` and rm670's
+    `gate` matched the syntax and all four MOVE, so all four were refused here."""
+    for o in script.objects:
+        for body in o.methods.values():
+            for n in I.walk(body):
+                if not (isinstance(n, dict) and n.get("t") == "Send"):
+                    continue
+                try:
+                    recv, msgs = I.send_pairs(n)
+                except Exception:                          # noqa: BLE001
+                    continue
+                rn = recv.get("name") if isinstance(recv, dict) else None
+                if rn != name and not (o.name == name and isinstance(recv, dict)
+                                       and recv.get("t") == "Self"):
+                    continue
+                if any(sel in ("setMotion", "posn", "moveTo", "setTarget", "x", "y")
+                       for sel, _ps in msgs):
+                    return False
+    return True
+
+
 def _room_unavoidable(infos, sources, reach_rooms):
     """`(doomed, handoff, unavoidable, preempt)` for one room's machines -- the shared front
     half of every detector that must tell a death the player can still dodge from one they
@@ -2556,6 +2806,7 @@ class IrSccReach(SccReach):
                     self._rstep[gi][room] |= {(u, v) for u in vals if u <= v}
                     wr.discard(v)
         self._joints = []
+        self._apply_hazard_gates()
         self._apply_death_traps()
         self._own_fixpoint()
         # Projections = one per register, PLUS the few joints the death traps ask for. See
@@ -2593,12 +2844,10 @@ class IrSccReach(SccReach):
             want.append(named)
         return want
 
-    def _apply_death_traps(self):
-        """Conjoin `death_traps`' disjunction onto every way OUT of a room whose arrival kills you.
-
-        The rows are alternatives and each existing meta is an alternative, so the two cross: a
-        crossing is possible when some (existing way) and some (way to survive) both hold."""
-        dom = defaultdict(set)                     # values each register is ever given
+    def _register_dom(self):
+        """Every value each promoted register is ever given -- the COMPLETE domain `guard_reqs`
+        needs before it may read a `!=` or a relational op exactly."""
+        dom = defaultdict(set)
         for R in self.regs:
             dom[R] |= {v for vs in (self._inroom.get(R) or {}).values() for v in vs}
             dom[R] |= {t for pairs in self._rstep[R].values() for (_f, t) in pairs}
@@ -2608,6 +2857,117 @@ class IrSccReach(SccReach):
                 for R, v in sets.items():
                     if R in dom:
                         dom[R].add(v)
+        return dom
+
+    def _apply_hazard_gates(self):
+        """A POSITIONAL DEATH IS A WALL. Gate the exits a stationary killer's radius seals.
+
+        The gap this closes is #1 in the modeling-gap census and the oracle names the instance
+        (docs/KQ5-ORACLE.md §15). KQ5's rm2 is the road out of town, and a snake sits on it:
+
+            (if (not (proc0_12 47)) (snake ... init:))     ; it is there while flag 47 is clear
+            (method (doit) ... ((< temp0 30)               ; ...and inside 30px...
+                (global2 setScript: strike)))              ; ...strike st3 = (proc0_26 243), death
+            (34 ... (proc0_9 47) ... )                     ; the tambourine sets 47, and NO `put:`
+
+        The player cannot leave town eastward without charming it, so everyone past that point
+        is carrying the tambourine -- which is exactly what the user ruled. But the snake blocks
+        by KILLING YOU AT A DISTANCE rather than by guarding an edge, so all four of rm2's exits
+        read FREE, and the tool claimed you might cross the roc without the tambourine and be
+        stranded. That was a FALSE POSITIVE with a geometric cause.
+
+        FOUR THINGS MUST HOLD, and each is asked of a part of the model that already exists:
+          1. the trigger is positional             -- `positional_hazards`
+          2. what it arms cannot be survived       -- `_room_unavoidable`, the SAME classifier
+             `fatal_uses` and `ownedby_death_folds` answer to, with the same pre-emption rule
+          3. the killer stands still               -- `_hazard_is_stationary`
+          4. its radius seals the exit             -- `polygons.hazard_barred_exits`, which
+             proves it over the room's own obstacle polygons
+
+        The demand placed on the sealed edge is the NEGATION OF THE HAZARD'S CAST CONDITION --
+        "it is not here" -- and nothing more. Not the death's own guard, not the branch the
+        `doit` took: the only fact that makes the exit passable is that the killer is gone, and
+        `cast_conditions` is where this codebase already keeps "under what condition does this
+        object exist". For the snake that is `not (flag 47)` negated to `flag 47`, whose price
+        `_reg_cost` independently derives as the Tambourine.
+
+        REFUSALS, all toward leaving the edge free, because this REMOVES movement:
+          * an object with no cast condition (unconditionally present) states no way to be rid
+            of it, so gating on its absence would wall the exit forever;
+          * a cast condition containing an unreadable atom lowers to no requirement at all
+            (`guard_reqs`), and an empty requirement is applied as nothing rather than as
+            "impossible" -- the row is dropped instead;
+          * everything `positional_hazards` and `hazard_barred_exits` refuse on their own.
+
+        MEASURED across the corpus: 27 candidate arms, ONE surviving gate. KQ6 supplies four
+        candidates and loses all four to (3) -- its zombies walk. LSL2 and KQ4 have no such
+        arms at all and no obstacle polygons to prove one with. That the survivor is the snake
+        is the geometry's answer, not a clause about KQ5: the disc is 30px at (298,64), the
+        walkable slice of rm2's east handoff is the y in (48,81) gap poly1 and poly4 leave, and
+        every cell of it is inside the disc."""
+        import extract as X
+        import polygons as PG
+        self.hazard_gates = []
+        ir = self.em.ir
+        by_room = defaultdict(list)
+        for i in self.em.machines:
+            by_room[i["room"]].append(i)
+        dom = self._register_dom()
+        regset = set(self.regs)
+        for room in sorted(by_room):
+            script = ir.scripts.get(room)
+            if script is None:
+                continue
+            found = positional_hazards(ir, script)
+            if not found:
+                continue
+            _d, _h, unavoidable, _p = _room_unavoidable(
+                by_room[room], self.sources, self.reach_rooms)
+            try:
+                cast = X.cast_conditions(script)
+            except Exception as e:                          # noqa: BLE001
+                _degraded_model("hazard gate: cast conditions rm%d (%s)" % (room, e))
+                continue
+            for (name, radius, armed) in found:
+                lethal = sorted(m for m in armed if m in unavoidable)
+                if not lethal or not _hazard_is_stationary(script, name):
+                    continue
+                obj = next((o for o in script.objects if o.name == name), None)
+                x, y = (obj.props.get("x"), obj.props.get("y")) if obj else (None, None)
+                if not isinstance(x, int) or not isinstance(y, int):
+                    continue
+                gs = cast.get(name)
+                if not gs or any(g is None for g in gs):
+                    continue                    # always in the cast: no absence to demand
+                absent = _negate(gs[0] if len(gs) == 1 else GOr(list(gs)))
+                req = guard_reqs(absent, regset, dom)
+                if not req:
+                    continue                    # nothing readable to demand -> leave it free
+                for edge, dst in sorted(PG.hazard_barred_exits(
+                        ir, room, [(x, y, radius)]).items()):
+                    self.hazard_gates.append({
+                        "room": room, "edge": edge, "dst": dst, "hazard": name,
+                        "at": (x, y), "radius": radius, "machine": lethal,
+                        "req": {R: sorted(v) for R, v in sorted(req.items())}})
+                    key = (room, dst)
+                    out = []
+                    for (breq, sets, alts) in list(self._emeta.get(key) or [self._FREE]):
+                        r2 = dict(breq)
+                        for R, vals in req.items():
+                            r2[R] = (r2[R] & set(vals)) if R in r2 else set(vals)
+                            if not r2[R]:
+                                break
+                        else:
+                            out.append((r2, sets, alts))
+                    if out:
+                        self._emeta[key] = out
+
+    def _apply_death_traps(self):
+        """Conjoin `death_traps`' disjunction onto every way OUT of a room whose arrival kills you.
+
+        The rows are alternatives and each existing meta is an alternative, so the two cross: a
+        crossing is possible when some (existing way) and some (way to survive) both hold."""
+        dom = self._register_dom()                 # values each register is ever given
         traps = death_traps(self.em, self.regs, dom)
         self._joints = self._trap_joints(traps, dom)
         # ⭐ WHICH REGISTER VALUES MEAN "YOU ARE DEAD" (2026-08-09). A room's rows are ALTERNATIVE

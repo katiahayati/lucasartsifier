@@ -210,33 +210,38 @@ KNOWN_RED = {
     # the check is a permanent green pin. docs/LB2-ORACLE.md §7ag.
 
     "test_kq5_ground_truth.py": {
-        # 🔴 DECLARED 2026-08-16b, USER-REFUTED -- an FP whose cause is named. Curing the
-        # tambourine's `fatal_uses` FP emptied `FP_EMITTED`, and with the item off the allow-list
-        # the suspicion check sees a row `analyze` had been emitting all along (verified
-        # pre-existing: `Tambourine` was in `softlock_items` and `has: 34` was a conjunct of the
-        # rm40->rm41 edge spec before the cure, whose own diff is removals only):
+        # ✅ PROMOTED 2026-08-17 -- "no UNEXPECTED item flagged (suspicion)" is GREEN and no
+        # longer listed. It was declared red the day before with the cure named ("goes green the
+        # day positional gates land"), and this is that day: the Tambourine's
+        # `need@rm55 sources=[13] frontier=rm40->rm41` row is gone because the model now knows
+        # you cannot leave town without charming the snake.
         #
-        #     Tambourine: need@rm55 sources=[13] frontier=rm40->rm41
+        # THE CURE, and it is the ranked #1 census gap in its cleanest form. A `doit` runs every
+        # cycle whether the player likes it or not, so `((< (gEgo distanceTo: snake) 30)
+        # (setScript: strike))` is the script saying "come within 30 pixels and you die". That
+        # makes the disc around a STATIONARY killer ground the player may not cross, i.e. an
+        # obstacle -- and an obstacle is a thing `polygons.py` already reasons about. So the
+        # geometry answers the question `control_oracle.crossing_forces_rect` asks of the SCI0
+        # control plane, over the polygons an SCI1 room hands its pathfinder instead: rm2's east
+        # handoff is walkable only through the y in (48,81) slit poly1 and poly4 leave, and every
+        # cell of it is inside the disc. The edge inherits the NEGATION OF THE SNAKE'S CAST
+        # CONDITION (flag 47), whose price `_reg_cost` independently derives as item 34.
         #
-        # USER: "you can't go outside of the town unless you use the tambourine on the snake. so
-        # by construction once you go out of the town you have the tambourine." Source agrees --
-        # `rm002::init` puts the snake on screen while flag 47 is clear, `snake::doit` arms
-        # `strike` (`proc0_26 243`, a death) inside 30 pixels, and using the tambourine sets
-        # flag 47 with NO `put:`, so you keep it. You cannot be past the roc without it.
+        # It needed `polygons.instance_polygons` first: KQ5 declares obstacles as named
+        # `Polygon` instances filled from local arrays, and reading only the inline spelling
+        # meant 84 `addObstacle:` sites across 67 rooms produced NO polygons -- every KQ5 room
+        # read as open floor. LSL2/KQ4 have no obstacles at all and KQ6/QFG/LB2 pass expressions
+        # rather than named instances, so all five frozen surfaces are untouched by it.
         #
-        # THE CAUSE IS RANKED: all four exits from rm2 read FREE, because the snake blocks by
-        # KILLING YOU AT A DISTANCE rather than by guarding an edge -- the CONTROL-MAP/positional
-        # gap, #1 in the modelling-gap census, and an unusually clean instance (the disarming
-        # condition is an ordinary flag we already track). Goes green the day that lands.
-        #
-        # ⚠️ THE REMEDY IS NOT TO ALLOW-LIST THE ITEM AGAIN. An FP entry in an allow-list
-        # suppresses EVERY row for that item, true ones included -- which is exactly what hid
-        # this row, and the cured fatal_uses FP's own sibling, for weeks. docs/KQ5-ORACLE.md §15.
-        "no UNEXPECTED item flagged (suspicion)":
-            "the Tambourine's analyze row (need@rm55, source rm13, frontier rm40->rm41) is a "
-            "FALSE POSITIVE -- USER-RULED: the snake gates the road out of town and charming it "
-            "does not consume the tambourine, so nobody is past the roc without one. The model "
-            "cannot see it because the snake is a positional death, not an edge guard.",
+        # MEASURED, as a funnel: 27 `doit` arms corpus-wide bound the ego's distance (KQ5 8,
+        # KQ6 6, QFG-VGA 8, LB2 5); 17 of them ARM something (6/5/4/2); and exactly ONE of the
+        # 17 says "inside the radius, full stop" rather than "inside the radius, AND some local
+        # is clear". That one is the snake. Every other hazard in the corpus is conditional --
+        # KQ6's zombie wants `(not local73)`, LB2's rat3 wants `(== (gEgo view:) 732)` -- and
+        # four of KQ6's five also move, so their `(x,y)` is not a place either. The rule is
+        # general and the corpus is simply thin in unconditional killers.
+        # KQ5's full surface (placements included) moved by exactly two lines, both this FP
+        # leaving. Three green pins replace this entry, one per conjunct. docs/KQ5-ORACLE.md §15.
 
         # KQ5's oracle landed 2026-08-14 (docs/KQ5-ORACLE.md: game source + three independent
         # walkthroughs) with five caught softlocks pinned green and these five declared red the

@@ -621,15 +621,108 @@ rm2 is carrying it, which is exactly the user's ruling, derived.
 FALSE POSITIVE.** It claims you might cross the roc without the tambourine and be unable to go
 back for it. You cannot: you could not have left town.
 
-**Its cause is named and ranked.** All four exits from rm2 read FREE in the model
+**Its cause was named and ranked.** All four exits from rm2 read FREE in the model
 (`_emeta[(2, 1|3|7|29)]` = `({}, [12], [[]])`), because the snake blocks by KILLING YOU AT A
 DISTANCE rather than by guarding an edge. That is the CONTROL-MAP / positional gap — #1 in the
 modelling-gap census — and this is a clean, small instance of it: a distance-triggered death whose
 disarming condition is an ordinary flag the model already tracks.
 
-⚠️ **The remedy is NOT to allow-list the Tambourine again.** That is precisely what hid this row
-(and the cured `fatal_uses` FP's true sibling) for weeks — see §14. The suspicion check stays
-DECLARED RED naming the snake, so the day positional gates are modelled it goes green by itself.
+⚠️ **The remedy was NOT to allow-list the Tambourine.** That is precisely what hid this row
+(and the cured `fatal_uses` FP's true sibling) for weeks — see §14.
+
+### ✅ CURED 2026-08-17 — a positional death is a wall (`missability._apply_hazard_gates`)
+
+**The rule.** A `doit` runs every game cycle whether the player wants it to or not, so a `doit`
+branch whose condition bounds the ego's DISTANCE to an object is the script saying *"walk within
+N pixels of this and the following is done to you."* When the following is a death nobody
+survives and the object stands still, the disc of radius N around it is ground the player may
+not cross — **which is to say it is an obstacle**, and obstacles are a thing this codebase
+already reasons about. So the gate is the question `control_oracle.crossing_forces_rect` asks of
+the SCI0 PIC control plane (*can the ego get from where it arrives to the exit without entering
+the killing zone?*), asked instead of the **obstacle polygons** where an SCI1 room keeps its
+walkable area.
+
+Four conjuncts, each answered by a part of the model that already existed:
+
+| | question | answered by |
+|---|---|---|
+| 1 | is the trigger positional? | `missability.positional_hazards` |
+| 2 | can what it arms be survived? | `_room_unavoidable` — the SAME classifier `fatal_uses` and `ownedby_death_folds` answer to, pre-emption rule included |
+| 3 | does the killer stand still? | `_hazard_is_stationary` |
+| 4 | does its radius seal the exit? | `polygons.hazard_barred_exits` |
+
+The demand placed on the sealed edge is **the negation of the hazard's CAST CONDITION** — "it is
+not here" — and nothing else. Not the death's guard, not the branch the `doit` took: the only
+fact that makes the exit passable is that the killer is gone, and `cast_conditions` is already
+where this codebase keeps *under what condition does this object exist*. For the snake that is
+`not (flag 47)`, negated to `flag 47`, whose price `_reg_cost` derives **independently** as
+`{34}` — the tambourine. The user's ruling, reached from coordinates and a flag.
+
+**⭐ IT NEEDED A SECOND SPELLING OF `addObstacle:` FIRST, and that was the bigger miss.**
+`polygons.py` read only the inline form (`((Polygon new:) type: 2 init: x1 y1 …)`). KQ5 declares
+its polygons as **named instances filled from a local array**:
+
+    (instance poly1 of Polygon (properties type 2))
+    (self addObstacle: poly1 poly2 poly3 poly4 poly5)
+    (poly1 points: @local3 size: 6)
+    [local3 12] = [319 48 223 77 103 72 183 51 247 0 319 0]
+
+Same three facts, taken apart across three statements. **Measured: 84 `addObstacle:` sites across
+67 KQ5 rooms produced ZERO polygons** — the whole game read as open floor. `instance_polygons`
+reads it structurally; LSL2 and KQ4 have no obstacles at all, and KQ6/QFG/LB2 pass expressions
+rather than named instances, so **all five frozen surfaces are byte-identical across it**
+(`dead_nav_exits` and `polygon_gates` reproduce exactly: 0/0, 0/0, 0/8, 0/60, 2/4). KQ5 gains 10
+`polygon_gates` in six rooms (9, 13, 24, 49, 67, 216), which move nothing downstream today.
+
+**Why rm2's east edge and only rm2's east edge.** The snake is at `(298, 64)` with radius 30.
+`poly1` bars the east column for y ≤ ~48 and `poly4` bars it for y ≥ ~81, so the entire walkable
+slit at the handoff is `y ∈ (48, 81)` — and every cell of it is within 30px of the snake
+(the corners `(319,48)` and `(319,81)` measure 26.4 and 27.0). The other three exits are 120+
+pixels away and untouched. The east arrival `(311, 57)` is itself 14.8px from the snake, i.e.
+you can only ever arrive from rm29 having already charmed it — the game agreeing with itself.
+
+**THE CENSUS, because a rule that fires once is indistinguishable from a clause about KQ5.**
+
+| | corpus | KQ5 | KQ6 | QFG-VGA | LB2 | LSL2 | KQ4 |
+|---|---|---|---|---|---|---|---|
+| `doit` arms bounding the ego's distance | **27** | 8 | 6 | 8 | 5 | 0 | 0 |
+| …that ARM a script | **17** | 6 | 5 | 4 | 2 | 0 | 0 |
+| …that are UNCONDITIONALLY lethal | **1** | 1 | 0 | 0 | 0 | 0 | 0 |
+| …stationary, with a literal position | **1** | 1 | 0 | 0 | 0 | 0 | 0 |
+
+LSL2 and KQ4 have none at all: SCI0 spells the same idea as `inRect` over the PIC control
+plane, which is `control_oracle.crossing_gates`' half of this rule. Both distance spellings are
+read — `(gEgo distanceTo: X)` and `(X distanceTo: gEgo)`, KQ6 uses each in adjacent rooms — and
+so is the measure-into-a-temp idiom, where the distance is bound in one `cond` arm and re-read
+as a bare `(< temp0 30)` in the next.
+
+⭐ **The row that does the work is the third**, and it is worth stating plainly: **the snake is
+the only hazard in the corpus whose lethal branch says "inside the radius, full stop."** Every
+other one is conditional — KQ6's `zombie` needs `(not local73)`, its `deadGuy` pair need
+`(not local61)` and a live mover, LB2's `rat3` needs `(== (gEgo view:) 732)` and `(not local5)`,
+QFG's `antwerp` needs `(== status 1)`. Those hazards are real; "walk here and die" is simply not
+what their scripts say, and a wall is not something we may build out of them. (Four of KQ6's
+five also move, so they fail the stationarity test independently.) **One gate survives
+corpus-wide, and it is the geometry's answer rather than a clause: the snake.**
+
+**Everything refuses toward leaving the edge free**, because this removes movement: only
+UNCONDITIONAL obstacle sites are used (an unread layout can only make the exit look *more*
+reachable); no polygons, no literal arrival point, no derivable edge bands, or no readable cast
+condition → no claim; north is never claimed (the engine tests the ego's bounding rect against
+the horizon and the ego's height is a scaled VIEW fact we do not model). A `setRegions:` does
+**not** refuse the room, unlike in `dead_nav_exits`, and the asymmetry is the point: there the
+rule DELETES an edge outright, here an unread region layout can only shrink both walks and
+shrinking the hazard-free walk is what *stops* a gate — so it costs coverage, never soundness.
+
+⛔ **One trap worth recording**: `guard_reqs` deliberately reads nothing under a `GNot`, so
+"negate the cast condition" spelled as `GNot(g)` produced a guard demanding **nothing** —
+indistinguishable from a free edge, and silently so. `_negate` does De Morgan and collapses the
+double negation; there was no canonical negation in `guard_ast` before this.
+
+**Measured.** KQ5's full snapshot surface (placements included) moved by exactly two lines: the
+Tambourine leaves `softlock_items`, and the `rm40->rm41` edge spec drops its `(gEgo has: 34)`
+conjunct. `hazard_gates` is deliberately **not** a snapshot key (adding one needs a bless); the
+oracle test reads it directly, with three green pins — the gate, its price, and the polygons.
 
 ## §14. The tambourine — an item you were CARRYING is not an item you USED (2026-08-16b, derived)
 

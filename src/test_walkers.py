@@ -81,6 +81,15 @@ ACCEPTED = {
                    "arrival taxi, the street seal). A single-purpose lifecycle reader, not "
                    "control flow: no other walker asks where an object ENDS.",
     "setRegions":  "region membership is built once, in opmodel.",
+    "x":           "the same two letters asking opposite questions, which is why neither can "
+                   "drift into the other. polygons.edge_bands reads `x` as the VARIABLE one side "
+                   "of the ego's own `edgeHit` cond (`(<= x 0)` -> west), deriving where THIS "
+                   "GAME hands off at a screen edge. missability._hazard_is_stationary reads "
+                   "`x:` as a SELECTOR SENT to an object -- a write, i.e. evidence that the "
+                   "object's declared position is not a place -- alongside setMotion/posn/"
+                   "moveTo/setTarget. One reads a comparison to learn a constant, the other "
+                   "looks for an assignment to disqualify a hazard.",
+    "y":           "as x.",
     "handleEvent": "two different questions wearing one name. machine/opmodel DISPATCH it -- "
                    "`handleEvent` is one of the methods whose body they walk for armings and "
                    "effects -- while extract.feature_adders reads it as a CLASS-TABLE FACT: a "

@@ -19,9 +19,9 @@ Flag 83 closes the cat window ON ARMING, not on success -- the one-shot-window c
 
 ⛔ KQ5 IS NOT A FINISHED ORACLE, and no run of this file should be reported as though it were.
 Two of the fifteen scorecard rows are still MISSED with a declared red apiece (the bees' window,
-the fortune teller's slot), one is a false positive we emit and have not cured (the tambourine;
-the Wand's was cured 2026-08-15 and the witch amulet's verdict was corrected 2026-08-16b),
-and several verdicts are open on their own terms (the peas
+the fortune teller's slot). Column F -- false positives we emit -- is EMPTY as of 2026-08-17:
+the Wand's was cured 2026-08-15, the witch amulet's verdict was corrected 2026-08-16b, and the
+tambourine's went with the snake gate below. Several verdicts are open on their own terms (the peas
 consumable waits on the item-property store; the locket window, the mountains' cold death and
 the Hammer's crystal site are unverified against the source). The checks below passing means
 the catches we HAVE are still there and still caught for the stated mechanism -- nothing more.
@@ -31,8 +31,14 @@ value and the losing arm is a death the player cannot dodge), retired the kidnap
 and pie reds. Phase 2, item-banned fetch walks in `register_strandings`, retired the Hammer red.
 Their rows are mechanism-pinned below. Phase 3 landed 2026-08-16b as `window_closures` (with
 `extract.feature_adders`), retiring the cat-window red. STILL RED: the bees' half of phase 3
-(flag 36's writer needs the fish -- an ITEM axis, not a register one), the fortune teller's
-needle slot, and the tambourine false positive.
+(flag 36's writer needs the fish -- an ITEM axis, not a register one) and the fortune teller's
+needle slot.
+
+⭐ THE POSITIONAL GAP IS OPEN ON KQ5 (2026-08-17). `missability._apply_hazard_gates` reads a
+`doit` branch that bounds the ego's DISTANCE to a stationary object and arms a death nobody
+survives, and bars the screen exits that object's radius seals -- proven over the room's own
+obstacle polygons, which KQ5 spells as named `Polygon` instances (`polygons.instance_polygons`,
+84 sites in 67 rooms that used to read as open floor). One gate in the corpus: rm2's snake.
 
 ⭐ THE WITCH AMULET IS NOT A SOFTLOCK (USER-RULED 2026-08-16b) -- you need it, but rm19 is one
 screen into the forest and you can walk back to rm13 for another. Its red demanded the wrong row
@@ -347,6 +353,43 @@ def run():
           hammer_alt and prev_free,
           f"metas={metas!r} -- expected one alternative demanding own(22) and one free under "
           f"prevRoom != 85. If this moved, the handler-latch/machine-exit composition regressed.")
+
+    # --- THE SNAKE IS THE TOWN GATE, and it is a POSITIONAL death (docs/KQ5-ORACLE.md §15) ----
+    # ✅ PROMOTED 2026-08-17. This was the last entry in column F: `analyze` claimed the
+    # Tambourine could be left behind at the roc (`need@rm55 sources=[13] frontier=rm40->rm41`),
+    # and the USER refuted it -- "you can't go outside of the town unless you use the tambourine
+    # on the snake." All four of rm2's exits read FREE because the snake blocks by KILLING YOU
+    # AT A DISTANCE rather than by guarding an edge. `_apply_hazard_gates` closes that, and the
+    # three pins below are the three separate things that have to be true, so a regression says
+    # WHICH one broke rather than only that the FP came back.
+    gates = [g for g in getattr(s, "hazard_gates", ())]
+    check("the snake gates the road out of town (rm2 east -> rm29, on flag 47)",
+          gates == [{"room": 2, "edge": "east", "dst": 29, "hazard": "snake", "at": (298, 64),
+                     "radius": 30, "machine": ["strike"], "req": {449: [1]}}],
+          f"hazard_gates={gates!r} -- expected exactly the snake's disc sealing rm2's east "
+          f"handoff, demanding flag 47 (register 449). More rows than this is a new claim to "
+          f"check against the game; fewer is the FP coming back.")
+
+    # ...AND THE DEMAND IS THE TAMBOURINE, which is the user's ruling in the model's own terms.
+    # The gate names a FLAG, not an item; that it reduces to the tambourine is `_reg_cost`'s
+    # answer, derived from the only write of flag 47 (`snake handleEvent 4`, item 34, and
+    # crucially NO `put:` -- charming it does not consume it, which is why everyone past the
+    # gate still has one).
+    check("leaving town eastward costs the Tambourine",
+          s._reg_cost(449, {1}) == frozenset({34}),
+          f"_reg_cost(449,{{1}})={s._reg_cost(449, {1})!r} -- expected the tambourine alone. "
+          f"If this widened, the flag has acquired a second writer the oracle has not seen.")
+
+    # ...AND THE GEOMETRY IS READ AT ALL. KQ5 states its obstacle layouts as named `Polygon`
+    # INSTANCES filled from local arrays, a spelling `polygons.py` could not read until this
+    # build -- 84 `addObstacle:` sites in 67 rooms, all invisible, so every KQ5 room looked
+    # like open floor. Pinned because the gate above is silently unprovable without it.
+    import polygons as PG
+    _polys = [p for _pc, ps in PG.room_obstacles(s.em.ir, s.em.ir.scripts[2]) for p in ps]
+    check("rm2's obstacle layout is read (the Polygon-instance spelling)",
+          len(_polys) == 5 and all(t == 2 and len(pts) >= 4 for (t, pts) in _polys),
+          f"rm2 polygons={_polys!r} -- expected the five BARRED polygons rm002 hands the "
+          f"pathfinder. With none of them the east handoff is reachable around the snake.")
 
     # --- THE DELIBERATE REDS: real, missed, and declared -------------------------------------
     # Each is a live assertion that flips green the day its detector lands; tools/run_tests.py

@@ -52,6 +52,78 @@ def _polygon(node):
     return (typ, pts) if pts else None
 
 
+_INSTANCE_POLYS = {}
+
+
+def instance_polygons(script):
+    """`{objname: (type, points)}` -- THE SECOND SPELLING of the same fact.
+
+    KQ6 and QFG build the layout inline, as one expression per obstacle, which is what `_polygon`
+    reads. KQ5 declares the polygons as INSTANCES and fills them from a local array literal:
+
+        (instance poly1 of Polygon (properties type 2))       ; the type is a property...
+        ...
+        (self addObstacle: poly1 poly2 poly3 poly4 poly5)     ; ...the layout names them...
+        (poly1 points: @local3 size: 6)                       ; ...and the points arrive by
+        [local3 12] = [319 48 223 77 103 72 183 51 247 0 319 0]   ;   ADDRESS of a local array
+
+    Same three facts (type, point count, coordinates), all still literals in the AST, just taken
+    apart across three statements. Reading only the inline form meant KQ5's obstacle layout did
+    not exist for us: MEASURED, 84 `addObstacle:` sites across 67 rooms and `room_obstacles`
+    returned polygons for NONE of them, so every KQ5 room looked like open floor. LSL2 and KQ4
+    have no obstacles at all, and KQ6/QFG/LB2 pass expressions rather than named instances, so
+    this spelling is (measured) KQ5's alone -- but it is a SPELLING, not a game quirk, which is
+    why it is read structurally rather than keyed on the game.
+
+    Refusals, both in the direction of having no layout rather than a wrong one: an instance
+    given points TWICE with different arrays is ambiguous (we do not know which assignment the
+    engine sees last, and a room that re-points a polygon is choosing between layouts), and an
+    array whose every slot is not a literal integer is not a polygon we can trust.
+
+    `size:` is the point COUNT, so the array must supply twice that many integers -- reading it
+    as a length in words would silently halve every polygon."""
+    hit = _INSTANCE_POLYS.get(id(script))
+    if hit is not None and hit[0] is script:
+        return hit[1]
+    lits = {d["index"]: d["value"] for d in (getattr(script, "locals", None) or [])
+            if isinstance(d, dict) and isinstance(d.get("value"), int)}
+    seen = {}
+    for o in script.objects:
+        for body in o.methods.values():
+            for n in I.walk(body):
+                if not (isinstance(n, dict) and n.get("t") == "Send"):
+                    continue
+                try:
+                    recv, msgs = I.send_pairs(n)
+                except Exception:                               # noqa: BLE001
+                    continue
+                if not (isinstance(recv, dict) and recv.get("t") == "Object"):
+                    continue
+                base = npts = None
+                for sel, ps in msgs:
+                    if sel == "points" and ps and isinstance(ps[0], dict) \
+                            and ps[0].get("t") == "AddressOf":
+                        v = (ps[0].get("kids") or [None])[0]
+                        if isinstance(v, dict) and v.get("vtype") == "Local":
+                            base = v.get("index")
+                    elif sel == "size" and ps:
+                        npts = I.as_int(ps[0])
+                if base is not None and npts:
+                    seen.setdefault(recv["name"], set()).add((base, npts))
+    byname = {o.name: o for o in script.objects}
+    out = {}
+    for name, got in seen.items():
+        if len(got) != 1 or name not in byname:
+            continue                                            # two layouts for one instance
+        (base, npts), = got
+        vals = [lits.get(base + i) for i in range(2 * npts)]
+        if npts < 3 or any(v is None for v in vals):
+            continue
+        out[name] = (byname[name].props.get("type"), list(zip(vals[0::2], vals[1::2])))
+    _INSTANCE_POLYS[id(script)] = (script, out)
+    return out
+
+
 def _proc_polygons(ir):
     """proc name -> [(guard, polygons), ...] -- the layouts it installs, one per BRANCH.
 
@@ -76,9 +148,10 @@ def _proc_polygons(ir):
         return cache
     out = {}
     for s in ir.scripts.values():
+        inst = instance_polygons(s)
         for name, body in s.procs.items():
             found = []
-            walk_stream(body, [], lambda n, pc: _collect(n, pc, found))
+            walk_stream(body, [], lambda n, pc, _f=found, _i=inst: _collect(n, pc, _f, _i))
             if found:
                 out[name] = found
     try:
@@ -88,8 +161,12 @@ def _proc_polygons(ir):
     return out
 
 
-def _collect(n, pc, out):
-    """`addObstacle:` sites in one statement, with the path condition that reaches them."""
+def _collect(n, pc, out, inst=None):
+    """`addObstacle:` sites in one statement, with the path condition that reaches them.
+
+    `inst` is the script's `instance_polygons` map, so an argument that NAMES a polygon resolves
+    to the same `(type, points)` an inline one produces -- one shape downstream, two spellings
+    read here."""
     if n.get("t") != "Send":
         return
     try:
@@ -102,6 +179,8 @@ def _collect(n, pc, out):
             continue
         for p in ps:
             got = _polygon(p)
+            if got is None and inst and isinstance(p, dict) and p.get("t") == "Object":
+                got = inst.get(p.get("name"))
             if got:
                 polys.append(got)
     if polys:
@@ -113,6 +192,7 @@ def room_obstacles(ir, script):
     path condition under which it runs. One entry per branch, so the two layouts stay separate."""
     from extract import walk_stream
     procs = _proc_polygons(ir)
+    inst = instance_polygons(script)
     out = []
 
     def leaf(n, pc):
@@ -123,7 +203,7 @@ def room_obstacles(ir, script):
             for (inner, polys) in procs[n["name"]]:
                 out.append((list(pc) + list(inner), polys))
             return
-        _collect(n, pc, out)
+        _collect(n, pc, out, inst)
 
     for o in script.objects:
         body = o.methods.get("init")
@@ -279,6 +359,143 @@ def edge_bands(ir):
     return got
 
 
+def _arrival_seeds(rm):
+    """The literal `(gEgo posn: x y)` points in the room's init -- where the player ARRIVES.
+
+    One per direction the room is entered from, which is the whole reason a room states them."""
+    out = []
+    init = rm.methods.get("init")
+    for send in (I.sends(init) if init else ()):
+        recv, msgs = I.send_pairs(send)
+        if not I.is_global(recv, 0):
+            continue
+        for sel, ps in msgs:
+            if sel == "posn" and len(ps) >= 2:
+                x, y = I.as_int(ps[0]), I.as_int(ps[1])
+                if x is not None and y is not None:
+                    out.append((x, y))
+    return out
+
+
+def _exit_zones(ir, gw, gh, step):
+    """`{edge: [cells]}` -- the engine's handoff zone for each edge, in the ego's BASE coords.
+
+    The BANDS come from the game (`edge_bands`, the ego's own `edgeHit` cond); the SLACK on top
+    of them is ours, an over-approximation in the KEEPING direction -- the zone is made easier
+    to reach than the engine makes it, so an edge is called unusable only when the walkable
+    area falls well short of it. 40px stands in for a wide scaled ego's footprint on the sides.
+
+    ⛔ NORTH IS NEVER HERE -- the engine tests the ego's bounding RECT against the horizon, so
+    the north handoff fires when `base_y - ego_height <= horizon`, and the ego's height is a
+    scaled VIEW fact this module does not model. Returns None when the game never spells its
+    handoff at all."""
+    bands = edge_bands(ir)
+    if bands is None:
+        return None
+    slack_ew, slack_s = 40, 6
+    return {
+        "south": [(gx, gy) for gx in range(gw) for gy in range(gh)
+                  if gy * step + step // 2 >= bands["south"] - slack_s],
+        "east":  [(gx, gy) for gx in range(gw) for gy in range(gh)
+                  if gx * step + step // 2 >= bands["east"] - slack_ew],
+        "west":  [(gx, gy) for gx in range(gw) for gy in range(gh)
+                  if gx * step + step // 2 <= bands["west"] + slack_ew],
+    }
+
+
+def _walk_from_arrival(polys, seeds_px, discs=(), step=4):
+    """Flood the walkable area from the arrival points, treating `discs` as solid.
+
+    `discs` are `(cx, cy, r)` LETHAL ZONES. A zone is modelled as an obstacle because that is
+    exactly what it is for a player who intends to survive: ground you may step onto and not
+    come back from is ground you may not cross. A seed INSIDE a zone is dropped rather than
+    flooded -- arriving there is dying there, so it is not a place any live walk begins.
+
+    Returns `(reached_cells, gw, gh, live_seeds)`."""
+    blocked, gw, gh = _blocked_mask(polys, step)
+    b = bytearray(blocked)
+    for (cx, cy, r) in discs:
+        rr = r * r
+        for gy in range(gh):
+            for gx in range(gw):
+                dx = gx * step + step // 2 - cx
+                dy = gy * step + step // 2 - cy
+                if dx * dx + dy * dy < rr:
+                    b[gy * gw + gx] = 1
+    seeds = []
+    for (x, y) in seeds_px:
+        gx = min(max(x // step, 0), gw - 1)
+        gy = min(max(y // step, 0), gh - 1)
+        if not b[gy * gw + gx]:
+            seeds.append((gx, gy))
+    q, seen = deque(seeds), set(seeds)
+    while q:
+        gx, gy = q.popleft()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = gx + dx, gy + dy
+            if (0 <= nx < gw and 0 <= ny < gh and (nx, ny) not in seen
+                    and not b[ny * gw + nx]):
+                seen.add((nx, ny))
+                q.append((nx, ny))
+    return seen, gw, gh, seeds
+
+
+def hazard_barred_exits(ir, room, discs):
+    """`{edge: declared_room}` -- exits the ego can walk to, but not while `discs` are lethal.
+
+    The geometric half of a positional death gate. `discs` are `(x, y, radius)` circles around a
+    stationary hazard whose `doit` kills the ego inside that radius. The question is the one
+    `control_oracle.crossing_forces_rect` asks of the PIC control plane for SCI0 -- *can the ego
+    get from where it arrives to the exit without entering the killing zone?* -- asked of the
+    obstacle polygons instead, because that is where an SCI1 room keeps its walkable area.
+
+    An edge is reported ONLY when it is reachable with the hazard gone and unreachable with it
+    present, so the barring is attributed to the hazard and not to the room's own walls.
+
+    Everything refuses toward NOT barring, because barring removes movement:
+      * only UNCONDITIONAL `addObstacle:` sites are used. A conditional layout is a layout we
+        may not be looking at, and leaving its walls out can only make the exit look MORE
+        reachable, i.e. less likely to be called barred.
+      * no polygons at all -> no walkable-area model -> no claim. (This is why LSL2 and KQ4,
+        which have no obstacles, can never produce one of these; their positional gates come
+        from the control plane instead.)
+      * no literal arrival point, or no derivable edge bands -> no claim.
+      * north is never claimed (`_exit_zones`).
+
+    A `setRegions:` does NOT refuse the room, and the asymmetry is the point: `dead_nav_exits`
+    refuses on it because a region's own polygons could make an edge reachable that the room's
+    layout alone does not, and that rule DELETES the edge outright. Here extra walls can only
+    SHRINK both walks, and shrinking the hazard-free walk is what stops a gate being emitted --
+    so an unread region layout costs coverage, never soundness."""
+    script = ir.scripts.get(room)
+    rm = _room_object(script, ir) if script else None
+    if rm is None or not discs:
+        return {}
+    from extract import NAV_SELECTORS
+    declared = [(d, rm.props.get(d)) for d in NAV_SELECTORS
+                if rm.props.get(d) and rm.props.get(d) != 0xffff]
+    if not declared:
+        return {}
+    polys = [p for pc, ps in room_obstacles(ir, script)
+             if not any(a is not None for a in pc) for p in ps]
+    seeds_px = _arrival_seeds(rm)
+    if not polys or not seeds_px:
+        return {}
+    step = 4
+    free, gw, gh, _s = _walk_from_arrival(polys, seeds_px, (), step)
+    hurt, _gw, _gh, _s2 = _walk_from_arrival(polys, seeds_px, discs, step)
+    zones = _exit_zones(ir, gw, gh, step)
+    if zones is None:
+        return {}
+    out = {}
+    for d, dst in declared:
+        if d not in zones:
+            continue
+        if any(c in free for c in zones[d]) and not any(c in hurt for c in zones[d]):
+            out[d] = dst
+    return out
+
+
 def dead_nav_exits(ir, room):
     """[{room, edge, declared_room}] -- declared s/e/w props whose engine trigger zone the
     room's own unconditional obstacle layout never lets the ego reach. A dead letter: the
@@ -326,50 +543,12 @@ def dead_nav_exits(ir, room):
                 return []
     polys = [p for _pc, ps in sites for p in ps]
     step = 4
-    blocked, gw, gh = _blocked_mask(polys, step)
-    seeds = []
-    init = rm.methods.get("init")
-    for send in (I.sends(init) if init else ()):
-        recv, msgs = I.send_pairs(send)
-        if not I.is_global(recv, 0):
-            continue
-        for sel, ps in msgs:
-            if sel == "posn" and len(ps) >= 2:
-                x, y = I.as_int(ps[0]), I.as_int(ps[1])
-                if x is not None and y is not None:
-                    gx = min(max(x // step, 0), gw - 1)
-                    gy = min(max(y // step, 0), gh - 1)
-                    if not blocked[gy * gw + gx]:
-                        seeds.append((gx, gy))
+    seen, gw, gh, seeds = _walk_from_arrival(polys, _arrival_seeds(rm), (), step)
     if not seeds:
         return []
-    q = deque(seeds)
-    seen = set(seeds)
-    while q:
-        gx, gy = q.popleft()
-        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            nx, ny = gx + dx, gy + dy
-            if (0 <= nx < gw and 0 <= ny < gh and (nx, ny) not in seen
-                    and not blocked[ny * gw + nx]):
-                seen.add((nx, ny))
-                q.append((nx, ny))
-    # The trigger zones, in the ego's BASE coordinates (see the docstring for why north has
-    # none). The BANDS come from the game (`edge_bands`, the ego's own `edgeHit` cond); the
-    # SLACK on top of them is ours, an over-approximation in the keeping direction -- the zone
-    # is made easier to reach than the engine makes it, so a room is called dead only when it
-    # falls well short. 40px stands in for a wide scaled ego's footprint on the sides.
-    bands = edge_bands(ir)
-    if bands is None:
+    zones = _exit_zones(ir, gw, gh, step)
+    if zones is None:
         return []                     # the game never spells its handoff: keep every edge
-    slack_ew, slack_s = 40, 6
-    zones = {
-        "south": [(gx, gy) for gx in range(gw) for gy in range(gh)
-                  if gy * step + step // 2 >= bands["south"] - slack_s],
-        "east":  [(gx, gy) for gx in range(gw) for gy in range(gh)
-                  if gx * step + step // 2 >= bands["east"] - slack_ew],
-        "west":  [(gx, gy) for gx in range(gw) for gy in range(gh)
-                  if gx * step + step // 2 <= bands["west"] + slack_ew],
-    }
     out = []
     for d, dst in declared:
         if d in zones and not any(cell in seen for cell in zones[d]):
