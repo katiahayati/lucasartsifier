@@ -4031,7 +4031,19 @@ class IrSccReach(SccReach):
         still refuses KQ4's Cupid, who moves his bow to room 202 and brings it back.
 
         The "was it the intended move" worry is answered by `dangerous_sinks` itself rather than
-        here: an intended use does not leave the item still needed in a room you can still reach."""
+        here: an intended use does not leave the item still needed in a room you can still reach.
+
+        ⛔ HANDLERS ONLY, and the boundary is a KNOWN GAP rather than a principle. A shop counter
+        is a CUTSCENE -- KQ5's tailor takes his fee in `soldCloak` state 0, a `changeState` body --
+        so none of that game's four shop payments is visible here, and the Heart (whose other
+        consumer, the enchanted princess at rm9, accepts nothing else and is the Harp's only
+        source) is a real one-payment walking dead we do not catch. MEASURED 2026-08-17: walking
+        `machine_moves` as well finds those 3 rows and 19 false ones -- 13 `Cat_Fish` and 3
+        `Beeswax` where the spend and the "still needed" use are THE SAME SITE seen in every room
+        its region serves, plus a `Wand@rm66` that re-creates an FP the user ruled on 2026-08-15.
+        The missing conjunct is a same-scope test (a consumer in the spend's own script is one
+        event, not two competing ones); it did not cover the Wand, so nothing shipped. Declared red
+        in `test_kq5_ground_truth`."""
         seen = {(sk["room"], sk["script"], sk["item"]) for sk in self.pure_sinks()}
         out, emitted = [], set()
         for room, script, it, g, dest in self.em.handler_drops:

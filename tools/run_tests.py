@@ -358,27 +358,72 @@ KNOWN_RED = {
         # the rm40->rm41 spec) go with it. The full snapshot surface of LSL2, KQ4, KQ6 and LB2 is
         # byte-identical, placements included. Mechanism in docs/KQ5-ORACLE.md §10 -- including
         # the site that DOES take the wand (rm066's machine tray), which the old reason denied.
-        # ⚠️ THE REASON BELOW WAS SOURCE-REFUTED 2026-08-17 and the row now awaits a USER RULING
-        # rather than a build -- so it stays red, per [[dont-flip-enumerated-ground-truth]]: the
-        # oracle enumerated it (§6, tier 3) and I do not get to retire it by disagreeing on my own.
-        # "The needle's real consumer is the tailor" is FALSE: `tailorShop.sc:143-151` accepts
-        # Golden_Needle(3), Gold_Coin(11) OR Heart(9). KQ5 runs a FIVE-TOKEN MARKET over four
-        # purchases -- gypsy{3,11}->Amulet, tailor{3,9,11}->Cloak, toyMaker{3,9,11,12}->Sled,
+        # ✅ RETIRED 2026-08-17, USER-RULED IN THE GAME -- "🔴 KNOWN GAP (KQ5): the fortune
+        # teller's needle substitution is caught" is gone because it DEMANDED THE WRONG ROW, not
+        # because a build landed. It asserted that some detector flags the Golden_Needle, on the
+        # tier-3 claim that paying the gypsy with it makes the game unwinnable "because the
+        # needle's real consumer is the tailor". Both halves are false.
+        #
+        # The reason, refuted by the source: `tailorShop.sc:143-151` accepts Golden_Needle(3),
+        # Gold_Coin(11) OR Heart(9). KQ5 runs a FIVE-TOKEN MARKET over four purchases --
+        # gypsy{3,11}->Amulet, tailor{3,9,11}->Cloak, toyMaker{3,9,11,12}->Sled,
         # baker{3,4,9,11}->Pie, with tokens Needle(rm27), Coin(rm4), Heart(rm21), Gold_Coin(rm18)
-        # and Marionette(rm10) -- and every token is obtainable before the amulet is needed (the
-        # temple is reached from town via rm14/15 -> rm212/213 -> rm214), so a perfect assignment
-        # survives ANY single payment. The model emitting nothing is therefore the right answer to
-        # the question this row asks. What CAN strand you is spending BOTH 3 and 11 away from the
-        # gypsy, emptying a slot no other token fills -- a Hall deficiency over the market, needing
-        # two wrong payments. The scoring tell (`proc0_27 3` only for coin->gypsy, `proc0_27 4`
-        # only for needle->tailor) marks the intended pairing, and we already know that tell is not
-        # a softlock signal: the Lamb and the Fish score nothing at the cat and still save the
-        # mouse. Goes green, or is retired, once the user rules which mechanism is real.
-        "🔴 KNOWN GAP (KQ5): the fortune teller's needle substitution is caught":
-            "rm13's amulet slot takes Gold_Coin(11) OR Golden_Needle(3). The old reason -- 'the "
-            "needle's real consumer is the tailor' -- is SOURCE-REFUTED (the tailor takes three "
-            "tokens). Open question: whether ANY single payment strands you, or whether the real "
-            "mechanism is the two-payment market deficiency. USER RULING OWED.",
+        # and Marionette(rm10). Every token is reachable before the amulet is needed (the temple is
+        # a short walk from town via rm14/15 -> rm212/213 -> rm214), so a perfect assignment
+        # survives ANY single payment.
+        #
+        # The verdict, refuted by the USER in two steps: the gypsy takes the needle, and the tailor
+        # then sells the cloak for the gold coin. So the model emitting nothing is CORRECT, and a
+        # row would have been a false positive. Rebuilt as two green pins -- the market reads as
+        # four alternative-sets (`disjunctive_groups` at rm13/rm5/rm206), and no detector strands a
+        # token -- the same shape the witch amulet's red was rebuilt into on 2026-08-16b.
+        #
+        # ⚠️ WHAT SURVIVES IS A DIFFERENT MECHANISM, and it is recorded as OPEN rather than as a
+        # missed catch (docs/KQ5-ORACLE.md §6): spending BOTH 3 and 11 away from the gypsy empties
+        # a slot no other token fills, because the Heart is two screens into the forest the amulet
+        # opens. That is a Hall deficiency over the market and needs TWO wrong payments, so no
+        # single-spend detector can state it. Do not re-declare it as this row.
+        #
+        # ⛔ The scoring tell is NOT evidence and must not be used as any detector's conjunct:
+        # `proc0_27 3` fires only for coin->gypsy and `proc0_27 4` only for needle->tailor, which
+        # marks Sierra's intended pairing. We already knew that tell is not a softlock signal --
+        # the Lamb and the Fish score nothing at the cat and still save the mouse.
+        #
+        # 🔴 AND THE ROW THAT REPLACES IT, declared the same day. USER, immediately after refuting
+        # the single-payment claim: *"yes but you CAN ... waste your gold on the toy maker and the
+        # cloak"*. The gypsy's slot is {Golden_Needle 3, Gold_Coin 11} and nothing else fills it,
+        # so spending BOTH at slots that merely accept them leaves the Amulet unbuyable -> no
+        # forest -> no rm24 -> no Beeswax, which rms 44-47 need.
+        # 🔴 AND THE HEART, declared the same day. USER: *"you need the heart for something else,
+        # so that would be a sink too"* -- and they are right, on exactly the Fish's argument: the
+        # enchanted princess at rm9 (`rm009.sc:936/990`) dispatches item 9 ALONE, she is the Harp's
+        # sole source, and the Harp is required at rm90/92/682 across the roc's point of no return.
+        # So unlike the needle and the gold coin, paying a shopkeeper with the Heart is a ONE-
+        # payment walking dead. We miss it because the shop payments are MACHINE drops and
+        # `destroying_sinks` walks only `handler_drops`.
+        # ⛔ THE ONE-LINE WIDENING WAS TRIED AND MEASURED AND IS NOT SHIPPABLE: walking
+        # `machine_moves` finds the 3 Heart rows and NINETEEN false ones on KQ5 -- 13 Cat_Fish + 3
+        # Beeswax where the spend and the need are the same region-homed site seen once per room,
+        # and a `Wand@rm66` that re-creates the FP the user ruled on 2026-08-15 through a detector
+        # it never came through before. ⛔⛔ AND IT MOVES A GOLDEN: KQ4 gains three
+        # `Shakespeare_Book@rm13/14/19` rows, the same region-broadcast family (script 203 serves
+        # all three rooms). LSL2, KQ6 and LB2 were unmoved. A same-scope conjunct (a consumer
+        # inside the spend's own script is one event, not two competing ones) cures both broadcast
+        # families and NOT the Wand, so the cure is at least two pieces. Do not ship it alone.
+        "🔴 KNOWN GAP (KQ5): spending the Heart at a shop is condemned by the Harp it costs":
+            "the tailor, toy maker and baker all accept the Heart(9), but its other consumer -- "
+            "the enchanted princess at rm9 -- accepts nothing else and is the Harp's only source. "
+            "Needs `destroying_sinks` to walk `machine_moves`; measured, that alone costs 19 "
+            "false positives including a re-created Wand FP.",
+        "🔴 KNOWN GAP (KQ5): the shop market squeeze is caught":
+            "the gypsy's slot {3,11} can be emptied by the toy maker and the tailor, which the "
+            "USER confirmed 2026-08-17 is a real dead end. Two payments, so no single-spend "
+            "detector can state it. The shape is GROUP STARVATION -- Hall's condition over the "
+            "four slots `disjunctive_groups` already derives -- and the conjunct that separates "
+            "it from the throwable pool is ARMING: the cat and dog scenes refuse to start without "
+            "ammunition (`rm006.sc:112`), the shops take your last token happily. ⛔ NOT "
+            "`group_strandings`, which asks about reachability to SOURCES, not competing "
+            "consumption.",
         # ✅ RETIRED 2026-08-16b, USER-RULED -- "🔴 KNOWN GAP (KQ5): the witch-region worn-amulet
         # death fold is caught" is gone because it DEMANDED THE WRONG ROW, not because a build
         # landed. It asserted that some detector flags the Amulet, on the oracle's old verdict

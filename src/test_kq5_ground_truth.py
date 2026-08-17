@@ -18,8 +18,10 @@ fork -- `rescue` (which still demands the Hammer) vs `yourStuck` (an unpreventab
 Flag 83 closes the cat window ON ARMING, not on success -- the one-shot-window class.
 
 ⛔ KQ5 IS NOT A FINISHED ORACLE, and no run of this file should be reported as though it were.
-Two of the fifteen scorecard rows are still MISSED with a declared red apiece (the bees' window,
-the fortune teller's slot). Column F -- false positives we emit -- is EMPTY as of 2026-08-17:
+One scorecard row is MISSED with a declared red: the SHOP MARKET SQUEEZE (§6a), which the user
+confirmed 2026-08-17 and which replaced the fortune-teller row the same day -- that one was ruled
+not a softlock at all, and the dead end it was groping at needs TWO payments rather than one.
+Column F -- false positives we emit -- is EMPTY as of 2026-08-17:
 the Wand's was cured 2026-08-15, the witch amulet's verdict was corrected 2026-08-16b, and the
 tambourine's went with the snake gate below. Several verdicts are open on their own terms (the peas
 consumable waits on the item-property store; the locket window, the mountains' cold death and
@@ -30,9 +32,9 @@ Two builds landed 2026-08-14. Phase 1, `ownedby_death_folds` (an arrival forks o
 value and the losing arm is a death the player cannot dodge), retired the kidnap-read, lamb-fold
 and pie reds. Phase 2, item-banned fetch walks in `register_strandings`, retired the Hammer red.
 Their rows are mechanism-pinned below. Phase 3 landed 2026-08-16b as `window_closures` (with
-`extract.feature_adders`), retiring the cat-window red. STILL RED: the bees' half of phase 3
-(flag 36's writer needs the fish -- an ITEM axis, not a register one) and the fortune teller's
-needle slot.
+`extract.feature_adders`), retiring the cat-window red. The bees' half of phase 3 turned out NOT
+to be a window at all -- flag 36's writer needs the fish IN HAND, so an item spent elsewhere shuts
+it, which is a SINK -- and closed 2026-08-17 as `dangerous_sinks Fish@rm6 -> [11]` (§16).
 
 ⭐ THE POSITIONAL GAP IS OPEN ON KQ5 (2026-08-17). `missability._apply_hazard_gates` reads a
 `doit` branch that bounds the ego's DISTANCE to a stationary object and arms a death nobody
@@ -476,23 +478,111 @@ def run():
           "the rm86 fold rows lost a pool member or their kidnap context -- "
           "docs/KQ5-ORACLE.md §1.")
 
-    # ⚠️ THE REASON THIS RED USED TO GIVE IS REFUTED BY THE SOURCE (2026-08-17), and the VERDICT
-    # is awaiting a user ruling -- so it stays red rather than being retired by me. "The needle's
-    # real consumer is the tailor" is false: `tailorShop.sc:143-151` takes Golden_Needle(3), Gold_
-    # Coin(11) OR Heart(9), and KQ5 runs a five-token market over four purchases -- gypsy{3,11},
-    # tailor{3,9,11}, toyMaker{3,9,11,12}, baker{3,4,9,11}. Every token is obtainable before the
-    # amulet is needed (the Gold_Coin's temple, rm18, is reached from town via rm14/15 ->
-    # rm212/213 -> rm214), so a perfect assignment survives ANY single payment and the model
-    # correctly emits nothing. What can still strand you is spending BOTH 3 and 11 away from the
-    # gypsy, which empties a slot no other token can fill -- a Hall deficiency across the market,
-    # needing two wrong payments, not the one this row names. See docs/KQ5-ORACLE.md §6.
-    needle_rows = [n for (n, _d, _r) in raw_rows if n == "Golden_Needle"]
-    check("🔴 KNOWN GAP (KQ5): the fortune teller's needle substitution is caught",
-          bool(needle_rows),
-          "rm13 accepts Gold_Coin(11) OR Golden_Needle(3) in the amulet slot (`put: 3 13`). The "
-          "old reason -- 'the needle's real consumer is the tailor' -- is SOURCE-REFUTED; the "
-          "open question is whether any single payment strands you at all, or whether the true "
-          "mechanism is the two-payment market deficiency. USER RULING OWED.")
+    # ✅ REWRITTEN 2026-08-17, USER-RULED -- this red, like the witch amulet's, DEMANDED THE WRONG
+    # ROW. It asserted that some detector flags the Golden_Needle, on the tier-3 claim that paying
+    # the gypsy with it makes the game unwinnable "because the needle's real consumer is the
+    # tailor". The source refutes the reason -- `tailorShop.sc:143-151` takes Golden_Needle(3),
+    # Gold_Coin(11) OR Heart(9) -- and the USER refuted the verdict IN THE GAME, in two steps:
+    # the gypsy takes the needle, and the tailor then sells the cloak for the gold coin. So a row
+    # here would be a FALSE POSITIVE, and emitting nothing is the correct answer.
+    #
+    # What KQ5 actually has is a FIVE-TOKEN MARKET over four purchases, and the model reads all of
+    # it: gypsy{3,11} -> Amulet, tailor{3,9,11} -> Cloak, toyMaker{3,9,11,12} -> Sled,
+    # baker{3,4,9,11} -> Pie. Every token is reachable before the amulet is needed (the Gold_Coin's
+    # temple, rm18, is a short walk from town via rm14/15 -> rm212/213 -> rm214), so a perfect
+    # assignment survives ANY single payment.
+    #
+    # ⚠️ The hazard that IS in this family needs TWO wrong payments: spend both 3 and 11 away from
+    # the gypsy and her slot has nothing left to read, because the Heart is two screens into the
+    # forest the amulet opens. That is a Hall deficiency over the market, no single-spend detector
+    # can state it, and it is recorded in docs/KQ5-ORACLE.md §6 as an OPEN MECHANISM rather than as
+    # a missed catch. The pins below are therefore the two facts that ARE true: the model reads the
+    # market as four alternative-sets, and no detector strands a token.
+    MARKET = {13: {3, 11}, 206: {3, 4, 9, 11}}
+    groups = s.disjunctive_groups()
+    at5 = {frozenset(g) for g in groups.get(5, ())}
+    check("the shop slots are read as alternatives, not as shopping lists",
+          all(frozenset(v) in {frozenset(g) for g in groups.get(r, ())}
+              for r, v in MARKET.items())
+          and {frozenset({3, 9, 11}), frozenset({3, 9, 11, 12})} <= at5,
+          "groups at rm5/rm13/rm206 = %r -- expected the gypsy's {3,11}, the tailor's {3,9,11}, "
+          "the toy maker's {3,9,11,12} and the baker's {3,4,9,11}. If one collapsed, either "
+          "`_own_required` or the by-state bucketing in `disjunctive_groups` regressed. "
+          "docs/KQ5-ORACLE.md §6." % (
+              {r: sorted(map(sorted, groups.get(r, ()))) for r in (5, 13, 206)},))
+    # ⛔ SCOPED TO THE TWO TOKENS THE USER ACTUALLY RULED ON, and the scoping is load-bearing.
+    # An earlier draft of this pin covered all five tokens, which would have frozen a REAL
+    # limitation green: the Heart is not interchangeable at all (see the pin below), so a
+    # dangerous_sinks row naming it is a CATCH, not a false positive.
+    TOKENS = ("Golden_Needle", "Gold_Coin")
+    token_sinks = [(n, r.get("at_room")) for (n, d, r) in raw_rows
+                   if n in TOKENS and d == "dangerous_sinks"]
+    check("neither the needle nor the gold coin is condemned by a SINGLE payment", not token_sinks,
+          f"rows={token_sinks} -- USER-RULED 2026-08-17, in the game: the gypsy takes the needle "
+          f"AND the tailor then sells the cloak for the gold coin, so no one payment strands you. "
+          f"A `dangerous_sinks` row on either is the false positive this red used to demand. "
+          f"(The two-payment squeeze below is a DIFFERENT shape and must not arrive here: it is a "
+          f"claim about a GROUP being emptied, not about one spend site.)")
+
+    # ⭐ THE HEART IS THE EXCEPTION, and the USER named it: *"you need the heart for something
+    # else, so that would be a sink too"*. It is a shop token like the others -- tailor, toy maker
+    # and baker all take it -- but its OTHER consumer accepts nothing else: the enchanted princess
+    # at rm9 (`rm009.sc:936/990`, `wFace` and `wArm` dispatch item 9 alone, and
+    # `disjunctive_groups[9]` is correctly empty) is the Harp's SOLE source, and the Harp is
+    # required at rm90/92/682 across the roc's point of no return. So paying any shopkeeper with
+    # the Heart is a one-payment walking dead, on exactly the Fish's argument (§16).
+    #
+    # It is invisible because the shop payments are MACHINE drops -- the tailor takes his fee in
+    # `soldCloak` state 0, a `changeState` body -- and `destroying_sinks` walks only
+    # `handler_drops`. `opmodel.machine_moves` (added for the owner graph) already has all four.
+    #
+    # ⚠️ THE ONE-LINE WIDENING WAS TRIED AND MEASURED 2026-08-17, AND IT IS NOT SHIPPABLE. Walking
+    # `machine_moves` too yields the 3 Heart rows this check wants AND NINETEEN false ones:
+    #   * 13 `Cat_Fish` and 3 `Beeswax` rows where the spend and the "still needed" use are THE
+    #     SAME SITE, seen once per room the region serves -- `castle.sc` is live in all the castle
+    #     rooms, so spending at rm54 reads as stranding rm57..rm683. A same-scope conjunct (a
+    #     consumer inside the spend's own script is one event, not two competing ones) would cure
+    #     this family.
+    #   * `Wand@rm66 -> [124]`, which RE-CREATES the false positive the user ruled on 2026-08-15
+    #     (oracle §10) through a detector that one never went through. The same-scope conjunct does
+    #     NOT cover it -- rm66 and rm124 are different scripts -- so the cure is at least two
+    #     pieces, and shipping the first alone would trade one catch for a known FP.
+    heart_sinks = {r.get("at_room") for (n, d, r) in raw_rows
+                   if n == "Heart" and d == "dangerous_sinks" and r.get("still_needed_at") == [9]}
+    check("🔴 KNOWN GAP (KQ5): spending the Heart at a shop is condemned by the Harp it costs",
+          {5, 206} <= heart_sinks,
+          f"Heart sink rooms needing rm9 = {sorted(heart_sinks)} -- expected the shops at rm5 "
+          f"(tailor, toy maker) and rm206 (baker). USER 2026-08-17: *\"you need the heart for "
+          f"something else, so that would be a sink too\"*. Needs `destroying_sinks` to walk "
+          f"`machine_moves`, which alone costs 19 false positives -- see the note above.")
+
+    # 🔴 DECLARED RED 2026-08-17, and this is the row the retired one should always have been.
+    # USER, having refuted the single-payment claim: *"yes but you CAN ... waste your gold on the
+    # toy maker and the cloak"*. That is the real dead end, and it takes TWO payments: the gypsy's
+    # slot is `{Golden_Needle 3, Gold_Coin 11}` and nothing else fills it, so spending BOTH tokens
+    # at slots that merely ACCEPT them -- toyMaker{3,9,11,12}, tailor{3,9,11}, baker{3,4,9,11} --
+    # leaves the Amulet unbuyable. No amulet, no forest, no rm24, no Beeswax, which rms 44-47 need.
+    #
+    # ⭐ WHY IT IS NOT THE THROWABLE POOL, and this is the conjunct that makes it a finding rather
+    # than an FP: the cat and dog scenes CANNOT be starved because they arm on `(or (has: 8)
+    # (has: 16))` -- `rm006.sc:112`, the scene waits for ammunition, which is the user's own
+    # 2026-08-16b ruling. The shops have no such arming: the toy maker will happily take your last
+    # amulet-token, and the Heart -- the tailor's third option -- is two screens inside the forest
+    # the Amulet opens, so it cannot be fetched to cover the loss.
+    #
+    # THE SHAPE TO BUILD: group starvation / Hall's condition over the market. `disjunctive_groups`
+    # already derives the four slots (pinned green above); what is missing is the COUNTING -- a
+    # group is starvable when the other slots that accept its members can absorb all of them and
+    # no arming holds them back. ⛔ Do NOT reach for `group_strandings`: that asks whether a group
+    # is faced past a point of no return to all its SOURCES, which is a reachability question and
+    # says nothing about competing consumption.
+    squeeze_rows = [(n, d) for (n, d, r) in raw_rows
+                    if n in TOKENS and 13 in _rooms_mentioned(r)]
+    check("🔴 KNOWN GAP (KQ5): the shop market squeeze is caught", bool(squeeze_rows),
+          "nothing reports that the gypsy's {Golden_Needle, Gold_Coin} slot can be emptied by the "
+          "toy maker and the tailor, which USER-CONFIRMED 2026-08-17 is a real dead end. Needs a "
+          "group-starvation detector (Hall's condition over the slots `disjunctive_groups` "
+          "already derives), not a single-spend one. docs/KQ5-ORACLE.md §6.")
 
     # ✅ PROMOTED 2026-08-17 -- "the bees' flag-36 window closure is caught" is GREEN. The Fish is
     # the one throwable whose OTHER consumer accepts nothing else: `rm011::init` puts the bear in

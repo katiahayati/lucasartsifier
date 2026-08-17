@@ -123,6 +123,31 @@ To reset the baker between runs: `send ?ego get 2` then `send ?ego put 2 206`.
 
 | test | expected | observed | date |
 |---|---|---|---|
-| 1 — needle→gypsy, then coin→tailor | cloak sold | | |
-| 2 — coin→gypsy +3, needle→tailor +4 | both pairings work, only these score | | |
-| 3 — needle→toy, coin→baker, then gypsy | amulet unbuyable | | |
+| 1 — needle→gypsy, then coin→tailor | cloak sold | ✅ **BOTH CONFIRMED, USER.** *"the gypsy at the door will take the golden needle rather than the gold coin"*, and *"yes you can buy the cloak for the gold coin"* | 2026-08-17 |
+| 2 — coin→gypsy +3, needle→tailor +4 | both pairings work, only these score | not run — test 1 settles the verdict; this only re-confirms the score is decoration | |
+| 3 — needle→toy, coin→baker, then gypsy | amulet unbuyable | not run — the OPEN mechanism (§6), worth running before anyone builds for it | |
+
+**RULING: the needle substitution is NOT a softlock.** Scorecard row 9 withdrawn, the red retired
+and rebuilt as green pins. ⛔ Note what test 1 did *not* settle: whether the two-payment squeeze
+(test 3) is real. Nothing should be built for it until that is run.
+
+## Getting into rm13 — read this before teleporting
+
+`room 13` alone will not do it, and it is **not** a flag. `rm013::init` ends with
+`(switch global12 ...)` on the PREVIOUS room number, whose cases are the room's own neighbours
+(`east 9`, `south 12`, `west 14`). Arrive from anywhere else and you take the `else` branch, which
+drops the ego at **(187, 127)** — a point inside `poly1`, the camp's own obstacle
+(`[10 113, 240 113, 260 120, 260 128, 209 128, 170 134, 107 134, 107 128, 10 129]`) — and then
+`egoWalk` hands control back only when its `MoveTo` cues.
+
+`Game::newRoom` sets `global12` from `global11` on the way in, so writing `global12` yourself is
+useless — it gets overwritten. **Teleport in two hops instead:**
+
+    room 12        ; the dog screen, rm13's declared `south` neighbour
+    room 13        ; global12 is now 12 -> the south branch, posn 133 180, stdWalkIn
+
+`room 9` then `room 13` works the same way (rm9 is the `east` neighbour).
+
+**Click the item on `body`** — the seated gypsy woman (`rm013.sc:621`), which owns the
+give-handler. The `gypsy` Actor (`rm013.sc:799`) only inits during the transaction cutscene, so
+there is no point waiting for her to appear first.

@@ -228,10 +228,11 @@ inside; one visit. **DETECTED** (`toll_strandings`), unchanged.
 `put: 11 13` / `put: 3 13`, refused once the amulet is owned. Tier 3 (Telltale thread): paying
 with the needle makes the game unwinnable (the needle's real consumer is the tailor → cloak).
 
-**⚠️ THAT REASON IS SOURCE-REFUTED (2026-08-17), and the verdict is now OPEN pending a user
-ruling.** The tailor is not a sole consumer of anything: `tailorShop.sc:143–151` takes
-**Golden_Needle(3), Gold_Coin(11) OR Heart(9)**. KQ5 does not have one exchange slot here, it has
-a **five-token market over four purchases**:
+**⭐ VERDICT CORRECTED 2026-08-17, USER-RULED IN THE GAME — this is NOT a softlock.** The user
+played it in two steps: *the gypsy takes the golden needle*, and then *you can buy the cloak for
+the gold coin*. The reason was already source-refuted — the tailor is not a sole consumer of
+anything: `tailorShop.sc:143–151` takes **Golden_Needle(3), Gold_Coin(11) OR Heart(9)**. KQ5 does
+not have one exchange slot here, it has a **five-token market over four purchases**:
 
 | slot | accepts | sells | needed at |
 |---|---|---|---|
@@ -253,11 +254,41 @@ scorecard row asks.
 intended pairing, silence for the substitution, exactly the tell §1 found on the throwable pool
 (the Lamb and the Fish score nothing at the cat and still save the mouse).
 
-**The mechanism that COULD strand you here is a different one:** spend **both** 3 and 11 away
-from the gypsy (say sled←needle, pie←gold coin) and the amulet slot `{3,11}` is empty — no amulet,
-no forest, no rm24, no Beeswax. That is a **Hall deficiency across the market**, and it needs two
-wrong payments, so no single-spend detector can state it. **Verdict: OPEN. USER RULING OWED on
-whether paying the gypsy with the needle is a dead end in play.**
+### 6a. The real dead end here is the MARKET SQUEEZE — USER-CONFIRMED 2026-08-17, and it takes two payments
+
+Immediately after refuting the single-payment claim the user named the true one: *"yes but you CAN
+… waste your gold on the toy maker and the cloak."* The gypsy's slot is `{Golden_Needle 3,
+Gold_Coin 11}` and **nothing else fills it**, so spend both tokens at slots that merely *accept*
+them — toy maker `{3,9,11,12}`, tailor `{3,9,11}`, baker `{3,4,9,11}` — and the Amulet is
+unbuyable. No amulet → no forest → no rm24 → **no Beeswax**, which rms 44–47 need.
+
+⭐ **The conjunct that makes this a finding and not the throwable pool's retired FP is ARMING.**
+The cat and dog scenes cannot be starved because `rm006.sc:112` inits them only under
+`(or (has: 8) (has: 16))` — the scene waits for ammunition, the user's own 2026-08-16b ruling.
+**The shops have no such arming**: the toy maker takes your last amulet-token without a murmur.
+And the escape hatch that exists on paper is closed in practice — the tailor's third option, the
+Heart(9), is sourced at rm21, two screens inside the forest the Amulet opens.
+
+**Verdict: TRUE softlock (walking-dead class), tier 1 on every `put:` and tier 2 on the
+consequence. MISSED — declared red.** The shape to build is **group starvation**: a disjunctive
+group is starvable when the other slots that accept its members can absorb all of them and no
+arming holds them back — Hall's condition over the market, on top of the four slots
+`disjunctive_groups` already derives. ⛔ Not `group_strandings`, which asks whether a group is
+faced past a point of no return to all its *sources* — a reachability question that says nothing
+about competing consumption.
+
+**What the tool should say, and now does:** the market is read as four alternative-sets
+(`disjunctive_groups`: rm13 `{3,11}`, rm5 `{3,9,11}` and `{3,9,11,12}`, rm206 `{3,4,9,11}`) and
+**no detector strands a token**. Both halves are pinned green in `test_kq5_ground_truth` — the
+same shape §7's amulet ruling took. A future Golden_Needle or Gold_Coin stranding row is a false
+positive to investigate, not a catch.
+
+⛔ **The scoring tell is not evidence.** `proc0_27 3` fires only for coin→gypsy and `proc0_27 4`
+only for needle→tailor, marking Sierra's intended pairing — and §1 already established that this
+tell says nothing about winnability, since the Lamb and the Fish score nothing at the cat and
+still save the mouse. Do not let it become a detector's conjunct.
+
+Play-test sheet, with the numbers and the console recipe: `docs/KQ5-NEEDLE-PLAYTEST.md`.
 
 ## 7. The witch and the worn amulet (tier 1) — REQUIRED, but NOT a stranding
 
@@ -401,7 +432,8 @@ covered.
 | 6 | kidnap without Hammer | (room, prev-value) trap; gate modeled | **CAUGHT** (phase 2: `register_strandings` with item-banned fetch walks — the permissive walk was assuming the hammer to fetch the hammer; row reg12=85, flip rm86, needed at rm86) |
 | 7 | rope on the branch | fatal use | **CAUGHT** (fatal_uses) |
 | 8 | tambourine near Dink | savior-condemned, arming polarity | ✅ **FP CURED 2026-08-16b (§14).** `fatal_uses` now blames what the arming SITE required, not what the inherited chain did; the row and its `(not (has: 34))` action spec are gone, and KQ6's skull is untouched |
-| 9 | needle to the fortune teller | exchange slot | **VERDICT OPEN 2026-08-17 — the stated reason is SOURCE-REFUTED.** The tailor takes needle *or* gold coin *or* heart, and KQ5 runs a five-token market over four purchases in which every token is reachable before the amulet is; a perfect assignment survives any single payment, so emitting nothing is correct for the claim as written. The real hazard in this family is a **Hall deficiency** (spend both the needle and the gold coin away from the gypsy) which no single-spend detector can state. Declared red, USER RULING OWED — see §6 |
+| 9 | ~~needle to the fortune teller~~ | — | ⭐ **NOT A SOFTLOCK — USER-RULED IN THE GAME 2026-08-17, row withdrawn.** The gypsy takes the needle, and the tailor then sells the cloak for the gold coin. The stated reason was already source-refuted (`tailorShop.sc:143–151` takes needle *or* gold coin *or* heart): KQ5 runs a five-token market over four purchases in which every token is reachable before the amulet is, so a perfect assignment survives any single payment and emitting nothing is CORRECT. Rebuilt as two green pins (the market reads as four alternative-sets; no single payment is condemned). Superseded by row 9a, which is the dead end this row was groping at. See §6 |
+| 9a | **the shop market squeeze** | group starvation (Hall's condition) | **TRUE, MISSED — declared red 2026-08-17.** USER: *"you CAN … waste your gold on the toy maker and the cloak."* The gypsy's slot `{3,11}` has no other filler, so spending both tokens at slots that merely accept them leaves the Amulet unbuyable → no forest → no rm24 → no Beeswax. Two payments, so no single-spend detector reaches it. ⭐ What separates it from the retired throwable-pool FP is ARMING: the cat/dog scenes refuse to start without ammunition (`rm006.sc:112`); the shops take your last token happily, and the tailor's third option (the Heart) is inside the forest the Amulet opens. See §6a |
 | 10 | ~~forest without worn amulet~~ | possession death fold, flag 84 | ⭐ **NOT A SOFTLOCK — USER-RULED 2026-08-16b.** You need the amulet, but rm19 is one screen in and you can walk back out to rm13 for one (98/100 rooms still reachable). The DEMAND is modelled (`required[27]` covers all seven forest rooms since the `(+= state N)` fix, §13) and no stranding row is emitted — both pinned green. ⛔ The old "MISSED (region scope)" reading was wrong twice: region scope was never the blocker |
 | 11 | locket window missed | one-shot window (tier 3) | MISSED, unverified |
 | 12 | peas exhaustion | consumable | OPEN (13 noisy rows). Note the emptied bag is REQUIRED — the walkthrough sacks the cat with it — so the peas are not pure flavour |
