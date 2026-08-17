@@ -108,15 +108,19 @@ KNOWN_RED = {
         # GREEN. `guard_specs` emits an `action` spec per `fatal_uses` row and the patcher places
         # it on the arming of the fatal machine (KQ6: rm420's `setScript: throwSkull`). Inert on
         # LSL2, KQ4 and the Dagger, which have no fatal uses.
-        "🔴 KNOWN GAP (KQ6): every non-refused spec places":
-            "PHASE 4. The arrival-commit re-site LANDED 2026-08-04: the capture demand sits on "
-            "the isle's entry frontier (rm320's cue arm-gate + rm300's shortcut nav-assign "
-            "re-route -- finding #8's bypass -- stage-conditioned with the game's own "
-            "capture-arm test, sites from guards.commit_entry_frontier -- model knowledge, "
-            "not text search), so the rm340 rows all place. Remaining skips, both "
-            "deliberate: rm420->rm435 (the shared-dispatcher seam; its demand is covered by "
-            "the capture guards) and the huntersLamp sink (a TRADE; its remedy is the mists "
-            "carry-in). Goes green only when those two either place or become refusals.",
+        # ✅ RETIRED BY RULING 2026-08-17b -- "🔴 KNOWN GAP (KQ6): every non-refused spec
+        # places" is gone because the USER ruled the state it complained about is the INTENDED
+        # output, not a gap: *"whatever we have there is working as intended and should not be
+        # a red."* The two skips it was held open by are both deliberate and both already
+        # carry their remedy or their coverage: the huntersLamp sink is a TRADE (deleting the
+        # disposal would refuse the magic lamp with it; trading the lamp commits you to the
+        # short ending -- the shipped remedy is the mists carry-in, the 2026-08-03 "refuse the
+        # trip, keep the trade" doctrine), and rm420->rm435 is the shared-dispatcher seam
+        # whose demand the capture guards on the isle's entry frontier already carry. Rebuilt
+        # GREEN as a PIN of exactly that two-skip set -- a new skip is a regression, a
+        # declared one moving is a mechanism change, and neither is a standing red. No model,
+        # patcher or surface change; the Shoe/Stick shape -- a red retired by DISAGREEING
+        # with it, this time about what the red's own state meant.
         # ✅ PROMOTED 2026-08-05 (same day as the play find) -- "the Realm-entry demand wraps
         # catchNiteMare's arming, not blowinIt's" is GREEN. The cross-file block now READS the
         # helper's arming graph (trigger.reaching_owners/reaching_procs) instead of assuming any
