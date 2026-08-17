@@ -125,7 +125,8 @@
       "sacredWater@one-visit-toll-pocket/rm370->rm380",
       "skeletonKey@one-visit-toll-pocket/rm340->rm155",
       "teaCup@one-visit-pocket-carry-in/rm340->rm155"
-    ]
+    ],
+    "window_specs": []
   },
   "dagger": {
     "action_specs": [],
@@ -201,6 +202,7 @@
       "grapes"
     ],
     "start_room": 110,
-    "tolls": []
+    "tolls": [],
+    "window_specs": []
   }
 }

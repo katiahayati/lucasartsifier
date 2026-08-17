@@ -71,5 +71,6 @@
     "Magic_Hen"
   ],
   "start_room": 99,
-  "tolls": []
+  "tolls": [],
+  "window_specs": []
 }
