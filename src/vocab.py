@@ -134,6 +134,11 @@ def derive(ir):
 
 # ---- the derived table, in the form extraction needs ---------------------
 EGO = "ego"          # destination sentinel: the item is HELD (shared with extract)
+HERE = "room"        # destination sentinel: the item is laid down in THE ROOM THIS SITE IS IN.
+                     # Deliberately the same spelling `_loc_values` uses for the mirror-image
+                     # read (`ownedBy: gCurRoomNum`), because it is the same fact seen from the
+                     # other end; every recording site resolves it against its own room, and it
+                     # must never reach a consumer that expects an owner number.
 
 
 def _literal_items(node):
@@ -457,7 +462,7 @@ class Vocabulary:
         return (f"{self.store_class}.{self.prop}  write via {sorted(self.writes)}  "
                 f"read via {sorted(self.reads)}")
 
-    def transfer(self, recv, sel, params, item_of_receiver):
+    def transfer(self, recv, sel, params, item_of_receiver, curroom=None):
         """A send -> `(item, dest)` if it moves an item, else None. `item` is a TUPLE when the
         game picks the item at runtime from a fixed menu (see `_literal_items`).
 
@@ -476,6 +481,8 @@ class Vocabulary:
             d = params[0]
             if I.is_global(d, 0) or (isinstance(d, dict) and d.get("t") == "Self"):
                 return (it, EGO)
+            if curroom is not None and I.is_global(d, curroom):
+                return (it, HERE)
             v = I.as_int(d)
             return (it, v) if v is not None else None
         # wrapper form -- but only if the RECEIVER is an instance of the wrapper's class.
@@ -510,6 +517,19 @@ class Vocabulary:
         if 0 <= j < len(params):
             if I.is_global(params[j], 0):
                 return (it, EGO)
+            # ⭐ `(gEgo put: X gCurRoomNum)` IS "LAY IT DOWN HERE", NOT "DESTROY IT", and the two
+            # were the same answer because an unreadable destination fell through to -1 -- SCI's
+            # NOWHERE, the strongest claim available. `_loc_values` has had the `"room"` sentinel
+            # for the mirror-image read (`ownedBy: gCurRoomNum`) since LSL2; the transfer side
+            # never learned it. KQ5's rm066 is the specimen: `putCWandScript` does
+            # `(gEgo put: 28 global11)` and `rm066::init` puts the wand prop in the cast under
+            # `(== ((gInv at: 28) owner:) global11)`, so laying the wand down and picking it back
+            # up are one round trip in one room -- and read as limbo it became a permanent
+            # destruction, which is the shape of the false positive the USER ruled on 2026-08-15.
+            # Answering "here" instead needs the room, which only the recording site knows, so
+            # the sentinel travels and `_here` resolves it there.
+            if curroom is not None and I.is_global(params[j], curroom):
+                return (it, HERE)
             v = I.as_int(params[j])
             return (it, v if v is not None else -1)
         return (it, -1)                                # destination omitted -- SCI means NOWHERE

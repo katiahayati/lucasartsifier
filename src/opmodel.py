@@ -699,7 +699,7 @@ class OpEmitter:
                     continue
                 drops |= set(st.drops)
                 for (it, dest) in st.moves:
-                    moves.append((it, dest, list(st.guard)))
+                    moves.append((it, X._here(dest, room), list(st.guard)))
         if not has_effect:
             return None
         # ...and it must be able to RUN. A machine whose `start` is not among its own states and
@@ -965,7 +965,8 @@ class OpEmitter:
         elif tp == "Send":
             recv, msgs = I.send_pairs(node)
             for sel, params in msgs:
-                for (it, dest) in item_transfers(recv, sel, params):
+                for (it, dest0) in item_transfers(recv, sel, params):
+                    dest = X._here(dest0, room)      # `put: X gCurRoomNum` = laid down HERE
                     # AN ITEM TRANSFER IS A FACT ABOUT A PLACE, AND THE ICON BAR HAS NO PLACE.
                     # `sources`, `drops` and every sink detector read these rows as "the game
                     # hands X over / invites you to spend X *here*". An inventory `doVerb` is

@@ -652,6 +652,7 @@ def _at_item(n):
 # the hand-written version made by eye (Window's same-named `moveTo: x y`) fall out of the
 # receiver and arity of the class's own method. See docs/HOW-IT-WORKS and TODO A0.
 EGO = V.EGO      # destination sentinel: the item is now HELD
+HERE = V.HERE    # destination sentinel: laid down in the room the site is in -- `_here` resolves
 
 _VOCAB = None    # installed by extract(); one game per process
 _IPROPS = {}     # (item, property) -> values written -- the FOURTH store, discovered
@@ -737,7 +738,15 @@ def item_transfer(recv, sel, params):
     structural fact that is not vocabulary: how an item is REFERRED to, `(<inv> at: N)`."""
     if _VOCAB is None:
         return None
-    return _VOCAB.transfer(recv, sel, params, _at_item)
+    return _VOCAB.transfer(recv, sel, params, _at_item, _CURROOM)
+
+
+def _here(dest, room):
+    """Resolve the `HERE` destination sentinel against the room the transfer was found in.
+
+    Every site that RECORDS a transfer knows its own room and must call this; nothing downstream
+    is prepared for a non-numeric owner. See `vocab.HERE`."""
+    return room if dest == HERE else dest
 
 
 def walk_stream(node, pc, on_leaf, on_loop=None, undecided=None):
@@ -2979,7 +2988,8 @@ class Extractor:
                 # ACQUISITION -- the last hardcoded `sel == "get"` here is gone too: whether a
                 # send hands the player an item is a question for the derived vocabulary, not a
                 # selector name we happen to know.
-                for tr in item_transfers(recv, sel, params):
+                for tr0 in item_transfers(recv, sel, params):
+                    tr = (tr0[0], _here(tr0[1], room))   # `put: X gCurRoomNum` places it HERE
                     if tr[1] == EGO:
                         self.ts.items.add(tr[0])
                         self.ts.acqs.append(Acq(tr[0], room, _conj(pc),
