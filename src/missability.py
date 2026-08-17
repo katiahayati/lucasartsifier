@@ -152,6 +152,28 @@ def _loc_values(guard, item, room=None):
     return out
 
 
+def _loc_item_keys(guard, out=None):
+    """Which items `guard` says anything about the LOCATION of, polarity ignored.
+
+    The index half of `_loc_values`: that one answers "which owners does this demand for item X",
+    this one answers "which X are worth asking about at all". `state_musts` needs the index before
+    it can ask the question, exactly as `_ctr_keys` indexes the counters before `_ctr_holds`."""
+    out = set() if out is None else out
+    if isinstance(guard, (list, tuple)) and not (isinstance(guard, tuple)
+                                                 and guard and guard[0] == "CTR"):
+        for x in guard:
+            _loc_item_keys(x, out)
+    elif isinstance(guard, Pred):
+        if guard.kind == "LOC":
+            out.add(guard.var)
+    elif isinstance(guard, (GAnd, GOr)):
+        for k in guard.kids:
+            _loc_item_keys(k, out)
+    elif isinstance(guard, GNot):
+        _loc_item_keys(guard.kid, out)
+    return out
+
+
 def _conj_spine(guard):
     """Flatten a guard (tree or list) to its top-level conjunct list -- the atoms that MUST
     hold. The same discipline as `_must_hold`: nothing under an OR or a negation is a
@@ -1466,11 +1488,28 @@ def state_musts(info, regs):
     context's `entry_locals` -- so the two views of one machine cannot drift. A path whose counter
     guard is decidably false at the current valuation is not walked at all.
 
+    ⭐ AND IT CARRIES THE OWNER STORE ON THE SAME WALK (`sm.owners(K)`), because "what every path
+    here established" is exactly the question an ACQUISITION inside a cutscene needs asked. KQ5's
+    haystack is the case and it decided the whole shop market:
+
+        (5  (if (and (or <a throwable is the dog's>) (== ((gInv at: 3) owner:) 27))
+                ...the ants repay you...   else (client setScript: 0)))
+        (14 (gEgo get: 3))
+
+    The needle is handed over eleven states after the condition that earns it, and state 14's own
+    path guard says nothing at all -- so read state-locally the pickup is unconditional, the
+    owner graph records it under the WILDCARD owner, and NO destination is ever permanent for the
+    needle. `_acq_guards`' machine half used to read the ENTRIES only, which covers a condition on
+    the way IN (KQ6's lamp, gated in `rm520::init`) and misses every condition the cutscene checks
+    once it is running. One walk, two accumulators; a second walk would be the same rule in two
+    places.
+
     Returns a mapping usable as before (`sm.get(K, {})` merges every valuation reaching K, the
     conservative answer) plus `sm.at(K, guard)`, which keeps only the valuations that guard's own
     counter conditions admit -- what a consumer holding a specific path should ask."""
     import compile as C
     out = {}                                       # (K, loc-key) -> {R: set(values)}
+    own = {}                                       # (K, loc-key) -> {item: set(owner values)}
     work = []
 
     # ⭐ THE NODE IS SPLIT BY THE LOCALS THIS MACHINE ACTUALLY CONSULTS, AND ONLY THOSE.
@@ -1513,6 +1552,26 @@ def state_musts(info, regs):
         _ctr_keys(eg, tracked)
     limit = {k: max(abs(v) for v in vs) + 1 for k, vs in tracked.items()}
 
+    # The items this machine's own guards say anything about -- the same "track only what is read
+    # HERE" discipline `tracked` applies to counters, and it keeps the second accumulator empty for
+    # the overwhelming majority of machines.
+    #
+    # ⛔ MINUS EVERY ITEM THIS MACHINE RELOCATES. The step tuple carries the path's GETS but not
+    # its moves, so a fact established before a `put:` cannot be expired at the right state. An
+    # owner fact that outlives the move it was invalidated by is too TIGHT, and this walk's whole
+    # discipline is that a partial intersection is the dangerous direction (see the cap fallback
+    # below). Dropping the item outright is the honest answer, and it costs nothing here: a
+    # machine that hands the item away is not a machine whose acquisition of it we are conditioning.
+    room = info.get("room")
+    moved = {it for (it, d, _g) in info.get("moves", ()) if d != E.EGO}   # a move INTO the ego's
+                                                                         # hands is the pickup
+                                                                         # itself, not a relocation
+    loc_items = set()
+    for _K, paths in (info.get("states") or {}).items():
+        for p in paths:
+            _loc_item_keys(p[0], loc_items)
+    loc_items -= moved
+
     def proj(loc):
         got = {}
         for k, v in loc.items():
@@ -1532,7 +1591,8 @@ def state_musts(info, regs):
         k = (K, key(loc))
         if k not in out:
             out[k] = {}
-            work.append((K, dict(loc), {}))
+            own[k] = {}
+            work.append((K, dict(loc), {}, {}))
 
     ents = list(info.get("entries", ()))
     elocs = list(info.get("entry_locals", ()))
@@ -1545,7 +1605,7 @@ def state_musts(info, regs):
     seen = 0
     while work and seen < _STATE_MUSTS_CAP:
         seen += 1
-        K, loc, cur = work.pop()
+        K, loc, cur, curo = work.pop()
         for (g, w, gg, c, tr) in info["states"].get(K, ()):
             if any(isinstance(a, tuple) and a and a[0] == "CTR" and not C._ctr_holds(a, loc)
                    for a in (g if isinstance(g, list) else [g])):
@@ -1557,6 +1617,14 @@ def state_musts(info, regs):
                     nxt[R] = (nxt[R] & v) if R in nxt else set(v)
             for (gi, _val) in w:
                 nxt.pop(gi, None)                  # the machine wrote it; prior facts expire
+            nown = dict(curo)
+            for it in loc_items:
+                v = _loc_values(g, it, room)
+                if v:
+                    nown[it] = (nown[it] & v) if it in nown else set(v)
+            for it in gg:
+                nown.pop(it, None)                 # it is in the ego's hands now; where it LAY
+                                                   # before this step says nothing after it
             if not tr:
                 continue
             if tr[0] == "ADVANCE":
@@ -1571,12 +1639,13 @@ def state_musts(info, regs):
             dk = (dst, key(nloc))
             if dk in out:
                 merged = {R: out[dk][R] | nxt[R] for R in set(out[dk]) & set(nxt)}
-                if merged == out[dk]:
+                mown = {i: own[dk][i] | nown[i] for i in set(own[dk]) & set(nown)}
+                if merged == out[dk] and mown == own[dk]:
                     continue                       # fixpoint on this edge
-                out[dk] = merged
+                out[dk], own[dk] = merged, mown
             else:
-                out[dk] = nxt
-            work.append((dst, nloc, out[dk]))
+                out[dk], own[dk] = nxt, nown
+            work.append((dst, nloc, out[dk], own[dk]))
     if work:
         # THE CAP RAN OUT WITH WORK LEFT, so `out` holds constraints established by only SOME
         # of the paths that reach each state -- and a MUST is an intersection, so a partial
@@ -1589,8 +1658,8 @@ def state_musts(info, regs):
         _degraded_model("state_musts hit its %d-step cap for %s; treating its musts as "
                         "UNKNOWN (permissive) rather than shipping a partial intersection"
                         % (_STATE_MUSTS_CAP, info.get("inst", "?")))
-        return _Musts({})
-    return _Musts(out)
+        return _Musts({}, {})
+    return _Musts(out, own)
 
 
 class _Musts(dict):
@@ -1599,13 +1668,25 @@ class _Musts(dict):
     Subclasses dict so every existing `sm.get(K, {})` reads the merged (conservative) answer and
     nothing had to change to keep working."""
 
-    def __init__(self, by_node):
+    def __init__(self, by_node, own_by_node=None):
         self._by_node = by_node
+        self._own_by_node = own_by_node or {}
         merged = {}
         for (K, _lk), d in by_node.items():
             merged[K] = d if K not in merged else \
                 {R: merged[K][R] | d[R] for R in set(merged[K]) & set(d)}
+        self._own = {}
+        for (K, _lk), d in self._own_by_node.items():
+            self._own[K] = d if K not in self._own else \
+                {i: self._own[K][i] | d[i] for i in set(self._own[K]) & set(d)}
         super().__init__(merged)
+
+    def owners(self, K):
+        """`{item: {owner values}}` that every path reaching state K established.
+
+        The ownedBy half of the same walk -- see `state_musts`' haystack. Empty for all but the
+        handful of machines whose own guards read where an item is lying."""
+        return self._own.get(K, {})
 
     def at(self, K, guard):
         """The musts at K over only the valuations `guard`'s own counter conditions admit."""
@@ -3876,6 +3957,16 @@ class IrSccReach(SccReach):
         is the only thing that can be about here."""
         return (room if room is not None else "room") in _loc_values(guard, item, room)
 
+    def _machine_musts(self, info):
+        """`state_musts` for one machine, memoised. The walk is per-machine and the owner-graph
+        callers ask it once per ITEM, so without this the corpus pays for it forty times over."""
+        if not hasattr(self, "_mmusts"):
+            self._mmusts = {}
+        key = (info.get("script"), info.get("inst"), info.get("room"))
+        if key not in self._mmusts:
+            self._mmusts[key] = state_musts(info, self.regs)
+        return self._mmusts[key]
+
     def _acq_guards(self, item):
         """Every acquisition of `item`, as `(guard, room-it-was-found-in)`."""
         mg = getattr(self.em, "machine_gets", set())
@@ -3892,13 +3983,33 @@ class IrSccReach(SccReach):
         # can know it. Entries are ALTERNATIVES, so the acquisition is location-gated only if every
         # one of them is; a machine with no entry contributes an unconditional acquisition, which is
         # the permissive answer.
+        #
+        # ...AND ITS CONDITION CAN ALSO BE ON THE WAY THROUGH, which is the second half and the
+        # one KQ5's whole shop market turned on. `searchHay` is armed by clicking the haystack --
+        # no condition at all -- and the ants only repay their debt at state 5 under
+        # `(== ((gInv at: 3) owner:) 27)`, the needle still lying in the hay; the `(gEgo get: 3)`
+        # is nine states later, on a path guard that says nothing. Read at the entries alone the
+        # pickup is unconditional, so the owner graph records it under the WILDCARD owner, every
+        # owner reaches EGO and NO destination is permanent -- the needle, the game's tightest
+        # shop token, read as infinitely re-suppliable. `state_musts` already computes exactly
+        # "what every path reaching this state established"; it now carries the ownedBy store on
+        # the same walk, so this is a lookup rather than a second traversal.
         for info in self.em.machines:
-            if not any(item in gg for paths in info["states"].values()
-                       for (_g, _w, gg, _c, _tr) in paths):
+            got = [K for K, paths in info["states"].items()
+                   if any(item in gg for (_g, _w, gg, _c, _tr) in paths)]
+            if not got:
                 continue
-            ents = [eg for (_seen, eg, _loc) in _entry_reach_walk_of(info)]
-            guards.extend((eg, info["room"]) for eg in ents) if ents else \
-                guards.append((None, info["room"]))
+            # One conjunct per getting state, because two states that both hand the item over are
+            # ALTERNATIVE acquisitions and the permissive reading takes them apart, not together.
+            musts = self._machine_musts(info)
+            ents = [eg for (_seen, eg, _loc) in _entry_reach_walk_of(info)] or [None]
+            for K in got:
+                vals = musts.owners(K).get(item) or ()
+                at = [Pred("LOC", var=item, op="ownedBy", value=v) for v in sorted(vals, key=str)]
+                on = at[0] if len(at) == 1 else (GOr(tuple(at)) if at else None)
+                for eg in ents:
+                    guards.append((GAnd(tuple(_conj_spine(eg) + [on])) if on else eg,
+                                   info["room"]))
         dbg = frozenset(self.em.cfg.debug_globals)
         guards = [(g, r) for (g, r) in guards if not _debug_gated_guard(g, dbg)]
         # ...and the same for an acquisition you could only reach by arriving from somewhere that

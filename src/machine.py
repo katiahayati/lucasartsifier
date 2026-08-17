@@ -144,6 +144,17 @@ def _is_cue_send(recv, msgs):
         # `(otherInstance changeState: K)` starts another script that cues back here
         if sel == "changeState" and recv.get("t") != "Self":
             return True
+        # ⭐ `(self setScript: X)` is SCI's SUB-SCRIPT HANDOFF and it arms a cue: the sub-script
+        # runs and cues its client back, which is what `Script` exists to do. KQ5's `searchHay`
+        # is the specimen -- state 6 hands off to `singScript`, whose state 1 is literally
+        # `(client cue:) (self dispose:)`, and state 8 is the empty state waiting for it. Read as
+        # arming nothing, state 8 PARKED and the cutscene was truncated there: the six states that
+        # follow, INCLUDING the one that hands over the golden needle, became unreachable in every
+        # walk over the machine. `(x setScript: 0)` is the opposite -- clearing a script, no
+        # handoff, no cue -- so the literal 0 is excluded rather than the receiver.
+        if sel == "setScript" and recv.get("t") == "Self" and params \
+                and I.as_int(params[0]) != 0:
+            return True
     return False
 
 

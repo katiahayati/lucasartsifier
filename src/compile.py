@@ -102,7 +102,9 @@ def _count_cues_send(recv, msgs):
         # test here read every speaking state as PARKing and truncated the cutscene there.
         if (any(isinstance(p, dict) and p.get("t") == "Self" for p in params)) or \
            (sel == "cue" and not params and recv.get("t") == "Self") or \
-           (sel == "changeState" and recv.get("t") != "Self"):
+           (sel == "changeState" and recv.get("t") != "Self") or \
+           (sel == "setScript" and recv.get("t") == "Self" and params
+                and I.as_int(params[0]) != 0):
             n += 1
     return n
 

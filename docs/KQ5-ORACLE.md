@@ -290,6 +290,46 @@ still save the mouse. Do not let it become a detector's conjunct.
 
 Play-test sheet, with the numbers and the console recipe: `docs/KQ5-NEEDLE-PLAYTEST.md`.
 
+### 6b. The market is TIGHT, and that is the general statement §6a is one instance of
+
+Derived 2026-08-17b, from the slots above plus the Heart's own consumer. **Five one-use tokens,
+five consumers, zero slack:**
+
+| consumer | accepts |
+|---|---|
+| gypsy, rm13 → Amulet | Needle(3) · Gold_Coin(11) |
+| tailor, rm5/script 203 → Cloak | 3 · 11 · Heart(9) |
+| toy maker, rm5/script 204 → Sled | 3 · 11 · 9 · Marionette(12) |
+| baker, rm206 → Pie | 3 · 11 · 9 · Coin(4) |
+| enchanted princess, rm9 → Harp | **9 alone** (`rm009.sc:936/990`) |
+
+Every product is required (`required[]` carries Amulet, Cloak, Sled, Pie; the Harp at rm90/92/682),
+so all five consumers must be satisfied and the only assignments that work are
+Marionette→toy maker, Coin→baker, Heart→princess, and {Needle, Gold_Coin} split between gypsy and
+tailor either way. **That last freedom is exactly the pair of plays the user made on 2026-08-17**
+(needle→gypsy then coin→cloak), which is why the single-payment row was correctly retired: one
+payment can always be absorbed by the swap, and only a second one breaks the market.
+
+⭐ So §6a is not a special fact about the gypsy — it is what a tight market does. Guarding it is
+guarding the tight set, not the assignment matrix ([[kq5-market-squeeze-patch-design]]).
+
+### 6c. The eagle and the yeti are a SECOND tight market — USER-RULED 2026-08-17b
+
+USER, asked directly: *"yes, you need both the pie (for the yeti) and the lamb (for the eagle)."*
+Two consumers, two tokens, and the eagle accepts either while the yeti accepts only the Pie:
+
+| consumer | accepts |
+|---|---|
+| eagle, rm34 → the rm42 rescue | Pie(2) · Leg_of_Lamb(19) |
+| yeti, rm36 → the mountain pass | **2 alone** |
+
+One assignment survives: Lamb→eagle, Pie→yeti. §1a already records one way to break it (feed the
+eagle the pie and the yeti is unsurvivable). The user's ruling closes the other direction, and it
+is what makes the eagle's `{2,19}` a genuine starvation target rather than a free choice: **any
+spend of either token elsewhere strands somebody.** The Pie's other absorber is the Main-script
+EAT verb (`Main.sc:1041`, `(gEgo put: 2 1)`); the Lamb's are the cat, the dog, and eating it a
+second time (`Main.sc:1054/1058` — the first bite hands you a half lamb back, the second does not).
+
 ## 7. The witch and the worn amulet (tier 1) — REQUIRED, but NOT a stranding
 
 `witchRegion.sc`: surviving the witch's fireball requires `(and (has: 27) (proc0_12 84))` —
