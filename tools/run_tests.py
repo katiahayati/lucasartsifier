@@ -420,13 +420,21 @@ KNOWN_RED = {
         # like LSL2/KQ4 (user, "as I've said many times"). The market states the same Heart
         # facts with zero movement anywhere else. [[re-derive-a-reds-premise]], for a cure.
         #
-        "🔴 KNOWN GAP (KQ5): eating the lamb is condemned by the eagle it starves":
-            "the eagle's consumer IS derived (the rm42 fold demands owner(19) == 34), but the "
-            "lamb reads restockable -- its cupboard pickup (rm028 openCup, gated on owner == 28) "
-            "is not owner-gated in the model, the same acquisition gap as the Coin and the "
-            "Marionette -- so the consumer is auto-satisfiable and exerts no pressure. USER-ruled "
-            "real 2026-08-17b (\"you need both the pie and the lamb\"). The cure is at the "
-            "acquisition read, not in the detector.",
+        # ✅ PROMOTED 2026-08-17b -- "🔴 KNOWN GAP (KQ5): eating the lamb is condemned by the
+        # eagle it starves" is GREEN and no longer listed, and its stated cure was REFUTED
+        # rather than built ([[re-derive-a-reds-premise]], on a cure, twice in one day). It
+        # prescribed owner-gating the cupboard acquisition; the true fact is that SCARCITY IS
+        # CONSUMER-RELATIVE: the eagle's fold sits at rm42, past the roc, and
+        # `reobtainable_rooms(19)` already excludes rm42 -- the same gate-aware fact the lamb's
+        # analyze carry-across row rests on -- so to the one consumer that matters every lamb
+        # is the last lamb, restockable cupboard or not. `_market` now waives pressure only for
+        # a token re-suppliable FROM THE CONSUMER'S OWN ROOMS, and the loss/satisfaction reads
+        # follow (a spend is a loss to a consumer that can never re-fetch; a spend TO the
+        # fold's own destination is its satisfaction). THREE rows landed, not one: the EAT
+        # verb, and the cat and dog throws -- oracle §1a's "throw the lamb at the cat or dog
+        # -> rm42 death", a declared TRUE softlock never before caught. Corpus: LSL2 0, KQ4 0,
+        # KQ6 0, LB2 0, KQ5 9 -> 12. Rebuilt as two green pins (the three rows; the lamb TO
+        # the eagle stays silent).
         # ✅ RETIRED 2026-08-16b, USER-RULED -- "🔴 KNOWN GAP (KQ5): the witch-region worn-amulet
         # death fold is caught" is gone because it DEMANDED THE WRONG ROW, not because a build
         # landed. It asserted that some detector flags the Amulet, on the oracle's old verdict

@@ -350,14 +350,19 @@ spend of either token elsewhere strands somebody.** The Pie's other absorber is 
 EAT verb (`Main.sc:1041`, `(gEgo put: 2 1)`); the Lamb's are the cat, the dog, and eating it a
 second time (`Main.sc:1054/1058` — the first bite hands you a half lamb back, the second does not).
 
-**Status, split by token (2026-08-17b).** The PIE half is ✅ CAUGHT twice over — `dangerous_sinks`
-(Pie@rm1 eaten, Pie@rm34 fed to the eagle, both golden'd) and now `market_squeezes` (the same two
+**Status (2026-08-17b): ✅ BOTH HALVES CAUGHT.** The PIE half twice over — `dangerous_sinks`
+(Pie@rm1 eaten, Pie@rm34 fed to the eagle, both golden'd) and `market_squeezes` (the same two
 spends starving the yeti, whose consumer is DERIVED from the rm35 fold: reading (d), a death
 fold's surviving arm demanding `owner(Pie) == 36` is "the yeti must have been paid"). The LAMB
-half is 🔴 a DECLARED RED: the eagle's consumer derives the same way (rm42, `owner(19) == 34`),
-but the Lamb still reads restockable — `rm028`'s cupboard pickup is not owner-gated in the model,
-the same acquisition gap as the Coin and the Marionette — so the consumer is auto-satisfiable and
-eating the lamb emits nothing. The cure is at the acquisition read, not in the detector.
+half landed by **refuting its red's stated cure**: the red prescribed owner-gating the cupboard
+pickup, but the true fact is that **scarcity is consumer-relative** — the eagle's fold sits at
+rm42, past the roc, and `reobtainable_rooms(19)` excludes rm42 (the same gate-aware fact the
+lamb's analyze carry-across row rests on), so to the one consumer that matters every lamb is the
+last lamb, restockable cupboard or not. Three rows: **eaten (Main's second bite), thrown at the
+cat, thrown at the dog** — the throws being §1a's declared TRUE softlock, caught for the first
+time. Feeding the lamb TO the eagle stays silent (a spend to the fold's own destination is its
+satisfaction). The cupboard/Coin/Marionette acquisition looseness remains and is measured to
+move no verdict.
 
 ## 7. The witch and the worn amulet (tier 1) — REQUIRED, but NOT a stranding
 
@@ -482,9 +487,9 @@ exactly two lines:
 
 ## Scorecard (2026-08-14)
 
-⛔ **This is a work in progress, not a finished oracle.** One row is MISSED with a declared red
-(9c, the lamb — an acquisition-read gap, not a detector one), and rows 11–12 rest on tier-3 or
-open verdicts. Builds: 2026-08-14 (phase 1 owner-value death folds; phase 2 item-banned fetch
+⛔ **This is a work in progress, not a finished oracle.** No row is currently missed with a
+declared red; rows 11–12 rest on tier-3 or open verdicts, and the acquisition looseness noted at
+9c (cupboard/Coin/Marionette read restockable) is measured to move no verdict. Builds: 2026-08-14 (phase 1 owner-value death folds; phase 2 item-banned fetch
 walks), 2026-08-16b (`window_closures`), 2026-08-17 (`dangerous_sinks` via the owner graph),
 2026-08-17b (`market_squeezes` — the market as one matching). A passing test run means the
 catches listed as CAUGHT are still caught for the mechanism stated — it does not mean KQ5 is
@@ -505,13 +510,13 @@ covered.
 | 9 | ~~needle to the fortune teller~~ | — | ⭐ **NOT A SOFTLOCK — USER-RULED IN THE GAME 2026-08-17, row withdrawn.** The gypsy takes the needle, and the tailor then sells the cloak for the gold coin. The stated reason was already source-refuted (`tailorShop.sc:143–151` takes needle *or* gold coin *or* heart): KQ5 runs a five-token market over four purchases in which every token is reachable before the amulet is, so a perfect assignment survives any single payment and emitting nothing is CORRECT. Rebuilt as two green pins (the market reads as four alternative-sets; no single payment is condemned). Superseded by row 9a, which is the dead end this row was groping at. See §6 |
 | 9a | **the shop market squeeze** | the market: perfect matching over required consumers | ✅ **CAUGHT 2026-08-17b (`market_squeezes`).** USER 2026-08-17: *"you CAN … waste your gold on the toy maker and the cloak"*; SHARPENED 2026-08-17b by the cloak ruling into ONE-payment dead ends. Four rows: needle/gold coin at the toy maker or baker, each starving the gypsy–tailor–princess triangle. The played pair (needle→gypsy, coin→tailor) emits nothing. LSL2/KQ4/KQ6/LB2 all 0. See §6a/§6b |
 | 9b | **the Heart at any shop** | the market: the princess accepts item 9 alone | ✅ **CAUGHT 2026-08-17b (`market_squeezes`), same detector, same fact.** USER 2026-08-17: *"you need the heart for something else, so that would be a sink too."* Three rows — tailor, toy maker, baker — each starving the princess, the Harp's sole source; her requiredness is DERIVED from the owner store (the Harp's acquisition demands `owner(Heart) ∈ {9, 21}`). ⛔ The red's declared cure (widen `destroying_sinks` over `machine_moves`) was measured twice and rejected twice — 19 FPs, then 8 KQ6 rows + 2 LB2 rows with shipped placements, and KQ6 is GOLDEN. See §6b |
-| 9c | **eating the lamb → eagle starves** | the market: the rm42 fold is the eagle's consumer | 🔴 **TRUE, MISSED — declared red 2026-08-17b.** USER: *"you need both the pie (for the yeti) and the lamb (for the eagle)."* The consumer derives (reading (d), `owner(19) == 34`), but the Lamb reads restockable — `rm028`'s cupboard pickup is not owner-gated in the model — so it exerts no pressure. Cure at the acquisition read. See §6c |
+| 9c | **the lamb spent anywhere but the eagle** | the market: consumer-relative scarcity at the rm42 fold | ✅ **CAUGHT 2026-08-17b (`market_squeezes`), by refuting the red's cure.** USER: *"you need both the pie (for the yeti) and the lamb (for the eagle)."* The eagle sits past the roc, so `reobtainable_rooms(19)` excludes rm42 and every lamb is its last — no cupboard owner-gating needed. THREE rows: eaten, thrown at the cat, thrown at the dog — the throws being row 13's spend half, declared since 2026-08-14 and never before caught. Lamb→eagle silent (satisfaction by destination). See §6c |
 | 10 | ~~forest without worn amulet~~ | possession death fold, flag 84 | ⭐ **NOT A SOFTLOCK — USER-RULED 2026-08-16b.** You need the amulet, but rm19 is one screen in and you can walk back out to rm13 for one (98/100 rooms still reachable). The DEMAND is modelled (`required[27]` covers all seven forest rooms since the `(+= state N)` fix, §13) and no stranding row is emitted — both pinned green. ⛔ The old "MISSED (region scope)" reading was wrong twice: region scope was never the blocker |
 | 11 | locket window missed | one-shot window (tier 3) | MISSED, unverified |
 | 12 | peas exhaustion | consumable | OPEN (13 noisy rows). Note the emptied bag is REQUIRED — the walkthrough sacks the cat with it — so the peas are not pure flavour |
 | 12b | rm57->rm683 carry-in | requirement broadcast into a cutscene | **FP, CURED 2026-08-16 (§11).** rm683 is `cdCassimaToon`, a CD cutscene that tests no item at all; the own(37)/own(24) demands landed there because `castle.sc` is the region live in all 16 castle rooms and `theCat` had no presence condition. `extract.room_valued_globals` reads the cat's bagged arm `(== global338 gCurRoom)` — the bagged cat is where you bagged it — and the presence narrows to seven rooms. Flipped `test_toll.py`'s two KQ5 assertions with it, as declared |
 | 12c | the Wand, anywhere | — | **FP, CURED 2026-08-15 (§10).** USER 2026-08-14, re-affirmed 2026-08-15: "you start the game with the wand, so you always have it." ⛔ The old reason was wrong — rm066's machine tray *does* take it (`putCWandScript`, `put: 28 gCurRoom`, and it stays there) — but the drop and the re-get are the same room and every wandless path into rm124 is a death. Cured by `_unrefusable_grants` (rm1's `init` grant), NOT by the never-strandable class this row used to propose |
-| 13 | lamb to the cat/dog → roc's nest death | exchange slots + ownedBy death fold (rm42) | **CAUGHT** (phase 1: rm42 `hatch` state-6 fork — its death chain sits behind a `(++ state)` skip the transition model now reads — plus the rm86 pool row) |
+| 13 | lamb to the cat/dog → roc's nest death | exchange slots + ownedBy death fold (rm42) | **CAUGHT, BOTH HALVES.** The DEMAND half since phase 1 (rm42 `hatch` state-6 fork — its death chain sits behind a `(++ state)` skip the transition model now reads — plus the rm86 pool row); the SPEND half since 2026-08-17b (`market_squeezes` rows at rm6 and rm12 — see 9c) |
 | 14 | pie to the eagle → yeti unsurvivable | slot swallow + chase-death counter-item | **CAUGHT** (phase 1: rm35 `killEgo` entry fold, prev==36 — the yeti kill continuing across the edge. The rm36 chase itself makes no claim: a `Chase` state is a race the player can decline by leaving, the refinement that keeps KQ4's rm49 dog — flee-able in play — out of the surface) |
 | 15 | fish to the cat → flag 36 unsettable → bees | exchange slot + sole-writer window (rm11) | ✅ **CAUGHT, BOTH HALVES 2026-08-17 (§16).** Phase 1's rm86 pool row names the Fish; `dangerous_sinks` now names the SPEND — `Fish@rm6 → still needed at [11]`. Never a register-flip closure: what shuts the bees' window is an item spent elsewhere, so the shape is a sink. Three derivations — a trade to a room is a destruction when the item cannot come back (`drop_is_permanent` over the owner graph, `put: X -1` its degenerate case, needing `opmodel.machine_moves`); `disjunctive_groups` by STATE and by `_own_required`, which derives the play-tested pool asymmetry; and the disjunctive rescue read at the CONSUMER, which is what keeps the Shoe and the Stick excused |
 

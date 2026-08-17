@@ -5626,12 +5626,24 @@ class IrSccReach(SccReach):
             for d in real:
                 by_dest.setdefault(d, hit if hit is not None else c)
 
+        # ⭐ SCARCITY IS CONSUMER-RELATIVE, and this is what closed the lamb red -- by refuting
+        # its stated cure. The red said the eagle's consumer is auto-satisfiable "because the
+        # lamb reads restockable (the cupboard pickup is not owner-gated in the model)", and
+        # the fix it prescribed was at the acquisition read. Both halves miss the true fact:
+        # the eagle's fold is at rm42, PAST THE ROC's point of no return, and
+        # `reobtainable_rooms(19)` -- the same gate-aware walk `analyze`'s carry-across row
+        # already rests on -- excludes rm42. Even a cupboard that restocked lambs forever
+        # could not supply the eagle. So a token waives a consumer's pressure only when it is
+        # BOTH re-suppliable in the model AND re-suppliable FROM THE CONSUMER'S OWN ROOMS;
+        # the cat's bank (rm6/rm86, in town) keeps its waiver and the pool stays safe, the
+        # eagle loses it and starts to constrain.
         consumers = []
         for c in out:
             why = self._required_consumer(c)
             if why is None:
                 continue
-            restock = sorted(t for t in c["accept"] if not single(t))
+            restock = sorted(t for t in c["accept"] if not single(t)
+                             and (c["rooms"] & self.reobtainable_rooms(t)))
             c["constrains"] = not restock
             c["why"] = why if not restock else why + " [auto-satisfiable: %s restock]" % (
                 [self.g.item_name(t) for t in restock])
@@ -5726,10 +5738,14 @@ class IrSccReach(SccReach):
         any shop (starves the princess, the Harp's sole source), and the pie eaten or fed to the
         eagle (starves the yeti, riding the rm35 fold). Every USER-ruled safe play stays silent:
         needle->gypsy, coin->tailor, marionette->toy maker, heart->princess, the whole throwable
-        pool. KNOWN LIMIT: eating the Lamb (twice) starves the eagle's rm42 fold, but the Lamb
-        still reads restockable (its cupboard pickup is not owner-gated in the model, the same
-        gap as the Coin and Marionette), so its consumer is auto-satisfiable and the row waits
-        on that acquisition read -- not on this detector."""
+        pool.
+
+        RE-MEASURED 2026-08-17b WITH CONSUMER-RELATIVE SCARCITY (see `_market`): +3 Leg_of_Lamb
+        rows -- eaten (Main's second bite), thrown at the cat, thrown at the dog -- each
+        starving the eagle's rm42 fold, whose surviving arm demands owner(19) == 34 and which
+        sits past the roc where no lamb can be re-fetched. USER-ruled real ("you need both the
+        pie and the lamb"); the cat and dog throws are oracle §1a's long-standing TRUE softlock,
+        caught here for the first time. The corpus stays 0 everywhere else."""
         consumers, tokens = self._market()
         cons = [c for c in consumers if c["constrains"]]
 
@@ -5748,16 +5764,28 @@ class IrSccReach(SccReach):
                  for room, script, it, g, dest in self.em.handler_drops]
         edges += [(it, room, script, inst, dest)
                   for room, script, it, g, dest, inst in self.em.machine_moves]
+        # An edge is a LOSS worth testing when the token is gone for good (destroyed, kept by
+        # its taker, or pocket-sealed) -- OR when some constraining consumer could never
+        # re-supply it anyway: the eagle cannot tell a permanently spent lamb from one lying
+        # in a town it can never walk back to, and neither kind returns to rm42.
+        starved_for = {t for c in cons for t in c["accept"]
+                       if not (c["rooms"] & self.reobtainable_rooms(t))}
         rows, seen = [], set()
         for (it, room, script, inst, dest) in sorted(edges, key=str):
             if it not in tokens or (room, inst) in fatal_sites:
                 continue
-            if not (dest != E.EGO and (dest in self.NOWHERE
-                                       or self.drop_is_permanent(it, dest)
-                                       or it in self._single_copy_pockets())):
+            if dest == E.EGO:
+                continue
+            if not (dest in self.NOWHERE or self.drop_is_permanent(it, dest)
+                    or it in self._single_copy_pockets() or it in starved_for):
                 continue
             ekey = ("m", script, inst) if inst is not None else ("h", script, dest)
-            sat = [c for c in consumers if ekey in c["keys"]]
+            # ...and a spend SATISFIES a consumer by identity (its own arming took the fee) or
+            # by DESTINATION: a fold consumer demands `owner(t) == dest`, and an edge that puts
+            # t exactly there has just established it -- feeding the lamb TO THE EAGLE is the
+            # solution, whatever machine performed it.
+            sat = [c for c in consumers
+                   if ekey in c["keys"] or (dest in c["dests"] and it in c["accept"])]
             rest = [c for c in cons if c not in sat]
             toks = [t for t in tokens if t != it]
             if pm(rest, toks) is not None:

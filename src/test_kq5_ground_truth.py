@@ -18,12 +18,13 @@ fork -- `rescue` (which still demands the Hammer) vs `yourStuck` (an unpreventab
 Flag 83 closes the cat window ON ARMING, not on success -- the one-shot-window class.
 
 ⛔ KQ5 IS NOT A FINISHED ORACLE, and no run of this file should be reported as though it were.
-The MARKET landed 2026-08-17b (`missability.market_squeezes`, §6a/§6b: the squeeze and the Heart
-promoted together -- they were one problem), but its reach is bounded by what reads as
-single-copy: EATING THE LAMB starves the eagle's rm42 fold (§6c, USER-ruled "you need both the
-pie and the lamb") and emits nothing today, because the lamb's cupboard pickup is not owner-gated
-in the model and the eagle's slot therefore reads restockable -- the same acquisition gap as the
-Coin and the Marionette. Column F -- false positives we emit -- is EMPTY as of 2026-08-17:
+The MARKET landed 2026-08-17b (`missability.market_squeezes`, §6a/§6b/§6c: the squeeze, the
+Heart and the lamb promoted together -- one matching question, with scarcity read
+consumer-relatively so the eagle past the roc counts every lamb as the last one). The known
+acquisition looseness remains -- the cupboard, the Coin and the Marionette all read restockable
+because their pickups' owner-gating is not modeled -- but it is measured to move NO verdict:
+every consumer it could waive is either town-side (where re-fetching is real) or constrained
+through a token that is scarce anyway. Column F -- false positives we emit -- is EMPTY as of 2026-08-17:
 the Wand's was cured 2026-08-15, the witch amulet's verdict was corrected 2026-08-16b, and the
 tambourine's went with the snake gate below. Several verdicts are open on their own terms (the peas
 consumable waits on the item-property store; the locket window, the mountains' cold death and
@@ -273,6 +274,21 @@ MECHANISM_ROWS = {
         "window_closures: {'pattern': 'window-closure', 'dest': 6, 'need_room': 86, "
         "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'producer_rooms': [6], "
         "'closes_on': [(485, 1), (565, 1)], 'flip_rooms': [6]}",
+        # ✅ THE MARKET, added 2026-08-17b with consumer-relative scarcity: any spend of the
+        # lamb away from the eagle starves the rm42 fold, whose surviving arm demands
+        # owner(19) == 34 and which sits past the roc where no lamb can be re-fetched
+        # (rm42 is outside `reobtainable_rooms(19)` -- the same fact the analyze row above
+        # rests on). Three spends exist: Main's EAT verb (the second bite destroys it), the
+        # cat (put: 19 6 -- it also BANKS the kidnap rescue, which is why `pays` credits the
+        # rm86 bank while the row still condemns the throw), and the dog (put: 19 12).
+        # The cat/dog rows are oracle §1a's "throw the lamb at the cat or dog -> rm42 death",
+        # a TRUE softlock declared there since 2026-08-14 and caught here for the first time.
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 0, 'script': 0, "
+        "'inst': None, 'pays': [], 'starves': [42], 'starved_accepts': [19]}",
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 6, 'script': 6, "
+        "'inst': None, 'pays': ['6', '6'], 'starves': [42], 'starved_accepts': [19]}",
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 12, 'script': 12, "
+        "'inst': None, 'pays': [], 'starves': [42], 'starved_accepts': [19]}",
     },
     "Fish": {
         # ✅ THE BEES, added 2026-08-17 (§16). The Fish is the one pool member whose OTHER
@@ -621,36 +637,51 @@ def run():
           f"else, so that would be a sink too\"*. The princess is the Harp's sole source. "
           f"docs/KQ5-ORACLE.md §6b.")
     # ...and the SILENCES, each one a user ruling the matching must keep honoring: the played
-    # pair (needle->gypsy, coin->tailor), the intended payments, the heart to the princess,
-    # and the whole throwable pool (rm6/rm12 -- the pool's competing consumers never outnumber
-    # it, which is Hall's condition answering the 2026-08-16b Shoe/Stick ruling by counting).
+    # pair (needle->gypsy, coin->tailor), the heart to the princess, and the SHOE AND STICK
+    # anywhere (the 2026-08-16b ruling: the safe ammunition -- each scene accepts the other's,
+    # and the pool's competing consumers never outnumber it). ⛔ Deliberately NOT "no rows at
+    # rm6/rm12": the LAMB thrown there is §1a's true softlock and its rows are pinned above --
+    # the pool-safety ruling names items, not rooms.
     bad_silence = [t for t in squeezes
-                   if t[1] in (13, 6, 12, 9)                # gypsy, cat, dog, princess
+                   if t[1] in (13, 9)                       # paying the gypsy or the princess
+                   or t[0] in ("Shoe", "Stick", "Fish")     # the pool's rescued members
                    or (t[0], t[2]) in {("Golden_Needle", "soldCloak"),
                                        ("Gold_Coin", "soldCloak")}]
-    check("every user-ruled safe play stays silent (gypsy, tailor's 3/11, princess, the pool)",
+    check("every user-ruled safe play stays silent (gypsy, tailor's 3/11, princess, Shoe/Stick)",
           not bad_silence,
           f"rows={bad_silence} -- a market row landed on a payment the USER ruled or played "
           f"safe: needle->gypsy and coin->tailor are THE winning pair (2026-08-17), the "
-          f"heart->princess is the intended move, and the pool cannot be starved (2026-08-16b). "
+          f"heart->princess is the intended move, and the Shoe/Stick keep their rescue "
+          f"(2026-08-16b; the Fish's condemnation belongs to dangerous_sinks, not here). "
           f"A row here is the false-positive family the distinct-token matching exists to "
           f"prevent.")
 
-    # 🔴 DECLARED RED 2026-08-17b, the market's known reach limit. USER, same day: *"yes, you
-    # need both the pie (for the yeti) and the lamb (for the eagle)"* -- so eating the lamb
-    # (Main's EAT verb destroys it on the second bite, `put: 19 1`) starves the rm42 fold, whose
-    # surviving arm demands owner(19) == 34 and nothing else. The eagle's consumer IS derived
-    # (reading (d), the rm42 fold), but the lamb still reads RESTOCKABLE -- its cupboard pickup
-    # (`rm028 openCup`, gated on `owner == 28`) is not owner-gated in the model, the same
-    # acquisition gap as the Coin and the Marionette -- so the consumer is auto-satisfiable and
-    # exerts no pressure. The cure is at the ACQUISITION read, not in the detector.
-    lamb_market = [r for (n, d, r) in raw_rows
-                   if n == "Leg_of_Lamb" and d == "market_squeezes" and 42 in r["starves"]]
-    check("🔴 KNOWN GAP (KQ5): eating the lamb is condemned by the eagle it starves",
-          bool(lamb_market),
-          "no market row ties the lamb's destruction to the rm42 fold -- the lamb reads "
-          "restockable because its cupboard acquisition is not owner-gated in the model. "
-          "USER-ruled real 2026-08-17b. docs/KQ5-ORACLE.md §6c.")
+    # ✅ PROMOTED 2026-08-17b, and by REFUTING the red's stated cure rather than building it
+    # ([[re-derive-a-reds-premise]], third time this arc). The red prescribed owner-gating the
+    # cupboard acquisition; the true fact is cheaper and stronger: SCARCITY IS CONSUMER-
+    # RELATIVE. The eagle's fold sits at rm42, past the roc, and `reobtainable_rooms(19)`
+    # excludes rm42 -- so to the one consumer that matters, EVERY lamb is the last lamb,
+    # restockable cupboard or not. `_market` now waives a consumer's pressure only for a token
+    # re-suppliable FROM ITS OWN ROOMS; the cat's bank (rm6/86, in town) keeps its waiver and
+    # the pool stays safe. Three rows landed, pinned in MECHANISM_ROWS: the EAT verb and the
+    # cat and dog throws -- the latter two being §1a's lamb-at-the-cat TRUE softlock, declared
+    # in the oracle since 2026-08-14 and never before caught.
+    lamb_market = {(r["at_room"], tuple(r["starves"])) for (n, d, r) in raw_rows
+                   if n == "Leg_of_Lamb" and d == "market_squeezes"}
+    check("spending the lamb anywhere but the eagle is condemned (eat, cat, dog -> rm42)",
+          lamb_market == {(0, (42,)), (6, (42,)), (12, (42,))},
+          f"rows={sorted(lamb_market)} -- expected the EAT verb (rm0) and the cat (rm6) and "
+          f"dog (rm12) throws, each starving the rm42 fold. USER-ruled 2026-08-17b (\"you need "
+          f"both the pie and the lamb\"); the throws are oracle §1a. If the rm6/rm12 rows "
+          f"vanished, check that the eagle's consumer still constrains -- its waiver must fail "
+          f"because rm42 cannot re-fetch, NOT because the cupboard reads owner-gated.")
+    # ...and the lamb TO the eagle stays silent: the spend that establishes owner(19) == 34 is
+    # the fold's own satisfaction, recognized by DESTINATION (no machine identity needed).
+    check("feeding the lamb to the eagle is not condemned",
+          not [r for (n, d, r) in raw_rows if n == "Leg_of_Lamb"
+               and d == "market_squeezes" and r["at_room"] == 34],
+          "a market row condemns the lamb AT the eagle -- the intended move. The "
+          "satisfaction-by-destination read regressed. docs/KQ5-ORACLE.md §6c.")
 
     # ✅ PROMOTED 2026-08-17 -- "the bees' flag-36 window closure is caught" is GREEN. The Fish is
     # the one throwable whose OTHER consumer accepts nothing else: `rm011::init` puts the bear in
