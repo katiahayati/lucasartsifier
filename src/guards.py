@@ -1367,6 +1367,59 @@ def sink_remedies(s):
     return out
 
 
+def market_remedies(s):
+    """Refuse the payments the market condemns -- one spec per `market_squeezes` row.
+
+    The remedy the USER approved (2026-08-17, the design; 2026-08-17b, the build): guard the
+    three shops, never the gypsy or the princess -- the tight slots must keep taking their
+    tokens, and every row the detector emits is a spend at a slot that merely TOLERATES the
+    token while some tight consumer starves. Because the market proved each row fatal in EVERY
+    live state (holding the token pins the residual enough that no ordering saves the spend),
+    the guard needs no runtime re-obtainability conjunct: it is a plain refusal of that (site,
+    token) payment, routed through the game's own refusal form.
+
+    PLACEMENT IS THE CASE, NOT THE MACHINE. A shop's cutscene (`soldCloak`) is armed from one
+    switch case per accepted token, so the wrap selects the case whose head literal IS the
+    condemned item and holds its whole body -- `trigger.wrap_forbidden_case`. The `anchor`
+    names the committed act inside that case: the `setScript:` arming for a purchase, the
+    handler's own `put:` for a throw or an eat (where the clause IS the act). The condition
+    keeps the corpus-wide `(not (gEgo has: X))` spelling; inside item X's own case it is
+    identically false, which is exactly the unconditional refusal the matching derived.
+
+    ⛔ A PURE SINK'S RETRACTION OUTRANKS THE MARKET'S REFUSAL, and the market defers to it.
+    KQ5's pie is the case: eating it is a pure sink (message + `put:`, nothing else), so
+    `sink_remedies` already withholds the disposal while LETTING THE JOKE PLAY -- strictly
+    kinder than a refusal. Wrapping the same case here as well stacked a refusal OUTSIDE the
+    retraction and full mode never reached the joke again (measured on the emitted source).
+    The deferral is exactly the pure-sink set: an IMPURE spend of the same item (the pie fed
+    to the eagle arms `feedEagle`, so the retraction cannot place there) keeps its market wrap.
+
+    Emits nothing on a game whose market has no fatal spends -- LSL2, KQ4, KQ6 and LB2 today,
+    measured -- so the frozen surfaces carry an empty key, not an absent one."""
+    # ...and "a retraction exists" means BOTH halves: the clause is pure AND `dangerous_sinks`
+    # actually carries the row `sink_remedies` will act on. The lamb's EAT is pure too, but its
+    # danger is stated only by the market (the sink sweep excuses it through the eagle's group),
+    # so no retraction ever ships for it and deferring would leave the spend unguarded.
+    pure = {(p["script"], p["item"]) for p in s.pure_sinks()}
+    remedied = pure & {(d["script"], d["item"]) for d in s.dangerous_sinks()}
+    out = []
+    for r in s.market_squeezes():
+        if r.get("inst") is None and (r["script"], r["item"]) in remedied:
+            continue          # the sink retraction already holds this exact clause, more kindly
+        anchor = (r"setScript:\s*%s\b" % re.escape(r["inst"])) if r.get("inst") else \
+                 (r"put:\s*%d\b" % r["item"])
+        out.append({
+            "site": "market", "room": r["at_room"], "script": r["script"],
+            "machine": r.get("inst"), "item": r["item"], "forbid": [r["item"]],
+            "anchor": anchor,
+            "condition": f"(not (gEgo has: {r['item']}))",
+            "why": (f"paying with {s.g.item_name(r['item'])} here starves rm{r['starves']} -- "
+                    f"the market has no assignment left for "
+                    f"{[s.g.item_name(t) for t in r['starved_accepts']]}"),
+            "refused": []})
+    return out
+
+
 def resource_remedies(s):
     """Prevent RESOURCE-EXHAUSTION softlocks by deleting the WASTEFUL degradation write -- the
     fourth store's analogue of `sink_remedies` (which deletes a wasteful item DROP).
@@ -1463,6 +1516,9 @@ def guard_specs(s):
     # An unguardable sink whose item later decides a death: demand the item at the crossings
     # into the death's room instead (the mists doctrine -- refuse the trip, keep the trade).
     specs.extend(sink_survival_carryins(s))
+    # ...and the market's fatal payments (KQ5's shops, the lamb's wastes) -- refusals of a
+    # (site, token) pair, placed on the token's own dispatch case. See market_remedies.
+    specs.extend(market_remedies(s))
     for gt in survival_gates(s):
         cp, cn, rest = factor(gt["alts"])
         pos_spec = render(cp, set(), rest)

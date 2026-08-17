@@ -39,7 +39,8 @@ import trigger as T
 from trigger import (find_trigger, find_arming, find_all_armings, find_cue_chain_armings,
                      find_nav_assign, find_proc_calls, exports_of,
                      reaching_procs, reaching_owners, wrap_trigger_in_source,
-                     wrap_all_armings_in_source, guarded_wrap, stock_or, _ModeSite,
+                     wrap_all_armings_in_source, wrap_forbidden_case, guarded_wrap, stock_or,
+                     _ModeSite,
                      _block_span,
                      _enclosing_clause_body, enclosing_clause_head, _find_region)
 
@@ -406,6 +407,41 @@ def _init_mode(dest):
         counter[0] += 1
         return base + 1 + b // 16, "$%04x" % (1 << (b % 16))
     T.MODE = {"g": base, "warned": _WARNED_LINE, "alloc": alloc}
+
+
+_HANDS_CACHE = {}
+
+
+def _hands_forms(dest):
+    """The input-lock pair the turn-back script may speak, IN THIS GAME'S OWN SPELLING.
+
+    Scanned once over the assembled sources: `handsOff:`/`handsOn:` where the game sends them
+    (LSL2, KQ4 -- their emissions stay byte-identical); `(User canControl: 0/1)` where THAT is
+    the game's idiom (KQ5 -- rm012's lamb throw locks input exactly this way); None when
+    neither is spoken, because a selector the game never sends does not compile and a brief
+    uncontrolled walk-back beats an uncompilable guard."""
+    if dest in _HANDS_CACHE:
+        return _HANDS_CACHE[dest]
+    src = os.path.join(dest, "src")
+    spoken = set()
+    for fn in os.listdir(src):
+        if not fn.endswith(".sc"):
+            continue
+        t = open(os.path.join(src, fn), errors="replace").read()
+        if "handsOff:" in t:
+            spoken.add("hands")
+        if "canControl:" in t:
+            spoken.add("cancontrol")
+        if "hands" in spoken:
+            break
+    if "hands" in spoken:
+        got = ("(global%d handsOff:)" % _GAME, "(global%d handsOn:)" % _GAME)
+    elif "cancontrol" in spoken:
+        got = ("(User canControl: 0)", "(User canControl: 1)")
+    else:
+        got = None
+    _HANDS_CACHE[dest] = got
+    return got
 
 
 def apply_sink_remedies(dest, sinks, titles_by_num):
@@ -2240,6 +2276,38 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             continue
         open(path, "w").write(_ensure_refusal_use(new_text, titles_by_num))
         out.append({**sp, "applied": True, "title": title, "sites": n, "placement": arm})
+    # MARKET SQUEEZES -- refuse the fatal PAYMENT. The site is the condemned token's own
+    # dispatch case (KQ5's shops switch on the offered item, so every payment has one), located
+    # by its case-head literal and its committed act -- the purchase cutscene's `setScript:` or
+    # the handler's own `put:` -- and the whole case is held, siblings included. The refusing
+    # line says why, because the player is being told no about a move the game invites; the
+    # gypsy and the princess are never in this list by construction (the detector's rows are
+    # spends at slots that merely tolerate the token while a tight consumer starves).
+    for sp in specs:
+        if sp["site"] != "market" or sp["refused"]:
+            continue
+        title = titles_by_num.get(sp["script"])
+        path = os.path.join(dest, "src", title + ".sc") if title else None
+        if not path or not os.path.exists(path):
+            out.append({**sp, "applied": False, "why": "no source for script %s" % sp["script"]})
+            continue
+        if _RETRACTION_FORM is None or REFUSE is None:
+            out.append({**sp, "applied": False,
+                        "why": "no literal-display form derives for this game"})
+            continue
+        text = open(path, errors="replace").read()
+        refuse = _RETRACTION_FORM % "Better not. You are going to need that."
+        new_text, n = wrap_forbidden_case(text, sp["anchor"], sp["item"],
+                                          to_source_syntax(sp["condition"]), refuse)
+        if not n:
+            out.append({**sp, "applied": False,
+                        "why": "no switch case headed %d anchors `%s` in %s"
+                               % (sp["item"], sp["anchor"], title)})
+            continue
+        open(path, "w").write(_ensure_refusal_use(new_text, titles_by_num))
+        out.append({**sp, "applied": True, "title": title, "sites": n,
+                    "placement": {"kind": "market-case", "instance": sp.get("machine"),
+                                  "case": sp["item"]}})
     # register-flip guards edit the game class's always-live method (script 0 = Main), not a room.
     for sp in specs:
         if sp["site"] != "register-write" or sp["refused"]:
@@ -2560,11 +2628,14 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             text = open(path, errors="replace").read()
             if placement["kind"] == "arm-clause":
                 # the turn-back variant speaks and moves the ego; give the wrapper the game's
-                # own object-global spellings, and the file the class scripts it will need
+                # own object-global spellings, and the file the class scripts it will need.
+                # The INPUT-LOCK pair rides along in the game's own tongue -- see the template
+                # in trigger.py for why an unspoken selector must never be emitted.
                 placement = {**placement,
                              "obj_globals": {"ego": "global%d" % _EGO,
                                              "room": "global%d" % _ROOM,
-                                             "game": "global%d" % _GAME}}
+                                             "game": "global%d" % _GAME,
+                                             "hands": _hands_forms(dest)}}
             new_text, n = wrap_trigger_in_source(
                 text, placement, to_source_syntax(sp["condition"]), REFUSE, site=row_site)
             if n == 0:
@@ -2574,6 +2645,8 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             if placement["kind"] == "arm-clause" and "sgTurnBack" in new_text:
                 new_text = _ensure_refusal_use(new_text, titles_by_num)
                 new_text = _ensure_use(new_text, "Motion")
+                if "(User canControl:" in new_text:
+                    new_text = _ensure_use(new_text, "User")   # the derived input-lock's class
             elif placement["kind"] not in ("arm-event", "arm-clause"):
                 new_text = _ensure_refusal_use(new_text, titles_by_num)
             open(path, "w").write(new_text)

@@ -1276,15 +1276,26 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
                            f"\t\t\t\t\t\t{mark}\n"
                            f"\t\t\t\t\t)\n"
                            f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
+            # THE INPUT LOCK IS SPOKEN IN THE GAME'S OWN TONGUE, or not at all. The template
+            # said `(gGame handsOff:)` unconditionally, and KQ5 -- the first game outside the
+            # LSL2/KQ4 dialect to receive a turn-back -- never sends that selector anywhere in
+            # its 211 scripts, so the guard was the one script in the game that could not
+            # compile. The caller derives the pair (`obj_globals["hands"]`): the handsOff:
+            # spelling where the game speaks it, its own idiom otherwise (KQ5 locks input with
+            # `(User canControl: 0)` -- rm012's lamb throw does exactly that), and NO lock when
+            # neither is spoken -- a brief uncontrolled walk-back beats an uncompilable file.
+            hands = og.get("hands", (f"({game} handsOff:)", f"({game} handsOn:)"))
+            h_off = ("\t\t\t\t%s\n" % hands[0]) if hands else ""
+            h_on = ("\t\t\t\t%s\n" % hands[1]) if hands else ""
             instance_txt = (
                 "\n(instance %s of Script\n\t(properties)\n\n"
                 "\t(method (changeState param1)\n"
                 "\t\t(switch (= state param1)\n"
-                "\t\t\t(0\n\t\t\t\t(%s handsOff:)\n\t\t\t\t%s  ; softlock-guard line\n"
+                "\t\t\t(0\n%s\t\t\t\t%s  ; softlock-guard line\n"
                 "\t\t\t\t(= cycles 1)\n\t\t\t)\n"
                 "\t\t\t(1\n\t\t\t\t(%s setMotion: MoveTo %s %s self)\n\t\t\t)\n"
-                "\t\t\t(2\n\t\t\t\t(%s handsOn:)\n\t\t\t\t(self dispose:)\n\t\t\t)\n"
-                "\t\t)\n\t)\n)\n" % (tb, game, refuse, ego, xe, ye, game))
+                "\t\t\t(2\n%s\t\t\t\t(self dispose:)\n\t\t\t)\n"
+                "\t\t)\n\t)\n)\n" % (tb, h_off, refuse, ego, xe, ye, h_on))
             new_text = text[:m0] + region[:bs] + wrapped + region[be:] + text[m1:]
             return new_text + instance_txt, 1
         wrapped = (f"(if {stock_or(guard_sexpr)}\n\t\t\t\t{region[bs:be]}\n\t\t\t)"
@@ -1393,6 +1404,45 @@ def _enclosing_clause_span(region, pos):
         else:
             k += 1
     return None
+
+
+def wrap_forbidden_case(text, anchor_pat, token, guard_sexpr, refuse, site=None):
+    """Wrap the switch case whose HEAD IS `token` around each `anchor_pat` match -- the market
+    refusal's placement primitive.
+
+    KQ5's shops dispatch on the offered item -- `(switch (gInv indexOf: (gIconBar curInvIcon:))
+    (9 (= local6 2) (gRoom setScript: soldCloak) ...))` -- so every forbidden payment has its
+    OWN case, and the case head literal IS the item number the market row names. Selecting the
+    case by that head is what lets a guard spelled `(not (gEgo has: 9))` be placed only where
+    the 9 was offered: inside its own case the condition is identically false, so the wrap is
+    the unconditional refusal the matching derived, and the sibling cases -- the payments that
+    keep the market solvable -- are never touched. (A condition alone cannot do this: wrapping
+    every arming of `soldCloak` with `(not (has: 9))` would refuse the NEEDLE payment of any
+    player merely carrying the heart.)
+
+    The anchor names the committed ACT -- the `setScript:` that arms the purchase cutscene, or
+    the handler's own `put:` for a throw/eat clause -- and the whole case body is wrapped, the
+    same siblings-must-not-outrun-the-refusal care as every other kind here. Matches that share
+    one case (Main's two lamb `put:` spellings) collapse to one wrap. Returns (text, n)."""
+    site = site if site is not None else _ModeSite()
+    spans = []
+    for m in re.finditer(anchor_pat, text):
+        span = _enclosing_clause_span(text, m.start())
+        if span is None or span in spans:
+            continue
+        if enclosing_clause_head(text, m.start()) != str(token):
+            continue
+        spans.append(span)
+    n = 0
+    for (cs, ce) in sorted(spans, reverse=True):
+        body = _clause_body(text, cs, ce)
+        if body is None:
+            continue
+        bs, be = body
+        wrapped = guarded_wrap(guard_sexpr, text[bs:be], refuse, site=site)
+        text = text[:bs] + wrapped + text[be:]
+        n += 1
+    return text, n
 
 
 def _enclosing_clause_body(region, pos):

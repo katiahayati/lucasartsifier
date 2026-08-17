@@ -140,6 +140,13 @@ def snapshot(cfg, with_placements=False):
                                   f"{sp['condition']}"
                                   + (" [REFUSED]" if sp["refused"] else "")
                                   for sp in specs if sp["site"] == "action")
+    # The market refusals (2026-08-17b): one per condemned (site, token) payment, keyed by the
+    # script file and the machine (or the handler act) the wrap holds. Empty everywhere the
+    # market emits no rows -- the same ran-and-found-nothing record as every other key.
+    snap["market_specs"] = sorted(
+        f"{s.g.item_name(sp['item'])}@script{sp['script']}/{sp.get('machine') or 'handler'}"
+        + (" [REFUSED]" if sp["refused"] else "")
+        for sp in specs if sp["site"] == "market")
     snap["register_write_specs"] = sorted(
         f"reg{sp.get('register')}={sp.get('trap')}: {sp['condition']}"
         + (" [REFUSED]" if sp["refused"] else "")
