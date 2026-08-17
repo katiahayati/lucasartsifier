@@ -530,10 +530,49 @@ def run():
     import guards as G
     front = {e: sorted(rec["items"]) for e, rec in G.register_flip_frontier(s).items()
              if 22 in rec["items"]}
-    check("the Hammer demand rides only the crossing that strands it",
-          all(b == 86 for (_a, b) in front),
+    # ⭐ NON-VACUOUS since 2026-08-18: this check passed for months on an EMPTY front -- a
+    # prev-room register never appears in an edge's own req, so `flip_edges`' req test could
+    # not see the structural exclusion (standing in rm85, prev != 85 by construction) and the
+    # Hammer's demand reached no edge at all (`reg12=85 [REFUSED] ... UNENFORCED`). The prev
+    # branch in flip_edges is the cure; this pin now demands the crossing be PRESENT.
+    check("the Hammer demand rides exactly the kidnap crossing rm85->rm86",
+          front == {(85, 86): [22]},
           f"frontier edges carrying the Hammer: {front} -- an edge that writes prev==85 while "
-          f"arriving somewhere other than the cellar enters no seal.")
+          f"arriving somewhere other than the cellar enters no seal, and an EMPTY front means "
+          f"the demand is enforced nowhere (the pre-2026-08-18 state).")
+
+    # ✅ PATCH B, added 2026-08-18 (`guards.fold_carryins` + the prev branch in
+    # `register_flip_frontier.flip_edges`). The kidnap is MANDATORY (the Rope is sourced inside
+    # rm86), so no gate may live in the cellar -- but the entry-fold's context {12: 85} names
+    # the one crossing that arms the losing fork, and BOTH demands ride it as ONE guard: the
+    # Hammer (the flip frontier's item) and the banked throwable (the fold's owner group, in
+    # rm086's own spelling). A-BEFORE-B is derived, not remembered: the bank's producers sit
+    # behind the window flag 83 closes, so the carry-in requires a PLACEABLE window remedy for
+    # the same group and refuses without one (test: break the window remedy and this spec must
+    # flip to refused, not silently wall the kidnap).
+    all_specs = G.guard_specs(s)
+    kidnap_spec = [sp for sp in all_specs if sp["site"] == "edge"
+                   and sp.get("from_room") == 85 and sp.get("to_room") == 86]
+    want_cond = ("(and (gEgo has: 22) (or (== ((gInv at: 5) owner:) 6) "
+                 "(== ((gInv at: 8) owner:) 6) (== ((gInv at: 16) owner:) 6) "
+                 "(== ((gInv at: 19) owner:) 6)))")
+    check("the kidnap crossing demands Hammer AND a banked throwable in one guard",
+          len(kidnap_spec) == 1 and kidnap_spec[0]["condition"] == want_cond
+          and not kidnap_spec[0]["refused"],
+          f"specs={kidnap_spec!r} -- expected exactly one placeable rm85->rm86 edge spec "
+          f"conjoining (has 22) with the rm086-spelled bank disjunction.")
+
+    # ...and the SAME derivation's second catch: rm35's killEgo entry-fold (context {12: 36},
+    # the scripted kill when you flee the yeti unfed) puts `owner(Pie) == 36` on rm36->rm35.
+    # The feed site is rm36 itself, so the demand is satisfiable at the refusal moment; a
+    # pie-less player was doomed in rm36 either way, so the guard defers and never walls.
+    yeti_spec = [sp for sp in all_specs if sp["site"] == "edge"
+                 and sp.get("from_room") == 36 and sp.get("to_room") == 35]
+    check("the yeti fold's demand rides rm36->rm35 (feed the yeti before crossing)",
+          len(yeti_spec) == 1 and yeti_spec[0]["condition"] == "(== ((gInv at: 2) owner:) 36)"
+          and not yeti_spec[0]["refused"],
+          f"specs={yeti_spec!r} -- the killEgo fold names prev==36, so its demand belongs on "
+          f"that crossing and nowhere else.")
 
     def _rooms_mentioned(r):
         out = {x for x in (r.get("still_needed_at") or ()) if isinstance(x, int)}

@@ -2265,6 +2265,20 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
     `(or (not <stage>) <demand>)` -- the demand deferral that prohibitions have had since the
     Spinach_Dip raft, extended to demands. Without it a sole-exit row stays honestly unplaced."""
     _init_mode(dest)               # runtime stock/lite/full dispatch for everything placed below
+    # OWNER-VALUED conditions arrive in the neutral `(gInv at: N)` spelling (window remedies,
+    # fold carry-ins); translate them into this game's own inventory-list global once, up
+    # front, so every wrap form downstream sees compilable source. A game that never speaks
+    # the owner-test idiom cannot compile such a guard -- refuse those specs rather than emit
+    # a guard that does not build.
+    for sp in specs:
+        c = sp.get("condition")
+        if c and "(gInv at:" in c:
+            inv = _inv_form(dest)
+            if inv is None:
+                sp.setdefault("refused", []).append(
+                    "no inventory-store spelling derives for this game")
+            else:
+                sp["condition"] = c.replace("(gInv at:", "(global%d at:" % inv)
     out_unplaced = []
     pending_fwd = []               # (index of the refusal row, spec, fwd, stage) -- see below
     by_title = {}
@@ -2284,7 +2298,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
         for sp in group:
             if sp.get("forbid") and title:
                 forms = read_file(os.path.join(dest, "src", title + ".sc"))
-                k = find_trigger(forms, sp["to_room"])["kind"]
+                k = find_trigger(forms, sp["to_room"], ego=_EGO)["kind"]
                 # arm-event gates an uncontrollable event on HAVING a survival item; a PROHIBITION
                 # enforced by refusing to arm an automatic cutscene would hang the game (the
                 # Spinach_Dip -> rm138 raft). So a forbid spec that resolves to arm-event is deferred
@@ -2516,7 +2530,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                 except Exception as e:
                     out.append({**sp, "applied": False, "why": "parse failed: %s" % e})
                     break
-                p = find_trigger(cforms, sp["to_room"])
+                p = find_trigger(cforms, sp["to_room"], ego=_EGO)
                 # Best first: a placeable trigger, else a file that at least CONTAINS the newRoom
                 # (its instance is what the cross-file arming search below needs), else nothing.
                 def rank(q):
@@ -3290,7 +3304,7 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
                 seen.add(key)
                 placed.append({"title": ttl, "kind": "flip-interceptor-hold", "sites": n2})
                 continue
-        trig = find_trigger(forms2, sp["from_room"])
+        trig = find_trigger(forms2, sp["from_room"], ego=_EGO)
         if (stage_override is not None and defer_ctx is not None
                 and trig["kind"] in ("arm-event", "sole-exit", "setscript")):
             # THE ARRIVAL-COMMIT TRIAGE (sole-exit deferral only). A deferral site is not a

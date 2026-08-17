@@ -827,6 +827,17 @@ def register_flip_frontier(s):
     prev = M.prev_room_reg(s.em)
 
     def flip_edges(R, v, from_room=None):
+        # A PREV-ROOM register's exclusion is STRUCTURAL, not spelled in the edge's req: standing
+        # in rm85, prev != 85 by construction, because `prev := 85` is what leaving rm85 means --
+        # the same fact the JOINT reduction below already uses ("the positional component names
+        # the from-room"). The req test below cannot see it (no edge constrains prev in its own
+        # req), which left KQ5's kidnap row [REFUSED]/UNENFORCED: the one crossing that strands
+        # the Hammer carried no demand. Every edge out of room v writes the value from a state
+        # that excludes it; the caller's `land` filter then keeps only the arrivals the walk
+        # measured as sealing.
+        if R == prev:
+            return {(a, b) for (a, b) in s._emeta
+                    if a == v and b != v and (from_room is None or a == from_room)}
         sites = set()
         for (a, b), metas in s._emeta.items():
             if from_room is not None and a != from_room:
@@ -1510,6 +1521,63 @@ def window_remedies(s):
     return out
 
 
+def fold_carryins(s):
+    """Owner-value demands on the CROSSING an entry-fold's context names -- patch B's derivation.
+
+    `ownedby_death_folds` states a demand the fold's own room can no longer satisfy: arriving
+    at KQ5's rm86 with `prev == 85` (the kidnap), some throwable must already be OWNED by room
+    6 or `yourStuck` is a pure-timer death -- and the Rope is sourced INSIDE rm86, so the
+    kidnap is mandatory and a gate cannot live there. But an entry-fold whose context names
+    the previous room IS a fact about one crossing: `{12: 85}` means the losing arm arms
+    exactly on rm85 -> rm86, so the demand's last controllable moment is that crossing --
+    the same doctrine as `sink_survival_carryins` (the mists), in the owner store's spelling.
+
+    The condition is the CONSUMER'S OWN reading (`(== ((gInv at: X) owner:) 6)` over the
+    demand group -- rm086's kidnap fork spells it exactly so), the same rendering
+    `window_remedies` ships; the patcher derives the game's `gInv` global at placement.
+
+    A-BEFORE-B, derived: if the demanded value's producers sit behind a window that CLOSES
+    (`window_closures` claims the group), this demand is only satisfiable in a game where the
+    window remedy holds that window open -- so the spec requires a PLACEABLE `window_remedies`
+    row for the same group and refuses without one. Refusing the kidnap while the bank can
+    never be filled again would wall a mandatory crossing forever, which is worse than the
+    softlock. A group no closure claims keeps its producers alive by the closure detector's
+    own liveness reading, and carries no gate.
+
+    STATE-FORK rows (KQ5's rm42 hatch: context {}) name no crossing and emit nothing --
+    their demands already ride the item frontiers (the roc edge carries the lamb)."""
+    prev = M.prev_room_reg(s.em)
+    closures = {(tuple(sorted(tuple(x) for x in r["demand_group"])), r["need_room"])
+                for r in s.window_closures()}
+    placeable = {(tuple(sp["items"]), sp["need_room"]): not sp["refused"]
+                 for sp in window_remedies(s)}
+    out, seen = [], set()
+    for r in s.ownedby_death_folds():
+        ctx = r.get("context") or {}
+        a = ctx.get(prev)
+        if a is None:
+            continue
+        b = r["need_room"]
+        group = sorted({tuple(x) for x in r["demand_group"]})
+        if (a, b, tuple(group)) in seen:
+            continue
+        seen.add((a, b, tuple(group)))
+        conds = ["(== ((gInv at: %d) owner:) %d)" % (it, dst) for it, dst in group]
+        cond = conds[0] if len(conds) == 1 else "(or %s)" % " ".join(conds)
+        refused = []
+        gkey = (tuple(group), b)
+        ikey = (tuple(it for it, _d in group), b)
+        if gkey in closures and not placeable.get(ikey):
+            refused.append("the window producing this value closes and no placeable window "
+                           "remedy holds it open -- demanding it here would wall the crossing")
+        out.append({"site": "edge", "from_room": a, "to_room": b, "condition": cond,
+                    "items": [], "groups": [], "owner_group": [list(g) for g in group],
+                    "why": (f"arriving at rm{b} from rm{a} is unsurvivable unless the value "
+                            f"is already banked -- the fold's demand rides its crossing"),
+                    "refused": refused})
+    return out
+
+
 def resource_remedies(s):
     """Prevent RESOURCE-EXHAUSTION softlocks by deleting the WASTEFUL degradation write -- the
     fourth store's analogue of `sink_remedies` (which deletes a wasteful item DROP).
@@ -1598,6 +1666,20 @@ def guard_specs(s):
             # deliberately emit nothing", and every reporting path prints it.
             sp["refused"] = [sp["dropped_why"] + " -- nothing left to demand at this edge"]
         specs.append(sp)
+    # ...and the OWNER-VALUED demands the entry-folds put on their own crossings (patch B):
+    # conjoined onto the frontier spec for the same edge when one exists -- rm85->rm86 demands
+    # the Hammer (the flip frontier) AND the banked throwable (the fold) in ONE guard, one no --
+    # appended standalone otherwise, refusals included so an unplaceable demand stays visible.
+    for fc in fold_carryins(s):
+        host = next((sp for sp in specs if sp["site"] == "edge" and not sp["refused"]
+                     and sp["from_room"] == fc["from_room"]
+                     and sp["to_room"] == fc["to_room"]), None)
+        if host is not None and not fc["refused"]:
+            host["condition"] = "(and %s %s)" % (host["condition"], fc["condition"])
+            host.setdefault("owner_groups", []).extend(fc["owner_group"])
+            host.setdefault("merged", []).append(fc["condition"])
+        else:
+            specs.append(fc)
     # ...and the REGISTER-valued half of a one-visit pocket: bringing the teacup in is one guard,
     # having filled it on the way out is the other. Appended after the frontier specs because it
     # READS them -- an exit guard may only ship alongside the entrance guard that makes it

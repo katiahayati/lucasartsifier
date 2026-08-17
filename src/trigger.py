@@ -812,7 +812,32 @@ def _mentions_oncontrol(form, octx=None):
     return False
 
 
-def analyze_room(forms):
+def _mentions_ego_position(form, ego=None):
+    """Does this subtree read WHERE THE EGO IS, in the COORDINATE spelling -- `(< (gEgo y:) 150)`?
+
+    The same standing-position fact `_mentions_oncontrol` reads in control-mask form, spelled
+    with no `onControl` anywhere: KQ5's rm85 arms the kidnap on `(< (global0 y:) 150)` in
+    `doit`, and the mask-only reading classified it an adversarial arm-event -- whose bare
+    arming wrap left the `(proc0_2)` handsOff sibling un-gated, the exact shape of play
+    finding #11. RESTRICTED TO THE EGO, which is why the caller must thread the ego's global
+    index: a cond on another actor's x/y is animation logic, not a player-initiated crossing,
+    and reading those as positional would hand arm-clause wraps to scenes the player never
+    walked into. `ego=None` (callers that cannot name the ego) reads nothing -- the
+    permissive direction is the old classification, not a guess."""
+    if ego is None or not isinstance(form, list):
+        return False
+    ms = _message_send(form)
+    if ms:
+        recv, groups = ms                      # _message_send returns the receiver NORMALIZED
+        name = recv if isinstance(recv, str) else \
+            (recv.name if isinstance(recv, Sym) else None)
+        if name == "global%d" % ego \
+                and any(sel in ("x", "y") and not args for sel, args in groups):
+            return True
+    return any(_mentions_ego_position(x, ego) for x in form if isinstance(x, list))
+
+
+def analyze_room(forms, ego=None):
     """newRoom sites, changeState-call sites and setScript-call sites, tagged with (instance,
     method, ...). setScript is the OTHER way a controllable handler starts an uncontrollable
     sequence: `(self setScript: closer)` where the `closer` Script does the frontier newRoom --
@@ -863,12 +888,14 @@ def analyze_room(forms):
         if is_sym(h, "cond"):
             for clause in form[1:]:
                 if isinstance(clause, list) and clause:
-                    cpos = pos or _mentions_oncontrol(clause[0], octx)
+                    cpos = pos or _mentions_oncontrol(clause[0], octx) \
+                        or _mentions_ego_position(clause[0], ego)
                     for b in clause[1:]:
                         walk(b, inst, meth, state, cpos, octx)
             return
         if is_sym(h, "if"):
-            tpos = pos or (len(form) > 1 and _mentions_oncontrol(form[1], octx))
+            tpos = pos or (len(form) > 1 and (_mentions_oncontrol(form[1], octx)
+                                              or _mentions_ego_position(form[1], ego)))
             for s in form[2:]:
                 walk(s, inst, meth, state, tpos, octx)
             return
@@ -943,9 +970,13 @@ def _var_assigned_rooms(forms):
     return out
 
 
-def find_trigger(forms, target_room):
-    """Return the guard placement for a frontier newRoom into `target_room`."""
-    nr, cs, ss, _pc = analyze_room(forms)
+def find_trigger(forms, target_room, ego=None):
+    """Return the guard placement for a frontier newRoom into `target_room`.
+
+    `ego` (a global index, or None) feeds the coordinate spelling of the positional test --
+    see `_mentions_ego_position`. Callers that know the game's ego should thread it; None
+    keeps the mask-only reading."""
+    nr, cs, ss, _pc = analyze_room(forms, ego=ego)
     nav = nav_props(forms)
     assigned = _var_assigned_rooms(forms)
     sites = [s for s in nr if s[3] == target_room
@@ -1256,15 +1287,34 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
         tspan = _find_region(text, r"\(instance\s+%s\b" % re.escape(target))
         tm = re.search(r"(?:setMotion:\s+)?(?:MoveTo|PolyPath)\s+(-?\d+)\s+(-?\d+)",
                        text[tspan[0]:tspan[1]]) if tspan else None
+        # THE CLAUSE NAMES ITS OWN ESCAPE when its test is an ego-coordinate compare: the
+        # boundary literal IS the zone's edge, so the back-off is "past it, along that axis" --
+        # `(< (gEgo y:) 150)` walks back to y = 165. Derived from the guarded clause itself,
+        # which cannot pick a wrong axis; the crossing script's first motion target (below)
+        # stays as the fallback for mask-form zones, whose boundary no literal states. Without
+        # this, rm85's turn-back walked SIDEWAYS (the thug's approach motion is x-dominant),
+        # the ego never left the y<150 zone, and the once-per-approach argument -- "the
+        # turn-back ends with the ego off the zone" -- was false: the guard machine-gunned
+        # (finding #12's shape, one derivation short).
+        head = enclosing_clause_head(region, ssm.start()) or ""
+        bm = re.search(r"\(([<>])=?\s*\(%s\s+([xy]):\)\s+(-?\d+)\)" % re.escape(ego), head)
+        bnd = None
+        if bm:
+            op, axis, k = bm.group(1), bm.group(2), int(bm.group(3))
+            esc = k + 15 if op == "<" else k - 15
+            bnd = (f"({ego} x:)", str(esc)) if axis == "y" else (str(esc), f"({ego} y:)")
         tb = "sgTurnBack"
-        if refuse and tm and tb not in text:
-            tx, ty = int(tm.group(1)), int(tm.group(2))
-            if abs(ty - 95) >= abs(tx - 160):      # dominant axis of the crossing, sign away
-                xe = f"({ego} x:)"
-                ye = f"({'+' if ty < 95 else '-'} ({ego} y:) 35)"
+        if refuse and (bnd or tm) and tb not in text:
+            if bnd:
+                xe, ye = bnd
             else:
-                xe = f"({'+' if tx < 160 else '-'} ({ego} x:) 35)"
-                ye = f"({ego} y:)"
+                tx, ty = int(tm.group(1)), int(tm.group(2))
+                if abs(ty - 95) >= abs(tx - 160):  # dominant axis of the crossing, sign away
+                    xe = f"({ego} x:)"
+                    ye = f"({'+' if ty < 95 else '-'} ({ego} y:) 35)"
+                else:
+                    xe = f"({'+' if tx < 160 else '-'} ({ego} x:) 35)"
+                    ye = f"({ego} y:)"
             forms = site.forms()
             if forms is None:
                 wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"

@@ -1022,3 +1022,47 @@ mouse → the bank holds owner==6 forever → `¬V` keeps the scene down on ever
 What this patch does NOT do: save a player who gets kidnapped having never banked anything —
 that is the rm85 warn-bounce interceptor (patch B), which this build is the stated
 precondition for.
+
+## §18. The kidnap corral — both demands ride the one crossing that arms the fork (2026-08-18, derived)
+
+The kidnap is MANDATORY (the Rope is sourced inside rm86), so no gate may live in the cellar —
+and rm86's own fork reads facts the cellar can no longer change: `owner ∈ {5,8,16,19} == 6`
+(else `yourStuck`, a pure-timer death) and then the Hammer (else `walkingDead`). Both demands
+belong on the LAST CONTROLLABLE MOMENT, the rm85 → rm86 grab. Three derivations, each closing
+a gap something else had left:
+
+* **A prev-room register's flip edges are structural** (`register_flip_frontier.flip_edges`).
+  The flip-edge test read "entered the seal from outside" out of the edge's own `req` — the
+  plot-register spelling (LB2's act break). A prev register never appears in a req; its
+  exclusion is that standing in rm85, `prev != 85` BY CONSTRUCTION, the same fact the joint
+  reduction already used. The scalar path now knows it, so the Hammer row's demand lands on
+  its crossing — `reg12=85 [REFUSED] ... UNENFORCED` becomes an edge spec, and the pin that
+  "the Hammer rides only the crossing that strands it" is non-vacuous for the first time (it
+  had been passing on an EMPTY frontier for months).
+* **An entry-fold's context names its crossing** (`guards.fold_carryins`). `{12: 85}` on the
+  yourStuck fold means the losing arm arms exactly on rm85 → rm86, so the owner-group demand
+  rides that edge in rm086's own spelling — conjoined into the frontier spec, ONE guard:
+  `(and (has 22) (or (== ((gInv at: X) owner:) 6) ...))`. A-BEFORE-B is derived, not
+  remembered: the bank's producers sit behind the window flag 83 closes, so the carry-in
+  requires a PLACEABLE window remedy (§17) for the same group and refuses without one.
+  The same derivation's second catch: rm35's killEgo fold (context {12: 36}) puts
+  `owner(Pie) == 36` on rm36 → rm35 — honestly UNPLACED today ("no controllable trigger":
+  KQ5's edge exits ride the script-202 travel dispatch, the same seam as the castle-fish
+  bypass).
+* **A coordinate compare is a positional test** (`trigger._mentions_ego_position`), and
+  **a coordinate clause names its own escape**. rm85 arms the grab on `(< (gEgo y:) 150)` in
+  `doit` — no `onControl` anywhere — so the mask-only reading classified it an adversarial
+  arm-event whose bare wrap left the `(proc0_2)` handsOff sibling un-gated: finding #11's
+  hang, rediscovered in the emitted source. Read as positional, the placement takes the
+  play-validated arm-clause path (whole clause held, turn-back refusal). And the turn-back's
+  back-off now derives from the guarded clause's own boundary literal — walk to y = 165,
+  past the zone's edge — because the old motion-target heuristic read the THUG's x-dominant
+  approach and walked the ego sideways, never leaving the zone: finding #12's machine-gun,
+  one derivation short. Mask-form zones keep the motion-target fallback.
+
+Emitted shape at rm085 (compiles; mode-less like the rest of KQ5's patch): the grab arms only
+when survivable; otherwise, once per approach, "Not yet!" and a walk-back to y 165 with input
+locked during the walk — the game's own warn-bounce idiom, given a condition. Play shape:
+approach the inn with Hammer + a banked throwable → kidnapped, exactly as stock; approach
+without → turned back at the door; fetch, return, kidnapped. The kidnap stays mandatory —
+the guard defers it, never removes it.
