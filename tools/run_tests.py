@@ -279,11 +279,53 @@ KNOWN_RED = {
         # walking in empty-handed neither spends anything nor closes anything. The rows were
         # FALSE POSITIVES; both items are now pinned to the rm86 pool demand alone and sit in
         # EXPECTED_CAUGHT. docs/KQ5-ORACLE.md §1.
-        "🔴 KNOWN GAP (KQ5): the bees' flag-36 window closure is caught":
-            "flag 36's only writer is bearScript (runs only while `has: 5` spawns the bear); "
-            "the hive arms deathByBees under not-flag36, so the honeycomb -> beeswax -> boat "
-            "chain dies with the wasted fish. Phase 3 (window closure): a demanded value "
-            "whose every producer is guarded on a flag the producers' own trigger sets.",
+        # ✅ PROMOTED 2026-08-17 -- "🔴 KNOWN GAP (KQ5): the bees' flag-36 window closure is
+        # caught" is GREEN and no longer listed. It was never a register-flip window at all (the
+        # 2026-08-16b note here already corrected that): flag 36's only writer is `bearScript`,
+        # the bear exists only while `has: 5`, and the bear takes item 5 alone -- so what shuts
+        # the window is an ITEM SPENT SOMEWHERE ELSE, and the shape is a sink, not a closure.
+        # Three derivations, none of which moves anything alone (docs/KQ5-ORACLE.md §16):
+        #
+        # (a) A TRADE TO A ROOM IS A DESTRUCTION WHEN THE ITEM CANNOT COME BACK. `destroying_
+        # sinks` admitted only `put:` with NO destination, on the ground that owner -1 is not a
+        # room so no `ownedBy: gCurRoomNum` acquisition can be met again -- but that argument is
+        # about the DESTINATION, not about -1, and `(gEgo put: 5 6)` hands the fish to the cat's
+        # room just as finally. ⛔ The one-step version of that test ("does any acquisition demand
+        # owner == dest") is WRONG and KQ4 proved it: `Room3::newRoom` parks Cupid's bow at 202
+        # whenever you leave it lying, and `doCupid` -- armed one visit in three under
+        # `ownedBy: 202` -- brings it back, so 202 is where the bow is SUPPOSED to rest and the
+        # naive rule condemned it. The reading is a graph: `_owner_graph` makes each owner value a
+        # node and each transfer an edge (source = what its guard demands about the item's
+        # location, wildcard when it demands nothing), and `drop_is_permanent` asks whether EGO is
+        # reachable. `destroyed_is_permanent` is now that same function called with NOWHERE -- one
+        # rule, one implementation. It needed `opmodel.machine_moves`: `Step.moves` has always
+        # carried `(item, dest)` and `_machine_info` reduced it to a bare set of item numbers, so
+        # a cutscene handing an item back to the world was invisible in every reading.
+        #
+        # (b) `disjunctive_groups` GROUPED BY STATE AND READ BY REQUIREMENT. Entries are
+        # alternatives only when they arm the same thing, and the cat's one item-free entry at
+        # state 0 was discarding the seven throw entries as "one alternative is free"; and a throw
+        # entry's guard carries the scene's arming disjunction alongside the act, so
+        # `_own_positive` returned {8,16} for every entry and the shared intersection killed the
+        # group. By state, with `_own_required`, the derivation is rm6 -> {Fish, Shoe, Stick,
+        # Leg_of_Lamb} and rm12 -> {Shoe, Stick, Leg_of_Lamb} -- the asymmetric pool the USER
+        # PLAY-CONFIRMED on 2026-08-16 ("that wouldn't divert the dog's attention"), derived
+        # rather than recorded.
+        #
+        # (c) THE DISJUNCTIVE RESCUE READ AT THE CONSUMER. An alternative is only an alternative
+        # for the gate it opens. Asked at the spend site, "the cat takes a Shoe too" excuses
+        # spending the Fish there -- while the room that still needs the Fish is rm11, where the
+        # bear takes nothing else. Read at the room where the item is STILL NEEDED, the Shoe and
+        # the Stick keep their rescue (the user's own 2026-08-16b ruling, pinned green) and the
+        # Fish loses it. Same rule as [[an-item-some-armings-demand-is-not-a-gate]].
+        #
+        # MEASURED across the corpus: LSL2's golden sink set is the v1.0-lsl2 tag exactly
+        # (Matches / Hair_Rejuvenator x3 / Parachute / Airsick_Bag x3) and its one group is
+        # unchanged; KQ4 keeps its single Magic_Fruit row and gains no group (the Cupid FP the
+        # one-step test created is gone); KQ6 holds at four rows and two groups; LB2 stays at zero
+        # sinks and gains one group that moves no finding. KQ5 gains the Fish row, and the Pie's
+        # pinned sink moves rm38 -> rm1 (a strengthening -- see the pin) plus a second row at
+        # rm34. Rebuilt as two green pins, one per direction of (c).
         # ✅ PROMOTED 2026-08-16b -- "🔴 KNOWN GAP (KQ5): the cat window's closure on arming is
         # caught" is GREEN and no longer listed. `missability.window_closures` is phase 3: the
         # fold rows state that the kidnap DEMANDS a banked throw, and these state that the only
@@ -316,11 +358,27 @@ KNOWN_RED = {
         # the rm40->rm41 spec) go with it. The full snapshot surface of LSL2, KQ4, KQ6 and LB2 is
         # byte-identical, placements included. Mechanism in docs/KQ5-ORACLE.md §10 -- including
         # the site that DOES take the wand (rm066's machine tray), which the old reason denied.
+        # ⚠️ THE REASON BELOW WAS SOURCE-REFUTED 2026-08-17 and the row now awaits a USER RULING
+        # rather than a build -- so it stays red, per [[dont-flip-enumerated-ground-truth]]: the
+        # oracle enumerated it (§6, tier 3) and I do not get to retire it by disagreeing on my own.
+        # "The needle's real consumer is the tailor" is FALSE: `tailorShop.sc:143-151` accepts
+        # Golden_Needle(3), Gold_Coin(11) OR Heart(9). KQ5 runs a FIVE-TOKEN MARKET over four
+        # purchases -- gypsy{3,11}->Amulet, tailor{3,9,11}->Cloak, toyMaker{3,9,11,12}->Sled,
+        # baker{3,4,9,11}->Pie, with tokens Needle(rm27), Coin(rm4), Heart(rm21), Gold_Coin(rm18)
+        # and Marionette(rm10) -- and every token is obtainable before the amulet is needed (the
+        # temple is reached from town via rm14/15 -> rm212/213 -> rm214), so a perfect assignment
+        # survives ANY single payment. The model emitting nothing is therefore the right answer to
+        # the question this row asks. What CAN strand you is spending BOTH 3 and 11 away from the
+        # gypsy, emptying a slot no other token fills -- a Hall deficiency over the market, needing
+        # two wrong payments. The scoring tell (`proc0_27 3` only for coin->gypsy, `proc0_27 4`
+        # only for needle->tailor) marks the intended pairing, and we already know that tell is not
+        # a softlock signal: the Lamb and the Fish score nothing at the cat and still save the
+        # mouse. Goes green, or is retired, once the user rules which mechanism is real.
         "🔴 KNOWN GAP (KQ5): the fortune teller's needle substitution is caught":
-            "rm13's amulet slot takes Gold_Coin(11) OR Golden_Needle(3); the needle's real "
-            "consumer is the tailor (-> cloak). Exchange-slot class ([[exchange-slots-one-"
-            "statement-one-item]]) -- the detector for 'a slot consumed by an item another "
-            "slot demands' does not exist yet.",
+            "rm13's amulet slot takes Gold_Coin(11) OR Golden_Needle(3). The old reason -- 'the "
+            "needle's real consumer is the tailor' -- is SOURCE-REFUTED (the tailor takes three "
+            "tokens). Open question: whether ANY single payment strands you, or whether the real "
+            "mechanism is the two-payment market deficiency. USER RULING OWED.",
         # ✅ RETIRED 2026-08-16b, USER-RULED -- "🔴 KNOWN GAP (KQ5): the witch-region worn-amulet
         # death fold is caught" is gone because it DEMANDED THE WRONG ROW, not because a build
         # landed. It asserted that some detector flags the Amulet, on the oracle's old verdict

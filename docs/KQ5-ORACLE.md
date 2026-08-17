@@ -154,8 +154,12 @@ The cat and dog scenes accepting four items is not generosity, it is a trap surf
   `getWax` arm **`deathByBees`** (`proc0_26 263`) on the hive control while
   `¬flag36 ∧ ¬bear-present`. So arriving fishless (or having wasted the fish on the cat —
   `put: 5 6` is accepted) makes flag 36 unsettable and every honeycomb (`get: 17`) approach
-  fatal → no beeswax → the boat. **Fish-at-cat is a TRUE walking dead, declared red.** (The
-  earlier "overlay semantics" caveat is moot — the flag-36 gate decides it.)
+  fatal → no beeswax → the boat. **Fish-at-cat is a TRUE walking dead — ✅ CAUGHT 2026-08-17,
+  `dangerous_sinks Fish@rm6 → still needed at [11]`, §16.** (The earlier "overlay semantics"
+  caveat is moot — the flag-36 gate decides it.) ⛔ It was filed for a long time as phase 3's
+  second window closure, and that framing was wrong: nothing here is a register flip. The bear
+  is in the cast only while you HOLD the fish, so the window is shut by an item spent elsewhere,
+  which is a sink and not a closure.
 
 ## 2. The kidnap corral (rm85 → rm86) (tier 1)
 
@@ -223,8 +227,37 @@ inside; one visit. **DETECTED** (`toll_strandings`), unchanged.
 `rm013`'s give-handler accepts **Gold_Coin(11) or Golden_Needle(3)** for the Amulet —
 `put: 11 13` / `put: 3 13`, refused once the amulet is owned. Tier 3 (Telltale thread): paying
 with the needle makes the game unwinnable (the needle's real consumer is the tailor → cloak).
-This is a pure **exchange-slot** hazard: two items competing for one slot, one of them demanded
-elsewhere. **Verdict: TRUE (tier 3 on the consequence; tier 1 on both puts). Not detected.**
+
+**⚠️ THAT REASON IS SOURCE-REFUTED (2026-08-17), and the verdict is now OPEN pending a user
+ruling.** The tailor is not a sole consumer of anything: `tailorShop.sc:143–151` takes
+**Golden_Needle(3), Gold_Coin(11) OR Heart(9)**. KQ5 does not have one exchange slot here, it has
+a **five-token market over four purchases**:
+
+| slot | accepts | sells | needed at |
+|---|---|---|---|
+| gypsy, rm13 | 3 · **11** | Amulet(27) | the forest, rm19–26 |
+| tailor, script 203 | **3** · 11 · 9 | Cloak(26) | rm29, rm30 |
+| toy maker, script 204 | 12 · 3 · 9 · 11 | Sled(29) | rm32 |
+| baker, script 206 | 4 · 3 · 9 · 11 | Pie(2) | rm34, rm36 |
+
+Tokens and their sole sources: Golden_Needle(3) ← rm27 (the haystack the ants repay you at),
+Coin(4) ← rm4, Heart(9) ← rm21, Gold_Coin(11) ← **rm18, the temple**, Marionette(12) ← rm10. The
+temple is a short walk from town (rm14/15 → rm212/213 → rm214 → rm18), so **every token is in
+reach before the amulet is needed** and a perfect assignment survives *any single payment*:
+pay the gypsy with the needle and the tailor still takes the coin, or the heart from the forest
+the amulet just opened. The model emitting no row is the correct answer to the question this
+scorecard row asks.
+
+**What the source does show is the game's own intent, and it is not a softlock signal.**
+`proc0_27 3` fires only for coin→gypsy and `proc0_27 4` only for needle→tailor — points for the
+intended pairing, silence for the substitution, exactly the tell §1 found on the throwable pool
+(the Lamb and the Fish score nothing at the cat and still save the mouse).
+
+**The mechanism that COULD strand you here is a different one:** spend **both** 3 and 11 away
+from the gypsy (say sled←needle, pie←gold coin) and the amulet slot `{3,11}` is empty — no amulet,
+no forest, no rm24, no Beeswax. That is a **Hall deficiency across the market**, and it needs two
+wrong payments, so no single-spend detector can state it. **Verdict: OPEN. USER RULING OWED on
+whether paying the gypsy with the needle is a dead end in play.**
 
 ## 7. The witch and the worn amulet (tier 1) — REQUIRED, but NOT a stranding
 
@@ -368,7 +401,7 @@ covered.
 | 6 | kidnap without Hammer | (room, prev-value) trap; gate modeled | **CAUGHT** (phase 2: `register_strandings` with item-banned fetch walks — the permissive walk was assuming the hammer to fetch the hammer; row reg12=85, flip rm86, needed at rm86) |
 | 7 | rope on the branch | fatal use | **CAUGHT** (fatal_uses) |
 | 8 | tambourine near Dink | savior-condemned, arming polarity | ✅ **FP CURED 2026-08-16b (§14).** `fatal_uses` now blames what the arming SITE required, not what the inherited chain did; the row and its `(not (has: 34))` action spec are gone, and KQ6's skull is untouched |
-| 9 | needle to the fortune teller | exchange slot | MISSED |
+| 9 | needle to the fortune teller | exchange slot | **VERDICT OPEN 2026-08-17 — the stated reason is SOURCE-REFUTED.** The tailor takes needle *or* gold coin *or* heart, and KQ5 runs a five-token market over four purchases in which every token is reachable before the amulet is; a perfect assignment survives any single payment, so emitting nothing is correct for the claim as written. The real hazard in this family is a **Hall deficiency** (spend both the needle and the gold coin away from the gypsy) which no single-spend detector can state. Declared red, USER RULING OWED — see §6 |
 | 10 | ~~forest without worn amulet~~ | possession death fold, flag 84 | ⭐ **NOT A SOFTLOCK — USER-RULED 2026-08-16b.** You need the amulet, but rm19 is one screen in and you can walk back out to rm13 for one (98/100 rooms still reachable). The DEMAND is modelled (`required[27]` covers all seven forest rooms since the `(+= state N)` fix, §13) and no stranding row is emitted — both pinned green. ⛔ The old "MISSED (region scope)" reading was wrong twice: region scope was never the blocker |
 | 11 | locket window missed | one-shot window (tier 3) | MISSED, unverified |
 | 12 | peas exhaustion | consumable | OPEN (13 noisy rows). Note the emptied bag is REQUIRED — the walkthrough sacks the cat with it — so the peas are not pure flavour |
@@ -376,7 +409,7 @@ covered.
 | 12c | the Wand, anywhere | — | **FP, CURED 2026-08-15 (§10).** USER 2026-08-14, re-affirmed 2026-08-15: "you start the game with the wand, so you always have it." ⛔ The old reason was wrong — rm066's machine tray *does* take it (`putCWandScript`, `put: 28 gCurRoom`, and it stays there) — but the drop and the re-get are the same room and every wandless path into rm124 is a death. Cured by `_unrefusable_grants` (rm1's `init` grant), NOT by the never-strandable class this row used to propose |
 | 13 | lamb to the cat/dog → roc's nest death | exchange slots + ownedBy death fold (rm42) | **CAUGHT** (phase 1: rm42 `hatch` state-6 fork — its death chain sits behind a `(++ state)` skip the transition model now reads — plus the rm86 pool row) |
 | 14 | pie to the eagle → yeti unsurvivable | slot swallow + chase-death counter-item | **CAUGHT** (phase 1: rm35 `killEgo` entry fold, prev==36 — the yeti kill continuing across the edge. The rm36 chase itself makes no claim: a `Chase` state is a race the player can decline by leaving, the refinement that keeps KQ4's rm49 dog — flee-able in play — out of the surface) |
-| 15 | fish to the cat → flag 36 unsettable → bees | exchange slot + sole-writer window (rm11) | **CAUGHT on the demand half** (phase 1: the rm86 pool row names the Fish); the bees' flag-36 window closure stays a declared red for phase 3 |
+| 15 | fish to the cat → flag 36 unsettable → bees | exchange slot + sole-writer window (rm11) | ✅ **CAUGHT, BOTH HALVES 2026-08-17 (§16).** Phase 1's rm86 pool row names the Fish; `dangerous_sinks` now names the SPEND — `Fish@rm6 → still needed at [11]`. Never a register-flip closure: what shuts the bees' window is an item spent elsewhere, so the shape is a sink. Three derivations — a trade to a room is a destruction when the item cannot come back (`drop_is_permanent` over the owner graph, `put: X -1` its degenerate case, needing `opmodel.machine_moves`); `disjunctive_groups` by STATE and by `_own_required`, which derives the play-tested pool asymmetry; and the disjunctive rescue read at the CONSUMER, which is what keeps the Shoe and the Stick excused |
 
 **Phase 1 (2026-08-14, `missability.ownedby_death_folds`):** an arrival that forks on an owner
 value, whose losing arm cannot be survived (`_room_unavoidable` — `_survivable` with
@@ -755,3 +788,78 @@ keeps `Rope@rm30/ropeOnBranch` — the true positive, where the rope IS thrown a
 **KQ6 keeps `throwSkull@rm420`**, the corpus's other row and the one the whole detector exists
 for: the skull's `own` comes from `theGears doVerb 51`, at the site. LSL2, KQ4, KQ6 and LB2
 byte-identical on the full snapshot surface, placements included.
+## §16. The fish and the bees — a trade is a destruction, and an alternative belongs to its consumer (2026-08-17, derived)
+
+Scorecard row 15's second half. Throwing the **Fish(5)** at the cat saves the mouse exactly as the
+Shoe or the Stick would (`rm006` accepts all four, `put: <item> 6`, same animation) — and it is the
+one throw that costs you the game, because the Fish's other consumer accepts nothing else.
+
+**The chain, tier 1 end to end.** `rm011::init` puts the bear in the cast only under
+`(global0 has: 5)`; the bear's `handleEvent` message 4 takes item 5 alone (`put: 5 11` →
+`throwFish` → `bearScript`); `bearScript` state 13 is **flag 36's only writer**; and both
+`rm011::doit` and `getWax` arm **`deathByBees`** (`proc0_26 263`) on the hive polygon while
+`¬flag36 ∧ ¬(global5 contains: bear)`. So a fishless arrival at rm11 makes flag 36 unsettable and
+every honeycomb (`get: 17`) approach fatal → no Honeycomb(17) → no Beeswax(18) at rm24 → the
+boat rooms 44/45/46/47 are unreachable-with-what-they-need.
+
+Three pieces, none of which moves anything alone.
+
+### (a) A trade to a ROOM is a destruction if the item cannot come back
+
+`destroying_sinks` admitted only `put:` with **no** destination, on the stated ground that owner
+−1 is not a room so no `owner == gCurRoomNum` acquisition can be satisfied again. The same
+argument applies to `put: X R` — owner R satisfies only acquisitions that can fire at R — so the
+NOWHERE case was never the rule, only its degenerate instance. `(gEgo put: 5 6)` gives the fish to
+the cat's room and is every bit as final: nothing in rm6 hands it back, and the fish's one
+acquisition (`rm004`) demands `((gInv at: 5) owner:) == 4`.
+
+**But the one-step version of that test is wrong, and KQ4 said so.** Cupid's Bow: `Room3::newRoom`
+moves it to room **202** whenever you leave it lying on the ground, and `doCupid` — armed one visit
+in three under `((gInv at: 14) ownedBy: 202)` — flies back and drops it at room 3 again. No
+acquisition demands `owner == 202`, so "is any acquisition satisfiable at the destination" called
+Cupid's own parking spot a destruction. **Owner 202 is where the bow is SUPPOSED to rest.**
+
+So the reading is a graph, not a predicate: `_owner_graph(item)` makes every owner value a node
+and every transfer an edge, whose SOURCE is what that transfer's guard demands about where the
+item is (`_loc_values`) and whose default is a wildcard — a site that demands nothing can fire
+from any owner, the permissive direction. `drop_is_permanent(item, dest)` is then "EGO is not
+reachable from `dest`", and **`destroyed_is_permanent(item)` is that same function called with
+NOWHERE** — one rule, one implementation.
+
+⭐ It needed `opmodel.machine_moves` first: `Step.moves` has carried `(item, dest)` since the
+machine lift existed, but `_machine_info` reduced it to `drops`, a bare set of item numbers. A
+cutscene that hands an item back to the world was therefore invisible in every reading —
+`machine_gets` is items-only and not a get, `handler_moves` is not a handler. Both of the bow's
+edges out of 202 live in `doCupid`.
+
+### (b) `disjunctive_groups` must group BY STATE and read what an entry REQUIRES
+
+Two independent misreadings, and each alone keeps the pool hidden.
+
+* **By state.** Entries are alternatives only when they arm the same thing. KQ5's cat machine has
+  seven entries at the throw state — one per pool item — and one at state 0 requiring no item;
+  pooled flat, that free entry means "one alternative is free" and the whole disjunction is
+  discarded.
+* **By requirement.** A throw entry's guard carries the scene's arming condition *and* the act:
+  `(has 8 ∨ has 16) ∧ ¬flag83 ∧ … ∧ own(8)`. `_own_positive` hoists the arming disjunction in
+  alongside the throw and returns {8,16} for every entry, so they all look alike and the shared
+  intersection kills the group. `_own_required` — OR-branches intersect — answers {8} here and
+  {16} next door, which is the question actually being asked.
+
+Together they derive **rm6 → {Fish, Shoe, Stick, Leg_of_Lamb}** and **rm12 → {Shoe, Stick,
+Leg_of_Lamb}** — the asymmetric throwable pool, dog refusing the Fish, exactly as PLAY-CONFIRMED
+by the user on 2026-08-16 (*"that wouldn't divert the dog's attention"*). That table was a
+play-test result being kept in prose; it is now a derivation.
+
+### (c) The rescue belongs to the CONSUMER, not to the spender
+
+`dangerous_sinks` excused a consumption when the item sat in any disjunctive group with a still
+fetchable sibling. Asked at the spend site, that conflates two scenes drawing on one pool:
+spending the Fish at the cat is excused by "the cat takes a Shoe too" while the room that still
+needs the Fish is rm11, where the bear takes nothing else. Read at the room where the item is
+STILL NEEDED, the Shoe and the Stick keep their rescue — each scene accepts the other's ammunition,
+which is the user's own 2026-08-16b ruling — and the Fish loses it.
+
+This is the same rule as [[an-item-some-armings-demand-is-not-a-gate]]: **a filter must use its
+consumer's reading.**
+

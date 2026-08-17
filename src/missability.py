@@ -123,6 +123,35 @@ def _loc_placed_required(guard, placed):
     return walk(guard, True)
 
 
+def _loc_values(guard, item, room=None):
+    """Owner values `guard` positively DEMANDS for `item`'s object.
+
+    `room` is where the guard was found. LSL2 writes the test as `ownedBy: gCurRoomNum`, which
+    says "here" without naming a room; KQ4 names it -- `ownedBy: 78` inside Room78. Both mean the
+    same thing, and only the caller knows which room it is in, which is why the atom keeps the
+    literal instead of collapsing it at extraction time. An empty result means the guard says
+    nothing about where the item is -- NOT that it demands nowhere."""
+    out = set()
+
+    def walk(g, pol):
+        if isinstance(g, list):
+            for x in g:
+                walk(x, pol)
+        elif isinstance(g, Pred):
+            if g.kind == "LOC" and g.var == item and pol:
+                # "room" = `ownedBy: gCurRoomNum`. A caller that did not say which room it is
+                # standing in gets the sentinel back unresolved -- it still means a location IS
+                # demanded, which is all the boolean reading ever asked.
+                out.add(room if (g.value == "room" and room is not None) else g.value)
+        elif isinstance(g, (GAnd, GOr)):
+            for k in g.kids:
+                walk(k, pol)
+        elif isinstance(g, GNot):
+            walk(g.kid, not pol)
+    walk(guard, True)
+    return out
+
+
 def _conj_spine(guard):
     """Flatten a guard (tree or list) to its top-level conjunct list -- the atoms that MUST
     hold. The same discipline as `_must_hold`: nothing under an OR or a negation is a
@@ -3840,36 +3869,15 @@ class IrSccReach(SccReach):
     def _loc_required(self, guard, item, room=None):
         """Does this guard REQUIRE item `item`'s object to still be lying in THIS room?
 
-        `room` is where the guard was found. LSL2 writes the test as `ownedBy: gCurRoomNum`, which
-        says "here" without naming a room; KQ4 names it -- `ownedBy: 78` inside Room78. Both mean
-        the same thing, and only the caller knows which room it is in, which is why the atom keeps
-        the literal instead of collapsing it at extraction time."""
-        found = []
-        def walk(g, pol):
-            if isinstance(g, list):
-                for x in g:
-                    walk(x, pol)
-            elif isinstance(g, Pred):
-                if (g.kind == "LOC" and g.var == item and pol
-                        and (g.value == "room" or (room is not None and g.value == room))):
-                    found.append(True)
-            elif isinstance(g, (GAnd, GOr)):
-                for k in g.kids:
-                    walk(k, pol)
-            elif isinstance(g, GNot):
-                walk(g.kid, not pol)
-        walk(guard, True)
-        return bool(found)
+        The BOOLEAN half of `_loc_values`, which answers WHICH owners it demands -- one reading,
+        asked two ways, so the pair cannot drift ([[same-rule-two-places]]). Note the question is
+        "is THIS room among them", not "does it demand a location at all": a guard naming some
+        OTHER room requires nothing here. With no room to resolve against, the `"room"` sentinel
+        is the only thing that can be about here."""
+        return (room if room is not None else "room") in _loc_values(guard, item, room)
 
-    def destroyed_is_permanent(self, item):
-        """Once destroyed with `put: X -1`, is `item` gone for good?
-
-        True when EVERY acquisition demands the object still be lying in the world
-        (`(gInv at: X) ownedBy: gCurRoomNum`). `put: X -1` sets the owner to -1 -- NOWHERE, not a
-        room -- so that test can never hold again. This is the one-time-pickup idiom, and it is
-        why barfing into the Airsick_Bag costs you the game at rm82 even though rm62 is still
-        walkable. Note it does NOT make the item unobtainable for someone who simply never took
-        it, so it is deliberately scoped to DESTRUCTION and leaves the stranding sweep alone."""
+    def _acq_guards(self, item):
+        """Every acquisition of `item`, as `(guard, room-it-was-found-in)`."""
         mg = getattr(self.em, "machine_gets", set())
         guards = [(a.guard, a.room) for a in self.em.ts.acqs
                   if a.item == item and (a.room, a.via, a.item) not in mg]
@@ -3900,11 +3908,71 @@ class IrSccReach(SccReach):
         # rm470's developer warp contributes an unconditional acquisition, and one unconditional
         # alternative is all it takes to make a destruction look undoable.
         prev = prev_room_reg(self.em)
-        guards = [(g, r) for (g, r) in guards if not _prev_impossible(g, r, prev, self.edges)]
-        return bool(guards) and all(self._loc_required(g, item, r) for (g, r) in guards)
+        return [(g, r) for (g, r) in guards if not _prev_impossible(g, r, prev, self.edges)]
 
-    def _groups(self):
-        return {frozenset(g) for gs in self.disjunctive_groups().values() for g in gs}
+    def _owner_graph(self, item):
+        """`owner -> {owner}`, the little transition system the ownedBy store IS for one item.
+
+        Nodes are owner values (room numbers, SCI's -1/limbo, and EGO); every transfer of the item
+        is an edge. An edge's SOURCE is what the transfer's guard demands about where the item is
+        (`_loc_values`); a site that demands nothing can fire from ANY owner and is recorded under
+        `None`, the wildcard -- the permissive reading, and the direction that refuses to invent a
+        loss. Edges into EGO are the acquisitions.
+
+        Reading transfers this way is what stops `moveTo:` being confused with destruction. KQ4's
+        Cupid parks his bow in room 202 whenever you leave it lying in room 3 (`Room3::newRoom`),
+        and re-appears one visit in three to drop it back (`doCupid`) -- so owner 202 is
+        "Cupid has it", the state the bow is SUPPOSED to rest in, and the one-step test that asked
+        only "does any acquisition demand owner == 202" called it destroyed."""
+        if not hasattr(self, "_ograph"):
+            self._ograph = {}
+        if item in self._ograph:
+            return self._ograph[item]
+        out = defaultdict(set)
+        for (g, r) in self._acq_guards(item):
+            for src in (_loc_values(g, item, r) or {None}):
+                out[src].add(E.EGO)
+        moves = [(room, g, dest) for room, script, it, g, dest in self.em.handler_drops
+                 if it == item]
+        moves += [(room, g, dest) for room, script, it, g, dest
+                  in getattr(self.em, "machine_moves", ()) if it == item and dest != E.EGO]
+        for (room, g, dest) in moves:
+            for src in (_loc_values(g, item, room) or {None}):
+                out[src].add(dest)
+        self._ograph[item] = dict(out)
+        return self._ograph[item]
+
+    def drop_is_permanent(self, item, dest):
+        """Handing `item` to owner `dest`, can the player ever hold it again?
+
+        `False` while EGO is reachable from `dest` in the item's owner graph -- following the
+        game's own re-homing moves, not just the acquisitions. An item with NO acquisition at all
+        cannot be regained and would be trivially permanent everywhere, so an empty graph answers
+        `False`: silence about how an item is obtained is ignorance, not evidence."""
+        graph = self._owner_graph(item)
+        if not any(E.EGO in v for v in graph.values()):
+            return False
+        seen, stack = {dest}, [dest]
+        while stack:
+            node = stack.pop()
+            for nxt in graph.get(node, set()) | graph.get(None, set()):
+                if nxt == E.EGO:
+                    return False
+                if nxt not in seen:
+                    seen.add(nxt)
+                    stack.append(nxt)
+        return True
+
+    def destroyed_is_permanent(self, item):
+        """Once destroyed with `put: X -1`, is `item` gone for good?
+
+        The special case of `drop_is_permanent` where the destination is NOWHERE: owner -1 is not
+        a room, so no `(gInv at: X) ownedBy: gCurRoomNum` acquisition can ever be satisfied from
+        it and nothing in the world can pick it back up. This is the one-time-pickup idiom, and it
+        is why barfing into the Airsick_Bag costs you the game at rm82 even though rm62 is still
+        walkable. Note it does NOT make the item unobtainable for someone who simply never took
+        it, so it is deliberately scoped to DESTRUCTION and leaves the stranding sweep alone."""
+        return self.drop_is_permanent(item, self.NOWHERE[0])
 
     # Main: its handleEvent runs in EVERY room. Hardcoded, and legitimately so -- script 0 IS
     # Main in every SCI dialect, which is a fact about the format rather than about a game.
@@ -3953,18 +4021,24 @@ class IrSccReach(SccReach):
         rain spell instead of caging you: `(if (and (gEgo has: 19) (== global161 15)) makeRain else
         inTheCage)`.
 
-        Deliberately narrow: only `put:` with NO destination. That is SCI's owner = -1, which no
-        `owner == gCurRoomNum` acquisition can ever satisfy again, so the loss is a fact rather than
-        an inference -- no re-obtainability reasoning is involved and none of `pure_sinks`' judgement
-        is being second-guessed. A `put:` to a ROOM is a different question (the item is lying
-        somewhere, and whether anything there can pick it up is a real question) and is left alone.
+        The test is `drop_is_permanent`: can the player ever hold the item again once it belongs to
+        this destination? `put:` with NO destination -- SCI's owner = -1 -- is the case that needs
+        no reasoning at all, since -1 is not a room and no `owner == gCurRoomNum` acquisition can
+        ever be satisfied from it. But it is only the DEGENERATE case, and reading it as the whole
+        rule is what left KQ5's throwable pool unread: `(gEgo put: 5 6)` gives the fish to the cat's
+        room, which is every bit as final as limbo -- nothing in rm6 hands it back, and the fish's
+        one acquisition wants it lying in rm4. Asking the owner graph instead admits the trade and
+        still refuses KQ4's Cupid, who moves his bow to room 202 and brings it back.
 
         The "was it the intended move" worry is answered by `dangerous_sinks` itself rather than
         here: an intended use does not leave the item still needed in a room you can still reach."""
         seen = {(sk["room"], sk["script"], sk["item"]) for sk in self.pure_sinks()}
-        out = []
+        out, emitted = [], set()
         for room, script, it, g, dest in self.em.handler_drops:
-            if dest in self.NOWHERE and (room, script, it) not in seen:
+            if (room, script, it) in seen or (room, script, it, dest) in emitted:
+                continue          # ...or two objects running one clause: KQ5's cat and catStrip
+            if dest in self.NOWHERE or self.drop_is_permanent(it, dest):    # both handle `put: 5 6`
+                emitted.add((room, script, it, dest))
                 out.append({"room": room, "script": script, "item": it, "dest": dest})
         return out
 
@@ -4284,10 +4358,22 @@ class IrSccReach(SccReach):
                     continue
                 # ...but a DISJUNCTIVE alternative rescues you: throwing the Ashes away is
                 # survivable while the Sand is still gettable, since rm81 accepts either.
-                if any(it in G and any(room in self.reobtainable_rooms(o) for o in G - {it})
-                       for G in self._groups()):
+                #
+                # ⭐ AN ALTERNATIVE IS ONLY AN ALTERNATIVE FOR THE GATE IT OPENS, so the group is
+                # read at the CONSUMER -- the room where the item is still needed -- not at the
+                # spend site. Both KQ5 scenes that trade throwables draw on one pool, and asking
+                # the question at the spend site conflates them: spending the Fish at the cat is
+                # excused by "the cat takes a Shoe too" while the room that still needs the Fish
+                # is rm11, where the bear takes nothing else. Read at the consumer, the Shoe and
+                # the Stick keep their rescue (each scene accepts the other's ammunition, the
+                # user's own 2026-08-16b ruling) and the Fish loses it.
+                live = {r for r in ahead
+                        if not any(it in G
+                                   and any(room in self.reobtainable_rooms(o) for o in G - {it})
+                                   for G in self.disjunctive_groups().get(r, ()))}
+                if not live:
                     continue
-                out.append({**sk, "at_room": room, "still_needed_at": sorted(ahead)})
+                out.append({**sk, "at_room": room, "still_needed_at": sorted(live)})
                 break          # one witness room is enough to condemn the site
         return out
 
@@ -5222,11 +5308,35 @@ class IrSccReach(SccReach):
         # him some mint leaves"). Read off the entries rather than the edges, this is the same
         # shape and the same rule; reading only edges made every such puzzle look like a
         # conjunction of all its solutions.
+        #
+        # TWO readings this needs and neither is the obvious one.
+        #
+        # BY STATE. Entries are alternatives only when they arm the SAME thing, and a machine's
+        # entries do not all enter the same state. KQ5's cat has seven entries at the throw state
+        # -- one per pool item -- and one at state 0 that requires no item at all; pooled flat,
+        # that free entry says "one alternative is free" and the whole disjunction is discarded.
+        # Bucketing by target state keeps the throw's alternatives together and lets the free
+        # entry speak only for its own state.
+        #
+        # BY REQUIREMENT, not by mention. An entry's guard carries BOTH the scene's arming
+        # condition and the specific act: throwing the Shoe at the cat reads
+        # `(has 8 or has 16) and not flag83 and ... and own(8)`. `_own_positive` returns {8, 16}
+        # from that -- the arming disjunction hoisted in alongside the throw -- so every entry
+        # looks like every other and the shared intersection kills the group. `_own_required` is
+        # the reading that already answers the question being asked: an item inside an OR is not
+        # required, so this entry demands {8} and its sibling {16}. Measured, the two together
+        # derive rm6 -> {Fish, Shoe, Stick, Leg_of_Lamb} and rm12 -> {Shoe, Stick, Leg_of_Lamb} --
+        # the asymmetric throwable pool, dog refusing the Fish, exactly as play-tested.
         for info in self.em.machines:
             ents = list(info.get("entries", ())) + list(info.get("init_entries", ()))
             if len(ents) < 2:
                 continue
-            offer(info["room"], tuple(frozenset(_own_positive(eg)) for _K, eg in ents))
+            by_state = defaultdict(list)
+            for K, eg in ents:
+                by_state[K].append(frozenset(_own_required(eg)))
+            for K in sorted(by_state, key=str):
+                if len(by_state[K]) >= 2:
+                    offer(info["room"], tuple(by_state[K]))
         return out
 
     def group_strandings(self):

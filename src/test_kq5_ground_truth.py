@@ -220,6 +220,14 @@ MECHANISM_ROWS = {
         "'closes_on': [(485, 1), (565, 1)], 'flip_rooms': [6]}",
     },
     "Fish": {
+        # ✅ THE BEES, added 2026-08-17 (§16). The Fish is the one pool member whose OTHER
+        # consumer takes nothing else -- the bear at rm11 exists only while `has: 5` and its
+        # `bearScript` is flag 36's sole writer, so `put: 5 6` at the cat makes every hive
+        # approach `deathByBees` and the honeycomb -> beeswax -> boat chain unreachable. That
+        # this row exists while Shoe@rm6 and Stick@rm6 do NOT is the whole content of the
+        # consumer-scoped rescue; see the pins on those two items.
+        "dangerous_sinks: {'room': 6, 'script': 6, 'dest': 6, 'at_room': 6, "
+        "'still_needed_at': [11]}",
         "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
         "'state': None, 'pattern': 'entry-fold', "
         "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
@@ -236,7 +244,20 @@ MECHANISM_ROWS = {
         # ADDITIVE -- Main's `proc0_21` inventory dispatch EATS the pie (`put: 2 1`), a room-0
         # scope the model widens to wherever you are standing, and the yeti at rm36 still needs
         # it. Same fact as the confirmed pie ruling, seen from the sink side.
-        "dangerous_sinks: {'room': 0, 'script': 0, 'dest': 1, 'at_room': 38, "
+        #
+        # ⚠️ RE-PINNED AGAIN 2026-08-17, `at_room` 38 -> 1, by the consumer-scoped rescue (§16),
+        # and the move is a STRENGTHENING. The old row started at rm38 because the eagle's group
+        # {Pie, Leg_of_Lamb} excused every earlier room -- "eat the pie, the eagle still takes the
+        # lamb" -- which is true of the EAGLE and says nothing about the YETI, whose counter-item
+        # is the pie and nothing else. Read at the consumer, rm34's rescue applies to rm34 alone
+        # and rm36's need survives from the first room you can eat it in.
+        "dangerous_sinks: {'room': 0, 'script': 0, 'dest': 1, 'at_room': 1, "
+        "'still_needed_at': [36]}",
+        # ...and the same fact at the site the walkthroughs warn about: feeding the pie to the
+        # eagle (`put: 2 34`) is a real trade, so `pure_sinks` never saw it and only the owner
+        # graph can tell that rm34 does not give it back. Scorecard row 14, caught a second way --
+        # the rm35 `killEgo` entry fold below catches the consequence, this catches the act.
+        "dangerous_sinks: {'room': 34, 'script': 34, 'dest': 34, 'at_room': 34, "
         "'still_needed_at': [36]}",
         "ownedby_death_folds: {'dest': 36, 'need_room': 35, 'machine': 'killEgo', "
         "'state': None, 'pattern': 'entry-fold', 'demand_group': [(2, 36)], "
@@ -455,21 +476,47 @@ def run():
           "the rm86 fold rows lost a pool member or their kidnap context -- "
           "docs/KQ5-ORACLE.md §1.")
 
+    # ⚠️ THE REASON THIS RED USED TO GIVE IS REFUTED BY THE SOURCE (2026-08-17), and the VERDICT
+    # is awaiting a user ruling -- so it stays red rather than being retired by me. "The needle's
+    # real consumer is the tailor" is false: `tailorShop.sc:143-151` takes Golden_Needle(3), Gold_
+    # Coin(11) OR Heart(9), and KQ5 runs a five-token market over four purchases -- gypsy{3,11},
+    # tailor{3,9,11}, toyMaker{3,9,11,12}, baker{3,4,9,11}. Every token is obtainable before the
+    # amulet is needed (the Gold_Coin's temple, rm18, is reached from town via rm14/15 ->
+    # rm212/213 -> rm214), so a perfect assignment survives ANY single payment and the model
+    # correctly emits nothing. What can still strand you is spending BOTH 3 and 11 away from the
+    # gypsy, which empties a slot no other token can fill -- a Hall deficiency across the market,
+    # needing two wrong payments, not the one this row names. See docs/KQ5-ORACLE.md §6.
     needle_rows = [n for (n, _d, _r) in raw_rows if n == "Golden_Needle"]
     check("🔴 KNOWN GAP (KQ5): the fortune teller's needle substitution is caught",
           bool(needle_rows),
-          "rm13 accepts Gold_Coin(11) OR Golden_Needle(3) in the amulet slot (`put: 3 13`); "
-          "paying with the needle starves the tailor->cloak chain. Exchange-slot class -- "
-          "docs/KQ5-ORACLE.md §6.")
+          "rm13 accepts Gold_Coin(11) OR Golden_Needle(3) in the amulet slot (`put: 3 13`). The "
+          "old reason -- 'the needle's real consumer is the tailor' -- is SOURCE-REFUTED; the "
+          "open question is whether any single payment strands you at all, or whether the true "
+          "mechanism is the two-payment market deficiency. USER RULING OWED.")
 
-    # --- the phase-3 halves, declared red the day phase 1 landed: the fold rows above state
-    # the DEMAND; that each demand's producers sit inside a one-shot window is not yet a row.
-    fish_bees = [n for (n, _d, r) in raw_rows if n == "Fish" and 11 in _rooms_mentioned(r)]
-    check("🔴 KNOWN GAP (KQ5): the bees' flag-36 window closure is caught", bool(fish_bees),
-          "flag 36's only writer is bearScript (exists only while `has: 5`); the hive arms "
-          "deathByBees under not-flag36 -- no row ties the Fish to rm11's honeycomb chain. "
-          "Phase 3 (window closure: a demanded value whose every producer is guarded on a "
-          "flag the producers' own trigger sets). docs/KQ5-ORACLE.md §1a.")
+    # ✅ PROMOTED 2026-08-17 -- "the bees' flag-36 window closure is caught" is GREEN. The Fish is
+    # the one throwable whose OTHER consumer accepts nothing else: `rm011::init` puts the bear in
+    # the cast only under `has: 5`, the bear takes item 5 alone, `bearScript` state 13 is flag 36's
+    # only writer, and both `rm011::doit` and `getWax` arm `deathByBees` under not-flag36 -- so a
+    # fishless rm11 makes the honeycomb -> beeswax -> boat chain fatal. Three derivations, none of
+    # which moves anything alone (docs/KQ5-ORACLE.md §16): a trade to a ROOM is a destruction when
+    # the item cannot come back (`drop_is_permanent` over the item's owner graph, with `put: X -1`
+    # as its degenerate case); `disjunctive_groups` grouped BY STATE and read with `_own_required`,
+    # which derives the play-tested pool asymmetry; and the disjunctive rescue read at the
+    # CONSUMER, which is what keeps the Shoe and the Stick excused while the Fish is not.
+    fish_bees = [r for (n, _d, r) in raw_rows if n == "Fish" and 11 in _rooms_mentioned(r)]
+    check("the Fish spent at the cat is condemned by the bear that still needs it",
+          any(r.get("at_room") == 6 and r.get("still_needed_at") == [11] for r in fish_bees),
+          "no dangerous_sinks row ties `put: 5 6` to rm11 -- docs/KQ5-ORACLE.md §16.")
+
+    # ...and the other side of the same coin, which is the assertion that stops §16 becoming the
+    # FP the user retired in 2026-08-16b: the Shoe and the Stick are spent in exactly the same
+    # statement shape, and each scene accepts the other's ammunition, so neither may be condemned.
+    check("the Shoe and the Stick keep their disjunctive rescue at both scenes",
+          not [r for (n, _d, r) in raw_rows
+               if n in ("Shoe", "Stick") and _d == "dangerous_sinks"],
+          "a throwable with a live alternative at its consumer was condemned -- the rm12 sink "
+          "rows the USER ruled false positives on 2026-08-16b are back.")
 
     # ✅ PROMOTED 2026-08-16b (phase 3, `missability.window_closures`). The fold rows say the bank
     # is DEMANDED at the kidnap; these say the only way to fill it shuts by itself. A producer is

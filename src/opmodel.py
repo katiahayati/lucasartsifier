@@ -580,6 +580,17 @@ class OpEmitter:
                 for (_g, _w, gg, _c, _tr) in paths:
                     for it in gg:
                         self.machine_gets.add((info["room"], info["inst"], it))
+        # EVERY item transfer a machine makes, destination kept: (room, script, item, guard, dest),
+        # the shape `handler_moves` already uses so a reader can concatenate the two without
+        # caring which scope moved the item. A cutscene that hands an item BACK to the world --
+        # KQ4's Cupid parking his bow in limbo 202 until he next flies past -- is invisible in
+        # `machine_gets` (item only, and this one is not a get) and in `handler_moves` (it is not
+        # a handler), so the only reading of "the item went somewhere" was the flat one that
+        # cannot say WHERE. See `drop_is_permanent`.
+        self.machine_moves = []
+        for info in self.machines:
+            for (it, dest, g) in info.get("moves", ()):
+                self.machine_moves.append((info["room"], info["script"], it, g, dest))
 
         # Control-map oracle FIRST (reads the PIC control plane + VIEW cels, not declared):
         #  - prop-gate  (rm82): machine EXIT->83 requires causedEruption (the aDoor Prop covers
@@ -671,9 +682,15 @@ class OpEmitter:
                 if K not in dr and (ss & dr):
                     dr.add(K); changed = True
         drops = set()
+        # ...and the same transfers WITH their destination and path condition. `drops` answers
+        # "was this item consumed here"; `moves` answers "where did it GO, and from what owner" --
+        # the two facts an owner-graph needs and the reason `machine_gets` (item only) could not
+        # supply them. Same survivable-path filter, so the two readings cannot disagree about
+        # which steps count.
+        moves = []
         for K, steps in steps_by_state.items():
             for st in steps:
-                if not st.drops:
+                if not (st.drops or st.moves):
                     continue
                 t = st.trans
                 tgt = (K + 1 if t[0] == "ADVANCE" else t[1] if t[0] == "JUMP" else
@@ -681,6 +698,8 @@ class OpEmitter:
                 if t[0] == "DEATH" or (tgt is not None and tgt in dr):
                     continue
                 drops |= set(st.drops)
+                for (it, dest) in st.moves:
+                    moves.append((it, dest, list(st.guard)))
         if not has_effect:
             return None
         # ...and it must be able to RUN. A machine whose `start` is not among its own states and
@@ -707,7 +726,7 @@ class OpEmitter:
                 "local_regs": dict(getattr(m, "local_regs", None) or {}),
                 "restores_control": set(getattr(m, "restores_control", None) or ()),
                 "chase_states": set(getattr(m, "chase_states", None) or ()),
-                "start": m.start, "delivered": delivered, "drops": drops}
+                "start": m.start, "delivered": delivered, "drops": drops, "moves": moves}
 
     def edge_hit_registers(self):
         """Registers that carry the ego's `edgeHit` CODE, discovered from identity copies.
