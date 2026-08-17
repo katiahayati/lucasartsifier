@@ -51,6 +51,7 @@
     ],
     "joint": [],
     "market": [],
+    "market_specs": [],
     "ownedby_death_folds": [],
     "placements": [
       "Main/mint: applied=True kind=None",
@@ -153,6 +154,7 @@
     "groups": [],
     "joint": [],
     "market": [],
+    "market_specs": [],
     "ownedby_death_folds": [],
     "placements": [
       "rm210: applied=True kind=setscript sites=1",

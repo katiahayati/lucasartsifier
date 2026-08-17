@@ -43,6 +43,7 @@
   ],
   "joint": [],
   "market": [],
+  "market_specs": [],
   "ownedby_death_folds": [],
   "placements": [
     "Main/Hair_Rejuvenator: applied=True kind=None",
