@@ -1400,6 +1400,25 @@ def fold_respell(s, a, b, rec):
                                  else "(or %s)" % " ".join(parts))
         else:
             groups2.append(g)
+    # ...and the fold demands THIS CROSSING seals, whether or not the requirement maps
+    # carried the item here. The lamb taught the gap twice in one day: with the sled one-way
+    # derived, the lamb's reob boundary moved to rm32->rm33 and the roc edge silently lost
+    # `owner(19)==34` -- but crossing rm40->rm41 is what kills the eagle-feed's producers,
+    # so a player who crossed the sled CARRYING the lamb (legal there) and never fed would
+    # sail past an unguarded roc into the nest death. A fold row whose need room lies ahead
+    # of this edge while EVERY producer of its value lies behind is this edge's demand, in
+    # the fold's own owner spelling; rows whose producers survive past the edge are some
+    # later crossing's business (or a carry-in context's), not this one's.
+    for r in s.ownedby_death_folds():
+        if r["need_room"] not in fwd:
+            continue
+        rooms_p = set()
+        for (it2, dst2) in {(r["item"], r["dest"])}:
+            rooms_p |= prods.get((it2, dst2), set())
+        if not rooms_p or rooms_p & fwd or not rooms_p & s.reach_rooms:
+            continue
+        atom = "(== ((gInv at: %d) owner:) %d)" % (r["item"], r["dest"])
+        atoms.append(atom)
     seen, deduped = set(), []
     for x in atoms:
         if x not in seen:

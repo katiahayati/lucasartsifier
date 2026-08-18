@@ -240,9 +240,12 @@ MECHANISM_ROWS = {
     },
     "Fishhook": {"analyze: need@rm67 sources=[90] frontier=rm44->rm113|rm45->rm113|"
                  "rm46->rm113|rm46->rm661|rm660->rm663"},
-    "Harp": {"analyze: need@rm90 sources=[9] frontier=rm40->rm41"},
-    "Beeswax": {"analyze: need@rm44 sources=[24] frontier=rm40->rm41"},
-    "Crystal": {"analyze: need@rm52 sources=[38] frontier=rm40->rm41"},
+    "Harp": {"analyze: need@rm90 sources=[9] frontier=rm32->rm33",
+             "analyze: need@rm92 sources=[9] frontier=rm32->rm33"},
+    "Beeswax": {"analyze: need@rm44 sources=[24] frontier=rm32->rm33"},
+    "Crystal": {"analyze: need@rm52 sources=[38] frontier=rm40->rm41",
+                # ...and the Hammer that pries it must cross the sled (source rm5, town):
+                },
     "Locket": {
         "analyze: need@rm57 sources=[42] frontier=rm42->rm43",
         # ✅ THE DUNGEON-HOLE FOLD, USER-CONFIRMED IN GAME 2026-08-18b ("if you don't give the
@@ -275,7 +278,16 @@ MECHANISM_ROWS = {
         # RE-PINNED 2026-08-15 with the USER'S OK: both fold rows are unchanged and this row is
         # ADDITIVE -- the lamb's source is the inn cupboard (rm28, in town) and the nest that
         # demands it is rm42, so the roc carries you across the boundary between them.
-        "analyze: need@rm42 sources=[28] frontier=rm40->rm41",
+        # RE-PINNED 2026-08-18b on the USER's sled ruling ("after you use the sled it
+        # breaks, so you can't go back"): rm32->rm33 is the mountains' real point of no
+        # return and every mountain frontier moved there; the roc edge keeps the fold's
+        # own owner spelling (pinned below at the spec level).
+        "analyze: need@rm42 sources=[28] frontier=rm32->rm33",
+        # ...and the EAT's DESTROYING bite (put: 19 1, the second one -- the first is the
+        # net-keep half-lamb) is a dangerous sink once the sled seals rm34 off from town;
+        # its remedy is the retraction (withhold the destruction), kinder than a refusal.
+        "dangerous_sinks: {'room': 0, 'script': 0, 'dest': 1, 'at_room': 33, "
+        "'still_needed_at': [34]}",
         "ownedby_death_folds: {'dest': 34, 'need_room': 42, 'machine': 'hatch', 'state': 6, "
         "'pattern': 'state-fork', 'demand_group': [(19, 34)], 'context': {}}",
         "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
@@ -347,6 +359,9 @@ MECHANISM_ROWS = {
         "ownedby_death_folds: {'dest': 36, 'need_room': 35, 'machine': 'killEgo', "
         "'state': None, 'pattern': 'entry-fold', 'demand_group': [(2, 36)], "
         "'context': {12: 36}}",
+        # ✅ 2026-08-18b, the sled ruling: the pie must CROSS rm32->rm33 (the yeti is past
+        # the sled, the bakery is not).
+        "analyze: need@rm35 sources=[206] frontier=rm32->rm33",
         # ✅ THE MARKET, added 2026-08-17b: the rm35 fold IS a consumer (the yeti must be
         # thrown the pie), so eating the pie or feeding it to the eagle starves him -- the
         # same two facts the dangerous_sinks rows above state, derived from the matching side.
@@ -357,6 +372,9 @@ MECHANISM_ROWS = {
     },
     "Hammer": {
         "register_strandings: reg12=85->[86]",
+        # ✅ 2026-08-18b, the sled ruling: the crystal is pried at rm38, past the sled,
+        # with a hammer sold only in town.
+        "analyze: need@rm38 sources=[5] frontier=rm32->rm33",
     },
     # ✅ RE-PINNED 2026-08-16b with the USER'S RULING: ONE row each, the rm86 pool demand. The
     # `dangerous_sinks {'room': 12, ..., 'still_needed_at': [6]}` row that used to sit beside it
@@ -586,8 +604,10 @@ def run():
     # same atom, and possession stays demanded only for the three genuine carries.
     roc_spec = [sp for sp in all_specs if sp["site"] == "edge"
                 and sp.get("from_room") == 40 and sp.get("to_room") == 41]
-    want_roc = ("(and (gEgo has: 10) (gEgo has: 18) (gEgo has: 21) "
-                "(== ((gInv at: 19) owner:) 34))")
+    # RE-PINNED 2026-08-18b (the sled ruling): harp/beeswax carries moved to rm32->rm33;
+    # the crystal (sourced at rm38, PAST the sled) still rides the roc, and the fold's owner
+    # atom stays here because crossing rm40->rm41 is what kills the eagle-feed's producers.
+    want_roc = "(and (gEgo has: 21) (== ((gInv at: 19) owner:) 34))"
     check("the roc edge demands the three carries AND a FED eagle (never a carried lamb)",
           len(roc_spec) == 1 and roc_spec[0]["condition"] == want_roc
           and not roc_spec[0]["refused"],

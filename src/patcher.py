@@ -36,7 +36,8 @@ import ir as I
 import missability as M
 from sexpr import read_file
 import trigger as T
-from trigger import (find_trigger, find_arming, find_all_armings, find_cue_chain_armings,
+from trigger import (analyze_room, _var_assigned_rooms,
+                     find_trigger, find_arming, find_all_armings, find_cue_chain_armings,
                      find_nav_assign, find_proc_calls, exports_of,
                      reaching_procs, reaching_owners, wrap_trigger_in_source,
                      wrap_all_armings_in_source, wrap_forbidden_case, guarded_wrap, stock_or,
@@ -532,7 +533,12 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
         # takes the item and dest args by position); this makes the text pattern agree instead of
         # refusing the line for having extra tokens.
         recv = "|".join(re.escape(e) for e in sorted(ego_spellings(_IR)))
-        pat = re.compile(r"^\s*\((?:%s)\s+put:\s*%d\b\s*(?:%d\b)?[^)]*\)\s*$"
+        # The DESTINATION is literal-exact when arguments follow: `put: 19 1` is the sink and
+        # `put: 19 global11` is the half-lamb refresh two lines up -- the loose `[^)]*` tail
+        # matched both and refused the retraction as ambiguous ("found 2"). No-argument stays
+        # accepted (KQ6 destroys the hunter's lamp with a bare `put: 19`), and trailing junk
+        # is allowed only AFTER the right literal (LB2's Main pushes nine dead numbers).
+        pat = re.compile(r"^\s*\((?:%s)\s+put:\s*%d(?:\s+%d\b[^)]*)?\s*\)\s*$"
                          % (recv, sk["item"], disposal))
         hits = [i for i, l in enumerate(lines) if pat.match(l)]
         if len(hits) != 1:
@@ -2908,6 +2914,38 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             # door: `wearClothingScr` arms from egoDoVerbCode::doVerb AND guardHut::doVerb, and
             # wrapping the first alone left the hut a bypass. Each extra site gets the same
             # guard, reported on the row so no second edit happens silently.
+            if placement["kind"] == "direct" and sp.get("to_room") is not None:
+                # A DIRECT wrap covers the walked crossing; a MACHINE in the same file that
+                # performs the same `newRoom` is a second door into the same commitment
+                # (findings #4/#8). KQ5's sled is the case: rm032's doit routes the walked
+                # edge through edgeToRoom (wrapped above, dest-test discriminated), and
+                # `useSled`'s cutscene rides `newRoom: 33` -- the crossing the player
+                # actually takes -- through its own arming in the path handler. Wrap every
+                # such machine's CONTROLLABLE arming with the same demand (the RAW condition:
+                # the direct site's dest_test names a doit temp that does not exist in the
+                # handler's scope), on the same warned bit.
+                nr2, _cs2, _ss2, _pc2 = analyze_room(forms)
+                assigned2 = _var_assigned_rooms(forms)
+                others = {i for (i, _m, _k, d2, _p) in nr2
+                          if i and i != placement.get("instance")
+                          and (d2 == sp["to_room"]
+                               or (isinstance(d2, tuple) and d2[0] == "var"
+                                   and sp["to_room"] in assigned2.get(d2[1], ())))}
+                for inst2 in sorted(others):
+                    # EVERY arming, not the first (findings #4/#8 -- the sled is armed from
+                    # two handlers and one wrap leaves the other a bypass).
+                    for arm2 in find_all_armings(forms, inst2):
+                        if not arm2 or arm2.get("kind") not in _PLACED_KINDS:
+                            continue
+                        t2 = open(path, errors="replace").read()
+                        nt2, n2 = wrap_trigger_in_source(
+                            t2, arm2, to_source_syntax(raw_cond), REFUSE, site=row_site)
+                        if n2:
+                            open(path, "w").write(_ensure_refusal_use(nt2, titles_by_num))
+                            row["sites"] = row.get("sites", 1) + n2
+                            row.setdefault("also_wrapped", []).append(
+                                {"instance": arm2.get("trigger_instance"),
+                                 "method": arm2.get("trigger_method"), "machine": inst2})
             if placement["kind"] == "setscript":
                 for extra in find_all_armings(forms, placement["target_script"]):
                     if (extra["trigger_instance"], extra["trigger_method"]) == \
