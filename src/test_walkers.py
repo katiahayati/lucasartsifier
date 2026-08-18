@@ -81,6 +81,14 @@ ACCEPTED = {
                    "arrival taxi, the street seal). A single-purpose lifecycle reader, not "
                    "control flow: no other walker asks where an object ENDS.",
     "setRegions":  "region membership is built once, in opmodel.",
+    "edgeHit":     "the ego's own screen-edge signal, read in exactly the two places that ask "
+                   "about screen edges and nowhere else. trigger reads the argument-free "
+                   "`(gEgo edgeHit:)` as a POSITIONAL fact (the player walked there -- the "
+                   "rm036 computed exit, 2026-08-18b) and polygons.edge_bands reads the cond "
+                   "that ASSIGNS it for the game's own handoff bands (plus dead_nav_exits' "
+                   "north discriminator: a room routing exits through an edgeHit READ is the "
+                   "base-y world where the horizon bound is provable). extract/opmodel consume "
+                   "the resulting EDGES, never the signal -- same division as newRoom.",
     "x":           "the same two letters asking opposite questions, which is why neither can "
                    "drift into the other. polygons.edge_bands reads `x` as the VARIABLE one side "
                    "of the ego's own `edgeHit` cond (`(<= x 0)` -> west), deriving where THIS "

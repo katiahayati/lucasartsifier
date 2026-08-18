@@ -597,6 +597,26 @@ class OpEmitter:
                 self.machine_moves.append((info["room"], info["script"], it, g, dest,
                                            info["inst"]))
 
+        # A PUT THE SAME BRANCH RE-GETS IS NOT A SPEND. KQ5's lamb EAT (USER-corrected
+        # 2026-08-18b) is the case: the first bite does `put: 19 <room>` then `get: 19` in
+        # one arm -- the item's OWNER IS THE EGO when the branch ends (the put/get dance
+        # refreshes the icon after the cel write that turns it into the half leg). Read as a
+        # drop, that branch is spend evidence for every sink and market detector, and it made
+        # a REQUIRED move (the mountain hunger's only lamb-safe answer) read as wasting the
+        # eagle's lamb. The pair cancels: the drop and one matching get, same room, script,
+        # item and GUARD (structural equality -- the clause identity the sink sweep already
+        # keys on), leave the evidence entirely.
+        for i in range(len(self.handler_drops) - 1, -1, -1):
+            room, script, it, g, _dest = self.handler_drops[i]
+            for j, (r2, s2, i2, g2) in enumerate(self.handler_gets):
+                if (r2, s2, i2) == (room, script, it) and repr(g2) == repr(g):
+                    del self.handler_drops[i]
+                    del self.handler_gets[j]
+                    self.handler_moves = [m for m in self.handler_moves
+                                          if not (m[0] == room and m[1] == script
+                                                  and m[2] == it and repr(m[4]) == repr(g))]
+                    break
+
         # Control-map oracle FIRST (reads the PIC control plane + VIEW cels, not declared):
         #  - prop-gate  (rm82): machine EXIT->83 requires causedEruption (the aDoor Prop covers
         #    the onControl-$0004 floor until the bomb opens it);
