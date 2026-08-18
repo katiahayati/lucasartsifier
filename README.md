@@ -114,6 +114,24 @@ Longer version in [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md); per-file map i
 [`docs/KQ6-STATUS.md`](docs/KQ6-STATUS.md); LB2's derivation log in
 [`docs/LB2-ORACLE.md`](docs/LB2-ORACLE.md).
 
+### The toolchain
+
+Steps 1 and 6 stand on two excellent existing projects, driven headless:
+
+- **Decompilation** is [sci-tools](https://github.com/sluicebox/sci-tools) (sluicebox, MIT).
+  We maintain [a fork](https://github.com/katiahayati/sci-tools) whose `json-ir` branch adds a
+  second emitter beside the `.sc` source output: the typed control-flow AST as JSON, which is
+  what the analysis consumes. The decompilation logic itself is untouched.
+- **Compilation** is [SCICompanion](https://github.com/icefallgames/SCICompanion)'s script
+  compiler (Philip Fortier, GPL-2.0+), which we ported to build and run headless on Linux —
+  `tools/scicompile/` is a small CLI plus a compatibility layer that replaces the MFC/Windows
+  surface, calling the real parser, class browser, resource map and code generator
+  (`GenerateScriptResource`). The vendor tree is cloned at build time and never edited; a
+  handful of files are patched as a build step for MSVC-only constructs, with every change
+  documented in [`tools/scicompile/BUILD_NOTES.md`](tools/scicompile/BUILD_NOTES.md). Each
+  guarded script the pipeline emits is compiled by the same code paths SCICompanion uses in
+  its IDE, then wrapped in Sierra's loose-patch header.
+
 ## Install
 
 The analysis is Python 3 with **no third-party packages at all** — `src/` imports only the
