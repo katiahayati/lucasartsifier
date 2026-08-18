@@ -230,6 +230,137 @@ def test_interceptor_shape_census():
                      "spelled some other way and falls to REFUSED silently" % (hits, expect))
 
 
+# KQ5's henchman arming, verbatim shape from build/kq5/ir/src/castle.sc: the `setScript:`
+# rides a MULTI-SELECTOR CASCADE whose first argument nests two parens deep. The flat
+# `[^()]*` arm-event pattern could not see it -- "trigger found but no site rewritten" was
+# the whole castle-fish placement gap (rm54->rm59/rm54->rm67, 2026-08-18).
+HENCHMAN = """(instance theHenchMan of Actor
+\t(properties
+\t\tx 1000
+\t)
+
+\t(method (init)
+\t\t(super init:)
+\t\t(self
+\t\t\tview: (if (== global11 58) 898 else 884)
+\t\t\tsetCycle: Walk
+\t\t\tsetLoop: -1
+\t\t\tlooper: 0
+\t\t\tsetScript: theHenchManScript
+\t\t)
+\t\t(if (not global333)
+\t\t\t(= global333 1)
+\t\t)
+\t)
+)
+"""
+
+# The flat single-selector spelling every prior game uses (KQ4's whale). The cascade fix must
+# leave this emission byte-identical -- KQ4 is golden.
+WHALE = """(instance Room31 of Rm
+\t(properties
+\t\tpicture 31
+\t)
+
+\t(method (init)
+\t\t(super init:)
+\t\t(global0 setScript: whaleActions)
+\t)
+)
+"""
+
+
+def test_arm_event_wraps_the_whole_cascade():
+    print("\n-- arm-event: the arming statement is the send, not a flat regex span --")
+    import trigger as T
+    place = {"kind": "arm-event", "trigger_instance": "theHenchMan", "trigger_method": "init",
+             "target_script": "theHenchManScript", "target_room": 59}
+    out, n = T.wrap_trigger_in_source(HENCHMAN, place, "(gEgo has: 37)", "(Refuse)")
+    check("the cascaded arming is found and wrapped once", n == 1,
+          detail="n=%r\n%s" % (n, out))
+    check("the WHOLE send is inside the gate (view/setCycle held with the setScript)",
+          "(if " in out and out.index("(if (") < out.index("view:")
+          and "arm only when survivable" in out,
+          detail=out)
+    check("the file still balances", out.count("(") == out.count(")"), detail=out)
+    check("the sibling statement after the send is NOT wrapped",
+          out.index("arm only when survivable") < out.index("(if (not global333)"),
+          detail=out)
+
+    flat, n2 = T.wrap_trigger_in_source(
+        WHALE, {"kind": "arm-event", "trigger_instance": "Room31", "trigger_method": "init",
+                "target_script": "whaleActions", "target_room": 32},
+        "(gEgo has: 8)", "(Refuse)")
+    check("the flat single-selector send wraps exactly as before (KQ4 golden shape)",
+          n2 == 1 and "(if (gEgo has: 8)\n\t\t\t\t(global0 setScript: whaleActions)\n\t\t\t)"
+          in flat,
+          detail=flat)
+
+
+# KQ5's computed edge exit, verbatim shape from rm036.sc: `doit` reads `(gEgo edgeHit:)`,
+# resolves the destination through `edgeToRoom:` into a temp, and `newRoom:`s the temp. Three
+# derivations in one site: edgeHit is a positional fact (the ego WALKED there), an
+# edgeToRoom-assigned variable holds the room's own nav values, and a var destination is
+# located by the variable and discriminated by dest_test.
+RM036 = """(instance rm036 of KQ5Room
+\t(properties
+\t\tpicture 36
+\t\tnorth 38
+\t\twest 35
+\t)
+
+\t(method (init)
+\t\t(super init:)
+\t\t(global0 posn: 149 140)
+\t)
+
+\t(method (doit &tmp temp0)
+\t\t(cond
+\t\t\t(script
+\t\t\t\t(script doit:)
+\t\t\t)
+\t\t\t(
+\t\t\t\t(and
+\t\t\t\t\t(global0 edgeHit:)
+\t\t\t\t\t(= temp0 (self edgeToRoom: (global0 edgeHit:)))
+\t\t\t\t)
+\t\t\t\t(global2 newRoom: temp0)
+\t\t\t)
+\t\t)
+\t)
+)
+"""
+
+
+def test_computed_edge_exit_is_a_positional_direct():
+    print("\n-- find_trigger: an edgeToRoom dispatch is a positional direct exit --")
+    import sexpr
+    import trigger as T
+    forms = sexpr.read_all(RM036)
+    p = T.find_trigger(forms, 35, ego=0)
+    check("the crossing is classified direct + positional (edgeHit IS where the ego stands)",
+          p["kind"] == "direct" and p.get("positional") and p.get("instance") == "rm036",
+          detail=repr(p))
+    check("the destination variable and its discriminator both ride the placement",
+          p.get("dest_var") == "temp0" and p.get("dest_test") == "(== temp0 35)",
+          detail=repr(p))
+    # ...and the other declared direction resolves through the same site.
+    p38 = T.find_trigger(forms, 38, ego=0)
+    check("the sibling direction resolves through the same dispatch",
+          p38["kind"] == "direct" and p38.get("dest_test") == "(== temp0 38)",
+          detail=repr(p38))
+    # the wrap: turn-back (a doit refusal machine-guns), walk-in posn as the safe target
+    place = {**p, "obj_globals": {"ego": "global0", "room": "global2", "game": "global1",
+                                  "hands": None}}
+    guard = "(or (not (== temp0 35)) (== ((global9 at: 2) owner:) 36))"
+    out, n = T.wrap_trigger_in_source(RM036, place, guard, "(Refuse)")
+    check("the var-destination site is rewritten (no literal newRoom exists to find)",
+          n == 1 and "sgTurnBack" in out, detail="n=%r\n%s" % (n, out))
+    check("the turn-back walks to the room's own walk-in position (the strip cannot hold it)",
+          "MoveTo 149 140" in out, detail=out)
+    check("the file still balances", out.count("(") == out.count(")"), detail=out)
+
+
 def run():
     print("=== test_patch_text ===")
     test_single_arm_is_wrapped()
@@ -238,6 +369,8 @@ def run():
     test_handsoff_ignores_comments_and_strings()
     test_unreadable_deliverer_is_not_a_cleared_one()
     test_interceptor_shape_census()
+    test_arm_event_wraps_the_whole_cascade()
+    test_computed_edge_exit_is_a_positional_direct()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL

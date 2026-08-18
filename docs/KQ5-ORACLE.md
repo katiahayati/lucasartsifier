@@ -1092,3 +1092,45 @@ position** — the spot the game itself stands the ego on at init (`rm018` posn 
 positional exit's control strip cannot contain, because the player walked here from there. The
 clause's own coordinate boundary still takes precedence when a literal names it; neither
 derivable → the silent whole-clause gate, which cannot spam.
+
+## §20. The castle-fish bypass and the yeti crossing — the computed edge exit, and the arming that lives in a region (2026-08-18, derived)
+
+The last two placement gaps ("trigger found but no site rewritten" on rm54 → rm59/rm67,
+"no controllable trigger" on rm36 → rm35) were three text-layer blindnesses, none of them the
+script-202 seam the handoff guessed — re-derive a red's premise before building for it:
+
+* **An `edgeToRoom:` dispatch is the dynamic nav read.** `_nav_read` already resolved the
+  static one-indirection exit (`(gCurRoom newRoom: (gCurRoom north:))`); KQ5 spells nearly
+  every scripted edge exit as `(= temp0 (self edgeToRoom: (gEgo edgeHit:)))` then
+  `(global2 newRoom: temp0)` (rm036::doit), and a variable assigned from `edgeToRoom:` can
+  hold exactly the rooms `nav_props` declares (`trigger._edge_dispatch_vars`). The var
+  destination carries both its discriminator (`dest_test`, LB2's act-break rule) and now its
+  NAME (`dest_var`) — a var site has no literal for the direct pattern to find.
+* **`edgeHit` is a positional fact.** The third spelling of "where does the ego stand" after
+  onControl masks and coordinate compares: the player WALKED to that screen edge. Read as
+  positional, rm036's exit takes the play-validated turn-back (a `doit` refusal
+  machine-guns), safe target = the room's own walk-in posn (149 140 — the strip cannot
+  contain it). The wrap: heading north (temp0=38) passes untouched; heading west unfed —
+  the killEgo fold's crossing — is refused once per approach with a walk-back.
+  **rm36 → rm35 `owner(Pie)==36` is PLACED** (rm036, direct positional, sites=1); §18's
+  "honestly UNPLACED" is retired.
+* **The arming statement is the send, not a flat regex span.** castle.sc arms the henchman
+  inside a multi-selector cascade whose first argument nests two parens deep
+  (`(self view: (if ...) ... setScript: theHenchManScript)`) — invisible to the `[^()]*`
+  arm-event pattern, which is the whole "no site rewritten". The wrapper now locates the
+  selector and expands to the innermost balanced form; the flat single-selector spelling
+  (KQ4's whale) emits byte-identically, and the golden proves it.
+* **An arm-event in a REGION file fires in every room the file is live in.** castle.sc is
+  live in five castle rooms and the spec condemns one crossing, so the gate discriminates by
+  the game's own current-room global — `(or (not (== global11 54)) (gEgo has: 37))` — the
+  dest_test rule applied on the source side. Without it, a player who has already SPENT the
+  fish on the cat would disarm every in-castle capture — stock behaviour the spec never
+  claimed. A ROOM file needs no discriminator (it is live where the model attributed the
+  arming), which is what keeps KQ4 byte-identical. Both castle crossings (rm54 → 59 and
+  rm54 → 67) ride the one arming: one wrap, the sibling row reports shared (sites=0) — the
+  travel-dispatch precedent.
+
+Play shape: fishless on the beach, the henchman never hunts (walk south, fetch the fish from
+rm51, return — the beach stays open); with the fish, captured exactly as stock. The grate
+climb (rm54 → 55, `enterGrate`) was already guarded; these were its two bypasses.
+

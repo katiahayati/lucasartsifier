@@ -2326,6 +2326,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
     out = out_unplaced
     seen_entry = set()             # (title, from_room, guard) -- entry-commit dedup across rows
     seen_dispatch = set()          # (file, to_room, condition) -- one travel-dispatch edit
+    seen_wrap = set()              # (file, kind, target, trigger, condition) -- one wrap per site
     #   covers every crossing the dispatch fans to that destination; siblings report shared
     # FATAL USES -- refuse the ACTION. The site is the arming of the machine that kills you, in the
     # room that offers the move: KQ6's rm420 `(gCurRoom setScript: throwSkull)`. `find_arming`
@@ -2760,6 +2761,35 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                             "why": "no literal-display form derives for this game, so a refusal "
                                    "would be silent"})
                 continue
+            if (placement["kind"] == "arm-event" and rooms
+                    and nums.get(title) not in rooms and sp.get("from_room") is not None):
+                # AN ARM-EVENT IN A REGION FILE FIRES IN EVERY ROOM THE FILE IS LIVE IN, and the
+                # spec claims one crossing. KQ5's henchman is the case: `theHenchMan::init` runs
+                # in five castle rooms and only the beach (rm54) crossing strands, so an
+                # undiscriminated gate would also disarm the in-castle captures of a player who
+                # has already SPENT the fish -- stock behaviour the spec never condemned. The
+                # discriminator is the crossing's own from-room read through the game's
+                # current-room global (in scope everywhere, same rule as dest_test on the source
+                # side). A ROOM file needs none: it is live only where the model attributed the
+                # arming (KQ4's whale grid ships exactly as before, byte-identical).
+                import extract as _X
+                cur_g = _X.current_room_global(_IR) if _IR is not None else None
+                if cur_g is not None:
+                    sp = {**sp, "condition": "(or (not (== global%d %d)) %s)"
+                                             % (cur_g, sp["from_room"], sp["condition"])}
+            # ONE WRAP PER (file, arming site, condition). Two edge rows can ride the same
+            # arming -- the henchman's capture performs BOTH castle crossings (rm54->59 and
+            # rm54->67), and each row's demand is the same conjunction at the same site.
+            # Wrapping twice would nest the same guard inside itself; the sibling row reports
+            # shared, exactly as travel-dispatch rows do.
+            wkey = (title, placement["kind"], sp.get("from_room"),
+                    placement.get("target_script") or placement.get("instance"),
+                    placement.get("trigger_instance"), placement.get("trigger_method"),
+                    sp["condition"])
+            if wkey in seen_wrap:
+                out.append({**sp, "applied": True, "sites": 0, "title": title,
+                            "placement": {**placement, "shared": True}, "shared": True})
+                continue
             text = open(path, errors="replace").read()
             if placement["kind"] == "arm-clause" or \
                     (placement["kind"] == "direct" and placement.get("positional")):
@@ -2788,6 +2818,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             elif placement["kind"] not in ("arm-event", "arm-clause"):
                 new_text = _ensure_refusal_use(new_text, titles_by_num)
             open(path, "w").write(new_text)
+            seen_wrap.add(wkey)
             row = {**sp, "applied": True, "title": title, "sites": n, "placement": placement}
             # A machine with N controllable armings needs N wraps -- play-found on KQ6's short
             # door: `wearClothingScr` arms from egoDoVerbCode::doVerb AND guardHut::doVerb, and
