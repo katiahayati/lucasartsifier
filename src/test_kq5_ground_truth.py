@@ -243,7 +243,21 @@ MECHANISM_ROWS = {
     "Harp": {"analyze: need@rm90 sources=[9] frontier=rm40->rm41"},
     "Beeswax": {"analyze: need@rm44 sources=[24] frontier=rm40->rm41"},
     "Crystal": {"analyze: need@rm52 sources=[38] frontier=rm40->rm41"},
-    "Locket": {"analyze: need@rm57 sources=[42] frontier=rm42->rm43"},
+    "Locket": {
+        "analyze: need@rm57 sources=[42] frontier=rm42->rm43",
+        # ✅ THE DUNGEON-HOLE FOLD, USER-CONFIRMED IN GAME 2026-08-18b ("if you don't give the
+        # locket... cassima doesn't come and you die") -- scorecard row 11's read half. The
+        # henchman capture drops you in rm67; `henchCaught` st8 forks on the GIVEN locket
+        # (owner(25)==57) -- moveStone (Cassima's rescue) vs dieScumScript (30-60s pure timer
+        # into proc0_26). The arms commit by ARMING SIBLINGS, so the delegated-fork matcher
+        # reads the fork out of handoff[(henchCaught, 8)]: complementary-guarded armings, one
+        # unavoidable. The context is the fold's own residue conjunct: flag 96 (register 498)
+        # CLEAR -- with it set, the capture kills regardless of the locket (the second-capture
+        # question, verdict pending).
+        "ownedby_death_folds: {'dest': 57, 'need_room': 67, 'machine': 'henchCaught', "
+        "'state': 8, 'pattern': 'state-fork', 'demand_group': [(25, 57)], "
+        "'context': {498: 0}}",
+    },
     "Iron_Bar": {"analyze: need@rm54 sources=[44] frontier=rm44->rm113|rm45->rm113|"
                  "rm46->rm113|rm46->rm661|rm660->rm663"},
     # ONE row now, and it is the catch: carry the fish up the castle stairs or the cat wins.

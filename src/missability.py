@@ -4368,6 +4368,49 @@ class IrSccReach(SccReach):
                                         and isinstance(a.value, int) \
                                         and a.value in self.em.ts.placed.get(a.var, ()):
                                     _emit(info, [[(a.var, a.value)]], [], state=K)
+                # ---- DELEGATED fork: the arms commit by ARMING SIBLINGS -------------------
+                # KQ5's rm67 `henchCaught` st8 (USER-confirmed 2026-08-18b: locketless capture
+                # = death): `(if (and (not flag96) (owner(25)==57)) (stone setScript: moveStone)
+                # else (stone setScript: dieScumScript))`. The transitions say nothing -- BOTH
+                # arms JUMP on, because the commitment is the `setScript:`, one machine away --
+                # so the spine matcher above is blind twice over: the arms are WHOLE-GUARD
+                # complements (a GAnd and its GNot, not a spine pair), and the death lives in
+                # the ARMED sibling, recorded only in `handoff[(inst, K)]`. The fork is read
+                # where the facts are: a state arming complementary-guarded siblings, one
+                # unavoidable and one not, demands the placed owner atoms on the SURVIVING
+                # arming's own spine; its register conjuncts (flag 96 clear) are the context.
+                # `_complementary` is _survivable's own branch test, shared, not copied.
+                for K in states:
+                    hmap = handoff.get((info["inst"], K)) or {}
+                    lethal_gs = [g for m2, g in hmap.items()
+                                 if m2 in unavoidable and g is not None]
+                    for m2, gsafe in sorted(hmap.items()):
+                        if m2 in unavoidable or gsafe is None:
+                            continue
+                        sspine = _conj_spine(gsafe if isinstance(gsafe, list) else [gsafe])
+                        for gl in lethal_gs:
+                            lspine = _conj_spine(gl if isinstance(gl, list) else [gl])
+                            # the machine's own entry context rides both armings as a
+                            # shared prefix; the fork is the RESIDUES -- one side a single
+                            # GNot whose kid's spine IS the other side (whole-guard
+                            # complement), or _survivable's bare g/NOT-g pair.
+                            shared = [x for x in sspine if x in lspine]
+                            sres = [x for x in sspine if x not in shared]
+                            lres = [x for x in lspine if x not in shared]
+                            comp = (_complementary(sres, lres)
+                                    or (len(lres) == 1 and isinstance(lres[0], GNot)
+                                        and _conj_spine([lres[0].kid]) == sres))
+                            if not comp:
+                                continue
+                            owners = [a for a in sres if _is_owner_atom(a)
+                                      and isinstance(a.value, int)
+                                      and a.value in self.em.ts.placed.get(a.var, ())]
+                            if not owners:
+                                continue
+                            rest = [x for x in sres if not _is_owner_atom(x)]
+                            _emit(info, [[(a.var, a.value)] for a in owners], rest,
+                                  state=K)
+                            break
         return out
 
     def window_closures(self):
