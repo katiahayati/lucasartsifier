@@ -361,6 +361,86 @@ def test_computed_edge_exit_is_a_positional_direct():
     check("the file still balances", out.count("(") == out.count(")"), detail=out)
 
 
+# Main.sc's lamb EAT case, verbatim shape: the first bite KEEPS the item (put + re-get, the
+# half-lamb cel write) and sets the hunger flag rm32's death demands; only the else arm's bare
+# put destroys it. USER-corrected 2026-08-18b: "it HAS to be half the leg of lamb."
+LAMB_EAT = """(instance KQ5 of Game
+	(method (handleEvent param1)
+		(switch (global9 indexOf: (global69 curInvIcon:))
+			(2
+				(proc0_9 16)
+				(proc0_29 141)
+				(global0 put: 2 1)
+				(param1 claimed: 1)
+			)
+			(19
+				(if (== (++ global316) 1)
+					(proc0_27 4)
+					(proc0_9 16)
+					(proc0_29 142)
+					(global0 put: 19 global11)
+					(global0 get: 19)
+				else
+					(proc0_29 143)
+					(global0 put: 19 1)
+				)
+				(param1 claimed: 1)
+			)
+		)
+	)
+)
+"""
+
+# rm006's lamb throw: the put sits inside the race-check `if local0` fork, but NO arm re-gets
+# -- the whole case must stay wrapped exactly as it ships today.
+LAMB_THROW = """(instance nest of RFeature
+	(method (handleEvent param1)
+		(switch (global9 indexOf: (global69 curInvIcon:))
+			(19
+				(if local0
+					(proc0_29 215)
+				else
+					(= local2 3)
+					(global0 put: 19 6)
+					(catAndMouse changeState: 4)
+				)
+				(param1 claimed: 1)
+			)
+		)
+	)
+)
+"""
+
+
+def test_market_wrap_spares_the_reget_branch():
+    print("\n-- wrap_forbidden_case: a put the same branch re-gets is not a spend --")
+    import trigger as T
+    out, n = T.wrap_forbidden_case(LAMB_EAT, r"put:\s*19\b", 19,
+                                   "(not (gEgo has: 19))", "(Refuse)")
+    check("exactly one wrap lands (the destroying arm)", n == 1, detail="n=%r\n%s" % (n, out))
+    check("the first bite stays stock (+4 / flag 16 / re-get untouched)",
+          "(if (not (gEgo has: 19))\n" not in out.split("else")[0]
+          and out.index("(proc0_27 4)") < out.index("(Refuse)"),
+          detail=out)
+    check("the destroying put is inside the refusal wrap",
+          out.index("(Refuse)") > out.index("put: 19 1") - 400
+          and "(if (not (gEgo has: 19))" in out,
+          detail=out)
+    check("the pie case is untouched", "(global0 put: 2 1)" in out
+          and out.count("Refuse") == 1, detail=out)
+    check("the file still balances", out.count("(") == out.count(")"), detail=out)
+
+    out2, n2 = T.wrap_forbidden_case(LAMB_THROW, r"put:\s*19\b", 19,
+                                     "(not (gEgo has: 19))", "(Refuse)")
+    base2, nb2 = T.wrap_forbidden_case(LAMB_THROW.replace("(global0 get: 19)", ""),
+                                       r"put:\s*19\b", 19,
+                                       "(not (gEgo has: 19))", "(Refuse)")
+    check("a no-reget fork keeps the whole-case wrap (shipped emissions cannot churn)",
+          n2 == 1 and out2 == base2 and out2.index("(if (not (gEgo has: 19))")
+          < out2.index("(if local0"),
+          detail=out2)
+
+
 def run():
     print("=== test_patch_text ===")
     test_single_arm_is_wrapped()
@@ -371,6 +451,7 @@ def run():
     test_interceptor_shape_census()
     test_arm_event_wraps_the_whole_cascade()
     test_computed_edge_exit_is_a_positional_direct()
+    test_market_wrap_spares_the_reget_branch()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL

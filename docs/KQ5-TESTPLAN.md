@@ -19,7 +19,7 @@ Teleport-sensitive rooms (init switches on where you came from): 35, 36, 42, 55�
 | A6 | tailor | Coin held | buy cloak with Coin | **works** |
 | A7 | girl rm9 | Heart held | give Heart | **works** (harp) — never guarded |
 | A8 | anywhere | C: `send ego get 2` | EAT the pie | joke plays, **pie kept** (retraction) |
-| A9 | anywhere | C: `send ego get 19` | EAT the lamb | **refused** |
+| A9 | anywhere | C: `send ego get 19` | EAT the lamb **twice** | 1st bite: **works** (+4, becomes the half leg — the mountain hunger needs it); 2nd bite: **refused** (the half is the eagle's) |
 
 ## B — Cat & dog scenes
 | # | Where | Setup | Do | Expect |
@@ -51,7 +51,8 @@ Teleport-sensitive rooms (init switches on where you came from): 35, 36, 42, 55�
 |---|---|---|---|---|
 | E1 | rm30 | hold Rope | use Rope on branch | **refused** "Better not…"; rope kept |
 | E2 | rm34 eagle | hold Pie only | offer Pie | **refused** (pie is the yeti's) |
-| E3 | rm34 | hold Lamb | feed Lamb | **works** (stock, the intended move) |
+| E3 | rm34 | hold Lamb (half is fine) | feed Lamb | **works** (stock; the half satisfies the nest fold) |
+| E6 | rm32 | flag 16 clear | walk east past x≈105 without ever eating | stock hungerDeath (preventable on-screen: eat the lamb) |
 | E4 | rm36 yeti | pie NOT thrown | walk west | "Not yet!" once, walk-back to mid-room; **north stays free**; chase still escapable |
 | E5 | rm36 | throw Pie at yeti | walk west | crosses to rm35 normally |
 

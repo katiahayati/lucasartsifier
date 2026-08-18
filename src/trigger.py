@@ -1646,15 +1646,80 @@ def wrap_forbidden_case(text, anchor_pat, token, guard_sexpr, refuse, site=None)
     same siblings-must-not-outrun-the-refusal care as every other kind here. Matches that share
     one case (Main's two lamb `put:` spellings) collapse to one wrap. Returns (text, n)."""
     site = site if site is not None else _ModeSite()
-    spans = []
+    # A PUT THE SAME BRANCH RE-GETS IS NOT A SPEND, and its branch must stay stock. KQ5's
+    # lamb EAT (USER-corrected 2026-08-18b: "it HAS to be half the leg of lamb") is the case:
+    # the case's first-bite arm does `put: 19 <room>` then `get: 19` -- the lamb SURVIVES as
+    # the half (a cel write, the item-property store), it scores, and it sets the hunger flag
+    # rm32's death demands -- while only the else arm's bare `put: 19 1` destroys it. Wrapping
+    # the whole case walls the designed, REQUIRED move. So a put-anchored wrap descends: for
+    # each anchor site, find its innermost enclosing `(if ...)` inside the case; an arm that
+    # re-gets the token is skipped, an arm that does not is held ALONE. Cases with no such
+    # fork (the cat's and dog's lamb throws) keep the whole-case wrap byte-identically.
+    is_put = "put:" in anchor_pat
+
+    def _if_arms(txt, pos):
+        """The innermost `(if ...)` enclosing pos that has a top-level `else`:
+        (then_start, then_end, else_start, else_end) as body spans, or None."""
+        i = txt.rfind("(if", 0, pos)
+        while i != -1:
+            s0, s1 = _block_span(txt, i)
+            if s1 > pos:
+                depth, j, else_at = 0, i, None
+                while j < s1:
+                    c = txt[j]
+                    if c == "(":
+                        depth += 1
+                    elif c == ")":
+                        depth -= 1
+                    elif depth == 1 and txt[j:j + 4] == "else"                             and not txt[j - 1].isalnum() and not txt[j + 4].isalnum():
+                        else_at = j
+                        break
+                    j += 1
+                if else_at is None:
+                    return None
+                # then-arm body: after the condition form, up to `else`
+                k = i + 3
+                while txt[k] in " \t\n":
+                    k += 1
+                cs, ce = _block_span(txt, k)          # the condition form
+                return (ce, else_at, else_at + 4, s1 - 1)
+            i = txt.rfind("(if", 0, i)
+        return None
+
+    get_pat = re.compile(r"get:\s*%s\b" % re.escape(str(token)))
+    by_case = {}                       # case span -> [(match_pos, arm_span or None)]
     for m in re.finditer(anchor_pat, text):
         span = _enclosing_clause_span(text, m.start())
-        if span is None or span in spans:
+        if span is None:
             continue
         if enclosing_clause_head(text, m.start()) != str(token):
             continue
-        spans.append(span)
+        arm = None
+        if is_put:
+            arms = _if_arms(text[span[0]:span[1]], m.start() - span[0])
+            if arms:
+                ts, te, es, ee = (span[0] + x for x in arms)
+                arm = (ts, te) if ts <= m.start() < te else (es, ee)
+        by_case.setdefault(span, []).append((m.start(), arm))
+    spans, arm_wraps = [], []
+    for span, hits in by_case.items():
+        # the narrowing engages ONLY when some arm re-gets the token (the half-lamb shape);
+        # a case whose fork never re-gets keeps the whole-case wrap byte-identically (the
+        # cat's and dog's race-check `if local0` would otherwise churn shipped emissions).
+        keeps = [a for (_p, a) in hits
+                 if a is not None and get_pat.search(text[a[0]:a[1]])]
+        if keeps:
+            for (_p, a) in hits:
+                if a is not None and not get_pat.search(text[a[0]:a[1]]) \
+                        and a not in arm_wraps:
+                    arm_wraps.append(a)
+        elif span not in spans:
+            spans.append(span)
     n = 0
+    for (bs, be) in sorted(arm_wraps, reverse=True):
+        wrapped = guarded_wrap(guard_sexpr, text[bs:be], refuse, site=site)
+        text = text[:bs] + "\n\t\t\t\t" + wrapped + "\n\t\t\t" + text[be:]
+        n += 1
     for (cs, ce) in sorted(spans, reverse=True):
         body = _clause_body(text, cs, ce)
         if body is None:
