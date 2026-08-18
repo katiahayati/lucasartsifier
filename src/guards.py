@@ -1312,6 +1312,102 @@ def unsatisfiable(s, a, b, rec):
     return bad
 
 
+def fold_respell(s, a, b, rec):
+    """Re-spell a frontier spec's conjuncts by their CONSUMERS' OWN reading -- the owner-store
+    correction ([[an-item-some-armings-demand-is-not-a-gate]]'s rule applied to edge guards).
+
+    KQ5's roc edge is the case that forced it (USER playtest prep, 2026-08-18b): the lamb's
+    need past rm40->rm41 is rm42's hatch fold, which reads `owner(19) == 34` -- the eagle was
+    FED, at rm34, BEHIND the edge -- while the spec spelled it `(gEgo has: 19)`. That demands
+    the exact state the fold condemns (carrying it across = nothing can feed the eagle any
+    more) and turns back the winning one (banked, hands empty): the Spinach_Dip shape, caught
+    before it shipped to play.
+
+    The derivation, per unit: the need rooms PAST the edge decide the spelling.
+      * a need room whose demand for the item is an `ownedby_death_folds` row is satisfied by
+        THAT room's own read -- the owner test over the fold's destinations. Possession is an
+        alternative only when some producer of (item -> dest) lies past the edge (there is
+        still somewhere to bank it); producers are the `put:` sites, handler and machine both.
+      * a need room the folds do not explain keeps the possession spelling -- both can be
+        demanded at once (carry for the possession need AND banked for the fold), which is the
+        conservative conjunction.
+      * a GROUP converts only when EVERY past-edge need room is fold-covered for some member
+        -- the group rode in on a member's fold room, and that room accepts exactly what its
+        fold names (rm42 does not take the pie; `(or (has 2) (has 19))` there guards nothing).
+        Any unexplained room keeps the group as spelled.
+    An owner atom subsumed by a kept possession conjunct is dropped; one whose producers are
+    unreachable EVERYWHERE is a refusal, not a guard. Games with no fold rows (all four frozen
+    ones, measured) pass through untouched by construction.
+
+    Returns (rec2, atoms, refusals)."""
+    folds = {}
+    for r in s.ownedby_death_folds():
+        folds.setdefault(r["need_room"], {}).setdefault(r["item"], set()).add(r["dest"])
+    if not folds:
+        return rec, [], []
+    fwd = s.rooms_after(b)
+    prods = {}                     # (item, dest) -> rooms that put it there
+    for row in list(getattr(s.em, "handler_drops", ())):
+        room, _sc, it, _g, dest = row
+        prods.setdefault((it, dest), set()).add(room)
+    for row in list(getattr(s.em, "machine_moves", ())):
+        room, _sc, it, _g, dest, _inst = row
+        prods.setdefault((it, dest), set()).add(room)
+
+    def atom_for(it, R):
+        parts = []
+        for dst in sorted(folds[R][it]):
+            parts.append("(== ((gInv at: %d) owner:) %d)" % (it, dst))
+        atom = parts[0] if len(parts) == 1 else "(or %s)" % " ".join(parts)
+        past = any(prods.get((it, dst), set()) & fwd for dst in folds[R][it])
+        anywhere = any(prods.get((it, dst), set()) & s.reach_rooms for dst in folds[R][it])
+        return atom, past, anywhere
+
+    items2, atoms, refused = [], [], []
+    for it in sorted(rec["items"]):
+        nr = s._unit_need_rooms(frozenset({it})) & fwd
+        fold_rooms = {R for R in nr if it in folds.get(R, {})}
+        poss = nr - fold_rooms
+        if poss or not fold_rooms:
+            items2.append(it)
+        for R in sorted(fold_rooms):
+            atom, past, anywhere = atom_for(it, R)
+            if not anywhere:
+                refused.append("owner demand for item %d at rm%d has no reachable producer"
+                               % (it, R))
+                continue
+            if it in items2 and past:
+                continue           # `(gEgo has: it)` already implies this atom's alternative
+            if past:
+                atom = "(or (gEgo has: %d) %s)" % (it, atom)
+            atoms.append(atom)
+    groups2 = []
+    for g in rec["groups"]:
+        nr = s._unit_need_rooms(frozenset(g)) & fwd
+        if nr and all(any(m in folds.get(R, {}) for m in g) for R in nr):
+            for R in sorted(nr):
+                parts = []
+                for m in sorted(g):
+                    if m in folds.get(R, {}):
+                        atom, past, anywhere = atom_for(m, R)
+                        if not anywhere:
+                            continue
+                        if past:
+                            atom = "(or (gEgo has: %d) %s)" % (m, atom)
+                        parts.append(atom)
+                if parts:
+                    atoms.append(parts[0] if len(parts) == 1
+                                 else "(or %s)" % " ".join(parts))
+        else:
+            groups2.append(g)
+    seen, deduped = set(), []
+    for x in atoms:
+        if x not in seen:
+            seen.add(x)
+            deduped.append(x)
+    return {"items": set(items2), "groups": groups2}, deduped, refused
+
+
 def render_frontier(rec):
     terms = [f"(gEgo has: {i})" for i in sorted(rec["items"])]
     for grp in rec["groups"]:
@@ -1695,16 +1791,28 @@ def guard_specs(s):
         if gone:
             rec = {"items": set(rec["items"]) - gone,
                    "groups": [g for g in rec["groups"] if not (g & gone)]}
-        bad = unsatisfiable(s, a, b, rec)
+        # the owner-store correction: past-edge needs that are fold demands are spelled by
+        # their consumer's own reading (see fold_respell) -- the possession conjuncts keep
+        # their satisfiability check below, the owner atoms carry their own refusals.
+        rec2, fold_atoms, fold_refused = fold_respell(s, a, b, rec)
+        bad = unsatisfiable(s, a, b, rec2) + fold_refused
+        base = render_frontier(rec2)
+        terms = ([base] if base else []) + fold_atoms
+        cond = (terms[0] if len(terms) == 1 else "(and " + " ".join(
+            ([base[5:-1]] if base and base.startswith("(and ") else ([base] if base else []))
+            + fold_atoms) + ")") if terms else None
         sp = {"site": "edge", "from_room": a, "to_room": b,
-              "condition": render_frontier(rec),
-              "items": sorted(rec["items"]), "groups": [sorted(g) for g in rec["groups"]],
+              "condition": cond,
+              "items": sorted(rec2["items"]), "groups": [sorted(g) for g in rec2["groups"]],
               "refused": bad}
+        if fold_atoms:
+            sp["owner_atoms"] = fold_atoms
+        rec = rec2
         if ann:
             sp["dropped_incompatible"] = sorted(ann)
             sp["dropped_why"] = "cannot be held here: " + "; ".join(
                 sorted({f"{s.g.item_name(i)} -- {r}" for i, r in ann.items()}))
-        if not rec["items"] and not rec["groups"]:
+        if not rec["items"] and not rec["groups"] and not fold_atoms:
             # Everything this edge would have demanded is unholdable here, so there is no guard to
             # place -- but say so. Dropping the row silently is how an edge stops being guarded
             # without anyone noticing; `refused` is the channel that already exists for "we

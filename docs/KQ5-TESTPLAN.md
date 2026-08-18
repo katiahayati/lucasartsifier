@@ -59,7 +59,7 @@ Teleport-sensitive rooms (init switches on where you came from): 35, 36, 42, 55�
 | # | Setup | Do | Expect |
 |---|---|---|---|
 | F1 | missing something (e.g. no Crystal) | walk the top zone | "Not yet!" once + walk-back up |
-| F2 | **the WINNING state**: `get 10`,`get 18`,`get 21`, eagle fed (`get 19`,`put 19 34`), yeti fed (`get 2`,`put 2 36`), cat won (`get 8`,`put 8 6`) — carrying NO lamb/pie/shoe | walk the top zone | **should be carried off by the roc.** ⚠️ I predict it wrongly turns you back — the guard says `has 19` where the winning line has `owner(19)=34`. If it walls: confirmed bug, I fix with the banked-owner spelling. Report either way. |
+| F2 | **the WINNING state**: `get 10`,`get 18`,`get 21`, eagle fed (`get 19`,`put 19 34`) — carrying NO lamb | walk the top zone (the strip is near 148,144) | **carried off by the roc** → nest. ✅ FIXED before play (fold_respell: the guard now reads `owner(19)==34`, not `has 19`) and harness-verified both ways — this row is a spot-check. |
 
 ## G — Nest (rm42) ✅ harness-verified, quick re-check
 | # | Setup | Do | Expect |

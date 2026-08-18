@@ -576,6 +576,25 @@ def run():
           f"specs={kidnap_spec!r} -- expected exactly one placeable rm85->rm86 edge spec "
           f"conjoining (has 22) with the rm086-spelled bank disjunction.")
 
+    # ✅ THE ROC EDGE'S OWNER SPELLING, added 2026-08-18b -- caught in TEST-PLAN PREP, before
+    # play. The lamb's need past rm40->rm41 is rm42's hatch fold (`owner(19) == 34`; the eagle
+    # was fed, at rm34, BEHIND the edge), and the spec spelled it `(gEgo has: 19)` -- demanding
+    # the exact state the fold condemns (carrying it across = nothing left to feed the eagle)
+    # while turning back the winning one (banked, hands empty): the Spinach_Dip shape.
+    # `guards.fold_respell` re-spells past-edge fold needs by their consumer's own reading;
+    # the pool groups (whose one past-edge need room was that same fold) collapse into the
+    # same atom, and possession stays demanded only for the three genuine carries.
+    roc_spec = [sp for sp in all_specs if sp["site"] == "edge"
+                and sp.get("from_room") == 40 and sp.get("to_room") == 41]
+    want_roc = ("(and (gEgo has: 10) (gEgo has: 18) (gEgo has: 21) "
+                "(== ((gInv at: 19) owner:) 34))")
+    check("the roc edge demands the three carries AND a FED eagle (never a carried lamb)",
+          len(roc_spec) == 1 and roc_spec[0]["condition"] == want_roc
+          and not roc_spec[0]["refused"],
+          f"specs={roc_spec!r} -- a `(gEgo has: 19)` conjunct here walls the winning line "
+          f"(the eagle is fed BEFORE the roc; no producer of owner(19)=34 exists past the "
+          f"edge), and the pool disjunctions guard nothing rm42 accepts.")
+
     # ...and the SAME derivation's second catch: rm35's killEgo entry-fold (context {12: 36},
     # the scripted kill when you flee the yeti unfed) puts `owner(Pie) == 36` on rm36->rm35.
     # The feed site is rm36 itself, so the demand is satisfiable at the refusal moment; a
