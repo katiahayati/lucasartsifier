@@ -1582,6 +1582,51 @@ def _enclosing_clause_span(region, pos):
     return None
 
 
+def hold_machine_advance(text, machine, guard_sexpr):
+    """Hold a cutscene machine at its leading TIMED WAIT STATE until the guard is banked.
+
+    The sole-exit shape's third answer, after refuse-the-arming (a wall: the machine is the
+    room's only way out) and the entry deferral (unsatisfiable when the demand's only source
+    is INSIDE the room the machine runs in). KQ5's roc nest: `hatch` st0 is `(= cycles 45)`,
+    the eggs crack on a timer while the locket sits grabbable beside you -- the USER-ruled
+    remedy (2026-08-18b) is that the timer simply does not elapse until the demand is met.
+
+    The emission is the game's own wait idiom -- `(-- state)` before the timer re-arm
+    (rm055's goDoorScript st6 spells exactly this to wait on audio) -- so the held state
+    re-enters itself each tick until the guard holds, then advances as built. SILENT by
+    design: nothing is refused to the player's face, the scene just waits, so stock mode
+    bypasses via `stock_or` and lite behaves as full (the register/flag-hold contract).
+
+    The held state is DERIVED: the machine's numerically first changeState arm whose body
+    writes a bare timer (`(= cycles N)` / `(= seconds N)` / `(= ticks N)`). No such state ->
+    (text, 0), honestly unplaced -- a machine that never pauses has nowhere to wait."""
+    span = _find_region(text, r"\((?:instance|class)\s+%s\b" % re.escape(machine))
+    if not span:
+        return text, 0
+    i0, i1 = span
+    mrel = _find_region(text[i0:i1], r"\(method\s+\(changeState\b")
+    if not mrel:
+        return text, 0
+    m0, m1 = i0 + mrel[0], i0 + mrel[1]
+    region = text[m0:m1]
+    best = None
+    for am in re.finditer(r"\(\s*(\d+)\s*\n", region):
+        bs, be = _block_span(region, am.start())
+        body = region[bs:be]
+        tm = re.search(r"\(=\s+(?:cycles|seconds|ticks)\s+\d+\s*\)", body)
+        if tm and (best is None or int(am.group(1)) < best[0]):
+            best = (int(am.group(1)), bs, be, am.end() - am.start())
+    if best is None:
+        return text, 0
+    _k, bs, be, head_len = best
+    hold = ("\n\t\t\t\t(if (not %s)\n"
+            "\t\t\t\t\t; softlock-guard: the scene waits until the demand is banked\n"
+            "\t\t\t\t\t(-- state)\n"
+            "\t\t\t\t)\n" % stock_or(guard_sexpr))
+    new_region = region[:bs + head_len] + hold + region[bs + head_len:]
+    return text[:m0] + new_region + text[m1:], 1
+
+
 def wrap_forbidden_case(text, anchor_pat, token, guard_sexpr, refuse, site=None):
     """Wrap the switch case whose HEAD IS `token` around each `anchor_pat` match -- the market
     refusal's placement primitive.

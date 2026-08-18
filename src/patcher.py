@@ -40,6 +40,7 @@ from trigger import (find_trigger, find_arming, find_all_armings, find_cue_chain
                      find_nav_assign, find_proc_calls, exports_of,
                      reaching_procs, reaching_owners, wrap_trigger_in_source,
                      wrap_all_armings_in_source, wrap_forbidden_case, guarded_wrap, stock_or,
+                     hold_machine_advance,
                      _ModeSite,
                      _block_span,
                      _enclosing_clause_body, enclosing_clause_head, _find_region)
@@ -2663,22 +2664,68 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                             title, path, placement = cand, cpath, arm
                             break
             if placement["kind"] not in _PLACED_KINDS:
-                # fall back to the room-property exit idiom before giving up
-                text = open(path, errors="replace").read()
-                new_text, n, direction = guard_edge_exit(
-                    text, title, sp["to_room"], to_source_syntax(sp["condition"]))
-                if n:
-                    open(path, "w").write(new_text)
-                    out.append({**sp, "applied": True, "title": title, "sites": n,
-                                "placement": {"kind": "edge-exit", "instance": title,
-                                              "trigger_method": "init", "trigger_state": direction}})
-                    continue
+                # Fall back to the room-property exit idiom -- ONLY when the trigger search
+                # found NO site at all. `guard_edge_exit`'s whole premise is "walking
+                # off-screen is engine-handled: there is no call site", and that premise
+                # FAILS whenever the file performs the crossing's own `newRoom:` from a
+                # machine: KQ5's rm42 declares `south 43` AND exits through the eagle-rescue
+                # cutscene's `(global2 newRoom: 43)` (hatch st7), so closing the property
+                # shipped as applied=True while the rescue sailed straight past it -- an
+                # INERT guard the surface called placed (USER-found 2026-08-18b: "it's a
+                # timed race... grab the locket before the egg cracks"). A found-but-
+                # unplaceable site falls through to the placements that can actually hold
+                # the machine.
+                if placement["kind"] == "not-found":
+                    text = open(path, errors="replace").read()
+                    new_text, n, direction = guard_edge_exit(
+                        text, title, sp["to_room"], to_source_syntax(sp["condition"]))
+                    if n:
+                        open(path, "w").write(new_text)
+                        out.append({**sp, "applied": True, "title": title, "sites": n,
+                                    "placement": {"kind": "edge-exit", "instance": title,
+                                                  "trigger_method": "init",
+                                                  "trigger_state": direction}})
+                        continue
                 # ...then the indirect travel dispatch (the magic-map class), whose crossing no
                 # from-room file performs at all
                 got = _guard_travel_dispatch(dest, sp, titles_by_num, seen_dispatch)
                 if got:
                     out.append({**sp, **got})
                     continue
+                # THE HOLD-ADVANCE: a SOLE-EXIT machine whose demand is acquirable IN THIS
+                # ROOM while it runs. Refusing the arming is a wall (nothing left to run) and
+                # the deferral would re-site the demand to rooms where it is unsatisfiable
+                # (the locket exists only in the nest), but the machine's own leading TIMED
+                # WAIT STATE is a place the game already pauses -- hold it with the game's own
+                # `(-- state)` wait idiom until the demand is banked. KQ5's roc nest is the
+                # case and the shape is the USER's ruling (2026-08-18b): the eggs simply do
+                # not crack until the locket is pocketed; the grab stays clickable the whole
+                # time because it rides the EGO's script slot, not the room's. Refused unless
+                # BOTH derivations hold: every demanded item has an ego `get:` in this room's
+                # own pristine source (in-room satisfiability -- the anti-wall half), and the
+                # machine has a leading timer state to hold (the game pauses there already).
+                if placement["kind"] == "sole-exit" and placement.get("instance"):
+                    items = re.findall(r"\(gEgo has: (\d+)\)", raw_cond)
+                    pris = globals().get("_PRISTINE_DIR")
+                    ptxt = ""
+                    if pris and os.path.exists(os.path.join(pris, title + ".sc")):
+                        ptxt = open(os.path.join(pris, title + ".sc"),
+                                    errors="replace").read()
+                    recv = "|".join(re.escape(e) for e in sorted(ego_spellings(_IR)))
+                    in_room = items and all(
+                        re.search(r"\((?:%s)\s+get:\s*%s(?!\d)" % (recv, it), ptxt)
+                        for it in items)
+                    if in_room:
+                        text = open(path, errors="replace").read()
+                        new_text, n = hold_machine_advance(
+                            text, placement["instance"],
+                            to_source_syntax(sp["condition"]))
+                        if n:
+                            open(path, "w").write(new_text)
+                            out.append({**sp, "applied": True, "title": title, "sites": n,
+                                        "placement": {"kind": "hold-advance",
+                                                      "instance": placement["instance"]}})
+                            continue
                 # THE SOLE-EXIT DEFERRAL. Refusing in place is a wall (the pocket's one
                 # `newRoom:` is inside the cutscene being refused), so the demand moves to the
                 # controllable crossings INTO the pocket, scoped by the model-derived stage --

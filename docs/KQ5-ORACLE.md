@@ -1162,3 +1162,42 @@ dangerous sinks:
 Play shape: offer the fish to the cat → "Better not. You are going to need that." — throw
 the shoe or the stick instead; the fish reaches the bear at rm11 and the bees stay
 survivable.
+
+## §22. The nest — the locket fold, the inert property close, and the hold-advance (2026-08-18b, USER-ruled remedy)
+
+Two USER rulings in one evening closed scorecard row 11 end to end:
+
+**The read half** — *"if you don't give the locket to [Cassima] cassima doesn't come and you
+die."* The henchman capture drops you in rm67's hole; `henchCaught` st8 forks
+`(¬flag96 ∧ owner(25)==57) → moveStone else dieScumScript` (a 30-60s pure timer into
+`proc0_26`). The fold detector was blind twice over — both arms carry `tr=('JUMP',10)` because
+they commit by ARMING SIBLINGS (`stone setScript:`), and the arm guards are WHOLE-GUARD
+complements, not spine pairs. The DELEGATED-FORK matcher reads the fork where the facts are:
+a state arming complementary-guarded siblings (residues compared after stripping the shared
+entry prefix), one unavoidable and one not, demands the surviving arming's placed owner atoms;
+its register conjuncts become the context — **flag 96 CLEAR**, the game's own statement that a
+second capture kills regardless (L3 verdict pending). Row:
+`Locket@rm67/henchCaught->owner57 ctx=[(498,0)]`, pinned byte-exact.
+
+**The window half** — *"you can't go back to the nest afterwards, of course, and it's a timed
+race... the right remedy is probably to hold that until you get the locket."* The shipped
+rm42→rm43 guard was **INERT**: `guard_edge_exit` closed the `south 43` property while the real
+exit is the eagle-rescue cutscene's own `(global2 newRoom: 43)` (hatch st7) — an applied=True
+that could never fire. Two placement rules follow:
+  * the property close only fires when the trigger search found NO site at all
+    (`kind == not-found`): its premise is "there is no call site", false whenever a machine in
+    the file performs the crossing itself;
+  * **the HOLD-ADVANCE** for a sole-exit machine whose demand is acquirable IN-ROOM while it
+    runs: hold the machine's leading TIMED WAIT STATE with the game's own `(-- state)` idiom
+    (rm055's goDoorScript st6 spells it for audio). Refused unless both derivations hold: an
+    ego `get:` of every demanded item in the room's own pristine source (the anti-wall half),
+    and a leading timer state to hold. rm042 emits: st0 becomes
+    `(if (not (global0 has: 25)) (-- state)) (= cycles 45)` — the eggs do not crack until the
+    locket is pocketed; the grab stays clickable because it rides the EGO's script slot.
+
+**Play-confirmed under the harness** (drive_scummvm, scratch copy): 26s and 90s in the nest
+with no crack and a live cursor (stock cracks in ~4s); granting the locket releases the hold;
+lamb-fed, the eagle rescue lands Graham at rm43 with Cedric's stock greeting. Un-lamb'd, the
+release runs the stock st6 death — the roc-edge guard (has 19 at rm40→41) is what protects
+that, unchanged. Corpus: LSL2/KQ4/KQ6/LB2 byte-identical at both steps; KQ5's only surface
+movement is the fold row and `rm042: edge-exit → hold-advance`.
