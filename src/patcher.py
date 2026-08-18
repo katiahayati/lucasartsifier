@@ -206,10 +206,41 @@ _TYPE_EXT = {"script", "view", "pic", "text", "sound", "vocab", "font", "cursor"
 
 def _patch_scheme(cfg):
     """This game's loose-patch naming, derived from its resource map. Falls back to SCI0's
-    `script.NNN` if the map cannot be read -- the shape every existing golden was built with."""
+    `script.NNN` if the map cannot be read -- the shape every existing golden was built with.
+
+    For the bare-SCI1 scheme it also derives EXPORT WIDTH from the stock game's own script 0.
+    SCI1-middle interpreters read the export table as 32-bit entries (offset word + zero word)
+    and DOUBLE the export index -- ScummVM validateExportFunc: `if (exportsAreWide) pubfunct
+    *= 2` -- so a script we compile with a 16-bit table sends every cross-script call to
+    export N through word 2N: garbage. KQ5 CD booted into exactly that (script 0 export 12 =
+    the flag test, read as our word 24, crash three opcodes later). The stock table states its
+    own width: an exports block of size 6 + 4*count is wide, 6 + 2*count is narrow -- the same
+    self-evidence SCICompanion's _DetectIsExportWide reads. The game's OWN loose 0.SCR
+    outranks the volume copy, exactly as the interpreter resolves it (KQ5's GOG copy ships
+    Sierra's official Main patch). SCI0 and SCI1.1 are never wide (SCICompanion's rule:
+    narrow below SCI1, narrow whenever heaps are separate)."""
     try:
+        import struct
+
         import sci_resource as R
-        return R.Sci0Game(cfg.resource_dir).patch_scheme()
+        game = R.Sci0Game(cfg.resource_dir)
+        scheme = game.patch_scheme()
+        if scheme["name"] == "sci1":
+            loose = os.path.join(cfg.resource_dir, "0.SCR")
+            data = (open(loose, "rb").read()[2:] if os.path.exists(loose)
+                    else game.get_script(0))
+            i, wide = 0, False
+            while i + 4 <= len(data):
+                t, sz = struct.unpack_from("<HH", data, i)
+                if t == 0:
+                    break
+                if t == 7:
+                    cnt = struct.unpack_from("<H", data, i + 4)[0]
+                    wide = cnt > 0 and sz >= 6 + 4 * cnt
+                    break
+                i += sz
+            scheme["wide_exports"] = wide
+        return scheme
     except Exception:                              # noqa: BLE001 -- no map, or an unreadable one
         return {"name": "sci0", "script": "script.%03d", "heap": None}
 
@@ -331,8 +362,14 @@ def _ensure_use(text, name):
 
 def _version_args():
     """`--version` for scicompile, from the same derivation. SCI1.1 must be pinned or the map
-    never parses and every selector comes out unknown (793 bogus errors on KQ6)."""
-    return ["--version", _SCHEME["name"]]
+    never parses and every selector comes out unknown (793 bogus errors on KQ6). Export width
+    rides along when the stock game's own script 0 says the table is wide (see
+    `_patch_scheme`) -- without it, every cross-script call to export N of a script we ship
+    reads word 2N of a 16-bit table (KQ5 CD's boot crash, 2026-08-18)."""
+    args = ["--version", _SCHEME["name"]]
+    if _SCHEME.get("wide_exports"):
+        args.append("--wide-exports")
+    return args
 
 
 def _declare_missing_globals(src_dir):
