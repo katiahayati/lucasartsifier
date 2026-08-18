@@ -56,10 +56,18 @@ Teleport-sensitive rooms (init switches on where you came from): 35, 36, 42, 55�
 | E4 | rm36 yeti | pie NOT thrown | walk west | "Not yet!" once, walk-back to mid-room; **north stays free**; chase still escapable |
 | E5 | rm36 | throw Pie at yeti | walk west | crosses to rm35 normally |
 
-## F — The roc edge (rm40) ⚠️ THE SUSPECT
+## E½ — The sled commit (rm32) — NEW: the mountains' real point of no return
 | # | Setup | Do | Expect |
 |---|---|---|---|
-| F1 | missing something (e.g. no Crystal) | walk the top zone | "Not yet!" once + walk-back up |
+| S1 | missing any of: Pie 2, Harp 10, Beeswax 18, Hammer 22, Lamb 19 (or fed eagle) | use the Sled (29) on the slope | **"Not yet!"** — sled kept, ride refused (both click paths) |
+| S2 | walk toward rm33 without riding | walk east | turned back at the edge (same demand) |
+| S3 | full carries | ride | sled breaks, lands rm33 — stock; and **rm33→32 walk-back stays blocked** (stock terrain) |
+
+## F — The roc edge (rm40) — now: Crystal + fed eagle only
+| # | Setup | Do | Expect |
+|---|---|---|---|
+| F1 | no Crystal (pried at rm38, needs Hammer) | walk the top zone | "Not yet!" once + walk-back |
+| F1b | Crystal held but eagle NOT fed (lamb still in hand) | walk the top zone | **turned back** — the nest would kill you; feed the eagle first |
 | F2 | **the WINNING state**: `get 10`,`get 18`,`get 21`, eagle fed (`get 19`,`put 19 34`) — carrying NO lamb | walk the top zone (the strip is near 148,144) | **carried off by the roc** → nest. ✅ FIXED before play (fold_respell: the guard now reads `owner(19)==34`, not `has 19`) and harness-verified both ways — this row is a spot-check. |
 
 ## G — Nest (rm42) ✅ harness-verified, quick re-check
