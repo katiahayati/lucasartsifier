@@ -1439,6 +1439,40 @@ def market_remedies(s):
                     f"the market has no assignment left for "
                     f"{[s.g.item_name(t) for t in r['starved_accepts']]}"),
             "refused": []})
+    # ...and the IMPURE dangerous sinks the retraction cannot hold. A pure sink's cure is the
+    # retraction above (strictly kinder: the joke plays, the item stays); an impure spend does
+    # more than destroy -- KQ5's fish thrown at the cat arms the chase machine and BANKS the
+    # pool value rm86's fork reads -- so withholding its `put:` would advance the scene while
+    # unfilling the bank it claims to fill: unsound, not merely unplaceable. The remedy is the
+    # same market-case refusal, and it needs no matching for its un-walling: `dangerous_sinks`
+    # proved this spend LOSES THE GAME, and a winning line never contains a losing move, so
+    # refusing it cannot take anything from a winning player. (KQ5's cat scene also arms only
+    # under a non-refused pool member in hand -- the refusal never strands the scene itself.)
+    #
+    # TRADES ARE EXCLUDED: a clause that also GETs hands the player the other side of an
+    # exchange (KQ6's lamp peddler, user-ruled working-as-designed), and whether an exchange
+    # starves anything is the matching's question, judged in the owner graph
+    # ([[a-trade-is-a-destruction]]) -- never refused off a sink row.
+    covered = {(r["script"], r["item"]) for r in s.market_squeezes()}
+    get_keys = {s._clause_key(room, g) for room, _sc, _it, g in s.em.handler_gets}
+    for d in s.dangerous_sinks():
+        key = (d["script"], d["item"])
+        if key in pure or key in covered:
+            continue      # the retraction (kinder) or a market row (same wrap) holds it already
+        covered.add(key)
+        if any(s._clause_key(room, g) in get_keys
+               for room, sc, it, g, _dst in s.em.handler_drops
+               if sc == d["script"] and it == d["item"]):
+            continue      # a TRADE -- the matching's territory, never refused from a sink row
+        out.append({
+            "site": "market", "room": d["at_room"], "script": d["script"],
+            "machine": None, "item": d["item"], "forbid": [d["item"]],
+            "anchor": r"put:\s*%d\b" % d["item"],
+            "condition": f"(not (gEgo has: {d['item']}))",
+            "why": (f"spending {s.g.item_name(d['item'])} here loses the game -- still needed "
+                    f"at rm{d['still_needed_at']}, not re-obtainable, and the clause does more "
+                    f"than destroy, so the retraction cannot hold it"),
+            "refused": []})
     return out
 
 

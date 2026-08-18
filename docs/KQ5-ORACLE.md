@@ -1134,3 +1134,31 @@ Play shape: fishless on the beach, the henchman never hunts (walk south, fetch t
 rm51, return — the beach stays open); with the fish, captured exactly as stock. The grate
 climb (rm54 → 55, `enterGrate`) was already guarded; these were its two bypasses.
 
+
+## §21. The fish's refusal — a fatal spend is never a winning move (2026-08-18, derived)
+
+The §16 row (`dangerous_sinks Fish@rm6 -> still_needed_at [11]`) had no remedy: the
+pure-sink retraction refused textually ("expected exactly one `put: 5 6`, found 2"), and
+would have been UNSOUND anyway — `put: 5 6` IS the bank rm86's kidnap fork reads, so
+withholding it advances the chase while unfilling what the throw claims to fill. That row
+stays on the surface as the honest record; the cure is `market_remedies` extended to impure
+dangerous sinks:
+
+* **The un-walling needs no matching.** `dangerous_sinks` proved the spend loses the game
+  (still needed ahead, no rescue at the consumer, not re-obtainable), and a winning line
+  never contains a losing move — so refusing it cannot take anything from a winning player.
+  (KQ5-specifically, the cat scene also arms only under `(or (has: 8) (has: 16))`
+  (rm006.sc:112), so a non-refused throwable is in hand whenever the chase runs.)
+* **Trades are excluded, structurally.** A clause that also GETs hands the player the other
+  side of an exchange — KQ6's lamp peddler, user-ruled WORKING AS DESIGNED — and whether an
+  exchange starves anything is the matching's question, judged in the owner graph
+  ([[a-trade-is-a-destruction]]). The test: some `handler_drops` clause for the (script,
+  item) shares its clause key with a `handler_gets`. KQ6 emits nothing (measured; its
+  frozen empty `market_specs` key pins it), LSL2/KQ4/LB2 have no impure dangerous sinks.
+* **Placement is the standing market-case wrap**: the fish's own case-5 head in BOTH of
+  rm006's handlers (the cat and `catStrip`), whole body held, `market-case sites=2`.
+  Surface: `market_specs` gains `Fish@script6/handler`; nothing else on any game moves.
+
+Play shape: offer the fish to the cat → "Better not. You are going to need that." — throw
+the shoe or the stick instead; the fish reaches the bear at rm11 and the bees stay
+survivable.

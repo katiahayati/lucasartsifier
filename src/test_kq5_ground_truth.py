@@ -764,6 +764,24 @@ def run():
           "a throwable with a live alternative at its consumer was condemned -- the rm12 sink "
           "rows the USER ruled false positives on 2026-08-16b are back.")
 
+    # ✅ THE FISH'S REMEDY, added 2026-08-18. The §16 row above states the disease; the cure is
+    # a market-case refusal of the fish's OWN dispatch case in rm006's two handlers, because the
+    # retraction is UNSOUND here, not merely unplaceable: `put: 5 6` IS the bank the kidnap fork
+    # reads, so withholding it would advance the scene while unfilling what it claims to fill.
+    # `market_remedies` extends to impure dangerous sinks on the row's own fatality proof (a
+    # winning line never contains a losing move, so the refusal cannot wall -- and the scene
+    # arms only under a non-refused pool member in hand, `rm006.sc:112`). TRADES stay excluded:
+    # a clause that also GETs is the matching's territory (KQ6's lamp peddler, user-ruled
+    # working-as-designed, pins the exclusion through its frozen empty market_specs key).
+    fish_market = [r for r in G.market_remedies(s)
+                   if r["script"] == 6 and r["item"] == 5]
+    check("the fish's spend at the cat is refused in its own dispatch case",
+          len(fish_market) == 1 and fish_market[0]["machine"] is None
+          and fish_market[0]["anchor"] == r"put:\s*5\b" and not fish_market[0]["refused"],
+          f"rows={fish_market!r} -- expected exactly one unrefused market row wrapping the "
+          f"fish's case (anchor `put: 5`) in script 6; the pure-sink retraction cannot hold "
+          f"an impure spend and must not try.")
+
     # ✅ PROMOTED 2026-08-16b (phase 3, `missability.window_closures`). The fold rows say the bank
     # is DEMANDED at the kidnap; these say the only way to fill it shuts by itself. A producer is
     # read through `guard_reqs` against the register being flipped -- rm6 stays walkable forever,
