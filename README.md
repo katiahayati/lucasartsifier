@@ -1,46 +1,118 @@
 # Sierra softlock analyzer
 
-Finds **softlocks** in Sierra SCI adventure games — states where the game still accepts input but
-victory has already become impossible — and emits a patch that prevents them.
+**Static analysis for 30-year-old adventure games.** This tool decompiles a Sierra SCI game,
+abstract-interprets the decompiled scripts into a graph of guarded room transitions, item
+movements and plot-flag writes, finds the **softlocks** — states where the game still accepts
+input but victory has quietly become impossible — and derives, verifies, compiles and installs
+guards that prevent them. Nothing about any title is declared: the start room, the victory room,
+the death signal and the debug flags are all discovered from the game's own code.
 
-Sierra games, unlike LucasArts ones, let you get stuck. Forget the sunscreen in Los Angeles, board
-the cruise ship, and you die days later on the raft with no way back. This finds every such trap
-automatically and blocks the crossing that causes it.
+Sierra games, unlike LucasArts ones, let you get stuck. Forget the sunscreen in Los Angeles,
+board the cruise ship, and you die days later on a raft with no way back. This finds these traps
+automatically and blocks the crossing that causes them — at the last moment you can still comply.
 
-Several classes of softlocks are detected and caught: missing items (leaving or entering a sealed region
-without required items); random game events (the whale catching you off-guard in King's Quest 4); and game clock 
-advances (night-time in King's Quest 4; acts in Laura Bow 2).
+**Four games run end to end** — Leisure Suit Larry 2 and King's Quest IV (SCI0, 1988) through
+King's Quest VI and Laura Bow 2 (SCI1.1, 1992) — same engine, no game-specific analysis code.
 
-A patched game is playable normally, because the patch mechanism is how Sierra shipped its own bug fixes.
-You can set the guard behavior in-game: **Full** prevents every dangerous action; **Lite** prevents the action
-once, then allows it with a warning; and **Off** turns the guards off.
+## Demo
 
-## Caveat Player
+King's Quest IV, patched — the whale, the night clock and seven stranded items, all guarded:
 
-**Some deaths are deliberately left in** — the ones you can still avoid from where you are. In Leisure Suit Larry 2,
-  if you walk onto the KGB beach without the full disguise you will die. Some pieces of the disguise are only obtained
-  on the cruise ship, so we prevent you from leaving it until you have them. But the rest of the disguise is obtainable
-  on the island, i.e. from the place the death occurs, so we let it happen. The main reason is that these kinds of deaths
-  are how Sierra games hint at what you need to do. So, as Al Lowe says, you still have to "Save Early, Save Often!".
+[![Demo: King's Quest IV, patched](https://img.youtube.com/vi/FvspDYQZj34/hqdefault.jpg)](https://youtu.be/FvspDYQZj34)
+
+## The thirty-second version
+
+Abridged from a real run on Leisure Suit Larry 2 (`python3 -m pipeline <game>`):
+
+```
+[2] ANALYZE
+    anchors: start rm11, victory [86]  (discovered)
+    death signal: global101 == 1001, debug globals: [14, 100]  (derived)
+    101 rooms, 27 strongly-connected components, 40 gating registers
+    softlocks: 15 items + 1 disjunctive group(s)
+      - Sunscreen
+      ...
+[3] DERIVE
+    rm38 -> rm131: (and (gEgo has: 11) (gEgo has: 12) (gEgo has: 14) (gEgo has: 15))
+    rm57 -> rm58: (and (gEgo has: 21) (gEgo has: 24) (gEgo has: 25) (gEgo has: 26))
+    rm79 -> rm80: (or (gEgo has: 30) (gEgo has: 31))
+    rm131 -> rm138: (not (gEgo has: 13))
+    rm63: delete `(gEgo put: 21 -1)` (Hair_Rejuvenator)
+    verifying against the guarded model...
+    fixed 15 + 1 group(s); NEW softlocks introduced: none
+[4] PATCH
+    compiled 117/118 scripts
+    script.000  Main  10790 bytes
+    script.057  rm57  2938 bytes
+    ...
+Done. 10 patch files in build/patch
+```
+
+The analyzer discovered the ship boarding as a one-way crossing, derived which items must cross
+with you, **re-verified the guarded model to prove the guards introduce no new softlocks**, and
+recompiled the touched scripts into Sierra's own loose-patch format.
+
+Note `rm131 -> rm138: (not (gEgo has: 13))`. Guards carry negative literals too: the Spinach Dip
+is fatal to be *holding* in rm138, so the fix is to refuse the crossing while you still have it —
+placed where you can still throw it overboard, because demanding you drop something you can no
+longer drop is a wall, which this project treats as worse than the bug. The pipeline refuses to
+emit anything if the guards fail verification, or if a script it edited will not compile.
+
+A patched game plays normally — the patch mechanism is how Sierra shipped its own bug fixes, and
+the originals are never modified (delete the patch files to revert). You can set the guard
+behavior in-game: **Full** prevents every dangerous action; **Lite** prevents it once, then
+allows it with a warning; **Off** turns the guards off.
+
+## What counts as a softlock? (or: Caveat Player)
+
+**Some deaths are deliberately left in** — the ones you can still avoid from where you are. The
+analysis distinguishes *unwinnable states* from *avoidable deaths* by reachability, not by death
+conditions. In Leisure Suit Larry 2, walking onto the KGB beach without the full disguise kills
+you. Some pieces of the disguise exist only on the cruise ship, so the analyzer refuses to let
+you leave the ship without them. But the rest is obtainable on the island — from the very place
+the death occurs — so that death stays in: it is how Sierra games hint at what you need to do.
+As Al Lowe says, "Save Early, Save Often!"
 
 ## Status
 
-Four games run end to end. Nothing about a title is declared: the start room, the victory room,
-the death signal and the debug flag are all derived from the game's own code.
+**Four complete games, spanning the engine's two major eras (SCI0 1988 → SCI1.1 1992), with no
+per-title declarations anywhere** — that is the evidence that the analysis generalizes rather
+than encodes trivia about particular games.
 
-| game | engine | model | findings | edits placed |
+| game | engine | world model derived | softlocks found | guards shipped |
 |---|---|---|---|---|
-| **Leisure Suit Larry 2** (1988) | SCI0 | 101 rooms, 27 components | 15 items + 1 group | 12 of 12 | 
-| **King's Quest IV** (1988) | SCI0 | 110 rooms, 15 components | 7 items | 5 of 5 | 
-| **King's Quest VI** (1992) | SCI1.1 | 86 rooms, 15 components | 18 items + 1 group | 24 of 26 | 
-| **Laura Bow 2: The Dagger of Amon Ra** (1992) | SCI1.1 | 78 rooms, 26 components | 10 items | 5 of 5 | 
+| **Leisure Suit Larry 2** (1988) | SCI0 | 101 rooms, 27 free-travel regions | 15 items + 1 either/or group | 12 of 12 |
+| **King's Quest IV** (1988) | SCI0 | 110 rooms, 15 regions | 7 items | 5 of 5 |
+| **King's Quest VI** (1992) | SCI1.1 | 86 rooms, 15 regions | 18 items + 1 group | 24 of 26 |
+| **Laura Bow 2: The Dagger of Amon Ra** (1992) | SCI1.1 | 78 rooms, 26 regions | 10 items | 5 of 5 |
 
-"Findings" is every detector's verdict unioned per item — the same seven a run prints and the
-frozen surface freezes; an item found by something other than the three stranding detectors is
-labeled with what found it (*sealed by a plot flag*, *fatal to use here*, …). "Edits placed"
-counts the guard and sink sites the patcher actually landed. KQ6's missing two are the suite's
-one deliberate red — a shared-dispatcher seam and a trade-shaped sink, both with their reasons
-written down rather than quietly dropped.
+"Softlocks found" is the union of every detector's verdict, per item — missing-item strandings
+plus the subtler classes: regions sealed by a plot flag, items fatal to *use* somewhere, one-shot
+windows that close on a timer. "Guards shipped" counts the edit sites the patcher actually
+landed; KQ6's missing two are the suite's one deliberately-red test — a shared-dispatcher seam
+and a trade-shaped sink, each with its reason written down rather than quietly dropped.
+(King's Quest V, an SCI1-middle hybrid, is in progress on the `kq5` branch — detection complete,
+guards installed, playtest under way.)
+
+## How it works, briefly
+
+1. **Decompile** the game binary to a typed control-flow AST (JSON IR).
+2. **Abstract-interpret** that AST, composing path conditions into a game graph: guarded movement
+   edges, item acquisitions, item losses, register writes. Room art (PIC/VIEW) and obstacle
+   polygons are read too, since some gates are geometric and exist nowhere in the script.
+3. **Condense** the graph into strongly-connected components — regions you can wander freely.
+   Only the one-way edges between them can strand you, which is what makes the problem finite.
+4. **Find strandings**: an item obtainable before a crossing, unavailable after, still needed beyond.
+5. **Derive a guard** from the winning region — the condition under which the goal is still
+   reachable — and place it at the last point where the player can still comply. Item-wasting
+   dead ends are neutralized separately, with a *"Just kidding!"* message that prevents you from
+   wasting the needed item, and no score penalty.
+6. **Recompile and emit.** The patched game is now playable normally (e.g. in ScummVM or DOSBox).
+
+Longer version in [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md); per-file map in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); current KQ6 status in
+[`docs/KQ6-STATUS.md`](docs/KQ6-STATUS.md); LB2's derivation log in
+[`docs/LB2-ORACLE.md`](docs/LB2-ORACLE.md).
 
 ## Install
 
@@ -107,61 +179,6 @@ Loose `script.NNN` files override the mapped resource, so `RESOURCE.MAP` and the
 modified and the patch reverts by deleting files. Point it at a **copy** of the game, never at
 your only one.
 
-## What it produces
-
-Abridged from a real run on LSL2 (`python3 -m pipeline <game>`, 2026-08-14):
-
-```
-[2] ANALYZE
-    anchors: start rm11, victory [86]  (discovered)
-    death signal: global101 == 1001, debug globals: [14, 100]  (derived)
-    101 rooms, 27 strongly-connected components, 40 gating registers
-    softlocks: 15 items + 1 disjunctive group(s)
-      - Sunscreen
-      ...
-[3] DERIVE
-    rm38 -> rm131: (and (gEgo has: 11) (gEgo has: 12) (gEgo has: 14) (gEgo has: 15))
-    rm57 -> rm58: (and (gEgo has: 21) (gEgo has: 24) (gEgo has: 25) (gEgo has: 26))
-    rm79 -> rm80: (or (gEgo has: 30) (gEgo has: 31))
-    rm131 -> rm138: (not (gEgo has: 13))
-    rm63: delete `(gEgo put: 21 -1)` (Hair_Rejuvenator)
-    verifying against the guarded model...
-    fixed 15 + 1 group(s); NEW softlocks introduced: none
-[4] PATCH
-    compiled 117/118 scripts
-    script.000  Main  10790 bytes
-    script.057  rm57  2938 bytes
-    ...
-Done. 10 patch files in build/patch
-```
-
-Note `rm131 -> rm138: (not (gEgo has: 13))`. Guards carry negative literals too: the Spinach Dip
-is fatal to be holding in rm138, so the fix is to refuse the crossing while you still have it —
-placed where you can still throw it overboard, because demanding you drop something you can no
-longer drop is a wall, which this project treats as worse than the bug.
-
-It refuses to emit anything if the guards fail verification, or if a script it edited will not
-compile.
-
-## How it works, briefly
-
-1. **Decompile** the game binary to a typed control-flow AST (JSON IR).
-2. **Abstract-interpret** that AST, composing path conditions into a game graph: guarded movement
-   edges, item acquisitions, item losses, register writes. Room art (PIC/VIEW) is read too, since
-   some gates are geometric and exist nowhere in the script.
-3. **Condense** the graph into strongly-connected components — regions you can wander freely. Only
-   the one-way edges between them can strand you, which is what makes the problem finite.
-4. **Find strandings**: an item obtainable before a crossing, unavailable after, still needed beyond.
-5. **Derive a guard** from the winning region — the condition under which the goal is still
-   reachable — and place it at the last point where the player can still comply. Item-wasting dead ends are also neutralized separately, 
-   with a *"Just kidding!"* message that prevents you from wasting the needed item and no score penalty.
-6. **Recompile and emit.** The patched game is now playable normally (eg, from ScummVM or DOSBox).
-
-Longer version in [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md); per-file map in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); current KQ6 status in
-[`docs/KQ6-STATUS.md`](docs/KQ6-STATUS.md); LB2's derivation log in
-[`docs/LB2-ORACLE.md`](docs/LB2-ORACLE.md).
-
 ## Running the tests
 
 ```
@@ -194,17 +211,21 @@ rather than declared; see `src/anchors.py`.
 
 ## Future work
 
-- **Required *actions* are not currently modeled** Currently we guard a transition that must not be taken while something it
-  needs is still required and no longer obtainable after the crossing. That covers a room edge, a plot flag advancing,
-  and an event the player does not control — a whale that swallows you, nightfall, an act break. But we do not model actions that, if not taken, will lead to a death
-  later. For example, in King's Quest V you have to throw a shoe at a cat to save a mouse who will later save you from bandits.
-- **State explosion in Quest For Glory games** QFG games have SO MUCH going on that the analyzer cannot complete. I suspect we can fix that by abstracting away
-  from player stats, combat, and health consumables (rations, etc.), but that work has not been done yet.
-- **SCI1.0** We have successfully modeled SCI0 and SCI1.1 games. SCI1.0 (e.g. KQ5) are a weird hybrid and have not been fully modeled yet. Those are next on the list.
-- **More games!** While there is no game-specific code in the engine, unfortunately Sierra does ship a lot of game-specific code in each game! That means that every
-  new game requires new work to extend the engine. Hopefully at some point this will converge to 0.
-- **AGI** AGI games should definitely be included, but that work is not started yet.
-
+- **Required *actions* are not currently modeled.** Currently we guard a transition that must not
+  be taken while something it needs is still required and no longer obtainable after the crossing.
+  That covers a room edge, a plot flag advancing, and an event the player does not control — a
+  whale that swallows you, nightfall, an act break. But we do not model actions that, if not
+  taken, lead to a death later. For example, in King's Quest V you have to throw a shoe at a cat
+  to save a mouse who will later save you from bandits.
+- **State explosion in Quest For Glory games.** QFG games have SO MUCH going on that the analyzer
+  cannot complete. I suspect we can fix that by abstracting away from player stats, combat, and
+  health consumables (rations, etc.), but that work has not been done yet.
+- **SCI1.0 / SCI1-middle.** SCI0 and SCI1.1 are modeled. King's Quest V — the weird hybrid in
+  between — is in progress on the `kq5` branch and most of the way there.
+- **More games!** There is no game-specific code in the engine, but Sierra shipped a lot of
+  game-specific code in each game, so every new title has so far required extending the analysis.
+  Hopefully at some point this converges to zero.
+- **AGI.** AGI games should definitely be included, but that work is not started yet.
 
 ## Licensing
 
