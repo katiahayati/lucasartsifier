@@ -848,12 +848,37 @@ def register_flip_frontier(s):
                     break
         return sites
 
+    def staged_flip_edges(R, v):
+        """Flip edges whose WRITE is unconstrained -- the crossing writes `v` whatever the
+        register held, so the req test above cannot see the entry. KQ5's harpy departure is
+        the case: `rm49->rm48` sets flag 54 with no flag-54 req of its own (you can sail home
+        again later). The crossing still ENTERS the seal -- from the pre-flip state -- but
+        the demand may bind ONLY there: a post-flip player re-crossing must never be walled
+        (the items it would demand are exactly what the flip sealed away). So these edges
+        carry a STAGE, the pre-flip test, for the spec builder to fold in as
+        `(or <already flipped> <items>)` -- and they qualify only when the flip is ONE-WAY
+        (every write of R anywhere is `v`), because with a writer back the pre-flip test
+        does not mean "first commitment"."""
+        writes = {sets[R] for metas in s._emeta.values()
+                  for (_rq, sets, _al) in metas if R in sets}
+        writes |= {vv for vs in (s._inroom.get(R) or {}).values() for vv in vs}
+        if writes != {v}:
+            return set()
+        sites = set()
+        for (a, b), metas in s._emeta.items():
+            for (req, sets, _alts) in metas:
+                if sets.get(R) == v and not req.get(R):
+                    sites.add((a, b))
+                    break
+        return sites
+
     out = defaultdict(lambda: {"items": set(), "groups": []})
     rows = list(s.register_strandings()) + [
         {"register": r["register"], "value": r["trap"], "item": r["item"]}
         for r in s.register_flip_strandings()]
     for r in rows:
         R, V = r["register"], r["value"]
+        stage = None
         if isinstance(R, tuple):
             comps = dict(zip(R, V))
             from_room = comps.get(prev)
@@ -863,6 +888,10 @@ def register_flip_frontier(s):
                     sites |= flip_edges(Ri, vi, from_room=from_room)
         else:
             sites = flip_edges(R, V)
+            if not sites and R != prev:
+                sites = staged_flip_edges(R, V)
+                if sites:
+                    stage = (R, V)
         need = set(r.get("still_needed_at") or ())
         # ...AND THE EDGE MUST LAND WHERE THE FLIP STRANDS (2026-08-14). `flip_edges` selects
         # by the WRITE -- an edge whose meta sets the value from a state that excludes it --
@@ -881,6 +910,14 @@ def register_flip_frontier(s):
             if need and s.crossing_retires_need(a, b, r["item"], need):
                 continue
             out[(a, b)]["items"].add(r["item"])
+            if stage is not None:
+                # rides the rec to the spec builder; a merge that finds two different stages
+                # on one edge, or a stage beside an unstaged claim, refuses the edge loudly
+                # rather than demanding at the wrong moment (none exist in the corpus today)
+                prior = out[(a, b)].get("stage")
+                if prior is not None and prior != stage:
+                    out[(a, b)]["stage_conflict"] = True
+                out[(a, b)]["stage"] = stage
     return dict(out)
 
 
@@ -1828,8 +1865,17 @@ def guard_specs(s):
     for src in (joint_frontier(s), pocket_frontier(s), pocket_carryout_frontier(s), rff):
         for (a, b), rec in src.items():
             if (a, b) in frontier:
-                frontier[(a, b)] = {"items": set(frontier[(a, b)]["items"]) | rec["items"],
-                                    "groups": frontier[(a, b)]["groups"] + rec.get("groups", [])}
+                old = frontier[(a, b)]
+                merged = {"items": set(old["items"]) | rec["items"],
+                          "groups": old["groups"] + rec.get("groups", [])}
+                # a STAGED claim (demand only pre-flip) merging with an unstaged one, or with
+                # a different stage, cannot share one condition -- refuse loudly downstream
+                if old.get("stage") != rec.get("stage") \
+                        or old.get("stage_conflict") or rec.get("stage_conflict"):
+                    merged["stage_conflict"] = True
+                elif rec.get("stage") is not None:
+                    merged["stage"] = rec["stage"]
+                frontier[(a, b)] = merged
             else:
                 frontier[(a, b)] = rec
     for (a, b), rec in sorted(frontier.items()):
@@ -1857,6 +1903,28 @@ def guard_specs(s):
         cond = (terms[0] if len(terms) == 1 else "(and " + " ".join(
             ([base[5:-1]] if base and base.startswith("(and ") else ([base] if base else []))
             + fold_atoms) + ")") if terms else None
+        stage = rec.get("stage")
+        if rec.get("stage_conflict"):
+            bad = bad + ["stage conflict: a staged (pre-flip-only) demand and an unstaged one "
+                         "met on this edge; demanding at the wrong moment walls a player, so "
+                         "nothing ships until the claims are reconciled"]
+        elif stage is not None and cond:
+            # THE STAGED FLIP EDGE (see register_flip_frontier.staged_flip_edges): the demand
+            # binds only on the COMMITTING crossing -- the one made pre-flip. A post-flip
+            # player re-crossing holds none of the sealed items by construction, and an
+            # unstaged demand here would wall them on the wrong side (KQ5: the returning
+            # sailor, shell-less forever, refused the boat home). The stage is spelled in the
+            # game's own flag test so the wrap reads at the site exactly what the model
+            # proved: `(or (proc0_12 54) <items>)` -- already committed, or fully equipped.
+            R2, _v2 = stage
+            ir2 = s.em.ir
+            base2 = getattr(ir2, "flag_synth_base", None)
+            testp2 = getattr(ir2, "flag_test_proc", None)
+            if base2 is not None and testp2 and R2 >= base2:
+                cond = "(or (%s %d) %s)" % (testp2, R2 - base2, cond)
+            else:
+                bad = bad + ["staged flip edge: no flag spelling derives for register %r, and "
+                             "an unstaged demand walls the post-flip crossing" % (R2,)]
         sp = {"site": "edge", "from_room": a, "to_room": b,
               "condition": cond,
               "items": sorted(rec2["items"]), "groups": [sorted(g) for g in rec2["groups"]],

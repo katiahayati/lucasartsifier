@@ -2140,6 +2140,55 @@ def _is_distance_cmp(node, binds):
     return _distance_subject(lhs) is not None
 
 
+def _is_ego_onctl(node):
+    """Is this node `(gEgo onControl: ...)` -- the ego's control-plane read, either mode?
+
+    Mode 1 samples the ego's origin pixel; mode 0 (or none) ORs its base rect. Both mean "the
+    ego is standing on this ground", which is all a zone test needs -- the rect form can only
+    touch MORE cells, and the walk's own 4px grid already blocks a cell any lethal pixel is
+    in, so the point reading under-claims by at most an ego's footprint."""
+    if not (isinstance(node, dict) and node.get("t") == "Send"):
+        return False
+    try:
+        recv, msgs = I.send_pairs(node)
+    except Exception:                                      # noqa: BLE001
+        return False
+    return I.is_global(recv, 0) and any(s == "onControl" for s, _ in msgs)
+
+
+def _ctl_masks(node, out):
+    """Collect the control-color masks this condition ASSERTS the ego is standing on.
+
+    `(& (gEgo onControl: ...) M)` is the SCI idiom for "the ego touches a colour in M"
+    (docs/SCI1.1-SEMANTICS.md §3: kOnControl returns the 1<<colour bitmask). Same connective
+    discipline as `_near_bounds`: descend `And` only -- an `Or` asserts nothing about either
+    side and a negation asserts the complement, and both keep the zone out, which is the
+    direction that does not invent a wall. KQ5's harpy patrol is the motivating spelling:
+    `(if (& (global0 onControl: 0) $0002) ... (setScript: harpyScript))`."""
+    if not isinstance(node, dict):
+        return
+    if node.get("t") == "And":
+        for k in (node.get("kids") or []):
+            _ctl_masks(k, out)
+        return
+    if node.get("t") in ("BinAnd", "BitAnd"):
+        ks = node.get("kids") or []
+        if len(ks) != 2:
+            return
+        a, b = ks
+        if _is_ego_onctl(a) and I.as_int(b) is not None:
+            out.append(I.as_int(b))
+        elif _is_ego_onctl(b) and I.as_int(a) is not None:
+            out.append(I.as_int(a))
+
+
+def _is_ctl_cmp(node):
+    """The conjunct IS a `(& (gEgo onControl:) mask)` zone test."""
+    got = []
+    _ctl_masks(node, got)
+    return bool(got)
+
+
 def _is_script_running(node):
     """`(<obj> script:)` or a bare `script` property -- IS A CUTSCENE RUNNING RIGHT NOW.
 
@@ -2165,25 +2214,36 @@ def _is_script_running(node):
     return any(sel == "script" for sel, _ in msgs)
 
 
-def _unconditionally_lethal(conds, binds):
-    """Does this arm say "inside the radius, FULL STOP", or only "inside the radius, and..."?
+def _unconditionally_lethal(conds, binds, kind="disc"):
+    """Does this arm say "inside the zone, FULL STOP", or only "inside the zone, and..."?
 
-    A gate built on this claims the disc is ground the player may not cross. If the arm carries
-    any OTHER condition -- a room local, a view, a `status`, an `onControl` -- then the disc is
-    only sometimes lethal, and barring the exit outright over-states it. So anything that is
-    not a distance comparison or a cutscene-running test disqualifies the arm, in either
-    polarity: this is a syntactic "mentions nothing else" test, which is the reading that
-    refuses rather than the one that reasons.
+    A gate built on this claims the zone is ground the player may not cross. If the arm carries
+    any OTHER condition -- a room local, a view, a `status` -- then the zone is only sometimes
+    lethal, and barring the exit outright over-states it. So anything that is not the zone's
+    OWN test (a distance comparison for a disc, an onControl mask for a control zone) or a
+    cutscene-running test disqualifies the arm, in either polarity: this is a syntactic
+    "mentions nothing else" test, which is the reading that refuses rather than the one that
+    reasons. The kinds are mutually disqualifying on purpose -- an onControl conjunct on a
+    disc arm (or a distance conjunct on a control arm) is exactly the "and..." this exists to
+    refuse, and the disc funnel below was measured with onControl in the refusing set.
 
-    ⭐ MEASURED, and this is what makes it a rule rather than a preference: of the 17 corpus
-    arms that arm something, EXACTLY ONE passes -- KQ5's snake. Every other one is conditional.
-    KQ6's `zombie` needs `(not local73)`, its `deadGuy` pair need `(not local61)` and a mover,
-    LB2's `rat3` needs `(== (gEgo view:) 732)` and `(not local5)`, QFG's `antwerp` needs
-    `(== status 1)`. Those hazards are real, but "walk here and die" is not what their scripts
-    say, and a wall is not what we may build out of them."""
+    ⭐ MEASURED (discs), and this is what makes it a rule rather than a preference: of the 17
+    corpus arms that arm something, EXACTLY ONE passes -- KQ5's snake. Every other one is
+    conditional. KQ6's `zombie` needs `(not local73)`, its `deadGuy` pair need `(not local61)`
+    and a mover, LB2's `rat3` needs `(== (gEgo view:) 732)` and `(not local5)`, QFG's
+    `antwerp` needs `(== status 1)`. Those hazards are real, but "walk here and die" is not
+    what their scripts say, and a wall is not what we may build out of them.
+    ⭐ MEASURED (ctl zones), 2026-08-19b, at this filter 44 arms pass corpus-wide -- KQ4 39,
+    KQ5 5, LSL2/KQ6/LB2 0 -- because `onControl` is ALSO how rooms spell walk-out triggers
+    (KQ4's stair rooms, KQ5's shop exits: leaveRoom/walkTo7/walkOutScript machines). The
+    funnel's next conjunct does the real work: `_room_unavoidable` in `_apply_hazard_gates`
+    keeps only arms whose armed machine is an unsurvivable death, and exactly ONE survives --
+    KQ5's rm049 harpy patrol, the play-found return kill. Zero gates move on the four frozen
+    games."""
+    own = (lambda a: _is_distance_cmp(a, binds)) if kind == "disc" else _is_ctl_cmp
     for (test, _pol) in conds:
         for a in _conjuncts(test):
-            if not (_is_distance_cmp(a, binds) or _is_script_running(a)):
+            if not (own(a) or _is_script_running(a)):
                 return False
     return True
 
@@ -2222,11 +2282,15 @@ def positional_hazards(ir, script):
             for conds, body in shape[1]:
                 if body is None:
                     continue
-                zones = []
+                zones, masks = [], []
                 for (test, pol) in conds:
                     if pol:                        # a FAILED prior arm says the ego is FAR, and
                         _near_bounds(test, binds, zones)     # far is not a hazard
-                if not zones or not _unconditionally_lethal(conds, binds):
+                        _ctl_masks(test, masks)
+                if zones and masks:
+                    continue                       # a mixed trigger is conditional either way
+                kind = "disc" if zones else ("ctl" if masks else None)
+                if kind is None or not _unconditionally_lethal(conds, binds, kind):
                     continue
                 armed = []
                 for send in I.sends(body):
@@ -2239,7 +2303,11 @@ def positional_hazards(ir, script):
                 if not armed:
                     continue
                 for (who, r) in zones:
-                    out.append((o.name if who == "SELF" else who, r, armed))
+                    out.append((o.name if who == "SELF" else who, ("disc", r), armed))
+                # a control-mask trigger's host is the machine OWNING the doit -- the zone is
+                # ground, not an object, so the host matters only for liveness (who arms it)
+                for m in masks:
+                    out.append((o.name, ("ctl", m), armed))
     return out
 
 
@@ -2700,6 +2768,7 @@ class IrSccReach(SccReach):
     """SccReach fed from the JSON-IR model instead of model.Game (same algorithm)."""
     def __init__(self, em):
         self.em = em
+        self._gfx_game = None          # lazy resource reader for control-zone hazard gates
         self.g = _ItemNames(vocab.item_names(em.ir))
         (self.edges, self.edge_kind, self.sources, self.drops, self.required,
          self.guard_required, self.source_guards, self.required_guards) = build_maps(em)
@@ -2994,6 +3063,43 @@ class IrSccReach(SccReach):
                         dom[R].add(v)
         return dom
 
+    def _ctl_zone_cells(self, script, mask):
+        """The pixels of this room's PIC whose control colour is in `mask` -- a hazard zone.
+
+        `onControl` returns `1 << colour` bits (docs/SCI1.1-SEMANTICS.md §3), so mask $0002 is
+        control colour 1. The PIC number is the room object's own `picture` property, and the
+        plane is `sci_gfx.render_control` -- the KQ4-era renderer, which reads SCI1 pics too
+        (the extended-op table dispatch, 2026-08-19b). Anything unreadable -- no room object,
+        no picture literal, a pic the renderer refuses -- returns nothing, and the caller
+        makes no wall claim: refusal toward NOT barring, like every other conjunct here."""
+        import polygons as PG_
+        rm = PG_._room_object(script, self.em.ir)
+        pic = rm.props.get("picture") if rm is not None else None
+        if not isinstance(pic, int):
+            return None
+        rd = getattr(self.em.cfg, "resource_dir", None)
+        if not rd:
+            return None
+        try:
+            import sci_gfx
+            from sci_resource import Sci0Game
+            game = self._gfx_game
+        except Exception:                                  # noqa: BLE001
+            return None
+        if game is None:
+            try:
+                game = self._gfx_game = Sci0Game(rd)
+            except Exception as e:                         # noqa: BLE001
+                _degraded_model("hazard zone: resources unreadable (%s)" % e)
+                return None
+        try:
+            con = sci_gfx.render_control(game, pic)
+        except Exception as e:                             # noqa: BLE001
+            _degraded_model("hazard zone: pic %s control plane (%s)" % (pic, e))
+            return None
+        W = 320
+        return {(i % W, i // W) for i, c in enumerate(con) if c < 16 and (1 << c) & mask}
+
     def _apply_hazard_gates(self):
         """A POSITIONAL DEATH IS A WALL. Gate the exits a stationary killer's radius seals.
 
@@ -3063,15 +3169,35 @@ class IrSccReach(SccReach):
             except Exception as e:                          # noqa: BLE001
                 _degraded_model("hazard gate: cast conditions rm%d (%s)" % (room, e))
                 continue
-            for (name, radius, armed) in found:
+            for (name, zone, armed) in found:
                 lethal = sorted(m for m in armed if m in unavoidable)
-                if not lethal or not _hazard_is_stationary(script, name):
+                if not lethal:
                     continue
-                obj = next((o for o in script.objects if o.name == name), None)
-                x, y = (obj.props.get("x"), obj.props.get("y")) if obj else (None, None)
-                if not isinstance(x, int) or not isinstance(y, int):
-                    continue
-                gs = cast.get(name)
+                if zone[0] == "disc":
+                    # a disc is drawn around the OBJECT, so the object must stand still and
+                    # its absence condition comes from the cast (the snake's shape, unchanged)
+                    if not _hazard_is_stationary(script, name):
+                        continue
+                    obj = next((o for o in script.objects if o.name == name), None)
+                    x, y = (obj.props.get("x"), obj.props.get("y")) if obj else (None, None)
+                    if not isinstance(x, int) or not isinstance(y, int):
+                        continue
+                    gs = cast.get(name)
+                    discs, cells = [(x, y, zone[1])], ()
+                    where = {"at": (x, y), "radius": zone[1]}
+                else:
+                    # a control zone is GROUND -- it cannot move, and its trigger's host is a
+                    # machine, live exactly when something arms it (KQ5's harpy patrol:
+                    # harpyInitScript armed in init under flag 54). The liveness condition is
+                    # the cast condition when the host has one, else the arming sites' own
+                    # guards (`extract.arming_conditions`) -- and every site must carry one,
+                    # the same "always live means no absence to demand" contract as the cast.
+                    gs = cast.get(name) or X.arming_conditions(script, name)
+                    zc = self._ctl_zone_cells(script, zone[1])
+                    if not zc:
+                        continue        # unreadable pic or empty zone: no wall claim
+                    discs, cells = [], zc
+                    where = {"mask": zone[1], "zone_px": len(zc)}
                 if not gs or any(g is None for g in gs):
                     continue                    # always in the cast: no absence to demand
                 absent = _negate(gs[0] if len(gs) == 1 else GOr(list(gs)))
@@ -3079,10 +3205,10 @@ class IrSccReach(SccReach):
                 if not req:
                     continue                    # nothing readable to demand -> leave it free
                 for edge, dst in sorted(PG.hazard_barred_exits(
-                        ir, room, [(x, y, radius)]).items()):
+                        ir, room, discs, cells=cells).items()):
                     self.hazard_gates.append({
                         "room": room, "edge": edge, "dst": dst, "hazard": name,
-                        "at": (x, y), "radius": radius, "machine": lethal,
+                        **where, "machine": lethal,
                         "req": {R: sorted(v) for R, v in sorted(req.items())}})
                     key = (room, dst)
                     out = []
@@ -3096,6 +3222,31 @@ class IrSccReach(SccReach):
                             out.append((r2, sets, alts))
                     if out:
                         self._emeta[key] = out
+                # A HAZARD PRICES IN-ROOM PICKUPS LIKE IT PRICES EXITS. An item whose pickup
+                # spot is walkable with the hazard gone and sealed with it live is exactly as
+                # gone as a room past a barred edge -- KQ5's Shell: the conch sits at
+                # (120, 100) on the harpy beach, the kill zone stands between it and the boat
+                # landing, so a player who sailed off without it cannot safely return for it,
+                # which is the play-found death of 2026-08-19b. The absence condition is
+                # CONJOINED onto every acquisition guard for (item, room) -- the source-side
+                # store `reobtainable_rooms` and `register_strandings` already read -- so the
+                # value-trapped walk sees the pickup die at the flip with no new machinery.
+                # The pickup spot is the literal position of the object the get-performing
+                # machine itself stages (refused when ambiguous), and the same
+                # some-layout-free / no-layout-hurt rule as the edges applies.
+                for item, spot in sorted(PG.item_pickup_spots(script).items()):
+                    if room not in self.sources.get(item, ()):
+                        continue
+                    verdict = PG.hazard_bars_point(ir, room, spot, discs, cells=cells)
+                    if not verdict:
+                        continue
+                    slots = self.source_guards.setdefault(item, {})
+                    gs2 = slots.get(room) or [None]
+                    slots[room] = [absent if g is None else GAnd([g, absent]) for g in gs2]
+                    self.hazard_gates.append({
+                        "room": room, "pickup": item, "at": spot, "hazard": name,
+                        **where, "machine": lethal,
+                        "req": {R: sorted(v) for R, v in sorted(req.items())}})
 
     def _apply_death_traps(self):
         """Conjoin `death_traps`' disjunction onto every way OUT of a room whose arrival kills you.
@@ -4751,7 +4902,8 @@ class IrSccReach(SccReach):
                 def _flip_at(r, ban=frozenset()):
                     key = (r, ban)
                     if key not in per_room:
-                        a = {q for (q, _v) in self._walk(R, ban, starts={(r, w)})}
+                        a_st = self._walk(R, ban, starts={(r, w)})
+                        a = {q for (q, _v) in a_st}
                         # ...and the pre-flip player must be one who can BE there without the
                         # item. `states` is the permissive product; inside a sealed region it
                         # contains arrivals no item-less player ever makes, and those vouch
@@ -4759,10 +4911,25 @@ class IrSccReach(SccReach):
                         # prev==410 "reaching" the coin at rm430, both in the labyrinth).
                         b0 = ({(r2, v) for (r2, v) in states if r2 == r and v != w}
                               & _live(R, ban))
-                        b = ({q for (q, _v) in self._walk(R, ban, starts=b0)}
+                        b_st = self._walk(R, ban, starts=b0) if b0 else None
+                        b = ({q for (q, _v) in b_st}
                              if b0 else None)       # None: no pre-flip player -> an arrival
-                        per_room[key] = (a, b)
+                        per_room[key] = (a, b, a_st, b_st)
                     return per_room[key]
+
+                def _live_srcs(it, srcs, walk_states):
+                    """Source rooms this walk reaches WITH A LIVE ACQUISITION -- reaching the
+                    room is not reaching the item when every acquisition guard there is dead
+                    at the walked value (`_source_live`, the same standard `reobtainable_rooms`
+                    applies). KQ5's Shell forced the distinction: the beach stays reachable
+                    after the departure flip, but the pickup's guard now carries the harpy
+                    wall's flag-54-clear demand, so the post-flip walk stands in the source
+                    room and cannot have the item."""
+                    if walk_states is None:
+                        return set()
+                    fit = frozenset({it})
+                    return {q[0] for q in walk_states
+                            if q[0] in srcs and self._source_live(fit, q, R)}
                 if goal and not (goal & rooms_after):
                     continue                        # already unwinnable: a dead end, not a softlock
                 for it in sorted(self.required):
@@ -4778,7 +4945,9 @@ class IrSccReach(SccReach):
                         # neither walk is worth running. Pure speed: the rows are the same
                         # either way, and it is the difference between one walk pair per
                         # (flip, room) and one per (flip, room, item).
-                        if (srcs & _flip_at(r)[0]) and it not in _priced_in_region(r):
+                        _ap, _bp, ast_p, _bs = _flip_at(r)
+                        if _live_srcs(it, srcs, ast_p) \
+                                and it not in _priced_in_region(r):
                             continue
                         # ONE standard for both halves of the comparison. The question the row
                         # asks is about a player who does NOT hold the item -- can they still
@@ -4787,14 +4956,15 @@ class IrSccReach(SccReach):
                         # this change did to leave old rows untouched, keeps the very
                         # circularity the ban exists to remove: LB2's pressPass rows survived
                         # only because the pre-flip walk fetched the pass while holding it.
-                        a, b = _flip_at(r, ban)
+                        a, b, a_st, b_st = _flip_at(r, ban)
                         if b is None:
                             continue                # no item-less pre-flip player -> arrival
                         if goal and not (goal & _flip_at(r, frozenset())[0]):
                             continue                # that flip is a dead end, not a softlock
                         #   ^ PERMISSIVE deliberately: a flip is a softlock only if some
                         #     equipped player still wins; the item-less one provably cannot.
-                        if (srcs & a) or not (srcs & b):
+                        if _live_srcs(it, srcs, a_st) \
+                                or not _live_srcs(it, srcs, b_st):
                             continue                # still obtainable, or never was from here
                         if self.required[it] & a:
                             strand_at.append(r)

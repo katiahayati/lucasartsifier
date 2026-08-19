@@ -157,7 +157,7 @@ class _Screen:
                     bitNo += 1; bitmap >>= 1
 
 
-def _render(pic_bytes):
+def _render(pic_bytes, vga=False):
     d = pic_bytes
     i = 0
     while i < len(d) and d[i] < 0xF0: i += 1   # skip any header bytes to first opcode
@@ -221,8 +221,23 @@ def _render(pic_bytes):
         elif op == 0xFA:
             while nonop(): getTex(); x, y = getAbs(); s.pattern(x, y, pic_color, pic_pri, pic_ctl, pat_code, pat_tex)
         elif op == 0xFE:
+            # THE EXTENDED-OP TABLE IS THE ONE PLACE SCI0 AND SCI1 PICS DISAGREE (ScummVM
+            # GfxPicture::drawVectorData dispatches PIC_OPX_EGA_* vs PIC_OPX_VGA_* on the
+            # resource type). Everything here is palette/priority/embedded-cel framing the
+            # CONTROL plane never reads -- only the skip sizes matter, and getting them from
+            # the wrong table desyncs the stream (KQ5's pic 49 opened with `fe 02` = VGA
+            # set-palette, 1284 bytes; the EGA table read it as mono0, 41 bytes, and crashed
+            # 3 bytes later). `vga` is recognised from the resource map's own shape.
             sub = rd()
-            if sub == 0:
+            if vga:
+                if sub == 0:                       # set palette entries: (index, color) pairs
+                    while nonop(): rd(); rd()
+                elif sub == 1:                     # embedded view cel (the visual background)
+                    getAbs(); sz = d[i] | (d[i + 1] << 8); i += 2 + sz
+                elif sub == 2: i += 1284           # set palette: 256 map + 4 stamp + 256*4
+                elif sub == 3: i += 4              # priority bands, equidistant
+                elif sub == 4: i += 14             # priority bands, explicit
+            elif sub == 0:
                 while nonop():
                     px = rd(); v = rd()
                     if px < len(pal): pal[px] = v
@@ -263,7 +278,8 @@ def _vector_data(d):
 
 def render_control(game: Sci0Game, pic_num: int) -> bytearray:
     """Return the 320x190 control plane of a PIC (one byte per pixel, control color 0..15)."""
-    return _render(_vector_data(game.get(PIC, pic_num))).con
+    return _render(_vector_data(game.get(PIC, pic_num)),
+                   vga=getattr(game, "sci1", False)).con
 
 
 # ============================== VIEW decoder ================================

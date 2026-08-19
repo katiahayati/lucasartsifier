@@ -53,6 +53,10 @@ class Sci0Game:
     def _parse_map(self):
         data = open(self.map_path, "rb").read()
         secs = self._sci1_sections(data)
+        # The map's shape is also the PIC dialect: an SCI1 map means SCI1 pics, whose 0xFE
+        # extended-op table differs from SCI0's (sci_gfx._render dispatches on this). Recorded
+        # here because it is RECOGNISED from the same evidence, not declared per game.
+        self.sci1 = secs is not None
         if secs is not None:
             return self._parse_map_sci1(data, secs)
         entries = {}

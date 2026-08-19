@@ -479,6 +479,184 @@ def _arrival_seeds(rm):
     return kept if kept else [pt for (_k, pt) in posns]
 
 
+def _tagged_seeds(script, rm, ir):
+    """`[(x, y, from_room|None)]` -- arrival seeds tagged with WHICH ROOM the arm arrives from,
+    plus the control-return points of the room's staged arrivals.
+
+    Two extensions over `_arrival_seeds`, both forced by KQ5's rm049 (the harpy beach,
+    play-found 2026-08-19b), both scoped to `hazard_barred_exits` -- `dead_nav_exits` keeps
+    the narrower seed set its four play-validated games froze:
+
+      * THE TAG. A walk-in posn guarded on `(== <prevRoom> K)` is where a player FROM room K
+        stands, and it must not defeat the bar on the edge BACK toward K: rm049's one literal
+        posn is the from-rm50 walk-in at (215, 100), east of the kill zone, from which the
+        east exit is trivially safe -- but a player standing there came FROM the east, and
+        the bar exists for everyone else. `hazard_barred_exits` excludes, per judged edge,
+        the seeds tagged with that edge's own destination. Read off the arm's path condition
+        (`extract.prev_room_global`); an arm that names no prevRoom tags None and is never
+        excluded -- the direction that defeats bars rather than invents them.
+      * THE STAGED CHAIN. A staged arrival's control returns somewhere the staging MACHINES
+        decide, and dropping it entirely lost the boat landing -- rm049's only non-interior
+        entry. Every literal `posn:`/`setMotion: MoveTo|PolyPath` coordinate in the staging
+        arm's machine chain (followed through `setScript:` handoffs; machines that
+        `newRoom:` away contribute nothing -- their end is not an in-room control return)
+        is close enough for a flood-fill walk: the exact disembark offset is spelled
+        relative to the vehicle (`(- (theBoat x:) 13)`), and the vehicle's own landing
+        (`MoveTo 143 140`) is in the same chain. A blocked seed is dropped by the walk
+        itself, so a coordinate that lands inside an obstacle costs nothing."""
+    from extract import prev_room_global, walk_stream, _conj
+    prev_g = prev_room_global(ir) if ir is not None else None
+    init = rm.methods.get("init")
+    if init is None:
+        return []
+
+    def _prev_tag(pc):
+        g = _conj([p for p in pc if p is not None])
+        if g is None or prev_g is None:
+            return None
+        for a in _guard_atoms(g):
+            k = _eq_reads(a, prev_g)
+            if k is not None:
+                return k
+        return None
+
+    seeds, staged_arms = [], []
+
+    def leaf(n, pc):
+        if n.get("t") != "Send":
+            return
+        try:
+            recv, msgs = I.send_pairs(n)
+        except Exception:                                  # noqa: BLE001
+            return
+        for sel, ps in msgs:
+            if sel == "setScript" and ps and (
+                    (isinstance(recv, dict) and recv.get("t") == "Self")
+                    or I.is_global(recv, 0) or I.is_global(recv, 2)):
+                tgt = ps[0].get("name") if isinstance(ps[0], dict) else None
+                if tgt:
+                    staged_arms.append((tgt, _prev_tag(pc)))
+            if sel == "posn" and len(ps) >= 2 and I.is_global(recv, 0):
+                x, y = I.as_int(ps[0]), I.as_int(ps[1])
+                if x is not None and y is not None:
+                    seeds.append((x, y, _prev_tag(pc)))
+
+    walk_stream(init, [], leaf)
+    # the staged chains: literal placements in the machines the staging arm hands through
+    names = {o.name: o for o in script.objects}
+    for (m0, tag) in staged_arms:
+        frontier, visited = [m0], set()
+        chain_placements = []          # accumulated ACROSS the chain: the disembark offset
+        #                                and its vehicle anchor live in different machines
+        while frontier:
+            mn = frontier.pop()
+            if mn in visited or mn not in names:
+                continue
+            visited.add(mn)
+            leaves_room = False
+            placements, handoffs = [], []
+            for body in names[mn].methods.values():
+                for n in I.walk(body):
+                    if not (isinstance(n, dict) and n.get("t") == "Send"):
+                        continue
+                    try:
+                        _r, msgs = I.send_pairs(n)
+                    except Exception:                      # noqa: BLE001
+                        continue
+                    for sel, ps in msgs:
+                        if sel == "newRoom":
+                            leaves_room = True
+                        elif sel == "setScript":
+                            handoffs += [p.get("name") for p in ps
+                                         if isinstance(p, dict) and p.get("name") in names]
+                        elif sel == "posn" and len(ps) >= 2:
+                            x, y = _fold_coord(ps[0], ir), _fold_coord(ps[1], ir)
+                            if x is not None and y is not None:
+                                placements.append((x, y))
+                        elif sel == "setMotion" and len(ps) >= 3 and isinstance(ps[0], dict) \
+                                and ps[0].get("name") in ("MoveTo", "PolyPath"):
+                            x, y = _fold_coord(ps[1], ir), _fold_coord(ps[2], ir)
+                            if x is not None and y is not None:
+                                placements.append((x, y))
+            if not leaves_room:
+                chain_placements += placements
+            frontier += [h for h in handoffs if h not in visited]
+        seeds += [(x, y, tag) for (x, y) in _fold_relative(chain_placements)]
+    return seeds
+
+
+def _fold_coord(node, ir):
+    """A literal coordinate, or a deferred `("rel", axis, offset)` for the one relative
+    spelling a disembark uses: `(- (<vehicle> x:) 13)`, whose property read the IR lowers to
+    a synthetic global (`ir._obj_prop_index[g] = (script, 'x'|'y')`). Resolved against the
+    chain's own literal placements by `_fold_relative` -- here the shape is only recognised."""
+    v = I.as_int(node)
+    if v is not None:
+        return v
+    if isinstance(node, dict) and node.get("t") in ("Add", "Sub"):
+        ks = node.get("kids") or []
+        if len(ks) == 2 and I.as_int(ks[1]) is not None:
+            base = ks[0]
+            if (isinstance(base, dict) and base.get("t") == "Variable"
+                    and base.get("vtype") == "Global" and ir is not None):
+                key = (getattr(ir, "_obj_prop_index", None) or {}).get(base.get("index"))
+                if key and key[1] in ("x", "y"):
+                    off = I.as_int(ks[1])
+                    return ("rel", key[1], off if node["t"] == "Add" else -off)
+    return None
+
+
+def _fold_relative(placements):
+    """Resolve deferred relative coordinates against the chain's OWN literal placements.
+
+    A `("rel", axis, off)` folds only when every fully-literal placement in the chain agrees
+    on that axis -- with one literal anchor (the vehicle's landing) the disembark offset
+    resolves exactly; with several disagreeing anchors the read is ambiguous and the
+    placement is dropped rather than guessed."""
+    anchors_x = {x for (x, y) in placements if isinstance(x, int) and isinstance(y, int)}
+    anchors_y = {y for (x, y) in placements if isinstance(x, int) and isinstance(y, int)}
+
+    def fold(c, axis, anchors):
+        if isinstance(c, int):
+            return c
+        if isinstance(c, tuple) and c[1] == axis and len(anchors) == 1:
+            return next(iter(anchors)) + c[2]
+        return None
+
+    out = []
+    for (x, y) in placements:
+        fx, fy = fold(x, "x", anchors_x), fold(y, "y", anchors_y)
+        if fx is not None and fy is not None:
+            out.append((fx, fy))
+    return out
+
+
+def _guard_atoms(g):
+    """Flatten a guard expression at its conjunctions."""
+    from guard_ast import GAnd
+    if isinstance(g, GAnd):
+        out = []
+        for k in getattr(g, "kids", ()):
+            out += _guard_atoms(k)
+        return out
+    return [g]
+
+
+def _eq_reads(atom_g, reg):
+    """`K` when this guard atom pins register `reg` to the single value K, else None.
+
+    The atom is `guard_ast.Pred(kind="CMP", var=<register>, op="==", value=K)` -- the shape
+    the extractor lowers `(== global12 50)` to."""
+    if (getattr(atom_g, "kind", None) == "CMP" and getattr(atom_g, "op", None) == "=="
+            and getattr(atom_g, "var", None) == reg):
+        v = getattr(atom_g, "value", None)   # Pred stores the literal as its source TEXT
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
 def _same_arm(a, b):
     """Two ARM PATHS (a chain of (branch-node, arm-index) pairs) describe the same arm when
     one is a prefix of the other -- the shorter reached everything the longer did. Distinct
@@ -524,7 +702,7 @@ def _exit_zones(ir, gw, gh, step, horizon=None):
     return out
 
 
-def _walk_from_arrival(polys, seeds_px, discs=(), step=4):
+def _walk_from_arrival(polys, seeds_px, discs=(), step=4, cells=()):
     """Flood the walkable area from the arrival points, treating `discs` as solid.
 
     `discs` are `(cx, cy, r)` LETHAL ZONES. A zone is modelled as an obstacle because that is
@@ -535,6 +713,7 @@ def _walk_from_arrival(polys, seeds_px, discs=(), step=4):
     Returns `(reached_cells, gw, gh, live_seeds)`."""
     blocked, gw, gh = _blocked_mask(polys, step)
     b = bytearray(blocked)
+    zone = bytearray(len(b))
     for (cx, cy, r) in discs:
         rr = r * r
         for gy in range(gh):
@@ -542,11 +721,33 @@ def _walk_from_arrival(polys, seeds_px, discs=(), step=4):
                 dx = gx * step + step // 2 - cx
                 dy = gy * step + step // 2 - cy
                 if dx * dx + dy * dy < rr:
-                    b[gy * gw + gx] = 1
+                    zone[gy * gw + gx] = 1
+    # a CELL zone (control-plane pixels): any grid cell containing a lethal pixel is solid --
+    # the quantization can only widen a zone by under one step, which for a lethal zone is
+    # the faithful direction (an ego is wider than a grid cell to begin with)
+    for (px, py) in cells:
+        gx, gy = px // step, py // step
+        if 0 <= gx < gw and 0 <= gy < gh:
+            zone[gy * gw + gx] = 1
+    for i, z in enumerate(zone):
+        if z:
+            b[i] = 1
     seeds = []
     for (x, y) in seeds_px:
         gx = min(max(x // step, 0), gw - 1)
         gy = min(max(y // step, 0), gh - 1)
+        # a seed on a WALL cell is a quantization casualty, not a wrong seed -- a disembark
+        # point sits at the walkable margin by nature (rm049's boat drops the ego one grid
+        # cell into the water polygon) -- so it snaps to an adjacent open cell, at most one
+        # step (4px) of tolerance, well under an ego's own footprint. A seed on LETHAL ground
+        # stays dropped, before and after snapping: arriving there is dying there.
+        if blocked[gy * gw + gx] and not zone[gy * gw + gx]:
+            for (dx, dy) in ((1, 0), (-1, 0), (0, 1), (0, -1),
+                             (1, 1), (1, -1), (-1, 1), (-1, -1)):
+                nx, ny = gx + dx, gy + dy
+                if 0 <= nx < gw and 0 <= ny < gh and not blocked[ny * gw + nx]:
+                    gx, gy = nx, ny
+                    break
         if not b[gy * gw + gx]:
             seeds.append((gx, gy))
     q, seen = deque(seeds), set(seeds)
@@ -561,7 +762,7 @@ def _walk_from_arrival(polys, seeds_px, discs=(), step=4):
     return seen, gw, gh, seeds
 
 
-def hazard_barred_exits(ir, room, discs):
+def hazard_barred_exits(ir, room, discs, cells=()):
     """`{edge: declared_room}` -- exits the ego can walk to, but not while `discs` are lethal.
 
     The geometric half of a positional death gate. `discs` are `(x, y, radius)` circles around a
@@ -590,31 +791,130 @@ def hazard_barred_exits(ir, room, discs):
     so an unread region layout costs coverage, never soundness."""
     script = ir.scripts.get(room)
     rm = _room_object(script, ir) if script else None
-    if rm is None or not discs:
+    if rm is None or not (discs or cells):
         return {}
     from extract import NAV_SELECTORS
     declared = [(d, rm.props.get(d)) for d in NAV_SELECTORS
                 if rm.props.get(d) and rm.props.get(d) != 0xffff]
     if not declared:
         return {}
-    polys = [p for pc, ps in room_obstacles(ir, script)
-             if not any(a is not None for a in pc) for p in ps]
-    seeds_px = _arrival_seeds(rm)
-    if not polys or not seeds_px:
+    # OBSTACLES BY LAYOUT. Unconditional polygons hold in every layout; a room that swaps
+    # whole layouts behind a condition (rm049 keeps one wall set before the heal and another
+    # after) contributes each arm as an ALTERNATIVE the player might be walking under. The
+    # bar must hold under all of them: an exit is claimed only if SOME layout reaches it
+    # hazard-free (the edge is real) and NO layout reaches it with the hazard live (nobody
+    # crosses). The old unconditional-only reading is the degenerate one-layout case -- and
+    # for a room with no unconditional polygons at all it had NO walkable-area model and
+    # refused every claim, which is what hid the harpy bar.
+    base = []
+    layouts = {}
+    for pc, ps in room_obstacles(ir, script):
+        if not any(a is not None for a in pc):
+            base.extend(ps)
+        else:
+            layouts.setdefault(tuple(map(repr, pc)), []).extend(ps)
+    poly_sets = [base + ps for ps in layouts.values()] if layouts else ([base] if base else [])
+    tagged = _tagged_seeds(script, rm, ir)
+    if not poly_sets or not tagged:
         return {}
     step = 4
-    free, gw, gh, _s = _walk_from_arrival(polys, seeds_px, (), step)
-    hurt, _gw, _gh, _s2 = _walk_from_arrival(polys, seeds_px, discs, step)
-    zones = _exit_zones(ir, gw, gh, step)
-    if zones is None:
-        return {}
+    zones = None
     out = {}
     for d, dst in declared:
-        if d not in zones:
+        # PER JUDGED EDGE, a seed whose own arrival arm names this edge's destination as the
+        # previous room is excluded: that player came FROM the far side, and their walk-in
+        # spot proving the exit safe says nothing about anyone the bar is for (rm049's
+        # from-rm50 posn sits east of the kill zone and would defeat the east bar forever).
+        # Both walks run over the same filtered set so the free-side attribution matches.
+        seeds_px = [(x, y) for (x, y, frm) in tagged if frm != dst]
+        if not seeds_px:
             continue
-        if any(c in free for c in zones[d]) and not any(c in hurt for c in zones[d]):
+        free_any, hurt_any = False, False
+        for polys in poly_sets:
+            free, gw, gh, _s = _walk_from_arrival(polys, seeds_px, (), step)
+            hurt, _gw, _gh, _s2 = _walk_from_arrival(polys, seeds_px, discs, step,
+                                                     cells=cells)
+            if zones is None:
+                zones = _exit_zones(ir, gw, gh, step)
+                if zones is None:
+                    return {}
+            if d not in zones:
+                break
+            free_any = free_any or any(c in free for c in zones[d])
+            hurt_any = hurt_any or any(c in hurt for c in zones[d])
+        if zones and d in zones and free_any and not hurt_any:
             out[d] = dst
     return out
+
+
+def item_pickup_spots(script):
+    """`{item: (x, y)}` -- where in this room each item is PICKED UP, when that is a place.
+
+    The `get: N` send names the item; the machine performing it stages the pickup around a
+    cast object with a literal position (KQ5's shell scene disposes the `shell` Prop at
+    (120, 100) in the same changeState). The spot is that object's declared (x, y); a machine
+    that references several differently-placed objects, or none, yields nothing -- refusal
+    toward no claim, since the consumer builds a wall on it."""
+    out = {}
+    for o in script.objects:
+        for body in o.methods.values():
+            items, spots = set(), set()
+            for n in I.walk(body):
+                if not (isinstance(n, dict) and n.get("t") == "Send"):
+                    continue
+                try:
+                    recv, msgs = I.send_pairs(n)
+                except Exception:                          # noqa: BLE001
+                    continue
+                rname = recv.get("name") if isinstance(recv, dict) else None
+                if rname:
+                    tgt = next((t for t in script.objects if t.name == rname), None)
+                    if tgt is not None:
+                        tx, ty = tgt.props.get("x"), tgt.props.get("y")
+                        # (0, 0) is SCI's "positioned at runtime" -- not a place (rm049's
+                        # glint declares it and is posn'ed onto the shell each init)
+                        if isinstance(tx, int) and isinstance(ty, int) and (tx, ty) != (0, 0):
+                            spots.add((tx, ty))
+                for sel, ps in msgs:
+                    if sel == "get" and ps and I.as_int(ps[0]) is not None:
+                        items.add(I.as_int(ps[0]))
+            if items and len(spots) == 1:
+                spot = next(iter(spots))
+                for it in items:
+                    out.setdefault(it, spot)
+    return out
+
+
+def hazard_bars_point(ir, room, spot, discs, cells=()):
+    """Is `spot` walkable with the hazard gone and sealed with it live -- under every layout?
+
+    The `hazard_barred_exits` question asked of a POINT (an in-room pickup) instead of an
+    edge band: some layout must reach it hazard-free (the pickup is real) and no layout may
+    reach it with the hazard live. Same seeds, same layout alternatives, same refusals."""
+    script = ir.scripts.get(room)
+    rm = _room_object(script, ir) if script else None
+    if rm is None or not (discs or cells):
+        return False
+    base, layouts = [], {}
+    for pc, ps in room_obstacles(ir, script):
+        if not any(a is not None for a in pc):
+            base.extend(ps)
+        else:
+            layouts.setdefault(tuple(map(repr, pc)), []).extend(ps)
+    poly_sets = [base + ps for ps in layouts.values()] if layouts else ([base] if base else [])
+    tagged = _tagged_seeds(script, rm, ir)
+    if not poly_sets or not tagged:
+        return False
+    step = 4
+    seeds_px = [(x, y) for (x, y, _frm) in tagged]
+    cell = (spot[0] // step, spot[1] // step)
+    free_any, hurt_any = False, False
+    for polys in poly_sets:
+        free, _gw, _gh, _s = _walk_from_arrival(polys, seeds_px, (), step)
+        hurt, _g2, _h2, _s2 = _walk_from_arrival(polys, seeds_px, discs, step, cells=cells)
+        free_any = free_any or cell in free
+        hurt_any = hurt_any or cell in hurt
+    return free_any and not hurt_any
 
 
 def _safe_pairs(n):

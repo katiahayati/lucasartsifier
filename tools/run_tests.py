@@ -214,27 +214,23 @@ KNOWN_RED = {
     # the check is a permanent green pin. docs/LB2-ORACLE.md §7ag.
 
     "test_kq5_ground_truth.py": {
-        # 🔴 DECLARED 2026-08-19b, USER PLAY-RULED (the harpy island). The departure cutscene
-        # (rm049 castOffScript) writes flag 54; every flag-54 return arms a 50%-roll positional
-        # kill on control mask $0002 with no counter (the harp is spent in the nest), so the
-        # island is ONE SAFE VISIT and the true frontier for everything sourced on it (the
-        # Shell on the beach, the Fishhook in the nest rm90) is rm49->rm48 -- the boat click --
-        # not the hermit island's far-shore crossings the old pins froze. USER: "yes go ahead
-        # and change ground truth. if we can guard the depart we should not guard the return."
-        # THE CURE, named: model the flag-54 patrol as a WALL (the snake's positional-death
-        # class, flag-staged: `harpyInitScript::doit` kills on `onControl 0 & $0002`, which
-        # needs the PIC control plane the KQ4-era renderer already reads) -- post-54
-        # reachability of the island interior dies and analyze moves the frontier to the
-        # flag-54 write by itself. Then the boat-click guard falls out at a controllable
-        # setscript site (state 3 of the boat's handleEvent switch).
-        "no confirmed softlock has DROPPED (regression)":
-            "Shell re-entered EXPECTED_CAUGHT on the 2026-08-19b ruling; the model cannot see "
-            "the one-safe-visit island until the flag-54 patrol is a wall",
-        "mechanism pinned: Fishhook":
-            "the pin now names the TRUE frontier rm49->rm48; the model still emits the stale "
-            "far-shore frontier",
-        "mechanism pinned: Shell":
-            "no Shell rows are emitted at all until the wall lands",
+        # ✅ PROMOTED 2026-08-19b, same session as declared -- "no confirmed softlock has
+        # DROPPED", "mechanism pinned: Fishhook" and "mechanism pinned: Shell" are GREEN and no
+        # longer listed. Declared on the USER's play-found harpy-island ruling (the departure
+        # cutscene writes flag 54; every flag-54 return arms a 50%-roll positional kill on
+        # control mask $0002 with no counter, so the island is ONE SAFE VISIT and the true
+        # frontier for the Shell and the Fishhook is the boat click). The cure differed from
+        # the reds' named guess in ONE respect ([[re-derive-a-reds-premise]]): analyze's
+        # value-blind frontier does not move -- the catch is register_strandings' reg456=1
+        # rows, the (room, register-value) trapped state. Five derivations, each measured:
+        # the SCI1 PIC extended-op dialect (sci_gfx renders KQ5 pics), the onControl-mask
+        # positional-hazard spelling + Script-host liveness via arming_conditions, staged
+        # control-return seeds with prevRoom tags (the boat landing; the per-edge tag
+        # exclusion), per-layout obstacle alternatives, and hazard-priced PICKUPS (the
+        # shell's spot) conjoined into source_guards -- read by register_strandings' walks
+        # through the new liveness-aware source test (_live_srcs/_source_live, the same
+        # standard reobtainable_rooms already applied). Snake gate byte-identical; the
+        # hazard-gates pin now freezes all three rows.
         # ✅ PROMOTED 2026-08-17 -- "no UNEXPECTED item flagged (suspicion)" is GREEN and no
         # longer listed. It was declared red the day before with the cure named ("goes green the
         # day positional gates land"), and this is that day: the Tambourine's

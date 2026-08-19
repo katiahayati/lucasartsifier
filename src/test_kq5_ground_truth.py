@@ -248,12 +248,23 @@ MECHANISM_ROWS = {
         "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 206, 'script': 206, "
         "'inst': 'getPie', 'pays': ['getPie'], 'starves': [9], 'starved_accepts': [9]}",
     },
-    # ⛔ RED SINCE 2026-08-19b (with the Shell below): the frontier moved from the hermit
-    # island's far-shore crossings to rm49's OWN departure -- the flag-54 write that makes the
-    # harpy island unreturnable (see the EXPECTED_CAUGHT note). The old pin asserted the stale
-    # frontier and no passing test may assert known-wrong behavior.
-    "Fishhook": {"analyze: need@rm67 sources=[90] frontier=rm49->rm48"},
-    "Shell": {"analyze: need@rm46 sources=[49] frontier=rm49->rm48"},
+    # ✅ RE-PINNED 2026-08-19b, the harpy-departure pair, GREEN the same day the reds were
+    # declared. The red pins guessed the cure would move the ANALYZE frontier; the derivation
+    # said otherwise ([[re-derive-a-reds-premise]] again): analyze is the value-blind
+    # room-graph walk and correctly keeps its far-shore frontier, while the flag-54 story is
+    # register_strandings' -- the (room, register-value) trapped state, the detector built
+    # for exactly this. The chain that produces the rows: the flag-54 return patrol is a
+    # positional CONTROL-ZONE hazard (harpyInitScript::doit kills on onControl & $0002), the
+    # zone plus the room's own walls separate the boat landing from both the east exit and
+    # the shell's pickup spot (proven over the PIC control plane per obstacle layout), so the
+    # rm49->rm50 edge and the (Shell, rm49) acquisition both inherit the patrol's absence
+    # condition -- flag 54 CLEAR, un-earnable after the departure writes it. The flip rows
+    # name the departure crossing itself (flip_rooms 48/49), which is the USER's ruling
+    # verbatim: the commitment is sailing off.
+    "Fishhook": {"analyze: need@rm67 sources=[90] frontier=rm44->rm113|rm45->rm113|"
+                 "rm46->rm113|rm46->rm661|rm660->rm663",
+                 "register_strandings: reg456=1->[67]"},
+    "Shell": {"register_strandings: reg456=1->[46]"},
     "Harp": {"analyze: need@rm90 sources=[9] frontier=rm32->rm33",
              "analyze: need@rm92 sources=[9] frontier=rm32->rm33"},
     "Beeswax": {"analyze: need@rm44 sources=[24] frontier=rm32->rm33"},
@@ -508,12 +519,23 @@ def run():
     # three pins below are the three separate things that have to be true, so a regression says
     # WHICH one broke rather than only that the FP came back.
     gates = [g for g in getattr(s, "hazard_gates", ())]
+    # EXTENDED 2026-08-19b with the harpy patrol's two rows, USER-play-confirmed the same day
+    # (the fatal return capture): the control-zone hazard (mask $0002, flag-54-armed) seals
+    # rm49's east walk into the island interior AND the shell's own pickup spot -- the
+    # positional-death-is-a-wall rule in its onControl spelling, over the PIC control plane.
     check("the snake gates the road out of town (rm2 east -> rm29, on flag 47)",
           gates == [{"room": 2, "edge": "east", "dst": 29, "hazard": "snake", "at": (298, 64),
-                     "radius": 30, "machine": ["strike"], "req": {449: [1]}}],
+                     "radius": 30, "machine": ["strike"], "req": {449: [1]}},
+                    {"room": 49, "edge": "east", "dst": 50, "hazard": "harpyInitScript",
+                     "mask": 2, "zone_px": 446, "machine": ["harpyScript"],
+                     "req": {456: [0]}},
+                    {"room": 49, "pickup": 23, "at": (120, 100), "hazard": "harpyInitScript",
+                     "mask": 2, "zone_px": 446, "machine": ["harpyScript"],
+                     "req": {456: [0]}}],
           f"hazard_gates={gates!r} -- expected exactly the snake's disc sealing rm2's east "
-          f"handoff, demanding flag 47 (register 449). More rows than this is a new claim to "
-          f"check against the game; fewer is the FP coming back.")
+          f"handoff (flag 47 / register 449) plus the harpy patrol's east-edge and "
+          f"shell-pickup seals (flag 54 / register 456). More rows than these is a new claim "
+          f"to check against the game; fewer is an FP coming back.")
 
     # ...AND THE DEMAND IS THE TAMBOURINE, which is the user's ruling in the model's own terms.
     # The gate names a FLAG, not an item; that it reduces to the tambourine is `_reg_cost`'s

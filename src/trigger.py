@@ -1467,22 +1467,35 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
         m0, m1 = i0 + meth_rel[0], i0 + meth_rel[1]
         region = text[m0:m1]
         tpat = placement.get("target_pattern") or (re.escape(target) + r"\b")
-        # ONE level of nesting on either side of the selector: SCI1.1 writes both the receiver and
-        # the target as calls -- `((ScriptID 344 2) setScript: (ScriptID 344 3))` -- and a pattern
-        # that allows no parentheses cannot see that statement at all.
-        _ANY = r"(?:[^()]|\([^()]*\))*"
-        ssm = re.search(r"\(%ssetScript:\s*%s%s\)" % (_ANY, tpat, _ANY), region)
+        # THE ARMING STATEMENT IS THE SEND THAT CARRIES THE SELECTOR, not a flat regex span --
+        # the same lesson the arm-event branch already carries (KQ5's henchman): locate the
+        # selector, then expand to the INNERMOST BALANCED FORM enclosing it. The old
+        # one-level-of-nesting pattern (`((ScriptID 344 2) setScript: (ScriptID 344 3))`) is
+        # subsumed; what it could not see was a DEEPER argument -- KQ5's boat departure,
+        # `(global2 setScript: castOffScript 0 (== (global0 view:) 661))`, two levels down,
+        # which left the boat click an unwrapped second door beside the walked-edge guard.
+        ssm = re.search(r"setScript:\s*%s" % tpat, region)
         if not ssm:
             return text, 0
-        clause = _enclosing_clause_body(region, ssm.start())
+        s0 = region.rfind("(", 0, ssm.start())
+        span = None
+        while s0 != -1:
+            b0, b1 = _block_span(region, s0)
+            if b1 > ssm.end():
+                span = (b0, b1)
+                break
+            s0 = region.rfind("(", 0, s0)
+        if span is None:
+            return text, 0
+        clause = _enclosing_clause_body(region, span[0])
         if clause:
             bs, be = clause
             wrapped = guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
             new_meth = region[:bs] + wrapped + region[be:]
         else:
-            new_meth, _ = _wrap_matches_in(
-                region, site, re.compile(r"\(%ssetScript:\s*%s%s\)" % (_ANY, tpat, _ANY)),
-                guard_sexpr, refuse)
+            bs, be = span
+            wrapped = guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
+            new_meth = region[:bs] + wrapped + region[be:]
         return text[:m0] + new_meth + text[m1:], 1
     if placement["kind"] == "proc-arm":
         # The helper file's OWN arming of the crossing -- a bare procedure the room calls at a

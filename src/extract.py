@@ -1242,6 +1242,41 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None,
     return out
 
 
+def arming_conditions(script, target):
+    """`[guard|None]` -- the path conditions under which this script ARMS `target`.
+
+    `cast_conditions`' question asked of a Script INSTANCE, whose cast event is being armed
+    rather than `init:`ed: a `doit` on a machine nobody has armed runs never, so a
+    machine-hosted trigger's liveness is its arming's own guard. Built for KQ5's harpy patrol
+    (rm049: `(if (proc0_12 54) (harpy1 init: setScript: harpyInitScript))` -- the patrol is
+    live exactly on flag-54 return visits), where `cast_conditions` has nothing to say: the
+    host is never in the cast, and the actor that carries it (`harpy1`) is also init'ed
+    unconditionally inside the first-visit capture cutscenes, which reads as always-present.
+
+    A `None` entry means an unconditional arming -- consumers must treat the trigger as
+    always-live, the permissive answer (same contract as `cast_conditions`)."""
+    out = []
+
+    def leaf(n, pc):
+        if n.get("t") != "Send":
+            return
+        try:
+            _recv, msgs = I.send_pairs(n)
+        except Exception:                                  # noqa: BLE001
+            return
+        for sel, params in msgs:
+            if sel == "setScript" and any(
+                    isinstance(p, dict) and p.get("name") == target for p in params):
+                out.append(_conj(pc))
+
+    for o in script.objects:
+        for _mn, body in o.methods.items():
+            walk_stream(body, [], leaf)
+    for _pn, body in script.procs.items():
+        walk_stream(body, [], leaf)
+    return out
+
+
 def local_write_conditions(script, cast=None, proc_guard=None, machine_guard=None, lregs=None):
     """`(vtype, index) -> [(value, guard|None)]`: the conditions under which this script sets a LOCAL.
 

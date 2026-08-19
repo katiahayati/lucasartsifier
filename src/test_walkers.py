@@ -81,6 +81,14 @@ ACCEPTED = {
                    "arrival taxi, the street seal). A single-purpose lifecycle reader, not "
                    "control flow: no other walker asks where an object ENDS.",
     "setRegions":  "region membership is built once, in opmodel.",
+    "BinAnd":      "missability._ctl_masks reads `(& (gEgo onControl:) M)` as a positional "
+                   "hazard ZONE (the harpy patrol, 2026-08-19b) -- a trigger-shape reader, "
+                   "not control flow; the guard extractors already lower the same idiom "
+                   "through their own comparison path.",
+    "get":         "polygons.item_pickup_spots reads `get: N` only to LOCATE a pickup on the "
+                   "room's floor (which object the get-machine stages, for the hazard-priced "
+                   "pickup rule, 2026-08-19b); acquisition SEMANTICS -- who owns what -- stay "
+                   "extract/opmodel's alone.",
     "edgeHit":     "the ego's own screen-edge signal, read in exactly the two places that ask "
                    "about screen edges and nowhere else. trigger reads the argument-free "
                    "`(gEgo edgeHit:)` as a POSITIONAL fact (the player walked there -- the "
