@@ -121,18 +121,18 @@ verdicts (P1/P2/L3) are woven in where they occur.
 | ✅ | M2 | rm54 (the stairs/grate room), WITHOUT the Cat Fish (37) | click the grate; linger where the henchman patrols | grate click: **"Not yet!"**, control returns; the beach henchman **never arms** (silent gate — walk back down for the fish). Inside the castle he stays STOCK (see Z) |
 | ◐ | M3 | rm54 with 37 | grate, or let the henchman grab you | both **stock** — either way into the castle. ◐ GRATE ✅ (2026-08-19c); ⏰ REMINDER: the henchman-grab entry with the fish still untried — needs a pre-grate save |
 | ☐ | M4 | castle halls | cat appears | **must throw the Cat Fish (37)** — stock required move (flag 62) |
-| ☐ | M5 = P2 | any henchman encounter | pea (24) throws: land four hits; ALSO try one deliberate far miss | hits set flag 63 (g132 & $8000). **VERDICT P2: does the far miss spend a pea without the flag?** report the raw outcome |
+| ✅ | M5 = P2 | the blue beast | ONE pea-bag (24) throw when he closes in | ✅ VERDICT IN (USER play + source 2026-08-19c): one throw is the whole mechanism — the script WAITS for the approach phase (global333==3) then atomically sets flag 63, flips the bag's cel to empty, and **DROPS THE BAG ON THE FLOOR — pick it back up**. P2 CLOSED structurally: spend and flag are one state, a flagless spend cannot occur |
 | ☐ | M6 | captured by the castle henchman → dungeon rm67 | give the Locket (25) — carried by construction (R4/R5's hold) — when Cassima comes | **rescue** (stock; without the give it's the timer death — that fork is the detection's row 11) |
 | ☐ | M6b = L3 | get captured a SECOND time after one rescue | — | **VERDICT L3: death regardless of the Locket?** flag 96 (g135 & $0001) is the tell |
 | ☐ | M7 | rm67 mouse hole | use the Fishhook (31) | **Moldy Cheese (32)** — the fishhook chain's payoff (why the harpy-island toll exists) |
-| ☐ | M8 = P1 | the cat, fish thrown | use the Bag of Peas (24) on the cat | **VERDICT P1** — walkthrough lead (USER 2026-08-19c): **the bag must be EMPTY** (all peas spent) to catch the cat. Confirm: does a still-loaded bag fail/waste, and does the empty bag bag him? |
+| ☐ | M8 = P1 | the cat, fish thrown | use the (now empty) Bag (24) on the cat | **the catch** — the handler demands flag 63 ∧ flag 62 (a pre-throw bag gets message 50, a no-fish cat gets the 550-14 flavor; neither wastes anything). P1's mechanism is source-confirmed; this row just watches it play |
 | ☐ | M9 | machine room → endgame | cheese (32) into the machine; the wand swap; the spell battle; victory | **stock, play through** — report anything that hangs, walls, or eats an item it shouldn't |
 
 ## V — Open verdicts (answers change what I build next)
 | # | Question | How |
 |---|---|---|
-| P1 | does the empty pea bag (24) still bag the cat — and is EMPTY required? | ⭐ USER 2026-08-19c, walkthrough-derived lead: "the bag must be empty to catch the cat" — confirm in play at M8 |
-| P2 | does a far-miss pea (24) throw spend a pea without setting flag 63? | M5: throw from across the room; check g132 & $8000 |
+| P1 | ✅ RESOLVED 2026-08-19c (USER play + source): ONE beast-throw sets flag 63 = "the bag is empty"; the cat catch demands 63 ∧ 62. M8 watches it play | — |
+| P2 | ✅ CLOSED 2026-08-19c structurally: the spend and flag 63 are one atomic changeState state (theThrowPeasScript st2) — a flagless spend cannot occur; nothing to build | — |
 | L3 | is a 2nd henchman capture (after one hole rescue) death regardless of the Locket (25)? | M6b: get caught twice; flag 96 is the tell |
 
 ## Z — Must-stay-stock spot checks
