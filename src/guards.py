@@ -1737,6 +1737,31 @@ def fold_carryins(s):
         conds = ["(== ((gInv at: %d) owner:) %d)" % (it, dst) for it, dst in group]
         cond = conds[0] if len(conds) == 1 else "(or %s)" % " ".join(conds)
         refused = []
+        # THE CHASE EXCLUSION, ACROSS THE ROOM SEAM (USER-prompted, 2026-08-18b: "why are we
+        # turning you back in the first place?"). A fold whose context room ARMS AN EGO-CHASE
+        # under the NEGATION of this very demand is not an independent trap -- it is the
+        # chase's CATCH, staged one screen over (KQ5's yeti: rm036's init arms `chaseEgo` iff
+        # `owner(Pie) != 36`, so every crossing this fold condemns is made mid-chase, and the
+        # rm35 kill is the yeti catching a player who ran with the counter in hand). The
+        # exclusion's own rationale applies uniformly: a race the player can decline -- feed,
+        # duck, or not run -- gets no gate, and the death is Sierra's lesson (the KGB-beach
+        # class). The demand stays a FINDING (the row is how the pie's necessity is known);
+        # only the crossing guard is declined, visibly.
+        for info in s.em.machines:
+            if info.get("room") != a or not info.get("chase_states"):
+                continue
+            for (_k, eg) in (list(info.get("entries", ()))
+                             + list(info.get("init_entries", ()))):
+                spine = M._conj_spine([eg] if not isinstance(eg, list) else eg)
+                if any(isinstance(x, M.GNot) and M._is_owner_atom(x.kid)
+                       and (x.kid.var, x.kid.value) in set(map(tuple, group))
+                       for x in spine):
+                    refused.append(
+                        "the fold is rm%d's chase catching you (its hunter arms on the "
+                        "complement of this demand) -- a declinable race, no gate owed" % a)
+                    break
+            if refused:
+                break
         gkey = (tuple(group), b)
         ikey = (tuple(it for it, _d in group), b)
         if gkey in closures and not placeable.get(ikey):

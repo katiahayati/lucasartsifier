@@ -615,17 +615,24 @@ def run():
           f"(the eagle is fed BEFORE the roc; no producer of owner(19)=34 exists past the "
           f"edge), and the pool disjunctions guard nothing rm42 accepts.")
 
-    # ...and the SAME derivation's second catch: rm35's killEgo entry-fold (context {12: 36},
-    # the scripted kill when you flee the yeti unfed) puts `owner(Pie) == 36` on rm36->rm35.
-    # The feed site is rm36 itself, so the demand is satisfiable at the refusal moment; a
-    # pie-less player was doomed in rm36 either way, so the guard defers and never walls.
+    # ✅ REVERSED 2026-08-18b, USER-prompted ("why are we turning you back in the first
+    # place?"): rm35's killEgo is THE YETI'S CATCH, staged one screen over -- rm036's init
+    # arms `chaseEgo` on exactly the complement of this demand (`owner(Pie) != 36`,
+    # rm036.sc:52), so every crossing the fold condemns is made mid-chase, and the chase
+    # exclusion (a race the player can decline: feed, duck north, don't run) applies across
+    # the seam. The old pin's own justification ("satisfiable at the refusal moment") was
+    # the KGB-beach fact read backwards -- the counter is IN HAND (the sled guard carries
+    # `has 2`), so the death is Sierra's lesson, Caveat-Player class. The spec must emit
+    # REFUSED with the chase reason -- the demand stays a finding, the crossing keeps no
+    # guard, and the pie's real protections are elsewhere (the sled carry, the EAT
+    # retraction, the eagle refusal).
     yeti_spec = [sp for sp in all_specs if sp["site"] == "edge"
                  and sp.get("from_room") == 36 and sp.get("to_room") == 35]
-    check("the yeti fold's demand rides rm36->rm35 (feed the yeti before crossing)",
+    check("the yeti crossing's guard is DECLINED as a chase catch (finding kept, refused)",
           len(yeti_spec) == 1 and yeti_spec[0]["condition"] == "(== ((gInv at: 2) owner:) 36)"
-          and not yeti_spec[0]["refused"],
-          f"specs={yeti_spec!r} -- the killEgo fold names prev==36, so its demand belongs on "
-          f"that crossing and nowhere else.")
+          and any("chase" in r for r in yeti_spec[0]["refused"]),
+          f"specs={yeti_spec!r} -- an unrefused spec here re-guards a declinable race; a "
+          f"missing spec loses the finding.")
 
     # ✅ THE TEMPLE'S GUARD, added 2026-08-18 (USER: \"we absolutely 100% need to do the temple
     # pocket\"). The toll rows (rm214->rm18, Staff spent on the door) had been detected since

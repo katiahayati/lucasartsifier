@@ -86,8 +86,8 @@ Legend: ✅ = verified (harness or your play) · ☐ = still needs your hands.
 |---|---|---|---|---|
 | ✅ | F1 | rm34 eagle | offer Pie (2) | **refused** (the pie is the yeti's) |
 | ✅ | F2 | rm34 | feed Lamb (19; half is fine) | **works** (stock — the intended move) |
-| ☐ | F3 | rm36 yeti | Pie (2) NOT thrown, walk west | "Not yet!" once + walk-back; **north stays free**; chase still escapable |
-| ☐ | F4 | rm36 | throw Pie (2) at yeti, walk west | crosses to rm35 normally |
+| ✅ | F3 | rm36 yeti | Pie (2) NOT thrown, walk west | **STOCK** (USER ruling): the yeti catches you at rm35 — his chase's staged catch, a declinable race (feed, or duck north), deliberately unguarded. The pie's protections live at the sled carry, the EAT retraction, and the eagle refusal |
+| ☐ | F4 | rm36 | throw Pie (2) at yeti, walk west | crosses to rm35 normally (pure stock now — our 36.SCR is retired, Sierra's own is restored) |
 | ☐ | F5 | rm38 | Hammer (22) on the crystal | pried (Crystal 21), +4 (stock; bare hands fail harmlessly) |
 
 ## R — The roc edge & the nest ✅ harness-verified — spot-checks only
