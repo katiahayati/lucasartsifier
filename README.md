@@ -75,24 +75,31 @@ As Al Lowe says, "Save Early, Save Often!"
 
 ## Status
 
-**Four complete games, spanning the engine's two major eras (SCI0 1988 → SCI1.1 1992), with no
-per-title declarations anywhere** — that is the evidence that the analysis generalizes rather
-than encodes trivia about particular games.
+**Four games are done, spanning the engine's two major eras (SCI0 1988 → SCI1.1 1992), and
+nothing about any title is declared** — start room, victory room, death signal and debug flags
+are all derived from each game's own code. Every game taught the engine something new:
 
-| game | engine | world model derived | softlocks found | guards shipped |
-|---|---|---|---|---|
-| **Leisure Suit Larry 2** (1988) | SCI0 | 101 rooms, 27 free-travel regions | 15 items + 1 either/or group | 12 of 12 |
-| **King's Quest IV** (1988) | SCI0 | 110 rooms, 15 regions | 7 items | 5 of 5 |
-| **King's Quest VI** (1992) | SCI1.1 | 86 rooms, 15 regions | 18 items + 1 group | 24 of 26 |
-| **Laura Bow 2: The Dagger of Amon Ra** (1992) | SCI1.1 | 78 rooms, 26 regions | 10 items | 5 of 5 |
-
-"Softlocks found" is the union of every detector's verdict, per item — missing-item strandings
-plus the subtler classes: regions sealed by a plot flag, items fatal to *use* somewhere, one-shot
-windows that close on a timer. "Guards shipped" counts the edit sites the patcher actually
-landed; KQ6's missing two are the suite's one deliberately-red test — a shared-dispatcher seam
-and a trade-shaped sink, each with its reason written down rather than quietly dropped.
-(King's Quest V, an SCI1-middle hybrid, is in progress on the `kq5` branch — detection complete,
-guards installed, playtest under way.)
+- **Leisure Suit Larry 2** (1988, SCI0) — 15 stranded items + one either/or group found; all 12
+  guard sites placed. Home of the **Spinach Dip**, an item *fatal to carry* into the endgame:
+  its guard is a negative literal, placed at the last crossing where you can still throw the
+  thing overboard — demanding you drop what you can no longer drop would be a wall.
+- **King's Quest IV** (1988, SCI0) — the **real-time night clock**: nightfall seals off an item
+  chain, so the guard holds the game's own clock flip until the daytime items are in hand. Also
+  the whale — a random swallow the player never chose — which taught the engine to guard
+  *adversarial events* by letting them arm only when they are survivable.
+- **King's Quest VI** (1992, SCI1.1) — the big one. The **two endings** multiplied everything:
+  mutually exclusive castle routes keyed on an item, a Realm you must carry things into and out
+  of, a wedding fuse on a timer, one-visit catacombs. 19 confirmed softlock units, none missed;
+  24 of 26 edit sites placed, and the two skips are deliberate and pinned (one is a trade the
+  player is *meant* to make).
+- **Laura Bow 2: The Dagger of Amon Ra** (1992, SCI1.1) — the **act structure**: the plot clock
+  is a register, act breaks are one-way, and every demand has to ride the act-flip interceptor
+  at the last controllable moment before the curtain. Play-confirmed end to end.
+- **King's Quest V** (1990, SCI1-middle) — *in progress on the `kq5` branch*: the odd hybrid
+  engine between the eras, and the **market**: shops with tight tokens and consumables that
+  have more consumers than copies, so softlock detection becomes a matching problem — which
+  payment quietly starves which future purchase. Detection is complete and the guards are
+  installed; playtest under way.
 
 ## How it works, briefly
 
