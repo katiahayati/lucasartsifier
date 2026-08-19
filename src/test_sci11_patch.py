@@ -341,11 +341,57 @@ def test_hoist_rest_targets():
           "(method (doVerb param1 &tmp temp0 restTgt)" in out3 and out3.count("&tmp") == 1)
 
 
+def test_indexed_compound_assign_restores_the_index():
+    """The scicompile codegen fix for `a[i] op= v` with a NON-LITERAL index (2026-08-18).
+
+    Upstream SCICompanion emits `eq? / toss / pprev` here, on the belief (its own comment)
+    that `toss` moves the saved index into the accumulator. It does not -- `toss` discards a
+    stack slot and `eq?` already consumed the index -- so the indexed store that follows read
+    its index from the eq? BOOLEAN and every such assignment landed on a[0] or a[1]. KQ5's
+    Main flag engine (`[global129 temp2] |= bit`) is the case: every flag write in the game
+    scribbled flags 0-31 (USER-found: the tambourine set flag 47, which landed on flag 15,
+    and rm2's take-off-the-cloak arm looped forever). Literal indexes take the constant-fold
+    path, which is why fan-game code rarely met it.
+
+    The fix emits Sierra's own idiom -- push0 / eq? / ldi 0 / or / pprev -- whose `ldi 0, or`
+    rebuilds the INDEX in acc before the store. Pinned on compiled bytes: KQ5's Main must
+    contain the fixed sequence exactly as many times as Sierra's official Main patch does
+    (three: the &=, |= and ^= arms), and the broken triplet not at all."""
+    print("\nPhase 4c -- indexed compound assignment restores the index before the store")
+    cfg = config.by_name("kq5")
+    if cfg is None or not os.path.exists(cfg.ir_path) or not os.path.isdir(cfg.resource_dir):
+        print("  (skip: no KQ5 IR/resources)")
+        return
+    import shutil
+    import tempfile
+    import patcher as P
+    import missability as M2
+    s = M2.load(cfg=cfg)
+    dest = tempfile.mkdtemp(prefix="sci1flag_")
+    try:
+        P.configure(s.em.ir)
+        P.assemble(dest, cfg)
+        P.compile_project(dest)          # the .sco bootstrap -- `use` resolves from these
+        raw = os.path.join(dest, "main_test.bin")
+        ok, log = P.compile_one(dest, "Main", raw)
+        check("KQ5's Main compiles", ok, log[-300:] if log else "")
+        data = open(raw, "rb").read() if ok else b""
+    finally:
+        shutil.rmtree(dest, ignore_errors=True)
+    FIXED = bytes([0x76, 0x1a, 0x35, 0x00, 0x14, 0x60])   # push0 eq? ldi0 or pprev
+    BROKEN = bytes([0x1a, 0x3a, 0x60])                     # eq? toss pprev
+    check("the fixed index-restore idiom appears exactly as often as in Sierra's own Main (3)",
+          data.count(FIXED) == 3, "count=%d" % data.count(FIXED))
+    check("the broken eq?/toss/pprev triplet is gone",
+          data.count(BROKEN) == 0, "count=%d" % data.count(BROKEN))
+
+
 def run():
     print("=== test_sci11_patch: the road from a correct finding to a playable patch ===")
     test_refusal_primitive_is_derived()
     test_fatal_uses_produces_a_remedy()
     test_hoist_rest_targets()
+    test_indexed_compound_assign_restores_the_index()
     test_placement()
     test_realm_entry_guard_sits_on_the_spell_delivery()
     test_verify_closes_every_kq6_finding()

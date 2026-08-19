@@ -1973,9 +1973,22 @@ CodeResult Assignment::OutputByteCode(CompileContext &context) const
                 // The result is now in the accumulator.  We actually want it in the stack, since
                 // we want to use the variable index (currently on the stack) in the accumulator
                 // Do a little trick:
-                WriteSimple(context, Opcode::EQ, GetLineNumber());        // -> eq?... the value in the accumulator will now be on the prev register
-                WriteSimple(context, Opcode::TOSS, GetLineNumber());      // Now the saved index will be in the accumulator
-                WriteSimple(context, Opcode::PPREV, GetLineNumber());     // And now... the value will be on the stack!
+                // scicompile fix (2026-08-18): the upstream sequence here was
+                //     eq? / toss / pprev
+                // with the comment "Now the saved index will be in the accumulator" -- but
+                // `toss` DISCARDS a stack slot, it never loads acc, and `eq?` already popped
+                // the saved index for its comparison. The indexed store below reads its index
+                // from acc, which held the eq? BOOLEAN -- so `a[i] op= v` with a NON-LITERAL
+                // index stored to a[0] or a[1]. (Literal indexes take the optimization above,
+                // which is why fan-game code rarely hit this.) KQ5's flag engine
+                // (`[global129 temp2] |= bit`) is the case that exposed it: every flag write
+                // landed on flags 0-31. Sierra's own compiler emits the sequence below --
+                // stash the value in prev, then rebuild the INDEX in acc via `ldi 0 / or`:
+                WriteSimple(context, Opcode::PUSH0, GetLineNumber());     // stack: idx, 0
+                WriteSimple(context, Opcode::EQ, GetLineNumber());        // prev = value; acc = bool; stack: idx
+                context.code().inst(GetLineNumber(), Opcode::LDI, 0);     // acc = 0
+                WriteSimple(context, Opcode::OR, GetLineNumber());        // acc = idx | 0 = idx; stack empty
+                WriteSimple(context, Opcode::PPREV, GetLineNumber());     // stack: value
                 VariableOperand(context, wIndex, TokenTypeToVOType(tokenType) | VO_STACK | VO_STORE | VO_ACC_AS_INDEX_MOD, GetLineNumber());
 
                 // REVIEW: the value was on the stack, but now it's gone!  Technically, we'll need a system where
