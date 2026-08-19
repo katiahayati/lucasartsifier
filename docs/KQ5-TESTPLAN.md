@@ -70,9 +70,9 @@ Legend: ✅ = verified (harness or your play) · ☐ = still needs your hands.
 | ✓ | # | Where | Do | Expect |
 |---|---|---|---|---|
 | ✅ | E0 | rm2 | Tambourine (34) on the snake | flag 47 set, road opens (the flag-engine fix, play-confirmed) |
-| ☐ | E1 | rm30 | use Cloak (26) on Graham | worn (flag 15, +4 once); the cold stops threatening |
+| ✅ | E1 | rm30 | use Cloak (26) on Graham | worn (flag 15, +4 once); the cold stops threatening |
 | ✅ | E2 | rm30 | use Rope (20) on the branch | **refused** ("Better not…"); rope kept |
-| ☐ | E3 | rm32 | never eat, walk east past x≈105 | **stock hungerDeath** (left in: preventable on-screen — eat the lamb) |
+| ✅ | E3 | rm32 | never eat, walk east past x≈105 | **stock hungerDeath** (left in: preventable on-screen — eat the lamb) |
 
 ## S — The sled commit (rm32 → rm33): the mountains' point of no return ⬅ THE PRIORITY
 | ✓ | # | Do | Expect |
