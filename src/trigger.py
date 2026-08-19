@@ -1197,6 +1197,24 @@ def _turnback_emit(guard_sexpr, body, og, tb, refuse, site):
     # get the obstacle-aware walker the game itself uses for exactly these moves; SCI0 titles
     # have no such class and keep MoveTo -- their turn-backs were play-validated with it.
     motion = og.get("motion", "MoveTo")
+    if og.get("chase_room"):
+        # A TURN-BACK IN A CHASE ROOM TAKES NO LOCK AND WAITS FOR NOTHING (USER-found at the
+        # yeti: the refusal's input lock plus its scripted walk delivered a fleeing player
+        # into the hunter's arms -- stock never locks input here, and the chase exclusion's
+        # whole point is that the player's legs are the counter). Refuse, start the walk,
+        # dispose immediately: the player can cancel the walk with any click, the room
+        # script frees at once so the next approach refuses again, and the modal line is
+        # what paces re-triggering. The ego ends off the trigger either way.
+        instance_tpl = (
+            "\n(instance %s of Script\n\t(properties)\n\n"
+            "\t(method (changeState param1)\n"
+            "\t\t(switch (= state param1)\n"
+            "\t\t\t(0\n\t\t\t\t%s  ; softlock-guard line\n"
+            "\t\t\t\t(= cycles 1)\n\t\t\t)\n"
+            "\t\t\t(1\n\t\t\t\t(%s setMotion: %s %%s %%s)\n"
+            "\t\t\t\t(self dispose:)\n\t\t\t)\n"
+            "\t\t)\n\t)\n)\n" % (tb, refuse, ego, motion))
+        return wrapped, instance_tpl
     instance_tpl = (
         "\n(instance %s of Script\n\t(properties)\n\n"
         "\t(method (changeState param1)\n"

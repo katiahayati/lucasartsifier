@@ -451,6 +451,24 @@ def _init_mode(dest):
 _MOTION_CACHE = {}
 
 
+def _init_armed_ego_chase(path):
+    """Does this room's INIT arm a machine that hunts the ego (`setMotion: Chase global<ego>`)?
+    The turn-back's lock-free form keys on this -- see the obj_globals site."""
+    try:
+        cur = open(path, errors="replace").read()
+    except Exception:                              # noqa: BLE001
+        return False
+    init_span = _find_region(cur, r"\(method\s+\(init\b")
+    if not init_span:
+        return False
+    for fm in re.finditer(r"setScript:\s*(\w+)", cur[init_span[0]:init_span[1]]):
+        ispan = _find_region(cur, r"\(instance\s+%s\s+of\s+Script\b" % re.escape(fm.group(1)))
+        if ispan and re.search(r"setMotion:\s*Chase\s+global%d\b" % _EGO,
+                               cur[ispan[0]:ispan[1]]):
+            return True
+    return False
+
+
 def _motion_form(dest):
     """The walker the turn-back speaks, IN THIS GAME'S OWN SPELLING: `PolyPath` (the
     obstacle-aware one) where the game sends it anywhere, else `MoveTo`. A blocked MoveTo
@@ -2940,7 +2958,16 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                                              "room": "global%d" % _ROOM,
                                              "game": "global%d" % _GAME,
                                              "hands": _hands_forms(dest),
-                                             "motion": _motion_form(dest)}}
+                                             "motion": _motion_form(dest),
+                                             # the chase exclusion, at the turn-back: a room
+                                             # whose INIT arms an ego-hunter gets the
+                                             # lock-free, no-cue form -- the hunter is live
+                                             # while the refusal runs (rm036's yeti). A
+                                             # chase inside the very machine the guard
+                                             # refuses to arm (rm085's kidnap grab) can
+                                             # never overlap the turn-back and keeps the
+                                             # locked walk its play-confirmation covered.
+                                             "chase_room": _init_armed_ego_chase(path)}}
             new_text, n = wrap_trigger_in_source(
                 text, placement, to_source_syntax(sp["condition"]), REFUSE, site=row_site)
             if n == 0:
