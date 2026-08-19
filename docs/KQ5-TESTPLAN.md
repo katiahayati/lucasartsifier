@@ -77,9 +77,9 @@ Legend: ✅ = verified (harness or your play) · ☐ = still needs your hands.
 ## S — The sled commit (rm32 → rm33): the mountains' point of no return ⬅ THE PRIORITY
 | ✓ | # | Do | Expect |
 |---|---|---|---|
-| ☐ | S1 | missing any of Pie (2) / Harp (10) / Beeswax (18) / Hammer (22) / Lamb (19): **use the Sled (29) on the slope** | **"Not yet!"** — ride refused, sled kept (both click paths carry the guard) |
-| ☐ | S2 | same state, walk east instead | turned back at the edge, same demand |
-| ☐ | S3 | full carries (`get 2 10 18 22 19`, eat the lamb once) — ride | sled breaks, lands rm33 (stock); walking back up stays blocked (stock terrain) |
+| ✅ | S1 | missing any of Pie (2) / Harp (10) / Beeswax (18) / Hammer (22) / Lamb (19): **use the Sled (29) on the slope** | **"Not yet!"** — ride refused, sled kept (both click paths carry the guard) |
+| ✅ | S2 | same state, walk east instead | turned back at the edge, same demand |
+| ✅ | S3 | full carries (`get 2 10 18 22 19`, eat the lamb once) — ride | sled breaks, lands rm33 (stock); walking back up stays blocked (stock terrain) |
 
 ## F — Above the sled
 | ✓ | # | Where | Do | Expect |
