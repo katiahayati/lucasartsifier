@@ -11,7 +11,7 @@ Sierra games, unlike LucasArts ones, let you get stuck. Forget the sunscreen in 
 board the cruise ship, and you die days later on a raft with no way back. This finds these traps
 automatically and blocks the crossing that causes them — at the last moment you can still comply.
 
-**The full pipeline runs end to end on four games** — Leisure Suit Larry 2 and King's Quest IV (SCI0, 1988) through
+**Four games analyzed and play-tested** — Leisure Suit Larry 2 and King's Quest IV (SCI0, 1988) through
 King's Quest VI and Laura Bow 2 (SCI1.1, 1992) — same engine, no game-specific analysis code.
 
 ## Demo
@@ -233,6 +233,8 @@ rather than declared; see `src/anchors.py`.
   health consumables (rations, etc.), but that work has not been done yet.
 - **SCI1.0 / SCI1-middle.** SCI0 and SCI1.1 are modeled. King's Quest V — the weird hybrid in
   between — is in progress on the `kq5` branch and most of the way there.
+- **Full end-to-end playtesting.** All four games have been extensively tested where patched, but none has been played end to 
+end yet. Doing that might uncover bugs.
 - **More games!** There is no game-specific code in the engine, but Sierra shipped a lot of
   game-specific code in each game, so every new title has so far required extending the analysis.
   Hopefully at some point this converges to zero.
