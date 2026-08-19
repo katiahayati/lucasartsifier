@@ -63,8 +63,8 @@ Legend: ✅ = verified (harness or your play) · ☐ = still needs your hands.
 ## D — Desert temple (rm18)
 | ✓ | # | Do | Expect |
 |---|---|---|---|
-| ☐ | D1 | inside via Staff (7), leave Brass Bottle (6) + Gold Coin (11) on the floor, walk the exit strip | **refused** + walk-back, control returns. The door timer is STOCK (USER ruling): dawdle too long and it entombs you — a death, preventable on your own screen, deliberately left in |
-| ☐ | D2 | pick both up, walk the exit | leaves normally |
+| ✅ | D1 | inside via Staff (7), leave Brass Bottle (6) + Gold Coin (11) on the floor, walk the exit strip | **refused** + walk-back, control returns. The door timer is STOCK (USER ruling): dawdle too long and it entombs you — a death, preventable on your own screen, deliberately left in |
+| ✅ | D2 | pick both up, walk the exit | leaves normally |
 
 ## E — Mountains, below the sled
 | ✓ | # | Where | Do | Expect |
