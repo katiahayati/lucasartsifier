@@ -51,8 +51,8 @@ Legend: ✅ = verified (harness or your play) · ☐ = still needs your hands.
 | ✅ | B3 | rm6 | throw Shoe (8) / Stick (16) | works, **+4 exactly once** |
 | ✅ | B4 | rm6 | lose the race → leave → re-enter with 8 or 16 | chase **re-arms** (window held open) |
 | ✅ | B5 | rm6 | win (mouse saved) → leave → re-enter | chase **never replays** |
-| ☐ | B6 | rm12 dog | offer Lamb (19) | **refused**; Shoe (8)/Stick (16) work (stock) |
-| ☐ | B7 | rm11 bear | use Fish (5) on bear | **works** (stock — the point of B1) |
+| ✅ | B6 | rm12 dog | offer Lamb (19) | **refused**; Shoe (8)/Stick (16) work (stock) |
+| ✅ | B7 | rm11 bear | use Fish (5) on bear | **works** (stock — the point of B1) |
 
 ## C — Kidnap & cellar
 | ✓ | # | Where | Do | Expect |
