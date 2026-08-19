@@ -1010,6 +1010,38 @@ def run():
           "crossing can strand it -- USER-RULED 2026-08-14 and re-affirmed 2026-08-15. Rows: "
           f"{wand_rows}. Check `_unrefusable_grants` still sees rm1's init grant.")
 
+    # 🔴 DECLARED 2026-08-19c, USER PLAY-FOUND + RULED (docs/KQ5-ORACLE.md §23). THE CASTLE CAT
+    # IS A WHALE: an unanswered encounter -- walking away included (castle::newRoom fuses under
+    # global332 == 1) -- writes a 5-10 game-minute fuse (global352, or global353 = 3 in the
+    # recurring cycle), castle::doit decrements it per game-minute, expiry writes global331 = 3,
+    # and nine rooms' doits then arm theWizardScript positionally -- Mordack materializes on the
+    # ego and every branch ends at `proc0_26 73`. `_room_unavoidable` already classifies
+    # theWizardScript unavoidable in every castle room; what nothing classifies is that the FUSE
+    # WRITE commits to it -- a THREE-HOP adversarial clock where KQ4's day/night was one hop.
+    #
+    # The demand is a FIXPOINT over global332's saving writers, NOT their bare disjunction: the
+    # fish dispatch (own 37) is only half an answer -- its own completion chains catGetFish ->
+    # theCatRunScript, the fuse again, with flag 62 now set and the fish now spent -- so it is
+    # saving iff the next encounter it forces is bag-answerable. That yields
+    #   (own37 ∧ 63 ∧ own24) ∨ (63 ∧ 62 ∧ own24)  ≡  63 ∧ own(24) ∧ (62 ∨ own(37))
+    # which is the USER's ruling verbatim ("you shouldn't encounter the cat before you have
+    # both"). ⛔ The naive "fuse write = death" WITHOUT the fixpoint condemns catGetFish too,
+    # collapses the demand to the bag answer, and -- flag 62's only writer being the fish answer
+    # inside an encounter -- walls the cat's first spawn forever: a guard built from it breaks
+    # the game instead of saving it.
+    fuse_rows = list(getattr(s, "fuse_death_armings", lambda: [])())
+    cat_rows = [r for r in fuse_rows if r.get("machine") == "theCatScript"]
+    check("the castle cat's arming demands the whale kit (remote fuse = death)",
+          {r.get("item") for r in cat_rows} == {24, 37}
+          and all(set(r.get("arm_rooms", ())) == {60, 61, 63} for r in cat_rows)
+          and all(r.get("death") == "theWizardScript" for r in cat_rows)
+          and all(352 in r.get("fuse", ()) for r in cat_rows)
+          and all({62, 63} <= set(r.get("flags", ())) for r in cat_rows),
+          f"rows={cat_rows!r} -- expected one row per demand item (Bag_of_Peas 24, Cat_Fish 37)"
+          f" at the cat's arming rooms {{60, 61, 63}} (proc550_16's call sites: rm061::init, "
+          f"rm063::init, rm060 enterLeft/enterNorth), each naming the fuse register 352, flags "
+          f"63 and 62, and theWizardScript as the committed death. docs/KQ5-ORACLE.md §23.")
+
     print(f"  {len(PASS)} passed, {len(FAIL)} failed")
     return not FAIL
 

@@ -1201,3 +1201,75 @@ lamb-fed, the eagle rescue lands Graham at rm43 with Cedric's stock greeting. Un
 release runs the stock st6 death — the roc-edge guard (has 19 at rm40→41) is what protects
 that, unchanged. Corpus: LSL2/KQ4/KQ6/LB2 byte-identical at both steps; KQ5's only surface
 movement is the fold row and `rm042: edge-exit → hold-advance`.
+
+## §23. The castle cat is a WHALE — an unanswered encounter is a remote death fuse (2026-08-19c, USER play-found + ruled; RED, not yet built)
+
+**The play finding.** The USER walked away from the castle cat and died to Mordack minutes
+later, on another screen: *"you can't just walk away from the cat. that sets up the mordack
+death... you shouldn't encounter the cat before you have both [the fish and the empty bag].
+that's the KQ4 whale shape."* Remote screen ⇒ IN SCOPE by the one rule — unlike the temple
+entombment or the yeti chase, nothing on the death's own screen prevents it.
+
+**The mechanism, source-read (castle.sc = script 550, region live in the castle rooms).**
+  * The cat ARMS through exactly one procedure: `proc550_16` (castle.sc:81) — guarded
+    `(and (!= global332 7) (> (Random 0 100) 20))`, positions the cat per room
+    {57,58,59,60,61,63,64}, sets `global338 = gCurRoom`, `global332 = 1`. Its call sites are
+    rm061::init (under flag 104 ∧ ¬352 ∧ ¬353), rm063::init (under ¬352), and rm060's
+    enterLeft/enterNorth st0 (under ¬352 ∧ ¬353) — the arming ROOMS are {60, 61, 63}.
+  * An encounter that is not answered ends in `theCatRunScript` — by the cat's own timer
+    (theCatScript st8, `(!= global332 2)`), by proximity (theCat::doit, distance < 15), by a
+    talk click (msg 5), by the bag under `63 ∧ ¬62`, or by LEAVING THE ROOM
+    (castle::newRoom under `global332 == 1`). Both fuse writers are unconditional on their
+    path: `global332 = 6`, `global331 = 2`, then `global352 = Random 5-10` (10 if fled;
+    `global353 = 3` instead when the recurring cycle is armed).
+  * THE FUSE IS A CLOCK: `castle::doit` (173-217) decrements `global352` once per game-minute
+    (GetTime tick, frozen only under flag 64 — cutscenes; cleared by castle::init). At 1 it
+    writes `global331 = 3` and flag 64.
+  * `global331 == 3` arms `theWizardScript` POSITIONALLY from nine rooms' doits —
+    `(and (== global331 3) (global0 inRect: ...))` at rm057:141, rm058:78, rm059:105(120),
+    rm060:65, rm061:72, rm062:64, rm063 (three sites), rm064:67, rm065:126 — Mordack
+    materializes on the ego and every branch of theWizardScript ends at `proc0_26 73`
+    (castle.sc:1584, 1682). `_room_unavoidable` ALREADY classifies theWizardScript
+    unavoidable in every castle room (measured 2026-08-19c); what it cannot see is that the
+    FUSE WRITE commits to it — three hops of adversarial clock where KQ4's day/night was one.
+  * The only stock defuse is the endgame: rm064's east exit under `global331 == 5`
+    (Mordack asleep) zeroes 352/353 (rm064:86-89). Bagging the cat does NOT clear a running
+    fuse.
+
+**The ORDERING TRAP inside it.** The fish throw is SPENT — `theThrowFishScript` st0
+`(global0 put: 37)` (castle.sc:602) — and sets flag 62 (st3); the bag answers only under
+`63 ∧ 62` (theCat handleEvent dispatch, castle.sc:830; pre-63 it is flavor msg 50, and
+63 ∧ ¬62 runs theCatRunScript = the fuse). So fish-before-beast leaves every later encounter
+UNANSWERABLE: the fish is gone, the bag is flavor, and each encounter re-arms the fuse.
+
+**The demand, derived as a FIXPOINT over saving writers — not the bare disjunction.**
+global332's saving writers at the encounter are {2: the fish dispatch, needs own(37)} and
+{5: the bag dispatch, needs 63 ∧ 62 ∧ own(24)}. But writer 2 is only HALF an answer: its own
+completion chains `catGetFish → theCatRunScript` — the fuse again — with flag 62 now set and
+item 37 now spent, so the fish answer is saving iff the NEXT encounter it forces is
+bag-answerable: `own(37) ∧ 63 ∧ own(24)`. The fixpoint terminates because each escape's
+writes are monotone (62 rises, 37 leaves). Demand at the ARMING:
+
+    (own37 ∧ 63 ∧ own24) ∨ (63 ∧ 62 ∧ own24)  ≡  63 ∧ own(24) ∧ (62 ∨ own(37))
+
+— exactly the USER's ruling: *"you shouldn't encounter the cat before you have both."*
+⛔ The naive "fuse write = death" WITHOUT the fixpoint condemns catGetFish too, collapses the
+demand to the bag answer alone, and — since flag 62's only writer is the fish answer inside
+an encounter — walls the cat's first spawn forever: a guard built from it breaks the game.
+
+**THE CURE, named (the red's promotion contract).** (1) Classify the REMOTE FUSE: a countdown
+register decremented by an always-live (region) doit whose expiry writes a value that arms an
+unavoidable death — the adversarial-clock class (KQ4 day/night, KQ6's wedding fuse), death-
+valued instead of item-sealing. A write arming the countdown is then a committed death (the
+expiry is nondeterministic; a localized defuse cannot un-fire it). (2) The machines whose
+completions write the fuse (theCatRunScript; castle::newRoom's 332==1 arm) become
+unavoidable, and the encounter's arming demands its escapes' prices under the saving-writer
+fixpoint above. (3) The guard is the standard whale-shape arm-event: refuse `proc550_16`'s
+body under the derived demand — one wrap, all four call sites, indistinguishable from the
+stock 20% no-spawn roll, open play everywhere (the cat is an optional ambush; a withheld
+spawn changes nothing else in the room). gypsy/princess-class exclusions do not apply; 550.SCR
+is already in the shipped patch set (the henchman discriminator) and is NOT on the GOG
+loose-patch list.
+
+**Safe play order until the guard ships:** pea the beast FIRST, re-take the dropped bag, keep
+the fish; then fish→cat, then bag→cat.
