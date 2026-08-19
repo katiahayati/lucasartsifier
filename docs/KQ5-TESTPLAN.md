@@ -102,15 +102,15 @@ Legend: ✅ = verified (harness or your play) · ☐ = still needs your hands.
 ## H — Coast, hermit, the sail (the last gate before Mordack's island)
 | ✓ | # | Where | Do | Expect |
 |---|---|---|---|---|
-| ☐ | H0 | harpy island rm49, first visit, missing Shell (23) or Fishhook (31) | click the boat to sail off / walk south or west into the sea edge | **"Not yet!"** — boat click refused (control returns); walked edge turns back with the line (⛔ 2026-08-19b play-found: the island is ONE SAFE VISIT — the departure writes flag 54, the return patrol kills with the harp spent; USER ruling: guard the depart, never the return) |
-| ☐ | H0b | 〃 with both (shell picked up, nest fishhook via `get 31` there) | sail off | **departs, stock** — and any LATER departure (flag 54 up) is never re-demanded |
+| ✅ | H0 | harpy island rm49, first visit, missing Shell (23) or Fishhook (31) | click the boat to sail off / walk south or west into the sea edge | **"Not yet!"** — boat click refused (control returns); walked edge turns back with the line (⛔ 2026-08-19b play-found: the island is ONE SAFE VISIT — the departure writes flag 54, the return patrol kills with the harp spent; USER ruling: guard the depart, never the return) |
+| ✅ | H0b | 〃 with both (shell picked up, nest fishhook via `get 31` there) | sail off | **departs, stock** — and any LATER departure (flag 54 up) is never re-demanded |
 | ☐ | H0c | return visit to rm49 (flag 54 up) | land, wander | **stock, unguarded** — the 50% harpy patrol may kill you; Caveat-Player BY RULING ("if we can guard the depart we should not guard the return") |
-| ☐ | H1 | rm90 / rm44 | get Fishhook (31) / Iron Bar (30) | stock |
-| ☐ | H2b | rm46 hermit | click Shell (23) on the hermit, missing Iron Bar (30) or Fishhook (31) | **"Not yet!"** — the give refuses, shell kept, heal deferred (USER ruling 2026-08-19: the whole cutscene chain must not start; ⛔ the first two builds hung at rm660 / deferred the commitment via flag 105) |
-| ☐ | H2c | coast rm44/45/46, flag 105 CLEAR (pre-hermit) | sail around (harpy island for the Shell etc.), items missing | **stock** — the boat click passes (`(or (not flag105) items)` — the fork-head discriminator); the rm113 leg is unreachable without flag 105 |
-| ☐ | H2d | coast, flag 105 SET, items missing | walk into a coast room / click the boat | **no auto-sail** (the boatRegion init auto-arm is silently gated — you stay walkable) / **"Not yet!"** on the click |
-| ☐ | H3 | rm46 hermit | give Shell with both (`get 30`, `get 31`) | **full stock chain**: heal, farewell, mermaid ride to Mordack's (ONE-WAY — save first) |
-| ☐ | H4 | hermit rm46/660-663 | all other hermit scenes | stock, un-walled |
+| ✅ | H1 | rm90 / rm44 | get Fishhook (31) / Iron Bar (30) | stock |
+| ✅ | H2b | rm46 hermit | click Shell (23) on the hermit, missing Iron Bar (30) or Fishhook (31) | **"Not yet!"** — the give refuses, shell kept, heal deferred (USER ruling 2026-08-19: the whole cutscene chain must not start; ⛔ the first two builds hung at rm660 / deferred the commitment via flag 105) |
+| ✅ | H2c | coast rm44/45/46, flag 105 CLEAR (pre-hermit) | sail around, items missing | **stock** — the boat click passes (`(or (not flag105) items)`). ✅ VERIFIED BY PLAY 2026-08-19c: the whole H0-H3 run island-hopped through this guard with flag 105 clear |
+| ◐ | H2d | coast, flag 105 SET, items missing | board the boat | **no auto-sail** + **"Not yet!"** on the click. ⚠️ UNREACHABLE BY PLAY in the current build (flag 105 rises only inside the equipped give chain — cartoon2 st18 / goGetBoat); defense-in-depth for stale saves. Repro if desired: load the 2026-08-19 post-give fishhook-less save (the mermaid-tow one) and board — expect refusal instead of the tow |
+| ✅ | H3 | rm46 hermit | give Shell with both (`get 30`, `get 31`) | **full stock chain**: heal, farewell, mermaid ride to Mordack's (ONE-WAY — save first) |
+| ✅ | H4 | hermit rm46/660-663 | all other hermit scenes | stock, un-walled |
 
 ## V — Open verdicts (answers change what I build next)
 | # | Question | How |
