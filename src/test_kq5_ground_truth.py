@@ -69,18 +69,28 @@ EXPECTED_CAUGHT = {
     # (`put: 7 214`); the bottle and coin are inside the one-visit pocket. Golden since July.
     "Brass_Bottle",
     "Gold_Coin",
-    # ⛔ SHELL LEFT THIS LIST 2026-08-15, on the USER'S OWN RULING (2026-08-14): "you can sail
-    # from the hermit island to the harpy island again to get the shell" -- re-obtainable, so not
-    # a stranding. Its old row rested on the phantom cartoon edges (see below); it is not a
-    # dropped catch, it is a false positive that went away with its cause.
-    #
-    # THE FISHHOOK: source rm90, used at rm67 (`lookInMseHole` -> the Moldy_Cheese), and you
-    # cannot go back for it -- USER 2026-08-14, "once you are in mordack's lair you can't get back
-    # out to get the fishhook". First caught 2026-08-14; RE-PINNED 2026-08-15 with the USER'S OK
-    # after three defects were cured together (docs/KQ5-ORACLE.md §8). The old pin named the
-    # frontier `rm49->rm650|rm49->rm654`, and those rooms DO NOT EXIST: 650/654 are Cedric's CD
-    # view numbers, which reached the room universe through a temp-scope bug. The real frontier is
-    # the hermit island's crossing to the far shore.
+    # ✅ SHELL RE-ENTERED 2026-08-19b, USER PLAY-RULED. It left 2026-08-15 on the 08-14 ruling
+    # "you can sail from the hermit island to the harpy island again to get the shell" -- and
+    # today's play REFUTED that premise: the USER sailed back after the hermit and was fatally
+    # captured, "which given that i didn't have the harp anymore ... wasn't avoidable". Source
+    # agrees and names the mechanism: rm049's departure cutscene (castOffScript state 13) writes
+    # flag 54 and CLEARS flag 74 (the harp's charm); on any flag-54 return, rm049::init arms
+    # `harpyInitScript` -- a 50% roll, then a positional kill (`harpyScript` -> proc0_26 247) on
+    # control mask $0002, no counter (the harp is spent in the nest on the first visit). So the
+    # island is one-safe-visit and the DEPARTURE is the commitment: everything sourced in the
+    # pocket {49, 50, 90, 91} and used beyond it must be in hand at the boat click.
+    # USER 2026-08-19b, both rulings: "yes go ahead and change ground truth. if we can guard the
+    # depart we should not guard the return" -- the toll goes on rm49->rm48; the residual return
+    # death stays UNGUARDED (Caveat-Player, the temple-entombment class).
+    "Shell",
+    # THE FISHHOOK: source rm90 (the harpies' NEST, entered only by the first-visit scripted
+    # capture, walk-reachable from rm50 while still on the island), used at rm67
+    # (`lookInMseHole` -> the Moldy_Cheese) -- USER 2026-08-14, "once you are in mordack's lair
+    # you can't get back out to get the fishhook". First caught 2026-08-14; RE-PINNED 2026-08-15
+    # (docs/KQ5-ORACLE.md §8) with the frontier at the hermit island's crossing to the far
+    # shore -- and THAT frontier was REFUTED 2026-08-19b by the same play finding as the
+    # Shell's: the harpy-island return is fatal, so the real frontier is rm49's own departure,
+    # one island earlier. Red until the flag-54 patrol is modeled as the wall it is.
     "Fishhook",
     # ✅ PROMOTED 2026-08-15, USER-RULED REAL, all five: the model could not have emitted ANY of
     # these before, because one poisoned register projection (`global322`, an object-valued
@@ -238,8 +248,12 @@ MECHANISM_ROWS = {
         "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 206, 'script': 206, "
         "'inst': 'getPie', 'pays': ['getPie'], 'starves': [9], 'starved_accepts': [9]}",
     },
-    "Fishhook": {"analyze: need@rm67 sources=[90] frontier=rm44->rm113|rm45->rm113|"
-                 "rm46->rm113|rm46->rm661|rm660->rm663"},
+    # ⛔ RED SINCE 2026-08-19b (with the Shell below): the frontier moved from the hermit
+    # island's far-shore crossings to rm49's OWN departure -- the flag-54 write that makes the
+    # harpy island unreturnable (see the EXPECTED_CAUGHT note). The old pin asserted the stale
+    # frontier and no passing test may assert known-wrong behavior.
+    "Fishhook": {"analyze: need@rm67 sources=[90] frontier=rm49->rm48"},
+    "Shell": {"analyze: need@rm46 sources=[49] frontier=rm49->rm48"},
     "Harp": {"analyze: need@rm90 sources=[9] frontier=rm32->rm33",
              "analyze: need@rm92 sources=[9] frontier=rm32->rm33"},
     "Beeswax": {"analyze: need@rm44 sources=[24] frontier=rm32->rm33"},
