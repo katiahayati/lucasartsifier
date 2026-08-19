@@ -1,4 +1,4 @@
-"""The silent arm-hold's soundness premise, and the decline-fork that replaces it.
+"""The silent arm-hold's soundness premise, annotated -- and the chain climb that cures it.
 
 Play-found 2026-08-18 (the USER, at the hermit): the mermaid departure's arm-event guard held
 `(self setScript: cartoon2)` in a room whose init had already gone hands-off, and the game HUNG
@@ -18,18 +18,20 @@ are structural facts of the file, not hermit facts:
     client's script slot, and a room whose doit dispatches on `script` never reaches its edge
     exits again (rm046's bringCedric; same class as the 2026-08-04 finding #11 hang).
 
-The cure is the game's own: when the gated script contains a DECLINE arm -- a setScript to a
-sibling whose chain exits to a NON-frontier room (goGetBoatScript, stock's "no ride today, sail
-home") -- the demand is conjoined at that fork instead: refuse with a line, then run the stock
-decline. Same doctrine as the market patch (refuse in the act's own dispatch case) and the flip
-interceptor (held = the stock else arm).
+find_trigger ANNOTATES the unsound hold (kind stays arm-event -- the deferral triage's
+contract) and, when a handoff machine is itself armed from a controllable handler up the
+chain, names that arming (`chain_arm`): the refusal belongs at the last controllable moment
+before the whole committed chain (USER ruling 2026-08-19, the shell give). A "decline-fork"
+cure -- conjoining the demand into the gated cutscene's own decline arm -- was built and then
+REMOVED BY USER RULING the same day: its one real site (goGetBoatScript) raised flag 105 on
+the way out, a commitment deferral wearing a decline's clothes.
 """
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from trigger import find_trigger, wrap_trigger_in_source                 # noqa: E402
+from trigger import find_trigger                 # noqa: E402
 from sexpr import read_all as read_string                                # noqa: E402
 
 PASS, FAIL = [], []
@@ -174,6 +176,36 @@ CARD = """(instance rm250 of Rm
 )
 """
 
+# The chain shape (the USER's hermit ruling): the transit's armings are all changeState
+# handoffs, but one of the handoff machines (giveC) is itself armed from a controllable
+# handler -- the give click. The refusal belongs THERE: the last controllable moment before
+# the whole committed chain. bringC's chain dead-ends in doit and is reported, not wrapped.
+CHAIN = HANDOFF + """
+(instance giveC of Script
+\t(method (changeState param1)
+\t\t(switch (= state param1)
+\t\t\t(0
+\t\t\t\t(= cycles 1)
+\t\t\t)
+\t\t\t(1
+\t\t\t\t(global2 setScript: transit)
+\t\t\t)
+\t\t)
+\t)
+)
+
+(instance hermitA of Actor
+\t(method (handleEvent param1)
+\t\t(switch (param1 message:)
+\t\t\t(4
+\t\t\t\t(global2 setScript: giveC)
+\t\t\t\t(param1 claimed: 1)
+\t\t\t)
+\t\t)
+\t)
+)
+"""
+
 COND = "(and (global0 has: 30) (global0 has: 31))"
 REFUSE = "(proc255_0 {Not yet!})"
 
@@ -183,11 +215,11 @@ def test_dead_outside_exit_declines_the_silent_hold():
     trig = find_trigger(read_string(HERMIT), 663)
     check("the hermit shape's hold is annotated unsound (kind stays arm-event: the "
           "deferral triage's contract)",
-          trig["kind"] == "arm-event" and trig.get("unsound_hold"),
+          trig["kind"] == "arm-event" and trig.get("unsound_hold")
+          and trig.get("target_script") == "cartoon2",
           detail="got %r" % (trig,))
-    check("the annotation names the stock decline fork",
-          trig.get("decline_script") == "goHome" and trig.get("target_script") == "cartoon2",
-          detail="got %r" % (trig,))
+    check("no decline is offered (the machinery was removed by USER ruling 2026-08-19)",
+          "decline_script" not in trig, detail="got %r" % (trig,))
 
 
 def test_changestate_handoff_declines_the_silent_hold():
@@ -210,6 +242,19 @@ def test_adversary_arming_keeps_the_silent_hold():
           detail="got %r" % (trig,))
 
 
+def test_chain_climb_to_the_controllable_arming():
+    print("\n-- find_trigger: the climb to the last controllable moment (the give click) --")
+    trig = find_trigger(read_string(CHAIN), 661)
+    check("the handoff chain climbs to the controllable arming",
+          trig.get("chain_arm") == {"trigger_instance": "hermitA",
+                                    "trigger_method": "handleEvent",
+                                    "target_script": "giveC"},
+          detail="got %r" % (trig,))
+    check("the unclimbable sibling door is reported, not silently skipped",
+          trig.get("chain_unwrapped") == ["bringC"],
+          detail="got %r" % (trig,))
+
+
 def test_true_sole_exit_is_unchanged():
     print("\n-- find_trigger: the act-break card still reports sole-exit --")
     trig = find_trigger(read_string(CARD), 26)
@@ -217,38 +262,12 @@ def test_true_sole_exit_is_unchanged():
           trig["kind"] == "sole-exit", detail="got %r" % (trig,))
 
 
-def test_decline_fork_emission():
-    print("\n-- wrap_trigger_in_source: the decline-fork wrap --")
-    trig = find_trigger(read_string(HERMIT), 663)
-    if not (trig.get("unsound_hold") and trig.get("decline_script")):
-        check("emission (skipped: no decline annotation)", False,
-              detail="got %r" % (trig,))
-        return
-    # the placement apply_guards derives from the annotation
-    trig = {"kind": "decline-fork", "instance": trig["target_script"],
-            "decline_script": trig["decline_script"], "target_room": trig["target_room"],
-            "dest_test": trig.get("dest_test")}
-    out, n = wrap_trigger_in_source(HERMIT, trig, COND, REFUSE)
-    check("exactly one site rewritten", n == 1, detail="n=%r" % (n,))
-    check("the refusal line is emitted", "Not yet!" in out, detail=out)
-    check("the stock decline arm still fires on its own head",
-          "(proc0_12 55)" in out and out.count("setScript: goHome") >= 2,
-          detail=out)
-    check("the frontier continuation is guarded on the demand",
-          "(global0 has: 30)" in out and "(global0 has: 31)" in out, detail=out)
-    check("output stays balanced",
-          out.count("(") == out.count(")"), detail="(%d vs )%d" % (out.count("("),
-                                                                   out.count(")")))
-    check("the marker names the kind", "softlock-guard: the stock decline holds" in out,
-          detail=out)
-
-
 def run():
     test_dead_outside_exit_declines_the_silent_hold()
     test_changestate_handoff_declines_the_silent_hold()
+    test_chain_climb_to_the_controllable_arming()
     test_adversary_arming_keeps_the_silent_hold()
     test_true_sole_exit_is_unchanged()
-    test_decline_fork_emission()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     sys.exit(1 if FAIL else 0)
 

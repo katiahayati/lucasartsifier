@@ -1002,30 +1002,13 @@ def _edge_dispatch_vars(forms):
     return out
 
 
-def _decline_arm(ss, nr, inst, target_room):
-    """The gated script's own DECLINE: a sibling script armed from within `inst` whose chain
-    exits to a room other than `target_room`. That arm is the game's own "not this time" --
-    stock code, full flavor, control handed back by construction -- so a demand conjoined at
-    its fork refuses the crossing without inventing any behavior (cdHermitRoom's
-    goGetBoatScript: hermit walks back inside, the player sails home to rm44)."""
-    exits = defaultdict(set)
-    for (i0, _m0, _k0, d0, _p0) in nr:
-        if isinstance(d0, int):
-            exits[i0].add(d0)
-    for (i2, _m2, tgt, _r, _p) in ss:
-        if (i2 == inst and isinstance(tgt, str) and tgt != inst
-                and exits.get(tgt) and target_room not in exits[tgt]):
-            return tgt
-    return None
-
-
 def _split_if(form):
     """`(if H then... else else...)` as text -> (H, [then...], [else...]), each piece verbatim.
 
     Purely textual, same contract as `_block_span`: comments and `{...}` strings skipped, an
     unparseable form returns (None, [], []) so the caller declines the site instead of editing
-    it. A form with no `else` returns an empty else list -- the decline-fork wrapper requires
-    both directions and refuses such a site."""
+    it. A form with no `else` returns an empty else list -- fork-reading callers (patcher's
+    `_fork_head`) require both directions and refuse such a site."""
     m = re.match(r"\(\s*if\b", form)
     if not m:
         return None, [], []
@@ -1162,8 +1145,13 @@ def find_trigger(forms, target_room, ego=None):
         # arm-event is safe only while some newRoom site lives OUTSIDE the script being gated.
         outside = [s for s in nr if s[0] != inst]
         if not outside:
-            return {"kind": "sole-exit", "instance": inst, "trigger_instance": i2,
-                    "trigger_method": m2, "target_room": target_room, "dest_test": dest_test}
+            # `target_script` rides along for the deferral triage, whose contexts are the
+            # armings of the gated script -- which for a sole exit is `inst` itself. The key
+            # was missing for as long as no triage chain hop ever landed on a true sole-exit
+            # room; the hermit deferral was the first to (KeyError, 2026-08-19).
+            return {"kind": "sole-exit", "instance": inst, "target_script": inst,
+                    "trigger_instance": i2, "trigger_method": m2,
+                    "target_room": target_room, "dest_test": dest_test}
         # THE PREMISE IS OPEN PLAY NEXT DOOR, and two context shapes break it (play-found
         # 2026-08-18, the hermit departure hang -- no refusal, no exits, nothing left to run):
         #
@@ -1182,8 +1170,8 @@ def find_trigger(forms, target_room, ego=None):
         # arm-events too, and it already judges these very contexts itself (committed vs
         # benign, play-validated on LB2's rm480 chase chain, dagger-frozen); changing the kind
         # under it crashed that path outright. Only the MAIN placement loop -- where a bare
-        # arm-event wrap would ship the silent hold as-is -- converts an unsound hold into a
-        # decline-fork or the sole-exit flow (see apply_guards).
+        # arm-event wrap would ship the silent hold as-is -- converts an unsound hold into
+        # the chain's controllable refusal or the sole-exit flow (see apply_guards).
         armers = defaultdict(set)
         for (i3, _m3, tgt3, _r3, _p3) in ss:
             armers[tgt3].add(i3)
@@ -1193,16 +1181,53 @@ def find_trigger(forms, target_room, ego=None):
         row = {"kind": "arm-event", "trigger_instance": i2, "trigger_method": m2,
                "target_script": inst, "target_room": target_room, "dest_test": dest_test}
         if not (sound and live):
-            # The silent hold is unsound here. The game's own decline, if the gated script
-            # carries one, is the refusal site: a sibling script armed from WITHIN the gate
-            # whose chain exits to a non-frontier room (cdHermitRoom's goGetBoatScript,
-            # stock's "no ride today, sail home"). The demand joins that fork -- refuse with
-            # a line, run the stock decline -- the flip interceptor's doctrine: held = the
-            # stock decline arm.
             row["unsound_hold"] = True
-            d = _decline_arm(ss, nr, inst, target_room)
-            if d:
-                row["decline_script"] = d
+            # THE CHAIN CLIMB, first choice (USER ruling 2026-08-19, the hermit: "prevent
+            # you from starting the whole cutscene by giving the shell until you have all
+            # you need"). The gated machine's armings are changeState handoffs, but a
+            # handoff machine may itself be armed from a CONTROLLABLE handler one or more
+            # hops up -- giveShell from hermit_a::handleEvent, the give click. That is the
+            # last controllable moment before the committed chain, and the refusal belongs
+            # there (the arrival-commit doctrine, in-file). Doors whose climb dead-ends in
+            # a free-running method are REPORTED (`chain_unwrapped`), never silently
+            # skipped -- whether they are sealed (bringCedric arms only off a flag written
+            # inside the very chain being guarded) is for the caller and the oracle to
+            # verify, and an unreported door is finding #4.
+            hop_seen = {inst}
+            level = sorted({i3 for (i3, m3) in arm_cands if m3 == "changeState"})
+            climbed_from = None
+            for _depth in range(3):
+                nxt = []
+                for carrier in level:
+                    if carrier in hop_seen:
+                        continue
+                    hop_seen.add(carrier)
+                    ups = [(i4, m4) for (i4, m4, t4, _r4, _p4) in ss
+                           if t4 == carrier and i4 is not None]
+                    ctl = [(i4, m4) for (i4, m4) in ups if m4 in CONTROLLABLE_METHODS]
+                    if ctl:
+                        row["chain_arm"] = {"trigger_instance": ctl[0][0],
+                                            "trigger_method": ctl[0][1],
+                                            "target_script": carrier}
+                        climbed_from = carrier
+                        break
+                    nxt += [i4 for (i4, m4) in ups
+                            if m4 == "changeState" and i4 not in hop_seen]
+                if climbed_from or not nxt:
+                    break
+                level = sorted(set(nxt))
+            if climbed_from:
+                others = sorted({i3 for (i3, m3) in arm_cands
+                                 if m3 == "changeState" and i3 != climbed_from})
+                if others:
+                    row["chain_unwrapped"] = others
+            # No controllable moment up the chain leaves only the annotation: the main loop
+            # routes such a row into the sole-exit flow (deferral, else honestly unplaced).
+            # A "decline-fork" cure -- conjoining the demand into the gated cutscene's own
+            # decline arm -- was BUILT here and REMOVED BY USER RULING 2026-08-19: its one
+            # real-world site (cdHermitRoom's goGetBoatScript) turned out to raise flag 105
+            # on the way out, a commitment DEFERRAL wearing a decline's clothes, and the
+            # ruling is that the refusal belongs before the chain starts, not inside it.
         return row
     return {"kind": "no-trigger", "instance": inst, "cutscene_state": state,
             "target_room": target_room, "dest_test": dest_test}
@@ -1482,68 +1507,6 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
             text = text[:p0] + new_region + text[p1:]
             n_total += n
         return text, n_total
-    if placement["kind"] == "decline-fork":
-        # THE STOCK DECLINE HOLDS THE CROSSING. The gated cutscene is the room's sole
-        # continuation (see find_trigger: no live outside exit / a changeState handoff), so
-        # neither a silent arm-gate nor an in-place refusal can carry the demand -- the first
-        # hangs the room (play-found 2026-08-18, the hermit departure), the second strands a
-        # half-armed scene (finding #5's class). But the cutscene carries the game's OWN way
-        # of not crossing: the decline arm find_trigger classified (`decline_script`), stock
-        # code that hands control back and sails the player home. Conjoin the demand at that
-        # fork: the demand-holding player continues exactly as stock; the demand-missing
-        # player hears the refusal line and then rides the stock decline. Held = the stock
-        # decline arm, the flip interceptor's own doctrine at a changeState fork.
-        inst, decl = placement["instance"], placement["decline_script"]
-        span = _find_region(text, r"\(instance\s+%s\b" % re.escape(inst))
-        if not span:
-            return text, 0
-        i0, i1 = span
-        region = text[i0:i1]
-        am = re.search(r"setScript:\s*%s\b" % re.escape(decl), region)
-        if not am:
-            return text, 0
-        # the innermost `(if ...)` enclosing the decline arming: that if IS the game's fork
-        # between declining and continuing toward the frontier. No enclosing if, or an if
-        # without an else (nothing spells the continue direction), leaves the row honestly
-        # unplaced -- a wrap at a site we did not analyse is this project's costliest bug.
-        fork = None
-        s0 = region.rfind("(", 0, am.start())
-        while s0 != -1:
-            b = _block_span(region, s0)
-            if b and b[1] > am.end():
-                if re.match(r"\(\s*if\b", region[b[0]:b[0] + 8]):
-                    fork = b
-                    break
-                s0 = region.rfind("(", 0, b[0])
-            else:
-                s0 = region.rfind("(", 0, s0)
-        if not fork:
-            return text, 0
-        b0, b1 = fork
-        head, then_parts, else_parts = _split_if(region[b0:b1])
-        if head is None or not else_parts or not then_parts:
-            return text, 0
-        decline_then = any(("setScript: %s" % decl) in p or
-                           re.search(r"setScript:\s*%s\b" % re.escape(decl), p)
-                           for p in then_parts)
-        cont = else_parts if decline_then else then_parts
-        decline = then_parts if decline_then else else_parts
-        line0 = region.rfind("\n", 0, b0) + 1
-        indent = region[line0:b0] if region[line0:b0].strip() == "" else "\t\t\t\t"
-        wrapped = guarded_wrap(guard_sexpr, "\n".join(cont), refuse, site=site,
-                               deny_extra=list(decline), indent=indent + "\t",
-                               marker="; softlock-guard: the stock decline holds the crossing")
-        b2 = indent + "\t"
-        if decline_then:
-            new_form = ("(if %s\n" % head
-                        + "".join("%s%s\n" % (b2, p) for p in then_parts)
-                        + "%selse\n%s%s\n%s)" % (indent, b2, wrapped, indent))
-        else:
-            new_form = ("(if %s\n%s%s\n%selse\n" % (head, b2, wrapped, indent)
-                        + "".join("%s%s\n" % (b2, p) for p in else_parts)
-                        + "%s)" % indent)
-        region = region[:b0] + new_form + region[b1:]
-        return text[:i0] + region + text[i1:], 1
     if placement["kind"] == "arm-event":
         # Gate the ARMING of an adversarial event: wrap `(<recv> setScript: <target>)` so it fires
         # only when the guard holds. NO `else` -- if the item is missing the event just does not arm
@@ -1551,7 +1514,9 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
         # branch of the controllable cases makes no sense here: there is no player to tell "not now".
         inst, meth = placement["trigger_instance"], placement["trigger_method"]
         target = placement["target_script"]
-        inst_span = _find_region(text, r"\(instance\s+%s\b" % re.escape(inst))
+        # instance OR class: KQ5's boatRegion is a CLASS, and its init auto-arms the sail
+        # (play-found 2026-08-19); the direct branch has accepted both spellings all along.
+        inst_span = _find_region(text, r"\((?:instance|class)\s+%s\b" % re.escape(inst))
         if not inst_span:
             return text, 0
         i0, i1 = inst_span

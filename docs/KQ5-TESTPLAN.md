@@ -103,10 +103,11 @@ Legend: ✅ = verified (harness or your play) · ☐ = still needs your hands.
 | ✓ | # | Where | Do | Expect |
 |---|---|---|---|---|
 | ☐ | H1 | rm90 / rm44 | get Fishhook (31) / Iron Bar (30) | stock |
-| ☐ | H2 | coast rm44/45/46 | sail on toward Mordack's (rm113 crossing), missing Iron Bar (30) or Fishhook (31) | **refused** (the departure doesn't start / "Not yet!") |
-| ☐ | H2b | hermit rm660 | heal Cedric (Shell 23), missing Iron Bar (30) or Fishhook (31) | goodbye scene plays, then **"Not yet!" + the stock decline**: hermit walks back inside, you sail home to rm44 (⛔ 2026-08-18d fix — the old build HUNG here; retry = get the items, sail on, H2/H3 gate the rm113 crossing via flag 105) |
-| ☐ | H3 | 〃 | with both (`get 30`, `get 31`) | **departs** (ONE-WAY — save first) |
-| ☐ | H4 | hermit rm46/660 | hermit scenes (Shell 23 heals Cedric etc.) | stock, un-walled |
+| ☐ | H2b | rm46 hermit | click Shell (23) on the hermit, missing Iron Bar (30) or Fishhook (31) | **"Not yet!"** — the give refuses, shell kept, heal deferred (USER ruling 2026-08-19: the whole cutscene chain must not start; ⛔ the first two builds hung at rm660 / deferred the commitment via flag 105) |
+| ☐ | H2c | coast rm44/45/46, flag 105 CLEAR (pre-hermit) | sail around (harpy island for the Shell etc.), items missing | **stock** — the boat click passes (`(or (not flag105) items)` — the fork-head discriminator); the rm113 leg is unreachable without flag 105 |
+| ☐ | H2d | coast, flag 105 SET, items missing | walk into a coast room / click the boat | **no auto-sail** (the boatRegion init auto-arm is silently gated — you stay walkable) / **"Not yet!"** on the click |
+| ☐ | H3 | rm46 hermit | give Shell with both (`get 30`, `get 31`) | **full stock chain**: heal, farewell, mermaid ride to Mordack's (ONE-WAY — save first) |
+| ☐ | H4 | hermit rm46/660-663 | all other hermit scenes | stock, un-walled |
 
 ## V — Open verdicts (answers change what I build next)
 | # | Question | How |
