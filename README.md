@@ -217,8 +217,11 @@ docs/archive/             superseded plans, kept for their measurements      [se
 vendor/                   cloned at build time, never committed (see Install)
 ```
 
-Per-game configuration is one small file, `src/config.py`. Start and victory rooms are **discovered**
-rather than declared; see `src/anchors.py`.
+Per-game configuration (`src/config.py`) is **filesystem paths and a display name — nothing
+about the game itself**. Start room, victory rooms, the death signal and the debug flags all
+have override fields there, and every game leaves them empty: the pipeline derives all four
+from the game's own code (see `src/anchors.py`). A new title needs no config entry at all —
+`config.by_name()` picks up any game whose decompiled IR sits under `build/sweep/<name>/`.
 
 ## Future work
 
