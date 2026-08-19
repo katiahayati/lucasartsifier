@@ -79,13 +79,13 @@ As Al Lowe says, "Save Early, Save Often!"
 declared per title** — start room, victory room, death signal and debug flags are all derived
 from each game's own code.
 
-| game | engine | found → guarded | what it taught the engine |
+| game | engine | status |notes |
 |---|---|---|---|
-| **Leisure Suit Larry 2** (1988) | SCI0 | 15 items + 1 group → 12/12 sites | the Spinach Dip: fatal to *carry*, so the guard is a negative literal, placed while you can still ditch it |
-| **King's Quest IV** (1988) | SCI0 | 7 items → 5/5 | the real-time night clock; the whale — random events guarded by arming them only when survivable |
-| **King's Quest VI** (1992) | SCI1.1 | 18 items + 1 group → 24/26 | two endings multiply everything: exclusive castle routes, the Realm's carry-in/out, the wedding fuse (the 2 skips are deliberate, pinned — one is a trade you're *meant* to make) |
-| **Laura Bow 2** (1992) | SCI1.1 | 10 items → 5/5 | the act structure: the plot clock is a register, act breaks are one-way, demands ride the act-flip interceptor |
-| **King's Quest V** (1990) | SCI1-middle | *in progress (`kq5` branch)* | the market: consumables with more consumers than copies — detection becomes a matching problem |
+| **Leisure Suit Larry 2** (1988) | SCI0 | done & tested |  the Spinach Dip: fatal to *carry*, so the guard is a negative literal, placed while you can still ditch it |
+| **King's Quest IV** (1988) | SCI0 | done & tested | the real-time night clock; the whale — random events guarded by arming them only when survivable |
+| **King's Quest VI** (1992) | SCI1.1 | done & tested | the two ending paths massively complicate analysis; guarding the start of the wedding (a timer) until necessary items are in hand |
+| **Laura Bow 2** (1992) | SCI1.1  | done & tested | the act structure: the plot clock is a register, act breaks are one-way, demands ride the act-flip interceptor |
+| **King's Quest V** (1990) | SCI1-middle | *in progress (`kq5` branch)* | the village market: matching payments to merchants so everyone can be paid — detection becomes a matching problem |
 
 ## How it works, briefly
 
