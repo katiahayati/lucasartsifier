@@ -34,9 +34,9 @@ Legend: ✅ = verified (harness or your play) · ☐ = still needs your hands.
 ## A — Town & market
 | ✓ | # | Where | Do | Expect |
 |---|---|---|---|---|
-| ☐ | A1 | toymaker (204) | pay Gold Coin (11) / Needle (3) / Heart (9) | **refused** ("Better not…") for all three |
-| ☐ | A2 | bakery (206) | pay Gold Coin (11) / Needle (3) / Heart (9) | **refused** for all three |
-| ☐ | A3 | tailor (203) | pay Heart (9) | **refused**; Gold Coin (11) buys the cloak (**works**) |
+| ✅ | A1 | toymaker (204) | pay Gold Coin (11) / Needle (3) / Heart (9) | **refused** ("Better not…") for all three |
+| ✅ | A2 | bakery (206) | pay Gold Coin (11) / Needle (3) / Heart (9) | **refused** for all three |
+| ✅ | A3 | tailor (203) | pay Heart (9) | **refused**; Gold Coin (11) buys the cloak (**works**) |
 | ☐ | A4 | gypsy rm13 | pay Needle (3) | **works** (amulet 27) — never guarded |
 | ☐ | A5 | girl rm9 | give Heart (9) | **works** (harp 10) — never guarded |
 | ☐ | A6 | anywhere | EAT the Pie (2) | joke plays, **pie kept** (retraction) |
