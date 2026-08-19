@@ -84,8 +84,8 @@ Legend: ✅ = verified (harness or your play) · ☐ = still needs your hands.
 ## F — Above the sled
 | ✓ | # | Where | Do | Expect |
 |---|---|---|---|---|
-| ☐ | F1 | rm34 eagle | offer Pie (2) | **refused** (the pie is the yeti's) |
-| ☐ | F2 | rm34 | feed Lamb (19; half is fine) | **works** (stock — the intended move) |
+| ✅ | F1 | rm34 eagle | offer Pie (2) | **refused** (the pie is the yeti's) |
+| ✅ | F2 | rm34 | feed Lamb (19; half is fine) | **works** (stock — the intended move) |
 | ☐ | F3 | rm36 yeti | Pie (2) NOT thrown, walk west | "Not yet!" once + walk-back; **north stays free**; chase still escapable |
 | ☐ | F4 | rm36 | throw Pie (2) at yeti, walk west | crosses to rm35 normally |
 | ☐ | F5 | rm38 | Hammer (22) on the crystal | pried (Crystal 21), +4 (stock; bare hands fail harmlessly) |
@@ -94,8 +94,8 @@ Legend: ✅ = verified (harness or your play) · ☐ = still needs your hands.
 | ✓ | # | Where | Do | Expect |
 |---|---|---|---|---|
 | ✅ | R1 | rm40 | winning state (Crystal 21 held, eagle fed via `get 19` + `put 19 34`, no lamb in hand), walk the top strip (~148,144 — cliff room, walk carefully) | **carried off by the roc** |
-| ☐ | R2 | rm40 | missing the Crystal (21) | "Not yet!" + walk-back **and control returns** (re-check: the old ✅ predates the control-return lesson) |
-| ☐ | R3 | rm40 | Crystal (21) held but eagle NOT fed (Lamb 19 in hand) | **turned back** — the nest would kill you |
+| ✅ | R2 | rm40 | missing the Crystal (21) | "Not yet!" + walk-back **and control returns** (re-check: the old ✅ predates the control-return lesson) |
+| ✅ | R3 | rm40 | Crystal (21) held but eagle NOT fed (Lamb 19 in hand) | **turned back** — the nest would kill you |
 | ✅ | R4 | rm42 nest | wait 30s+ | eggs do **not** crack until the Locket (25) is taken |
 | ✅ | R5 | rm42 | take the Locket (25) | eggs crack → chicks → eagle rescue → rm43, Cedric greets |
 

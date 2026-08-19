@@ -1486,9 +1486,21 @@ def sink_remedies(s):
     for gt in survival_gates(s):
         _, cn, _ = factor(gt["alts"])
         forbidden |= cn
+    # A SPEND THE MARKET ALREADY REFUSES GETS NO RETRACTION (USER-found at the eagle,
+    # 2026-08-18b: "just kidding" played, then the full feed scene, then the eagle flew off
+    # unfed with the pie retained). An IMPURE sink -- the put: arms the scene -- is exactly
+    # what the retraction cannot hold: withholding the disposal lets the commitment run
+    # anyway, and by editing first it also consumed the market wrap's own anchor, so the
+    # refusal that should have preceded the scene never placed. The market's case wrap
+    # refuses BEFORE anything arms; where it covers a (script, item), it is the whole
+    # remedy. Pure jokes (the EATs) keep their kinder retraction -- the market defers to
+    # those in the other direction, and the two exclusions together are a partition.
+    covered = {(r["script"], r["item"]) for r in market_remedies(s)}
     out = []
     for d in s.dangerous_sinks():
         it = d["item"]
+        if (d["script"], it) in covered:
+            continue
         refused = ([f"{s.g.item_name(it)} is fatal to CARRY -- keeping it would trade one "
                     f"softlock for another"] if it in forbidden else [])
         score = scores.get((d["script"], it))
