@@ -118,8 +118,8 @@ verdicts (P1/P2/L3) are woven in where they occur.
 | ✓ | # | Where | Do | Expect |
 |---|---|---|---|---|
 | ☐ | M1 | rm51 beach | get the Cat Fish (37) | stock (the walkthroughs' "pick up the fish before the stairs" — with our guards, skipping it is refused rather than fatal) |
-| ☐ | M2 | rm54 (the stairs/grate room), WITHOUT the Cat Fish (37) | click the grate; linger where the henchman patrols | grate click: **"Not yet!"**, control returns; the beach henchman **never arms** (silent gate — walk back down for the fish). Inside the castle he stays STOCK (see Z) |
-| ☐ | M3 | rm54 with 37 | grate, or let the henchman grab you | both **stock** — either way into the castle |
+| ✅ | M2 | rm54 (the stairs/grate room), WITHOUT the Cat Fish (37) | click the grate; linger where the henchman patrols | grate click: **"Not yet!"**, control returns; the beach henchman **never arms** (silent gate — walk back down for the fish). Inside the castle he stays STOCK (see Z) |
+| ◐ | M3 | rm54 with 37 | grate, or let the henchman grab you | both **stock** — either way into the castle. ◐ GRATE ✅ (2026-08-19c); ⏰ REMINDER: the henchman-grab entry with the fish still untried — needs a pre-grate save |
 | ☐ | M4 | castle halls | cat appears | **must throw the Cat Fish (37)** — stock required move (flag 62) |
 | ☐ | M5 = P2 | any henchman encounter | pea (24) throws: land four hits; ALSO try one deliberate far miss | hits set flag 63 (g132 & $8000). **VERDICT P2: does the far miss spend a pea without the flag?** report the raw outcome |
 | ☐ | M6 | captured by the castle henchman → dungeon rm67 | give the Locket (25) — carried by construction (R4/R5's hold) — when Cassima comes | **rescue** (stock; without the give it's the timer death — that fork is the detection's row 11) |
