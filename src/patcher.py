@@ -923,7 +923,7 @@ EDGEHIT = {"north": 1, "east": 2, "south": 3, "west": 4}   # Game.sc Rm.doit swi
 # Placements find_trigger can actually wrap in a controllable handler: a direct newRoom, a
 # changeState cutscene, or a setScript-started Script. Anything else falls back to the exit idiom.
 _PLACED_KINDS = ("trigger", "direct", "setscript", "arm-event", "arm-clause",
-                 "proc-call", "proc-arm")
+                 "decline-fork", "proc-call", "proc-arm")
 
 
 def guard_edgehit_clause(text, direction, cond):
@@ -2350,6 +2350,94 @@ def _guard_travel_dispatch(dest, sp, titles_by_num, seen_dispatch):
     return None
 
 
+def _cond_items(cond):
+    """The item numbers a spec condition demands, read off its source spelling."""
+    try:
+        return {int(m) for m in re.findall(r"has:\s*(\d+)", to_source_syntax(cond))}
+    except Exception:                                  # noqa: BLE001
+        return set()
+
+
+def _pocket_cover_probe(dest, sp, specs, titles_by_num, nums, rooms):
+    """Is this sole-exit row's pocket covered by a sibling row's decline-fork hold?
+
+    Play-found 2026-08-18 (the hermit): the frontier for one demand can cut a POCKET several
+    edges deep -- rm46->rm661 enters the mermaid-departure suite, rm660->rm663 is the suite's
+    one crossing out, and 661/662/660 shuttle between themselves in between. The rm46 edge has
+    no sound site of its own (its arming is a changeState handoff), and re-siting the demand
+    up its chain would wall the heal scene the pocket exists to play. The correct coverage is
+    the sibling's: once rm660's fork declines the crossing without the items, entering the
+    pocket unprepared is SURVIVABLE BY STOCK'S OWN RETURN, and this row's edge stops being a
+    commit at all.
+
+    The claim is checked structurally, fail-closed: some sibling spec (same demand or more)
+    must classify decline-fork, and that sibling's room must be reachable from this row's
+    pocket by the pocket's own `newRoom:` literals, expanding only until the frontier rim
+    (rooms that are some sibling row's from_room -- their crossings carry their own holds).
+    Anything unreadable, unreachable, or larger than a small pocket refuses the claim; the
+    row then falls through to the deferral exactly as before. The rows this returns for are
+    RE-VERIFIED after every spec has placed (`pending_cover`): the covering fork and every
+    rim sibling must have actually applied, or the row flips back to honestly unplaced."""
+    items = _cond_items(sp["condition"])
+    if not items:
+        return None
+    edge = (sp.get("from_room"), sp.get("to_room"))
+    sibs = [s2 for s2 in specs
+            if s2.get("site") == "edge" and not s2.get("refused") and s2.get("condition")
+            and (s2.get("from_room"), s2.get("to_room")) != edge
+            and s2.get("from_room") is not None and s2.get("to_room") is not None
+            and items <= _cond_items(s2["condition"])]
+    if not sibs:
+        return None
+    forks = []
+    for s2 in sibs:
+        for cand in _edit_candidates(dest, titles_by_num, s2, rooms):
+            cpath = os.path.join(dest, "src", cand + ".sc")
+            try:
+                cforms = read_file(cpath)
+            except Exception:                          # noqa: BLE001
+                break
+            p = find_trigger(cforms, s2["to_room"], ego=_EGO)
+            if p["kind"] in _PLACED_KINDS:
+                # find_trigger annotates rather than reclassifies (the triage contract);
+                # the main loop converts exactly this shape into a decline-fork placement.
+                if (p["kind"] == "arm-event" and p.get("unsound_hold")
+                        and p.get("decline_script")):
+                    forks.append(s2)
+                break
+    if not forks:
+        return None
+    rim = {s2["from_room"] for s2 in sibs}
+    fork_rooms = {s2["from_room"] for s2 in forks}
+    seen_r, frontier_hits = {sp["to_room"]}, set()
+    queue = [sp["to_room"]]
+    while queue:
+        r = queue.pop()
+        if r in rim:
+            frontier_hits.add(r)
+            continue                       # a held crossing: its own row guards it
+        if len(seen_r) > 24:
+            return None                    # not a small pocket: refuse the claim
+        ttl = titles_by_num.get(r)
+        if ttl is None:
+            return None                    # a room we cannot read: refuse the claim
+        p2 = os.path.join(dest, "src", ttl + ".sc")
+        if not os.path.exists(p2):
+            return None
+        txt = open(p2, errors="replace").read()
+        for m in re.finditer(r"newRoom:\s*(\d+)", txt):
+            d = int(m.group(1))
+            if d not in seen_r:
+                seen_r.add(d)
+                queue.append(d)
+    hit_forks = frontier_hits & fork_rooms
+    if not hit_forks:
+        return None                        # no decline reachable: the pocket has no way home
+    s2 = next(s2 for s2 in forks if s2["from_room"] in hit_forks)
+    return {"from": s2["from_room"], "to": s2["to_room"],
+            "rim": sorted(frontier_hits), "items": sorted(items)}
+
+
 def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), rooms=None,
                  entry_frontier=None, defer_info=None):
     """Place each EDGE guard at its CONTROLLABLE TRIGGER.
@@ -2389,6 +2477,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                 sp["condition"] = c.replace("(gInv at:", "(global%d at:" % inv)
     out_unplaced = []
     pending_fwd = []               # (index of the refusal row, spec, fwd, stage) -- see below
+    pending_cover = []             # indexes of covered-by-pocket-hold rows, re-verified at end
     by_title = {}
     for sp in specs:
         if sp["site"] != "edge" or sp["refused"] or not sp.get("condition"):
@@ -2665,6 +2754,24 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             if placement.get("dest_test"):
                 sp = {**sp, "condition": "(or (not %s) %s)"
                                          % (placement["dest_test"], sp["condition"])}
+            if placement["kind"] == "arm-event" and placement.get("unsound_hold"):
+                # THE SILENT HOLD'S PREMISE FAILED AT THIS SITE (find_trigger's annotation:
+                # no live outside exit, or every arming is a changeState handoff -- the hermit
+                # departure hang, play-found 2026-08-18). Shipping the bare arm-gate here is
+                # shipping the hang. When the gated script carries the game's own decline arm,
+                # the demand moves to that fork (`decline-fork`); otherwise the row takes the
+                # sole-exit flow below -- pocket cover, then deferral, then honestly unplaced.
+                # The deferral triage keeps receiving the plain arm-event kind and is not
+                # affected -- its own committed/benign judgment already owns those sites.
+                if placement.get("decline_script"):
+                    placement = {"kind": "decline-fork",
+                                 "instance": placement["target_script"],
+                                 "decline_script": placement["decline_script"],
+                                 "target_room": placement["target_room"],
+                                 "dest_test": placement.get("dest_test")}
+                else:
+                    placement = {**placement, "kind": "sole-exit",
+                                 "instance": placement["target_script"]}
             if placement["kind"] not in _PLACED_KINDS and placement.get("instance"):
                 # The cutscene that performs the `newRoom` is in one file and the ARMING that
                 # starts it is in another: KQ6's rm340 arms script 344's cutscenes, and script
@@ -2796,6 +2903,20 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                                         "placement": {"kind": "hold-advance",
                                                       "instance": placement["instance"]}})
                             continue
+                # THE POCKET COVER, before any deferral: when a sibling row's decline-fork
+                # makes this row's pocket survivable by stock's own return, re-siting the
+                # demand up this row's chain would only wall the scenes the pocket plays on
+                # the way (the hermit heal). Probed forward against the SPECS -- not against
+                # rows placed so far -- so the outcome does not depend on spec order; the
+                # claim is re-verified against the actually-applied rows at the end.
+                if placement["kind"] == "sole-exit":
+                    cover = _pocket_cover_probe(dest, sp, specs, titles_by_num, nums, rooms)
+                    if cover:
+                        out.append({**sp, "applied": True, "sites": 0, "title": title,
+                                    "placement": {"kind": "covered-by-pocket-hold",
+                                                  "via": cover, "commit": placement}})
+                        pending_cover.append(len(out) - 1)
+                        continue
                 # THE SOLE-EXIT DEFERRAL. Refusing in place is a wall (the pocket's one
                 # `newRoom:` is inside the cutscene being refused), so the demand moves to the
                 # controllable crossings INTO the pocket, scoped by the model-derived stage --
@@ -3052,6 +3173,31 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
         frow = _forward_demand_to_hold(dest, dsp, fwd, stage, out)
         if frow is not None:
             out[idx] = frow
+    # THE COVER VERIFICATION -- a covered-by-pocket-hold row claimed its pocket on a forward
+    # probe of the SPECS; now that every spec has placed, the claim must hold against what
+    # actually applied: the covering fork landed as a decline-fork, and every rim crossing the
+    # probe leaned on carries an applied hold of its own. Any miss flips the row back to
+    # honestly unplaced -- a coverage claim that outlived its evidence is finding #4 wearing
+    # a new coat.
+    for idx in pending_cover:
+        row = out[idx]
+        via, rim = row["placement"]["via"], set(row["placement"]["via"]["rim"])
+        items = set(row["placement"]["via"]["items"])
+        fork_ok = any(r2.get("applied") and (r2.get("placement") or {}).get("kind")
+                      == "decline-fork" and (r2.get("from_room"), r2.get("to_room"))
+                      == (via["from"], via["to"]) for r2 in out)
+        rim_bad = sorted(r for r in rim - {via["from"]}
+                         if not any(r2.get("applied") and r2.get("from_room") == r
+                                    and items <= _cond_items(r2.get("condition") or "")
+                                    for r2 in out))
+        if not fork_ok or rim_bad:
+            out[idx] = {**row, "applied": False, "sites": 0,
+                        "why": ("pocket cover retracted: " +
+                                ("the covering decline-fork did not apply"
+                                 if not fork_ok else
+                                 "rim rooms %r carry no applied hold" % rim_bad)),
+                        "placement": {**row["placement"],
+                                      "kind": "covered-by-pocket-hold-RETRACTED"}}
     return out
 
 

@@ -103,7 +103,8 @@ Legend: ✅ = verified (harness or your play) · ☐ = still needs your hands.
 | ✓ | # | Where | Do | Expect |
 |---|---|---|---|---|
 | ☐ | H1 | rm90 / rm44 | get Fishhook (31) / Iron Bar (30) | stock |
-| ☐ | H2 | coast rm44/45/46 | sail on toward Mordack's, missing Iron Bar (30) or Fishhook (31) | **refused** (the departure doesn't start / "Not yet!") |
+| ☐ | H2 | coast rm44/45/46 | sail on toward Mordack's (rm113 crossing), missing Iron Bar (30) or Fishhook (31) | **refused** (the departure doesn't start / "Not yet!") |
+| ☐ | H2b | hermit rm660 | heal Cedric (Shell 23), missing Iron Bar (30) or Fishhook (31) | goodbye scene plays, then **"Not yet!" + the stock decline**: hermit walks back inside, you sail home to rm44 (⛔ 2026-08-18d fix — the old build HUNG here; retry = get the items, sail on, H2/H3 gate the rm113 crossing via flag 105) |
 | ☐ | H3 | 〃 | with both (`get 30`, `get 31`) | **departs** (ONE-WAY — save first) |
 | ☐ | H4 | hermit rm46/660 | hermit scenes (Shell 23 heals Cedric etc.) | stock, un-walled |
 
