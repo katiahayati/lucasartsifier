@@ -11,8 +11,8 @@ Sierra games, unlike LucasArts ones, let you get stuck. Forget the sunscreen in 
 board the cruise ship, and you die days later on a raft with no way back. This finds these traps
 automatically and blocks the crossing that causes them — at the last moment you can still comply.
 
-**Four games analyzed and play-tested** — Leisure Suit Larry 2 and King's Quest IV (SCI0, 1988) through
-King's Quest VI and Laura Bow 2 (SCI1.1, 1992) — same engine, no game-specific analysis code.
+**Four games analyzed and play-tested** — Leisure Suit Larry 2 (SCI0, 1988), King's Quest IV (SCI0, 1988), King's Quest VI (SCI1.1, 1992),
+and Laura Bow 2 (SCI1.1, 1992) — same engine, no game-specific analysis code.
 
 ## Demo
 
