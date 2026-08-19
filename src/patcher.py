@@ -448,6 +448,29 @@ def _init_mode(dest):
     T.MODE = {"g": base, "warned": _WARNED_LINE, "alloc": alloc}
 
 
+_MOTION_CACHE = {}
+
+
+def _motion_form(dest):
+    """The walker the turn-back speaks, IN THIS GAME'S OWN SPELLING: `PolyPath` (the
+    obstacle-aware one) where the game sends it anywhere, else `MoveTo`. A blocked MoveTo
+    never cues and the turn-back's input lock never lifts (rm085, USER-found); a game that
+    ships PolyPath uses it for exactly these walks, and one that does not (SCI0) cannot
+    name a class it lacks."""
+    if dest in _MOTION_CACHE:
+        return _MOTION_CACHE[dest]
+    src = os.path.join(dest, "src")
+    got = "MoveTo"
+    for fn in os.listdir(src):
+        if not fn.endswith(".sc"):
+            continue
+        if "PolyPath" in open(os.path.join(src, fn), errors="replace").read():
+            got = "PolyPath"
+            break
+    _MOTION_CACHE[dest] = got
+    return got
+
+
 _HANDS_CACHE = {}
 
 
@@ -475,10 +498,33 @@ def _hands_forms(dest):
             break
     if "hands" in spoken:
         got = ("(global%d handsOff:)" % _GAME, "(global%d handsOn:)" % _GAME)
-    elif "cancontrol" in spoken:
-        got = ("(User canControl: 0)", "(User canControl: 1)")
     else:
+        # The PROC spelling: a game with no handsOff: selector usually wraps the whole lock
+        # in a pair of Main procedures instead -- KQ5's proc0_2/proc0_3 set and restore
+        # canControl, canInput, the icon bar, the cursor and the handsOff latch (global102)
+        # TOGETHER. Speaking raw `(User canControl:)` here restores one property of five:
+        # rm085's stock warn arm proc0_2's the room before our guard ever fires, the refused
+        # kidnap never delivers the stock restore, and the turn-back ended with the walk
+        # complete and the controls dead (USER-found, state=2 in the live game). The pair is
+        # DERIVED: the exported Main procedure whose body writes `canControl: 0` is the
+        # game's handsOff, its `canControl: 1` partner the handsOn; raw canControl remains
+        # the fallback when no such pair exists.
         got = None
+        main = os.path.join(src, "Main.sc")
+        if os.path.exists(main):
+            txt = open(main, errors="replace").read()
+            off = on = None
+            for m in re.finditer(r"\(procedure\s+\((proc\d+_\d+)\b", txt):
+                b0, b1 = _block_span(txt, m.start())
+                body = txt[b0:b1]
+                if "canControl: 0" in body and off is None:
+                    off = m.group(1)
+                if "canControl: 1" in body and on is None:
+                    on = m.group(1)
+            if off and on:
+                got = ("(%s)" % off, "(%s)" % on)
+        if got is None and "cancontrol" in spoken:
+            got = ("(User canControl: 0)", "(User canControl: 1)")
     _HANDS_CACHE[dest] = got
     return got
 
@@ -2893,7 +2939,8 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                              "obj_globals": {"ego": "global%d" % _EGO,
                                              "room": "global%d" % _ROOM,
                                              "game": "global%d" % _GAME,
-                                             "hands": _hands_forms(dest)}}
+                                             "hands": _hands_forms(dest),
+                                             "motion": _motion_form(dest)}}
             new_text, n = wrap_trigger_in_source(
                 text, placement, to_source_syntax(sp["condition"]), REFUSE, site=row_site)
             if n == 0:
@@ -2903,6 +2950,8 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             if "sgTurnBack" in new_text:       # any kind that emitted the turn-back needs its
                 new_text = _ensure_refusal_use(new_text, titles_by_num)     # classes declared
                 new_text = _ensure_use(new_text, "Motion")
+                if "setMotion: PolyPath" in new_text:
+                    new_text = _ensure_use(new_text, "PolyPath")
                 if "(User canControl:" in new_text:
                     new_text = _ensure_use(new_text, "User")   # the derived input-lock's class
             elif placement["kind"] not in ("arm-event", "arm-clause"):

@@ -1189,15 +1189,23 @@ def _turnback_emit(guard_sexpr, body, og, tb, refuse, site):
     hands = og.get("hands", (f"({game} handsOff:)", f"({game} handsOn:)"))
     h_off = ("\t\t\t\t%s\n" % hands[0]) if hands else ""
     h_on = ("\t\t\t\t%s\n" % hands[1]) if hands else ""
+    # THE WALK-BACK IS THE GAME'S OWN WALKER, or the straight-line one only where no better
+    # exists. `MoveTo` walks a straight line and a BLOCKED straight line never completes, so
+    # its cue never fires and the input lock never lifts -- rm085's turn-back hung the game on
+    # the legitimate approach (USER-found, 2026-08-18b); rm040's only worked because open snow
+    # is straight-line-walkable. Games that speak `PolyPath` (KQ5 does, in these very rooms)
+    # get the obstacle-aware walker the game itself uses for exactly these moves; SCI0 titles
+    # have no such class and keep MoveTo -- their turn-backs were play-validated with it.
+    motion = og.get("motion", "MoveTo")
     instance_tpl = (
         "\n(instance %s of Script\n\t(properties)\n\n"
         "\t(method (changeState param1)\n"
         "\t\t(switch (= state param1)\n"
         "\t\t\t(0\n%s\t\t\t\t%s  ; softlock-guard line\n"
         "\t\t\t\t(= cycles 1)\n\t\t\t)\n"
-        "\t\t\t(1\n\t\t\t\t(%s setMotion: MoveTo %%s %%s self)\n\t\t\t)\n"
+        "\t\t\t(1\n\t\t\t\t(%s setMotion: %s %%s %%s self)\n\t\t\t)\n"
         "\t\t\t(2\n%s\t\t\t\t(self dispose:)\n\t\t\t)\n"
-        "\t\t)\n\t)\n)\n" % (tb, h_off, refuse, ego, h_on))
+        "\t\t)\n\t)\n)\n" % (tb, h_off, refuse, ego, motion, h_on))
     return wrapped, instance_tpl
 
 

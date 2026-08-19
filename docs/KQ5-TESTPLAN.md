@@ -57,8 +57,8 @@ Legend: ✅ = verified (harness or your play) · ☐ = still needs your hands.
 ## C — Kidnap & cellar
 | ✓ | # | Where | Do | Expect |
 |---|---|---|---|---|
-| ☐ | C1 | inn rm85 | approach the north zone without Hammer (22) + a banked throwable | "Not yet!" **once**, walk-back, controls return |
-| ☐ | C2 | rm85 | with Hammer (`get 22`) + cat won (or `get 8` + `put 8 6`) | **kidnapped normally**; cellar plays stock (Hammer 22 on door, get Rope 20, mouse frees you) |
+| ✅ | C1 | inn rm85 | approach the north zone without Hammer (22) + a banked throwable | "Not yet!" **once**, walk-back, controls return |
+| ✅ | C2 | rm85 | with Hammer (`get 22`) + cat won (or `get 8` + `put 8 6`) | **kidnapped normally**; cellar plays stock (Hammer 22 on door, get Rope 20, mouse frees you) |
 
 ## D — Desert temple (rm18)
 | ✓ | # | Do | Expect |
@@ -94,7 +94,7 @@ Legend: ✅ = verified (harness or your play) · ☐ = still needs your hands.
 | ✓ | # | Where | Do | Expect |
 |---|---|---|---|---|
 | ✅ | R1 | rm40 | winning state (Crystal 21 held, eagle fed via `get 19` + `put 19 34`, no lamb in hand), walk the top strip (~148,144 — cliff room, walk carefully) | **carried off by the roc** |
-| ✅ | R2 | rm40 | missing the Crystal (21) | "Not yet!" + walk-back |
+| ☐ | R2 | rm40 | missing the Crystal (21) | "Not yet!" + walk-back **and control returns** (re-check: the old ✅ predates the control-return lesson) |
 | ☐ | R3 | rm40 | Crystal (21) held but eagle NOT fed (Lamb 19 in hand) | **turned back** — the nest would kill you |
 | ✅ | R4 | rm42 nest | wait 30s+ | eggs do **not** crack until the Locket (25) is taken |
 | ✅ | R5 | rm42 | take the Locket (25) | eggs crack → chicks → eagle rescue → rm43, Cedric greets |
