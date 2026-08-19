@@ -1,97 +1,103 @@
 # KQ5 patched-game test plan — everything up to Mordack's island
 
 Game: `~/sierra/patched/kq5` · Console: **Ctrl+Alt+D**, type lines, `exit`.
-`C:` below = console lines. **After `exit`, move the mouse OFF the icon bar** (bar pauses the room).
-`put N R` **no-ops unless you hold N** — always `get N` first. **Save before every one-way** (kidnap, roc, sail).
-Teleport-sensitive rooms (init switches on where you came from): 35, 36, 42, 55–67, 86 — walk in from a neighbor instead of `room`-ing straight in.
+`C:` = console lines. **After `exit`, move the mouse OFF the icon bar** (the bar pauses the room).
+`put N R` **no-ops unless you hold N** — always `get N` first. **Save before every one-way**
+(kidnap, sled, roc, sail). Don't teleport straight into rooms 33, 35, 36, 42, 55–67, 86 — they
+switch on where you came from; walk in from a neighbor.
 
-**Items:** 2 Pie · 3 Needle · 5 Fish · 6 Bottle · 8 Shoe · 9 Heart · 10 Harp · 11 Coin · 16 Stick · 18 Beeswax · 19 Lamb · 20 Rope · 21 Crystal · 22 Hammer · 24 Peas · 25 Locket · 30 IronBar · 31 Fishhook · 34 Tambourine · 37 CatFish
-**Flags** (read `vmvars g N`): 62=g132&$4000 (cat took fish) · 63=g132&$8000 (henchman pea'd) · 69=g133&$20 (Cassima with you) · 96=g135&$0001 (hole rescue used?)
+**Items:** 2 Pie · 3 Needle · 5 Fish · 6 Bottle · 8 Shoe · 9 Heart · 10 Harp · 11 Coin ·
+16 Stick · 18 Beeswax · 19 Lamb · 20 Rope · 21 Crystal · 22 Hammer · 24 Peas · 25 Locket ·
+26 Cloak · 29 Sled · 30 IronBar · 31 Fishhook · 37 CatFish
+
+**Flags** (read `vmvars g N`; write `vmvars g N <value>`): 15 = cloak WORN (g129 & $8000) ·
+16 = has eaten (g130 & $0001; `vmvars g 130 1` fakes it) · 62 = cat took fish (g132 & $4000) ·
+63 = henchman pea'd (g132 & $8000) · 96 = hole-rescue state (g135 & $0001)
+
+Legend: ✅ = already verified under the harness (spot-check only) · ☐ = needs your hands.
 
 ## A — Town & market
-| # | Where | Setup | Do | Expect |
+| ✓ | # | Where | Do | Expect |
 |---|---|---|---|---|
-| A1 | toymaker 204 | C: `send ego get 11` | pay Coin | **refused** "Better not…" |
-| A2 | bakery 206 | (Coin held) | pay Coin | **refused** |
-| A3 | toymaker+bakery | C: `send ego get 3` | pay Needle | **refused** at both |
-| A4 | tailor 203 + both shops | C: `send ego get 9` | pay Heart | **refused** at all three |
-| A5 | gypsy rm13 | Needle held | pay Needle | **works** (amulet) — never guarded |
-| A6 | tailor | Coin held | buy cloak with Coin | **works** |
-| A7 | girl rm9 | Heart held | give Heart | **works** (harp) — never guarded |
-| A8 | anywhere | C: `send ego get 2` | EAT the pie | joke plays, **pie kept** (retraction) |
-| A9 | anywhere | C: `send ego get 19` | EAT the lamb **twice** | 1st bite: **works** (+4, becomes the half leg — the mountain hunger needs it); 2nd bite: **refused** (the half is the eagle's) |
+| ☐ | A1 | toymaker (204) | pay Coin / Needle / Heart | **refused** ("Better not…") for all three |
+| ☐ | A2 | bakery (206) | pay Coin / Needle / Heart | **refused** for all three |
+| ☐ | A3 | tailor (203) | pay Heart | **refused**; Coin buys the cloak (**works**) |
+| ☐ | A4 | gypsy rm13 | pay Needle | **works** (amulet) — never guarded |
+| ☐ | A5 | girl rm9 | give Heart | **works** (harp) — never guarded |
+| ☐ | A6 | anywhere | EAT the pie | joke plays, **pie kept** (retraction) |
+| ☐ | A7 | anywhere | EAT the lamb **twice** | 1st bite: **works** (+4, becomes the half leg); 2nd bite: joke plays, **the half SURVIVES** (retraction — the eagle still gets fed) |
 
 ## B — Cat & dog scenes
-| # | Where | Setup | Do | Expect |
+| ✓ | # | Where | Do | Expect |
 |---|---|---|---|---|
-| B1 | rm6 | hold Shoe or Stick, walk in | offer **Fish** during chase | **refused** "Better not…"; fish kept |
-| B2 | rm6 | 〃 | offer **Lamb** | **refused** |
-| B3 | rm6 | 〃 | throw Shoe/Stick | works, **+4 once** |
-| B4 | rm6 | lose the race, leave, re-enter w/ throwable | — | chase **re-arms** (window held open) |
-| B5 | rm6 | win (mouse saved), leave, re-enter | — | chase **never replays**, score not doubled |
-| B6 | rm12 dog | hold Lamb | offer Lamb | **refused** |
-| B7 | rm12 | hold Shoe/Stick | throw | works (stock) |
-| B8 | rm11 bear | Fish still held | use Fish on bear | **works** (stock — the point of B1) |
+| ☐ | B1 | rm6 | offer **Fish** during the chase | **refused**; fish kept |
+| ☐ | B2 | rm6 | offer **Lamb** | **refused** |
+| ☐ | B3 | rm6 | throw Shoe/Stick | works, **+4 exactly once** |
+| ☐ | B4 | rm6 | lose the race → leave → re-enter with a throwable | chase **re-arms** (window held open) |
+| ☐ | B5 | rm6 | win (mouse saved) → leave → re-enter | chase **never replays** |
+| ☐ | B6 | rm12 dog | offer Lamb | **refused**; Shoe/Stick work (stock) |
+| ☐ | B7 | rm11 bear | use Fish on bear | **works** (stock — the point of B1) |
 
-## C — Kidnap & cellar (rm85/86)
-| # | Setup | Do | Expect |
-|---|---|---|---|
-| C1 | **no** Hammer or no banked throwable | walk toward inn's north zone | "Not yet!" **once**, walk-back to y≈165, controls return |
-| C2 | C: `send ego get 22` + won cat scene (or `get 8` + `put 8 6`) | walk in again | **kidnapped normally** (stock) |
-| C3 | in cellar | Hammer on door; get Rope; mouse frees you | all stock |
+## C — Kidnap & cellar
+| ✓ | # | Where | Do | Expect |
+|---|---|---|---|---|
+| ☐ | C1 | inn rm85 | approach the north zone without Hammer + a banked throwable | "Not yet!" **once**, walk-back, controls return |
+| ☐ | C2 | rm85 | with Hammer (`get 22`) + cat won (or `get 8` + `put 8 6`) | **kidnapped normally**; cellar plays stock (hammer on door, get Rope, mouse frees you) |
 
 ## D — Desert temple (rm18)
-| # | Setup | Do | Expect |
+| ✓ | # | Do | Expect |
 |---|---|---|---|
-| D1 | inside via Staff, **leave Bottle/Coin on floor** | walk exit strip | **refused** + walk-back to entrance, no message spam |
-| D2 | pick both up | walk exit | leaves normally |
+| ☐ | D1 | inside via Staff, leave Bottle/Coin on the floor, walk the exit strip | **refused** + walk-back to the entrance, no message spam |
+| ☐ | D2 | pick both up, walk the exit | leaves normally |
 
-## E — Mountains
-| # | Where | Setup | Do | Expect |
+## E — Mountains, below the sled
+| ✓ | # | Where | Do | Expect |
 |---|---|---|---|---|
-| E1 | rm30 | hold Rope | use Rope on branch | **refused** "Better not…"; rope kept |
-| E2 | rm34 eagle | hold Pie only | offer Pie | **refused** (pie is the yeti's) |
-| E3 | rm34 | hold Lamb (half is fine) | feed Lamb | **works** (stock; the half satisfies the nest fold) |
-| E6 | rm32 | flag 16 clear | walk east past x≈105 without ever eating | stock hungerDeath (preventable on-screen: eat the lamb) |
-| E4 | rm36 yeti | pie NOT thrown | walk west | "Not yet!" once, walk-back to mid-room; **north stays free**; chase still escapable |
-| E5 | rm36 | throw Pie at yeti | walk west | crosses to rm35 normally |
+| ☐ | E1 | rm30 | use Cloak on Graham | worn (flag 15, +4 once); the cold stops threatening |
+| ☐ | E2 | rm30 | use Rope on the branch | **refused** ("Better not…"); rope kept |
+| ☐ | E3 | rm32 | never eat, walk east past x≈105 | **stock hungerDeath** (left in: preventable on-screen — eat the lamb) |
 
-## E½ — The sled commit (rm32) — NEW: the mountains' real point of no return
-| # | Setup | Do | Expect |
+## S — The sled commit (rm32 → rm33): the mountains' point of no return ⬅ THE PRIORITY
+| ✓ | # | Do | Expect |
 |---|---|---|---|
-| S1 | missing any of: Pie 2, Harp 10, Beeswax 18, Hammer 22, Lamb 19 (or fed eagle) | use the Sled (29) on the slope | **"Not yet!"** — sled kept, ride refused (both click paths) |
-| S2 | walk toward rm33 without riding | walk east | turned back at the edge (same demand) |
-| S3 | full carries | ride | sled breaks, lands rm33 — stock; and **rm33→32 walk-back stays blocked** (stock terrain) |
+| ☐ | S1 | missing any of Pie 2 / Harp 10 / Beeswax 18 / Hammer 22 / Lamb 19: **use the Sled (29) on the slope** | **"Not yet!"** — ride refused, sled kept (both click paths carry the guard) |
+| ☐ | S2 | same state, walk east instead | turned back at the edge, same demand |
+| ☐ | S3 | full carries (`get 2 10 18 22 19`, eat the lamb once) — ride | sled breaks, lands rm33 (stock); walking back up stays blocked (stock terrain) |
 
-## F — The roc edge (rm40) — now: Crystal + fed eagle only
-| # | Setup | Do | Expect |
-|---|---|---|---|
-| F1 | no Crystal (pried at rm38, needs Hammer) | walk the top zone | "Not yet!" once + walk-back |
-| F1b | Crystal held but eagle NOT fed (lamb still in hand) | walk the top zone | **turned back** — the nest would kill you; feed the eagle first |
-| F2 | **the WINNING state**: `get 10`,`get 18`,`get 21`, eagle fed (`get 19`,`put 19 34`) — carrying NO lamb | walk the top zone (the strip is near 148,144) | **carried off by the roc** → nest. ✅ FIXED before play (fold_respell: the guard now reads `owner(19)==34`, not `has 19`) and harness-verified both ways — this row is a spot-check. |
-
-## G — Nest (rm42) ✅ harness-verified, quick re-check
-| # | Setup | Do | Expect |
-|---|---|---|---|
-| G1 | eagle fed, arrive via roc (or F2) | wait 30s+ | **eggs do NOT crack** until Locket taken |
-| G2 | take Locket | — | eggs crack → chicks → **eagle rescue** → rm43, Cedric greets |
-
-## H — Coast, hermit, the sail (last gate before Mordack's)
-| # | Where | Setup | Do | Expect |
+## F — Above the sled
+| ✓ | # | Where | Do | Expect |
 |---|---|---|---|---|
-| H1 | beach rm90 | — | get Fishhook | stock |
-| H2 | hermit island rm44 | — | get IronBar | stock |
-| H3 | coast rm44/45/46 | missing Bar or Hook | sail on toward Mordack's | **refused** (scene doesn't start / "Not yet!") |
-| H4 | 〃 | C: `send ego get 30` + `send ego get 31` | sail | **departs** (ONE-WAY — save first) |
-| H5 | hermit rm46/660 | with both | hermit scenes (shell heals Cedric etc.) | stock, un-walled |
+| ☐ | F1 | rm34 eagle | offer Pie | **refused** (the pie is the yeti's) |
+| ☐ | F2 | rm34 | feed Lamb (half is fine) | **works** (stock — the intended move) |
+| ☐ | F3 | rm36 yeti | pie NOT thrown, walk west | "Not yet!" once + walk-back; **north stays free**; chase still escapable |
+| ☐ | F4 | rm36 | throw Pie at yeti, walk west | crosses to rm35 normally |
+| ☐ | F5 | rm38 | Hammer on the crystal | pried, +4 (stock; bare hands fail harmlessly) |
 
-## I — Open verdicts (answers change what I build)
+## R — The roc edge & the nest ✅ harness-verified — spot-checks only
+| ✓ | # | Where | Do | Expect |
+|---|---|---|---|---|
+| ✅ | R1 | rm40 | winning state (Crystal held, eagle fed, no lamb in hand), walk the top strip (~148,144 — cliff room, walk carefully) | **carried off by the roc** |
+| ✅ | R2 | rm40 | missing the Crystal | "Not yet!" + walk-back |
+| ☐ | R3 | rm40 | Crystal held but eagle NOT fed (lamb in hand) | **turned back** — the nest would kill you |
+| ✅ | R4 | rm42 nest | wait 30s+ | eggs do **not** crack until the Locket is taken |
+| ✅ | R5 | rm42 | take the Locket | eggs crack → chicks → eagle rescue → rm43, Cedric greets |
+
+## H — Coast, hermit, the sail (the last gate before Mordack's island)
+| ✓ | # | Where | Do | Expect |
+|---|---|---|---|---|
+| ☐ | H1 | rm90 / rm44 | get Fishhook / IronBar | stock |
+| ☐ | H2 | coast rm44/45/46 | sail on toward Mordack's, missing Bar or Hook | **refused** (the departure doesn't start / "Not yet!") |
+| ☐ | H3 | 〃 | with both (`get 30`, `get 31`) | **departs** (ONE-WAY — save first) |
+| ☐ | H4 | hermit rm46/660 | hermit scenes (shell heals Cedric etc.) | stock, un-walled |
+
+## V — Open verdicts (answers change what I build next)
 | # | Question | How |
 |---|---|---|
-| P1 | empty pea bag still bags the cat? | castle: empty bag on henchman (4 throws), then fish+empty bag on cat |
-| P2 | far-miss pea throw wasted? | throw pea at henchman from across the room; check flag 63 |
-| L3 | 2nd capture after one hole-rescue = death? | get caught twice (flag 96) |
-| C1 | hammerless route into mountains? descent one-way? | try reaching mountains skipping the kidnap; try walking back down |
+| P1 | does the empty pea bag still bag the cat? | castle: 4 pea throws at the henchman, then fish + empty bag on the cat |
+| P2 | does a far-miss pea throw spend a pea without setting flag 63? | throw from across the room; check g132 & $8000 |
+| L3 | is a 2nd henchman capture (after one hole rescue) death regardless of the locket? | get caught twice; flag 96 is the tell |
 
-## J — Must-be-stock spot checks
-Snake still demands tambourine · witch forest needs worn Amulet · in-castle henchman behavior (58–61) unchanged **even after** fish spent on cat · wand always works in endgame · EAT-pie joke text unchanged.
+## Z — Must-stay-stock spot checks
+Snake at rm2 still demands the tambourine · witch forest still needs the worn Amulet ·
+in-castle henchman (rooms 58–61) unchanged even after the fish is spent on the cat ·
+Cedric-reappears-after-rm32-capture is a **stock bug**, expected, out of scope.
