@@ -39,9 +39,9 @@ Legend: ✅ = verified (harness or your play) · ☐ = still needs your hands.
 | ✅ | A3 | tailor (203) | pay Heart (9) | **refused**; Gold Coin (11) buys the cloak (**works**) |
 | ✅ | A4 | gypsy rm13 | pay Needle (3) | **works** (amulet 27) — never guarded |
 | ✅ | A5 | girl rm9 | give Heart (9) | **works** (harp 10) — never guarded |
-| ☐ | A6 | anywhere | EAT the Pie (2) | joke plays, **pie kept** (retraction) |
+| ✅ | A6 | anywhere | EAT the Pie (2) | joke plays, **pie kept** (retraction) |
 | ✅ | A7a | anywhere (town confirmed!) | EAT the Lamb (19), first bite | **works** (+4, becomes the half leg; hunger flag persists to the mountains) |
-| ☐ | A7b | anywhere | EAT the Lamb (19) again | joke plays, **the half SURVIVES** (retraction — the eagle still gets fed) |
+| ✅ | A7b | anywhere | EAT the Lamb (19) again | joke plays, **the half SURVIVES** (retraction — the eagle still gets fed) |
 
 ## B — Cat & dog scenes
 | ✓ | # | Where | Do | Expect |
