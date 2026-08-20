@@ -441,6 +441,288 @@ def test_market_wrap_spares_the_reget_branch():
           detail=out2)
 
 
+# === THE 2026-08-19d REVIEW: the two new appliers, and the span arithmetic under them ==========
+#
+# docs/REVIEW-2026-08-19d-FIXES.md F1/F2/F5/F6/F14/F15. Both appliers shipped with NO test of any
+# kind, and both are pure text manipulation -- the layer this file's opening docstring calls the
+# one with the least excuse for that. Each fixture below is a shape a next game spells routinely
+# and KQ5 happens not to: an arming in an `else`, a procedure with an earlier unrelated branch,
+# an arming with no wrap around it at all, and a message string containing a paren.
+
+# F1. An arming in the ELSE branch. Conjoining the demand onto this `(if`'s TEST does not hold
+# the ambush -- it INVERTS it: the encounter then arms exactly when the player cannot survive
+# it, and the placement row still reports `applied: True`.
+ELSE_ARM = """(instance rm300 of Rm
+\t(method (init)
+\t\t(super init:)
+\t\t(if (== global11 58)
+\t\t\t(theGuard setScript: patrolScript)
+\t\telse
+\t\t\t(theGuard setScript: ambushScript)
+\t\t)
+\t)
+)
+"""
+
+# ...and the same fork held INSIDE an outer arming. The inner `if` is disqualified, but the
+# outer one holds the whole fork in its then branch, so it is a sound hold and the search must
+# keep going OUTWARD rather than refusing.
+NESTED_ELSE_ARM = """(instance rm300 of Rm
+\t(method (init)
+\t\t(super init:)
+\t\t(if (not (proc0_12 41))
+\t\t\t(if (== global11 58)
+\t\t\t\t(theGuard setScript: patrolScript)
+\t\t\telse
+\t\t\t\t(theGuard setScript: ambushScript)
+\t\t\t)
+\t\t)
+\t)
+)
+"""
+
+# ...and the plain positive: a then-branch arming, with a nested value-`if` earlier in the same
+# branch whose `else` belongs to IT and must not be mistaken for the outer one's.
+THEN_ARM = """(instance rm300 of Rm
+\t(method (init)
+\t\t(super init:)
+\t\t(if (not (proc0_12 41))
+\t\t\t(theGuard view: (if (== global11 58) 898 else 884))
+\t\t\t(theGuard setScript: ambushScript)
+\t\t)
+\t)
+)
+"""
+
+
+def test_enclosing_if_test_respects_the_else_branch():
+    print("\n-- patcher._enclosing_if_test: the else branch is not the then branch --")
+    pos = THEN_ARM.index("setScript: ambushScript")
+    span = P._enclosing_if_test(THEN_ARM, pos)
+    check("a then-branch arming finds its own arming test",
+          span is not None and THEN_ARM[span[0]:span[1]] == "(not (proc0_12 41))",
+          detail="span=%r -> %r" % (span, span and THEN_ARM[span[0]:span[1]]))
+
+    pos = ELSE_ARM.index("setScript: ambushScript")
+    span = P._enclosing_if_test(ELSE_ARM, pos)
+    check("an ELSE-branch arming does NOT return the test that would invert the guard",
+          span is None,
+          detail="span=%r -> %r. Conjoining a demand onto `(== global11 58)` arms the ambush "
+                 "exactly when the player CANNOT survive it, and the row still says "
+                 "applied=True." % (span, span and ELSE_ARM[span[0]:span[1]]))
+
+    pos = NESTED_ELSE_ARM.index("setScript: ambushScript")
+    span = P._enclosing_if_test(NESTED_ELSE_ARM, pos)
+    check("...but an OUTER if holding the whole fork in its then branch is still a hold",
+          span is not None and NESTED_ELSE_ARM[span[0]:span[1]] == "(not (proc0_12 41))",
+          detail="span=%r -> %r" % (span, span and NESTED_ELSE_ARM[span[0]:span[1]]))
+
+
+# F15. `_balanced_span` counted raw parens with no string or comment handling, and
+# `_enclosing_if_test` scans the WHOLE file -- so one `(` inside a message string shifts every
+# span computed after it. castle.sc contains no `{` at all, which is the only reason the two
+# 2026-08-19d appliers were safe there.
+STRINGY = """(instance rm300 of Rm
+\t(method (init)
+\t\t(Print {a paren ( in a message})
+\t\t; and a paren ( in a comment
+\t\t(if (not (proc0_12 41))
+\t\t\t(theGuard setScript: ambushScript)
+\t\t)
+\t)
+)
+"""
+
+
+def test_balanced_span_ignores_strings_and_comments():
+    print("\n-- patcher._balanced_span: a paren in a string is not a paren --")
+    i = STRINGY.index("(instance")
+    check("the whole instance form spans to its own closing paren",
+          P._balanced_span(STRINGY, i) == len(STRINGY.rstrip()),
+          detail="span ends at %d, the form ends at %d"
+                 % (P._balanced_span(STRINGY, i), len(STRINGY.rstrip())))
+    pos = STRINGY.index("setScript: ambushScript")
+    span = P._enclosing_if_test(STRINGY, pos)
+    check("...and the arming test is still found past an unbalanced string and comment",
+          span is not None and STRINGY[span[0]:span[1]] == "(not (proc0_12 41))",
+          detail="span=%r -> %r" % (span, span and STRINGY[span[0]:span[1]]))
+
+
+# F2. The `fuse-arm` applier took the FIRST `(if` in the procedure, not the one containing the
+# spawn. `proc550_16` is a single top-level `if`, so KQ5 never showed it; a procedure with any
+# earlier branch gets a guard that holds nothing and gates something unrelated -- while
+# reporting `applied: True sites=1`.
+SPAWNER = """(procedure (proc550_16)
+\t(if (== global5 1)
+\t\t(Load 132 835)
+\t)
+\t(if (and (!= global332 7) (> (Random 0 100) 20))
+\t\t(switch global11
+\t\t\t(57
+\t\t\t\t(theCat posn: 91 172 init:)
+\t\t\t)
+\t\t\t(58
+\t\t\t\t(theCat posn: 103 115 init:)
+\t\t\t)
+\t\t)
+\t\t(= global332 1)
+\t)
+)
+"""
+
+# KQ5's own shape, verbatim in structure: one top-level `if`, the spawn inside it. That emission
+# is play-confirmed and must not move by a byte.
+KQ5_SPAWNER = """(procedure (proc550_16)
+\t(if (and (!= global332 7) (> (Random 0 100) 20))
+\t\t(Load 132 835)
+\t\t(switch global11
+\t\t\t(57
+\t\t\t\t(theCat posn: 91 172 init:)
+\t\t\t)
+\t\t)
+\t\t(= global332 1)
+\t)
+)
+"""
+
+# ...and a spawn with no arming around it: refusing WHOLE is the doctrine, because holding the
+# guarded sites and leaving this one open is a claim of coverage the patch does not have.
+BARE_SPAWNER = """(procedure (proc550_16)
+\t(if (== global5 1)
+\t\t(theCat posn: 91 172 init:)
+\t)
+\t(theCat posn: 103 115 init:)
+)
+"""
+
+DEMAND = "(and (proc0_12 63) (gEgo has: 24))"
+
+
+def test_fuse_arm_holds_the_if_that_spawns():
+    print("\n-- patcher._place_fuse_arm: the arming is the `if` around the SPAWN --")
+    place = getattr(P, "_place_fuse_arm", None)
+    if place is None:
+        check("the fuse-arm applier is a testable function",
+              False,
+              detail="`patcher._place_fuse_arm` does not exist -- the applier is inline in "
+                     "`apply_guards`, so its text arithmetic has no test at all (F14).")
+        return
+    out, n, why = place(SPAWNER, "proc550_16", ["theCat"], DEMAND)
+    check("the demand lands on the arming that performs the spawn",
+          why is None and n == 1
+          and "(and (and (!= global332 7) (> (Random 0 100) 20)) %s)" % DEMAND in out,
+          detail="n=%r why=%r\n%s" % (n, why, out))
+    check("...and NOT on the unrelated branch that happens to come first",
+          "(and (== global5 1)" not in out,
+          detail="a guard on `(== global5 1)` holds no spawn at all and gates the Load "
+                 "instead:\n%s" % out)
+    check("the file still balances", out.count("(") == out.count(")"), detail=out)
+
+    out2, n2, why2 = place(KQ5_SPAWNER, "proc550_16", ["theCat"], DEMAND)
+    check("KQ5's own shape emits exactly what it shipped (one wrap on the sole arming)",
+          why2 is None and n2 == 1
+          and "(and (and (!= global332 7) (> (Random 0 100) 20)) %s) ; softlock-guard" % DEMAND
+          in out2,
+          detail="n=%r why=%r\n%s" % (n2, why2, out2))
+
+    out3, n3, why3 = place(BARE_SPAWNER, "proc550_16", ["theCat"], DEMAND)
+    check("a spawn outside every `(if` refuses WHOLE rather than half-holding",
+          why3 is not None and n3 == 0 and out3 == BARE_SPAWNER,
+          detail="n=%r why=%r\n%s" % (n3, why3, out3))
+
+    out4, n4, why4 = place(SPAWNER, "proc550_16", ["theRat"], DEMAND)
+    check("a host the procedure never inits is a refusal, not a guess",
+          why4 is not None and n4 == 0 and out4 == SPAWNER, detail="why=%r" % (why4,))
+
+
+# F5. `capture-arm` only landed on KQ5 because an UNRELATED spec (the rm54 fish discriminator)
+# had already wrapped the same send. Stock `theHenchMan::init` has no enclosing `(if` at all, so
+# `_enclosing_if_test` returns None and the applier refuses -- retire the fish guard and the
+# capture guard silently stops shipping, with `test_kq5_ground_truth` still green because it
+# pins the SPEC and not the applied edit.
+STOCK_HENCH = """(instance theHenchMan of Actor
+\t(properties
+\t\tx 1000
+\t)
+
+\t(method (init)
+\t\t(super init:)
+\t\t(self
+\t\t\tview: (if (== global11 58) 898 else 884)
+\t\t\tsetCycle: Walk
+\t\t\tsetScript: theHenchManScript
+\t\t)
+\t)
+)
+"""
+
+# ...and the same file after the edge pass has wrapped it, which is what KQ5 actually ships.
+WRAPPED_HENCH = STOCK_HENCH.replace(
+    "\t\t(self\n",
+    "\t\t(if (or (not (== global11 54)) (gEgo has: 37))\n\t\t(self\n").replace(
+    "\t\t)\n\t)\n)\n", "\t\t)\n\t\t)\n\t)\n)\n")
+
+CAP_DEMAND = "(or (not (proc0_12 96)) (gEgo has: 24))"
+
+
+def test_capture_arm_creates_its_own_hold():
+    print("\n-- patcher._place_capture_arm: the hold must not depend on another spec --")
+    place = getattr(P, "_place_capture_arm", None)
+    if place is None:
+        check("the capture-arm applier is a testable function",
+              False,
+              detail="`patcher._place_capture_arm` does not exist -- the applier is inline in "
+                     "`apply_guards`, so its text arithmetic has no test at all (F14).")
+        return
+    out, n, why = place(WRAPPED_HENCH, "theHenchManScript", "theHenchMan", CAP_DEMAND)
+    check("an existing wrap is strengthened in place (KQ5's shipped shape)",
+          why is None and n == 1
+          and "(and (or (not (== global11 54)) (gEgo has: 37)) " in out and CAP_DEMAND in out,
+          detail="n=%r why=%r\n%s" % (n, why, out))
+
+    out2, n2, why2 = place(STOCK_HENCH, "theHenchManScript", "theHenchMan", CAP_DEMAND)
+    check("...and a STOCK arming with no wrap gets one of its OWN, rather than refusing",
+          why2 is None and n2 == 1 and CAP_DEMAND in out2
+          and out2.index("(if ") < out2.index("view:"),
+          detail="n=%r why=%r -- the capture hold shipped on KQ5 only because the rm54 fish "
+                 "discriminator had already wrapped this send; retire that guard and this one "
+                 "silently stops shipping.\n%s" % (n2, why2, out2))
+    check("the whole cascade is inside the created hold, not just the setScript",
+          why2 is None and out2.index("(if ") < out2.index("setCycle: Walk"), detail=out2)
+    check("the file still balances", out2.count("(") == out2.count(")"), detail=out2)
+
+
+def test_a_refused_arming_does_not_orphan_its_host():
+    """🔴 F6, DECLARED RED 2026-08-19e -- the cure moves a PLAY-CONFIRMED emission.
+
+    Both the fish wrap and the capture hold sit INSIDE `theHenchMan::init`, AFTER
+    `(super init:)`. A refused arming therefore leaves the actor in the cast with `script == 0`,
+    and rm054's verb-3 handler reads `(>= (((ScriptID 550 3) script:) state:) 1)` -- a send to
+    0 -- guarded only by `(global5 contains: (ScriptID 550 3))`, which a cast-resident
+    scriptless actor satisfies.
+
+    THE INVARIANT: a wrap placed inside a host's OWN `init` must either cover `(super init:)`
+    (so a refusal keeps the host out of the cast) or dispose the host on the refusal. Neither
+    is what ships, on KQ5 or in the applier. Both cures change emitted bytes for a patch the
+    USER has already play-tested, so this is DECLARED rather than made silently."""
+    print("\n-- 🔴 a refused arming must not leave its host cast-resident (F6) --")
+    place = getattr(P, "_place_capture_arm", None)
+    if place is None:
+        check("🔴 KNOWN GAP: the hold covers `(super init:)`, or refuses by disposing the host",
+              False, detail="no `_place_capture_arm` to exercise (F14)")
+        return
+    out, _n, why = place(STOCK_HENCH, "theHenchManScript", "theHenchMan", CAP_DEMAND)
+    i_super = out.index("(super init:)")
+    i_if = out.index("(if ") if "(if " in out else len(out)
+    check("🔴 KNOWN GAP: the hold covers `(super init:)`, or refuses by disposing the host",
+          why is None and (i_if < i_super or "dispose:" in out),
+          detail="the wrap starts at %d and `(super init:)` runs at %d, so a refused arming "
+                 "adds theHenchMan to the cast with no script; rm054.sc:447-449 then sends "
+                 "`state:` to 0. Cure: wrap the `init:` CALL SITES (what `fuse-arm` does), or "
+                 "add `else (self dispose:)`. Both move a play-confirmed emission, so this is "
+                 "declared, not slipped in." % (i_if, i_super))
+
+
 def run():
     print("=== test_patch_text ===")
     test_single_arm_is_wrapped()
@@ -452,6 +734,11 @@ def run():
     test_arm_event_wraps_the_whole_cascade()
     test_computed_edge_exit_is_a_positional_direct()
     test_market_wrap_spares_the_reget_branch()
+    test_enclosing_if_test_respects_the_else_branch()
+    test_balanced_span_ignores_strings_and_comments()
+    test_fuse_arm_holds_the_if_that_spawns()
+    test_capture_arm_creates_its_own_hold()
+    test_a_refused_arming_does_not_orphan_its_host()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
