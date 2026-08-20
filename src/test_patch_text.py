@@ -397,6 +397,93 @@ def test_arm_event_refuses_whole_when_one_arming_cannot_be_held():
                  "test.\n%s" % nest)
 
 
+# ⭐ P2, 2026-08-20 FOURTH REVIEW. The `setscript` branch of the SAME function -- the CONTROLLABLE
+# arming, the one a player triggers -- never got N1b's port. It scanned with a bare `re.search`
+# and expanded to the INNERMOST BALANCED FORM, the two rules the arm-event branch beside it
+# stopped using. Three fixtures, one per consequence.
+#
+# (1) VALUE POSITION is N1's own shape: the innermost form is the send, so the hold lands in the
+# assignment's value slot and the refusal's return value gets STORED instead of the arming being
+# withheld. `statement_span` climbs to the assignment, which is what the game's own no-arm path
+# skips.
+SETSCRIPT_VALUE_POS = """(instance rm300 of Rm
+\t(method (doVerb theVerb)
+\t\t(= local0 (global0 setScript: digScript))
+\t\t(global1 doit:)
+\t)
+)
+"""
+
+# (2) A RAW SCAN reads text that is not code. Measured before the cure: the wrap was spliced
+# INSIDE THE COMMENT -- the `(if` stayed commented out while `(Refuse)`, an `else` and a surplus
+# `)` spilled onto the following lines as live code -- and the real arming in the cond clause
+# shipped untouched, with `n=1  applied: True`. A build break AND a silent miss from one bug.
+SETSCRIPT_COMMENTED = """(instance rm300 of Rm
+\t(method (doVerb theVerb)
+\t\t; (global0 setScript: digScript)   the old way, kept for reference
+\t\t(cond
+\t\t\t((== theVerb 4)
+\t\t\t\t(global1 score: 5)
+\t\t\t\t(global0 setScript: digScript)
+\t\t\t)
+\t\t)
+\t)
+)
+"""
+
+# (3) TWO SITES IN ONE HANDLER. `find_all_armings` fans out per (instance, method) -- the
+# play-found KQ6 rm220 lesson, a machine with N ways in needs N wraps -- but `patcher.py:3138`
+# skips any extra arming whose instance AND method match the primary's, so a handler that arms
+# the same machine under two verbs collapses to ONE wrap. The first verb is guarded, the second
+# is a bypass, and the row counts 1. Findings #4 and #8 again, on the controllable side.
+SETSCRIPT_TWO_VERBS = """(instance rm300 of Rm
+\t(method (doVerb theVerb)
+\t\t(cond
+\t\t\t((== theVerb 4)
+\t\t\t\t(global0 setScript: digScript)
+\t\t\t)
+\t\t\t((== theVerb 5)
+\t\t\t\t(global0 setScript: digScript)
+\t\t\t)
+\t\t)
+\t)
+)
+"""
+
+
+def test_setscript_uses_the_statement_rule_and_reads_only_code():
+    print("\n-- P2: the controllable arming gets N1b's rule too, and every site --")
+    import trigger as T
+    place = {"kind": "setscript", "trigger_instance": "rm300", "trigger_method": "doVerb",
+             "target_script": "digScript", "target_room": 301}
+
+    out, n = T.wrap_trigger_in_source(SETSCRIPT_VALUE_POS, place, "(gEgo has: 4)", "(Refuse)")
+    check("an arming in VALUE position is held at its statement, not inside the value slot",
+          n == 1 and "(= local0 (if " not in out and "(if (gEgo has: 4)\n" in out
+          and out.index("(if (gEgo has: 4)") < out.index("(= local0"),
+          detail="wrapping the send alone stores the refusal's value in local0 instead of "
+                 "withholding the arming.\nn=%r\n%s" % (n, out))
+
+    out2, n2 = T.wrap_trigger_in_source(SETSCRIPT_COMMENTED, place, "(gEgo has: 4)", "(Refuse)")
+    check("a commented-out arming is not the site (the scan reads CODE)",
+          n2 == 1 and "; (global0 setScript: digScript)   the old way" in out2,
+          detail="n=%r -- the wrap was spliced into the comment, which both breaks the build "
+                 "and leaves the real arming open.\n%s" % (n2, out2))
+    check("...and the REAL arming, in the cond clause, is the one held",
+          out2.count("(gEgo has: 4)") == 1 and "(cond" in out2
+          and out2.index("(cond") < out2.index("(gEgo has: 4)"),
+          detail="the demand must land INSIDE the cond, after its head -- landing before it is "
+                 "the comment splice, which this check would otherwise pass vacuously.\n%s"
+                 % out2)
+
+    out3, n3 = T.wrap_trigger_in_source(SETSCRIPT_TWO_VERBS, place, "(gEgo has: 4)", "(Refuse)")
+    check("two verbs arming the same machine in one handler are BOTH held",
+          n3 == 2 and out3.count("(gEgo has: 4)") == 2,
+          detail="n=%r -- one door guarded and one open is findings #4/#8; the caller's "
+                 "same-(instance,method) skip means no sibling placement covers the second."
+                 "\n%s" % (n3, out3))
+
+
 # KQ5's computed edge exit, verbatim shape from rm036.sc: `doit` reads `(gEgo edgeHit:)`,
 # resolves the destination through `edgeToRoom:` into a temp, and `newRoom:`s the temp. Three
 # derivations in one site: edgeHit is a positional fact (the ego WALKED there), an
@@ -1525,6 +1612,7 @@ def run():
     test_interceptor_shape_census()
     test_arm_event_wraps_the_whole_cascade()
     test_arm_event_refuses_whole_when_one_arming_cannot_be_held()
+    test_setscript_uses_the_statement_rule_and_reads_only_code()
     test_computed_edge_exit_is_a_positional_direct()
     test_market_wrap_spares_the_reget_branch()
     test_enclosing_if_test_respects_the_else_branch()
