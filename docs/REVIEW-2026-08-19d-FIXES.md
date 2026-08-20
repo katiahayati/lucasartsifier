@@ -536,3 +536,85 @@ shape N1b is about, with a raw `setScript:` scan feeding it. Both closed, and re
 **byte-identical on all five games**, so every arming site in this corpus was already a
 statement. The `_arming_statement_span` docstring's claim that the two use the same rule is now
 true.
+
+---
+
+# THE FOURTH REVIEW (2026-08-20) — the third round's cures, same mandate
+
+Over `6aa0a1d..c89f378`. **12 findings, none CRITICAL. Three are mine, from the round that was
+fixing the round before it** — fourth time running ([[review-the-fix-not-only-the-feature]]).
+
+## ⭐ WHAT IT CONFIRMED INDEPENDENTLY — it took nothing on trust
+
+It rebuilt **both** emitted trees itself (a `6aa0a1d` worktree and HEAD) and got an empty
+`diff -rq`, 1,084 `.sc` files. It ran the suite: `691 passed, 1 known-red, 0 unexpected, 0
+crashed`. It re-derived 780/774 one-line `(if …)` forms, the two quoted `(method (` hits, KQ5's
+26 falsifying answers, and 3,303/3,303 `setScript:` sites already resolving as statements. And
+it **mutation-tested every new regression guard** — reverting each guarded change in a scratch
+copy — and every one of them goes red. The round's central claims hold.
+
+Two useful measurements it added: **117** markers are emitted across the five games and **none**
+has a paren after it on its line, while **610 of 4,959 (12.3%)** real form-end splice points
+*would* need the push — so `mark_line` removes a substantial class rather than a hypothetical
+one. And **165** `init:`-bearing sends in the corpus are places where `statement_span` and the
+old innermost-form rule differ, in real room scripts (`dagger/rm460.sc`, `KQ6/rm450.sc`,
+`KQ6/slaveWomenScr.sc`), not only in dev tools.
+
+## The findings
+
+| # | Finding | Where | Sev | Status |
+|---|---------|-------|-----|--------|
+| P1 | the arm-event wrap SILENTLY DROPS an arming site `statement_span` cannot resolve and still reports `sites: n` — the sibling applier refuses whole for the same rule | `trigger.py:1582` | HIGH | 🔴 **REPRODUCED, mine, first job** |
+| P2 | the `setscript` branch of the SAME function still uses the raw scan + innermost-form rule — "Now they do [use the same rule]" is false | `trigger.py:1476` | MED-HIGH | 🔴 confirmed by reading |
+| P3 | `QUOTED` exempts `(method (` from the census while **twelve** raw scanners still read it | `test_patch_text.py:1038` | MED-HIGH | 🔴 relayed |
+| P4 | the `co_varnames` check no longer catches un-threading `site=row_site` — the same weakness its own comment criticises | `test_mode.py:331` | MED | 🔴 relayed (reviewer proved by mutation) |
+| P5 | `_enclosing_if_test` climbs outward past an INNER `if`'s `else` when the arming sits in that inner `if`'s test | `patcher.py:3300` | MED | ⏸ **COMMENT ONLY [USER]** — see below |
+| P6 | the `_DIVERGENT` tripwire reads KQ5 only, short-circuits on the first falsifying conjunct, and has no anti-vacuity check | `missability.py:2519` | MED | 🔴 relayed |
+| P7 | `test_model_cache` writes a `.py` into the LIVE `src/`, changing every game's cache key for the duration | `test_model_cache.py:109` | MED | 🔴 relayed |
+| P8 | the pipeline-union check was deleted and its replacement is vacuous on the only input the test provides (a SKIP row) | `test_mode.py:249` | LOW-MED | 🔴 relayed |
+| P9 | three more four-tree figures still labelled "five trees" — in the very file N3 was about | `test_patch_text.py:731,957`, `trigger.py:1278` | LOW | 🔴 relayed |
+| P10 | `skip_noncode` ignores the `\}` escape its own lexer honours — 8 corpus messages end their span early (0 parens, 0 `;`, 0 `{` leak, so nothing moves) | `sexpr.py:225` | LOW | 🔴 relayed, benign |
+| P11 | a magic `-40` byte offset assertion; `_turnback_emit(region=None)` defaults back to the UNSAFE marker; a stale "still-raw scanners" comment | mixed | LOW | 🔴 relayed |
+| P12 | `until`/`switchto` have zero corpus occurrences, and `switchto` is in `_FORKS` *and* `_BODY_HEADS`, which disagree about its arms | `sexpr.py:334` | LOW | 🔴 relayed |
+
+## P1, reproduced
+
+Two armings of the same machine in one `init`, one of them in a test position:
+
+```
+arming sites in the source: 2   sites reported: 1   both held? False
+```
+
+`statement_span` returns None for the test-position site and the loop skips it with no `why`;
+`n` counts only what was wrapped, and the row reports `applied: True`. That is findings #4 and
+#8's shape — a guard on one door while the player walks through the other — and it is exactly
+what `_place_fuse_arm` refuses whole for (`patcher.py:3435`: *"The invariant is EVERY arming
+site or none"*). The N1b rule was ported into `trigger` without its refusal, so the failure mode
+moved from LOUD (a broken build) to SILENT. **Latent**: 0 of the corpus's 3,303 `setScript:`
+sites are in a test, but 157 `init:` sends are.
+
+## ⏸ P5 — COMMENT ONLY [USER RULING, 2026-08-20]
+
+Reproduced: `(if (== global5 1) (if (self setScript: capture) (foo) else (bar)))` puts the demand
+on the OUTER test, so a player who cannot pay gets neither `(foo)` nor `(bar)`.
+
+> *"I feel uneasy about #5. let's just put a comment there on the code and not invent some
+> walking upwards that is not currently exercised."*
+
+So: **document the shape at the site, ship no cure.** The minimal cure was stated (one line,
+`continue` → `return None`, which REMOVES an outward climb rather than adding walking) and the
+ruling stands anyway. Latent: 0 of 3,303 `setScript:` sites are in a test position.
+
+## What it could NOT verify
+
+* **"76 `init:` sends carry text after them on their line"** — it gets **79** under three other
+  readings. Re-measured under the original definition (a `code_finditer` `init:` send whose
+  `_balanced_span` end is followed by non-blank text on the same line): **76**, exactly. The
+  figure is DEFINITION-SENSITIVE and the comment does not say which definition, so it is not
+  checkable as written. Fix the comment, not the number.
+* **The paren figures "7/7 → 7/6" and "4/4 → 6/5"** — re-measured: the committed fixtures are
+  `TAIL_SIBLING` 4/4, `ONE_LINE_FORK` **6/6**, `VALUE_POSITION_ARM` 4/4, with a 3-paren `DEMAND`.
+  The doc's "7/7 → 7/6" came from a hand repro with a 1-paren demand and matches NEITHER; that
+  hand repro measured 7/7 → **8/7**. The deltas are right and the printed numbers are not.
+* **Nothing ran under ScummVM.** Every "the emitted program behaves correctly" statement in this
+  document is source reading plus paren/comment arithmetic, not a play test.
