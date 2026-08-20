@@ -287,11 +287,64 @@ def test_synthetic_project_end_to_end():
           rows and not rows[0]["applied"] and "no menu bar" in rows[0]["why"], repr(rows))
     # ...and those rows never join the frozen placement surface: the pipeline unions them by
     # `title` alone, which is only safe while they carry none of the keys the snapshot reads.
+    #
+    # ⛔ AND IT MUST BE ASKED OF AN *APPLIED* ROW (2026-08-20 fourth review, P8). The replacement
+    # for the deleted `"edits + gedits + uedits" in pipeline.py` check was vacuous on the only
+    # input this test had: `rows` here is the chooser's honest SKIP row, so
+    # `"title" in r or not r["applied"]` is satisfied by its second disjunct and the title
+    # requirement is never tested, while a skip row carries no placement key to begin with. An
+    # APPLIED mode-UI row could have grown a `placement` or a `sites` and this would still have
+    # passed. So the mini project below is given a menu bar, which makes the chooser land.
     surface_keys = {"placement", "kind", "item", "item_name", "condition", "sites"}
-    check("a mode-UI row is union-able by title and carries no placement-surface key",
-          all(set(r) & surface_keys == set() for r in rows)
-          and all("title" in r or not r["applied"] for r in rows),
-          repr(rows))
+
+    def _unionable(rs):
+        return (all(set(r) & surface_keys == set() for r in rs)
+                and all("title" in r or not r["applied"] for r in rs))
+
+    check("a mode-UI SKIP row is union-able by title and carries no placement-surface key",
+          _unionable(rows), repr(rows))
+
+    scratch2 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build",
+                            "test_mode_mini_menu")
+    d2 = os.path.join(scratch2, "src")
+    shutil.rmtree(scratch2, ignore_errors=True)
+    os.makedirs(d2)
+    open(os.path.join(d2, "Main.sc"), "w").write(
+        "(script# 0)\n(local\n\tglobal0\n\tglobal1\n\tglobal2\n)\n")
+    # a menu bar the chooser can extend: two declared menus (one is a runtime extension, not a
+    # bar), a gameplay handler case that touches none of the device vocabulary, and the
+    # `(switch (= tN (super handleEvent:` head the insertion needs.
+    open(os.path.join(d2, "Menu.sc"), "w").write(
+        "(script# 1)\n"
+        "(instance Menu of Obj\n"
+        "\t(method (init)\n"
+        "\t\t(AddMenu {Game} {Pause:Inventory})\n"
+        "\t\t(AddMenu {Action} {Look:Talk})\n"
+        "\t)\n"
+        "\t(method (handleEvent event &tmp temp0 temp1)\n"
+        "\t\t(switch (= temp0 (super handleEvent: event))\n"
+        "\t\t\t(257\n"
+        "\t\t\t\t(proc0_1)\n"
+        "\t\t\t)\n"
+        "\t\telse\n"
+        "\t\t\t(return 0)\n"
+        "\t\t)\n"
+        "\t)\n"
+        ")\n")
+    P._MODE_DEST = None
+    T.MODE = None
+    P._init_mode(scratch2)
+    rows2 = P.install_mode_ui(scratch2, {})
+    applied = [r for r in rows2 if r["applied"]]
+    check("...and the chooser LANDS on a project that has a menu bar (so the next check bites)",
+          len(applied) >= 2 and any(r.get("ui") == "menu" for r in applied),
+          repr(rows2))
+    check("an APPLIED mode-UI row is union-able by title and carries no placement-surface key",
+          _unionable(rows2) and all("title" in r for r in applied),
+          "the pipeline unions these into the emission set by `title` alone; a row that grew a "
+          "`placement`, `kind`, `item` or `sites` would be indistinguishable from a placement "
+          "row in the frozen surface. rows=%r" % (rows2,))
+    shutil.rmtree(scratch2, ignore_errors=True)
     shutil.rmtree(scratch, ignore_errors=True)
     P._MODE_DEST = None
     T.MODE = None
