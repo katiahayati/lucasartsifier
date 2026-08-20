@@ -692,6 +692,133 @@ def test_capture_arm_creates_its_own_hold():
     check("the file still balances", out2.count("(") == out2.count(")"), detail=out2)
 
 
+# === THE 2026-08-20 REVIEW: what the first round of applier fixes still got wrong ==============
+#
+# A second contextless review, same mandate, over the cures themselves. Three of its findings are
+# defects introduced or left standing BY THAT ROUND, which is the argument for running the review
+# on the fix and not only on the feature.
+
+# R1. `_skip_noncode` was wired into `_balanced_span` and NOT into the scan that feeds it:
+# `_enclosing_if_test` still enumerates candidates with a raw `finditer` over the whole file. An
+# `(if` inside a message string is picked as the arming, the demand is written INTO the message,
+# the arming is not held, the file stops balancing -- and the row says `applied: True`.
+MESSAGE_IF = """(instance rm300 of Rm
+\t(method (init)
+\t\t(if (not (proc0_12 41))
+\t\t\t(Print {you wonder (if (the guard saw you})
+\t\t\t(theGuard setScript: ambushScript)
+\t\t)
+\t)
+)
+"""
+
+
+def test_an_if_inside_a_message_is_not_an_arming():
+    print("\n-- the candidate scan must skip strings too, not just the span walk (R1) --")
+    for nm, fn, args in (
+            ("capture-arm", getattr(P, "_place_capture_arm", None),
+             (MESSAGE_IF, "ambushScript", "theGuard", "(gEgo has: 24)")),
+            ("fuse-arm", getattr(P, "_place_fuse_arm", None),
+             (MESSAGE_IF.replace("(instance rm300 of Rm\n\t(method (init)",
+                                 "(procedure (proc550_16)")
+                        .replace("(theGuard setScript: ambushScript)",
+                                 "(theCat posn: 91 172 init:)"),
+              "proc550_16", ["theCat"], "(gEgo has: 24)"))):
+        if fn is None:
+            check("%s: the applier exists" % nm, False)
+            continue
+        out, n, why = fn(*args)
+        check("%s: an `(if` inside a message text is never the arming" % nm,
+              out.count("(") == out.count(")")
+              and "{you wonder (if (and " not in out
+              and (why is not None or "softlock-guard" in out.split("}")[-1]),
+              detail="n=%r why=%r balanced=%s -- the demand was written INSIDE the message, so "
+                     "nothing is held and the source no longer compiles, while the placement "
+                     "row reports applied=True:\n%s"
+                     % (n, why, out.count("(") == out.count(")"), out))
+
+
+# R2. A demand conjoined onto the test of an `(if T ... else B)` does not merely withhold the
+# arming -- it DIVERTS CONTROL INTO B. F1 asked whether `pos` sat in the else branch; it never
+# asked whether the `if` HAS one. Here the else arms the very death the row exists to prevent,
+# so a player who cannot pay meets Mordack instead of the cat.
+ELSE_BODY_SPAWNER = """(procedure (proc550_16)
+\t(if (!= global332 7)
+\t\t(theCat posn: 91 172 init:)
+\telse
+\t\t(theWizard posn: 10 10 init: setScript: theWizardScript)
+\t)
+)
+"""
+
+ELSE_BODY_ARM = """(instance theHenchMan of Actor
+\t(method (init)
+\t\t(super init:)
+\t\t(if (!= global332 7)
+\t\t\t(self setScript: theHenchManScript)
+\t\telse
+\t\t\t(self setScript: theWizardScript)
+\t\t)
+\t)
+)
+"""
+
+
+def test_a_hold_never_diverts_into_an_else_branch():
+    print("\n-- conjoining onto an `if` that HAS an else diverts control into it (R2) --")
+    place = getattr(P, "_place_fuse_arm", None)
+    if place is None:
+        check("the fuse-arm applier exists", False)
+        return
+    out, n, why = place(ELSE_BODY_SPAWNER, "proc550_16", ["theCat"], "(gEgo has: 24)")
+    check("fuse-arm: the demand is NOT conjoined onto a test whose else runs instead",
+          why is not None or "(and (!= global332 7) (gEgo has: 24))" not in out,
+          detail="n=%r why=%r -- failing the demand no longer withholds the encounter, it "
+                 "spawns `theWizardScript`, which is the committed death this row exists to "
+                 "prevent. A hold that arms the death is worse than no hold.\n%s"
+                 % (n, why, out))
+
+    cap = getattr(P, "_place_capture_arm", None)
+    out2, n2, why2 = cap(ELSE_BODY_ARM, "theHenchManScript", "theHenchMan", "(gEgo has: 24)")
+    check("capture-arm: the same, on the arming shape it owns",
+          why2 is not None or "(and (!= global332 7) (gEgo has: 24))" not in out2,
+          detail="n=%r why=%r\n%s" % (n2, why2, out2))
+
+
+# R3. `_place_fuse_arm` enumerates spawn sites as `init:` sends to the host object, but the
+# ARMING of a machine is `setScript: <machine>` -- `init:` is a proxy that is right on KQ5 only
+# because `theCat::init` happens to do the setScript itself. A procedure that arms the same
+# machine both ways gets one site held and one left open, `applied: True sites=1`. That is
+# findings #4 and #8's shape, which this file's own opening docstring exists to prevent. Note
+# the two appliers shipped in ONE commit with opposite definitions of "the arming site".
+MIXED_SPAWNER = """(procedure (proc550_16)
+\t(if (== global11 57)
+\t\t(theCat posn: 91 172 init:)
+\t)
+\t(if (== global11 58)
+\t\t(theCat setScript: theCatScript)
+\t)
+)
+"""
+
+
+def test_every_spelling_of_the_arming_is_held():
+    print("\n-- an arming spelled `setScript:` is an arming too (R3) --")
+    place = getattr(P, "_place_fuse_arm", None)
+    if place is None:
+        check("the fuse-arm applier exists", False)
+        return
+    out, n, why = place(MIXED_SPAWNER, "proc550_16", ["theCat"], "(gEgo has: 24)",
+                        machine="theCatScript") \
+        if "machine" in getattr(place, "__code__").co_varnames else place(
+            MIXED_SPAWNER, "proc550_16", ["theCat"], "(gEgo has: 24)")
+    check("both armings of the same machine are held, or the applier refuses whole",
+          (why is not None and n == 0) or out.count("softlock-guard") == 2,
+          detail="n=%r why=%r held %d of 2 armings -- the unheld one is a spawn the player "
+                 "walks straight into while the row claims the encounter is guarded.\n%s"
+                 % (n, why, out.count("softlock-guard"), out))
+
+
 def test_a_refused_arming_does_not_orphan_its_host():
     """🔴 F6, DECLARED RED 2026-08-19e -- the cure moves a PLAY-CONFIRMED emission.
 
@@ -738,6 +865,9 @@ def run():
     test_balanced_span_ignores_strings_and_comments()
     test_fuse_arm_holds_the_if_that_spawns()
     test_capture_arm_creates_its_own_hold()
+    test_an_if_inside_a_message_is_not_an_arming()
+    test_a_hold_never_diverts_into_an_else_branch()
+    test_every_spelling_of_the_arming_is_held()
     test_a_refused_arming_does_not_orphan_its_host()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))

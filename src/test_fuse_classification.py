@@ -372,6 +372,61 @@ def test_an_empty_rendered_demand_refuses():
           len(unrend) == 1 and unrend[0]["refused"], detail="specs=%r" % (unrend,))
 
 
+# === THE 2026-08-20 REVIEW: what the first round of cures still got wrong ======================
+
+def test_falsifies_reads_a_set_of_writes_not_a_state():
+    print("\n-- missability._falsifies: a chain's WRITES are not a register STATE (R4) --")
+    # `chain_writes` unions every write of every state of a machine AND of the machine that
+    # armed it. Discharge can read that union safely, because the flag store is monotone: a
+    # flag once set stays set. A REGISTER is not monotone -- KQ5's global332 is written 2, 3
+    # and 4 by one chain -- so "the chain wrote (332, 3), therefore `332 == 2` is false" is not
+    # a deduction. Measured on KQ5: `_falsifies` fires 26 times and EVERY firing rests on a
+    # register the chain writes three different values to.
+    #
+    # The error direction is the dangerous one. A falsified entry is dropped, so the escape it
+    # was is deleted: the demand rises (a wall) or the row vanishes (a shipped softlock).
+    fal = getattr(M, "_falsifies", None)
+    if fal is None:
+        check("the falsification rule is a named, testable function", False)
+        return
+    check("a write that CONTRADICTS the only value of that register still falsifies",
+          fal(GAnd([_cmp(901, "==", 5)]), frozenset({(901, 7)})),
+          detail="the rule's own job: `sHalf` wrote 901 := 7, so a `901 == 5` arm cannot fire")
+    check("...and a write that SATISFIES it does not",
+          not fal(GAnd([_cmp(901, "==", 5)]), frozenset({(901, 5)})))
+    check("a chain that writes the register SEVERAL values falsifies nothing",
+          not fal(GAnd([_cmp(901, "==", 5)]), frozenset({(901, 5), (901, 7)})),
+          detail="the chain writes 901 twice and one of the writes IS 5, so the entry can "
+                 "still fire; dropping it deletes a real escape. `chain_writes` is an "
+                 "unordered union over every state -- it says what the run TOUCHES, never "
+                 "what the register HOLDS at the end.")
+    check("...and the same is true whichever order the pair is read in",
+          not fal(GAnd([_cmp(901, "==", 7)]), frozenset({(901, 5), (901, 7)})))
+    check("a NEGATED conjunct is falsified only when EVERY write contradicts it",
+          fal(GAnd([GNot(_cmp(901, "==", 5))]), frozenset({(901, 5)}))
+          and not fal(GAnd([GNot(_cmp(901, "==", 5))]), frozenset({(901, 5), (901, 7)})),
+          detail="`¬(901 == 5)` is impossible only if the register can hold nothing but 5")
+
+
+def test_a_second_room_deriving_a_stronger_demand_is_not_dropped():
+    print("\n-- missability.fuse_death_armings: the row key must carry its room (R5) --")
+    # `emitted` lives outside the per-room loop and is keyed `(machine, item)`, while the
+    # demand is derived PER ROOM off that room's escapes. Two rooms that arm the same encounter
+    # with different escapes available derive different demands, and only the first is ever
+    # emitted -- so the guard ships the weaker hold and the second room's softlock ships open.
+    # The clash gate added to `fuse_arming_remedies` cannot see this: it only sees rows that
+    # survived `emitted`.
+    import inspect
+    src = inspect.getsource(M.IrSccReach.fuse_death_armings)
+    body = src[src.index("out, emitted"):]
+    key = [ln for ln in body.splitlines() if "key = (" in ln]
+    check("the dedupe key distinguishes two rooms' demands for one (machine, item)",
+          bool(key) and ("room" in key[0] or "alt" in key[0] or "demand" in key[0]),
+          detail="key line is %r -- keyed on (machine, item) alone, across every room, while "
+                 "`demand_alts` is derived per room. The first room to emit wins and the "
+                 "second room's stronger demand is silently dropped." % (key[0] if key else None))
+
+
 def run():
     print("=== test_fuse_classification ===")
     test_the_countdown_is_the_register_the_handler_decrements()
@@ -384,6 +439,8 @@ def run():
     test_a_capture_hold_refuses_context_it_cannot_render()
     test_a_second_spawning_procedure_is_not_dropped()
     test_an_empty_rendered_demand_refuses()
+    test_falsifies_reads_a_set_of_writes_not_a_state()
+    test_a_second_room_deriving_a_stronger_demand_is_not_dropped()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
