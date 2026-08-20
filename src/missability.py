@@ -2361,22 +2361,6 @@ def _demands_nonzero(a):
             or (a.op == ">" and v >= 0) or (a.op == ">=" and v >= 1))
 
 
-def _walk_guard(g):
-    """Every node of a guard tree, polarity-blind -- for questions that only ask WHICH names
-    a guard mentions (never whether it demands them; that is `_must_hold`'s discipline)."""
-    stack = [g]
-    while stack:
-        n = stack.pop()
-        if isinstance(n, list):
-            stack.extend(n)
-        elif isinstance(n, (GAnd, GOr)):
-            stack.extend(n.kids)
-        elif isinstance(n, GNot):
-            stack.append(n.kid)
-        elif n is not None:
-            yield n
-
-
 def _bounded_below(g, S, v):
     """Does this write's own guard prove the register is already BELOW the value written?
 
@@ -5399,7 +5383,7 @@ class IrSccReach(SccReach):
         where it can arm by testing the current-room global, and that is where a guard's
         effect will be felt.
 
-        POSITIVELY names (review F15). `_walk_guard` is polarity-blind by design, so a
+        POSITIVELY names (review F15). This used to run on a polarity-blind node walk, so a
         `(not (== gCurRoom 67))` -- "everywhere but there" -- reported rm67 as an arming room,
         which is the one room that conjunct provably rules out. A region machine's arming is
         usually a DISJUNCTION of per-room arms with the cond-ordering negations still on them
