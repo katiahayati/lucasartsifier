@@ -1075,6 +1075,141 @@ def test_a_refused_arming_does_not_orphan_its_host():
                  "declared, not slipped in." % (i_if, i_super))
 
 
+def is_code(text, idx):
+    """True when offset `idx` in `text` is CODE -- not inside a comment or a quoted form.
+
+    The question every assertion below about "did the edit keep X" has to ask. `X in out` is
+    not that question: a `;` line comment leaves every byte after it in the file, perfectly
+    greppable, and completely gone from the program."""
+    import bisect
+    spans = P._noncode_spans(text)
+    starts = [s for (s, _e) in spans]
+    i = bisect.bisect_right(starts, idx) - 1
+    return not (i >= 0 and idx < spans[i][1])
+
+
+# ⭐ N1, 2026-08-20 THIRD REVIEW. `; softlock-guard` IS A LINE COMMENT -- and the fix for that
+# went into `_conjoin_marked` only, twenty lines from `_wrap_statement`, which is the emitter R2
+# routes to whenever the conjoin is refused. R2 made that the COMMON path: 774 of the corpus's
+# 780 one-line `(if ...)` forms carry a depth-1 `else`, and every one of them is now disqualified
+# from the conjoin and handed here. Measured 2026-08-20 across all five source trees.
+#
+# The failure is not a broken build -- that would be the lucky case. When the eaten text happens
+# to balance, the file still compiles and an arming, an assignment or the game's own other
+# outcome has been silently DELETED, with the placement row reporting `applied: True`.
+TAIL_SIBLING = """(procedure (proc550_16)
+\t(theCat init:) (theRat init:)
+)
+"""
+
+# ...and R2's own fallback shape: nothing may be conjoined onto this `if`, so the arming
+# statement inside it is wrapped -- in the middle of a line whose remainder is the else.
+ONE_LINE_FORK = """(procedure (proc550_16)
+\t(if (== global5 1) (theCat posn: 91 172 init:) else (theRat init:))
+)
+"""
+
+# The other half of N1: `_arming_statement_span` returns the INNERMOST balanced form, which is
+# routinely an expression in VALUE position. Wrapping `(theCat init: yourself:)` where the game
+# wrote `(= [local0 0] (theCat init: yourself:))` does not withhold the arming, it changes what
+# is assigned -- and `(if ...)` in an argument slot is not the same program. 76 `init:` sends
+# corpus-wide have text after them on their line; the value-position spelling is KQ6's and LB2's.
+VALUE_POSITION_ARM = """(procedure (proc550_16)
+\t(= [local0 0] (theCat init: yourself:))
+)
+"""
+
+
+def test_the_marker_never_eats_the_line():
+    print("\n-- N1: a `;` marker must not comment out the rest of its line --")
+    out, n, why = P._place_fuse_arm(TAIL_SIBLING, "proc550_16", ["theCat"], DEMAND)
+    check("a sibling statement on the arming's own line survives the hold",
+          why is None and n == 1 and is_code(out, out.index("(theRat init:)")),
+          detail="n=%r why=%r -- `(theRat init:)` is still in the file and no longer in the "
+                 "program: everything after `; softlock-guard` on that line is a comment.\n%s"
+                 % (n, why, out))
+
+    out2, n2, why2 = P._place_fuse_arm(ONE_LINE_FORK, "proc550_16", ["theCat"], DEMAND)
+    check("R2's fallback on a one-line `(if ... else ...)` keeps the else",
+          why2 is None and n2 == 1
+          and is_code(out2, out2.index("(theRat init:)"))
+          and code_parens(out2)[0] == code_parens(out2)[1],
+          detail="n=%r why=%r code parens %r -- R2 disqualifies this `if` from the conjoin and "
+                 "hands it to the statement wrap, whose marker then eats `else (theRat "
+                 "init:))`. The file does not compile.\n%s"
+                 % (n2, why2, code_parens(out2), out2))
+
+    out3, n3, why3 = P._place_fuse_arm(VALUE_POSITION_ARM, "proc550_16", ["theCat"], DEMAND)
+    i_if = out3.index("(if ") if "(if " in out3 else len(out3)
+    check("an arming in VALUE position is held as a statement, not rewritten in place",
+          why3 is None and n3 == 1
+          and i_if < out3.index("(= [local0 0]")
+          and code_parens(out3)[0] == code_parens(out3)[1],
+          detail="n=%r why=%r code parens %r -- the hold went INSIDE `(= [local0 0] ...)`, so "
+                 "the assignment now stores the value of an `if` and the closing paren of the "
+                 "assignment is inside the marker's comment. The arming statement is the "
+                 "assignment, which is what the stock no-spawn path also skips.\n%s"
+                 % (n3, why3, code_parens(out3), out3))
+
+
+# ⭐ N2, 2026-08-20 THIRD REVIEW. R2's doctrine -- "the game's own other outcome must stay free"
+# -- is enforced for the `else` SPELLING alone. `_depth1_else` looks for the four letters `else`
+# and nothing else, so a `cond` or a `switch` standing between the arming and the `if` is
+# invisible: the search widens straight past the fork it should have stopped at, and the demand
+# lands on the `if` that holds the WHOLE fork. A player who cannot pay then gets neither arm --
+# the wall R2's own docstring forbids, reached by a different spelling of the same shape.
+COND_FORK = """(procedure (proc550_16)
+\t(if (> (Random 0 100) 20)
+\t\t(cond
+\t\t\t((> global11 5)
+\t\t\t\t(theCat init:)
+\t\t\t)
+\t\t\t(else
+\t\t\t\t(theRat init:)
+\t\t\t)
+\t\t)
+\t)
+)
+"""
+
+SWITCH_FORK = """(procedure (proc550_16)
+\t(if (> (Random 0 100) 20)
+\t\t(switch global11
+\t\t\t(57
+\t\t\t\t(theCat init:)
+\t\t\t)
+\t\t\t(58
+\t\t\t\t(theRat init:)
+\t\t\t)
+\t\t)
+\t)
+)
+"""
+
+
+def test_a_fork_between_the_if_and_the_arming_is_not_climbed_past():
+    print("\n-- N2: a `cond`/`switch` fork is a fork, whatever it is spelled --")
+    for name, src in (("cond", COND_FORK), ("switch", SWITCH_FORK)):
+        span = P._enclosing_if_test(src, src.index("(theCat init:)"))
+        check("a `%s` arm's arming does not return the outer `if`'s test" % name,
+              span is None,
+              detail="span=%r -> %r. Conjoining there withholds the WHOLE %s, so the player "
+                     "who cannot pay gets neither the cat nor the rat -- and the rat is the "
+                     "game's own other outcome, which no row derived and no spec scoped."
+                     % (span, span and src[span[0]:span[1]], name))
+
+        out, n, why = P._place_fuse_arm(src, "proc550_16", ["theCat"], DEMAND)
+        held = None
+        if why is None and "(if %s" % DEMAND in out:
+            hs = out.index("(if %s" % DEMAND)
+            held = out[hs:P._balanced_span(out, hs)]
+        check("...and the applier holds the arming alone, leaving the sibling arm free (%s)"
+              % name,
+              why is None and n == 1 and held is not None
+              and "(theCat init:)" in held and "(theRat init:)" not in held,
+              detail="n=%r why=%r\nheld: %r\n%s" % (n, why, held, out))
+
+
 def run():
     print("=== test_patch_text ===")
     test_single_arm_is_wrapped()
@@ -1095,6 +1230,8 @@ def run():
     test_every_spelling_of_the_arming_is_held()
     test_a_region_never_starts_inside_a_message()
     test_a_refused_arming_does_not_orphan_its_host()
+    test_the_marker_never_eats_the_line()
+    test_a_fork_between_the_if_and_the_arming_is_not_climbed_past()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
