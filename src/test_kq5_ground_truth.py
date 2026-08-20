@@ -1042,6 +1042,28 @@ def run():
           f"rm063::init, rm060 enterLeft/enterNorth), each naming the fuse register 352, flags "
           f"63 and 62, and theWizardScript as the committed death. docs/KQ5-ORACLE.md §23.")
 
+    # ✅ THE REMEDY, same session: the whale-shape arm hold (`guards.fuse_arming_remedies`).
+    # One wrap on proc550_16 -- the spawn procedure all four call sites share -- carries the
+    # derived demand conjoined into the proc's own arming `(if ...)`; a withheld spawn is the
+    # stock 20% no-spawn roll, so play stays open everywhere (the arm-event soundness premise,
+    # satisfied by the game's own design). The condition is the fixpoint FACTORED: the atoms
+    # every alternative shares (flag 63, the bag) are hoisted out of the OR, so the site reads
+    # exactly what the ruling says -- beast pea'd, bag in hand, and fish in hand or already
+    # thrown. Silent kind: stock mode bypasses via stock_or at application time; no refusal
+    # line exists to warn about, so lite behaves as full.
+    fa = G.fuse_arming_remedies(s)
+    check("the whale guard wraps the cat's one arming procedure",
+          len(fa) == 1 and not fa[0]["refused"]
+          and fa[0]["script"] == 550 and fa[0]["proc"] == "proc550_16"
+          and fa[0]["machine"] == "theCatScript"
+          and fa[0]["items"] == [24, 37] and fa[0]["flags"] == [62, 63]
+          and fa[0]["condition"] == "(and (proc0_12 63) (gEgo has: 24) "
+                                    "(or (proc0_12 62) (gEgo has: 37)))",
+          f"specs={fa!r} -- expected exactly one placeable fuse-arm spec wrapping proc550_16 "
+          f"in script 550 with the ruled demand factored. docs/KQ5-ORACLE.md §23 has the"
+          f"derivation; a REFUSED spec ships no patch and a second spec means the dedupe by "
+          f"(machine, demand) broke.")
+
     print(f"  {len(PASS)} passed, {len(FAIL)} failed")
     return not FAIL
 

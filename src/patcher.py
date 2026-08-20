@@ -2552,6 +2552,44 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
         out.append({**sp, "applied": True, "title": title, "sites": n,
                     "placement": {"kind": "market-case", "instance": sp.get("machine"),
                                   "case": sp["item"]}})
+    # FUSE-ARM HOLDS -- the whale shape (missability.fuse_death_armings, docs/KQ5-ORACLE.md
+    # §23): the encounter must not ARM until survivable, so the spawn procedure's own arming
+    # condition gains the derived demand -- one balanced-expression edit on the proc's leading
+    # `(if <cond> ...)` holds every call site at once, and a withheld spawn is
+    # indistinguishable from the stock no-spawn roll. SILENT kind: it never speaks, so lite
+    # behaves as full and stock bypasses via `stock_or` (the arm-event doctrine,
+    # user ruling 2026-08-06). Anything unexpected refuses whole rather than half-edits.
+    for sp in specs:
+        if sp["site"] != "fuse-arm" or sp["refused"]:
+            continue
+        title = titles_by_num.get(sp["script"])
+        path = os.path.join(dest, "src", title + ".sc") if title else None
+        if not path or not os.path.exists(path):
+            out.append({**sp, "applied": False,
+                        "why": "no source for script %s" % sp["script"]})
+            continue
+        text = open(path, errors="replace").read()
+        m = re.search(r"\(procedure\s+\(%s\b" % re.escape(sp["proc"]), text)
+        if not m:
+            out.append({**sp, "applied": False,
+                        "why": "no procedure %s in %s" % (sp["proc"], title)})
+            continue
+        pend = _balanced_span(text, m.start())
+        fm = re.search(r"\(if\s+", text[m.start():pend])
+        ci = m.start() + fm.end() if fm else -1
+        if not fm or ci >= len(text) or text[ci] != "(":
+            out.append({**sp, "applied": False,
+                        "why": "%s has no leading (if <cond> ...) arming to strengthen"
+                               % sp["proc"]})
+            continue
+        cend = _balanced_span(text, ci)
+        demand = stock_or(to_source_syntax(sp["condition"]))
+        new_text = (text[:ci] + "(and %s %s) ; softlock-guard"
+                    % (text[ci:cend], demand) + text[cend:])
+        open(path, "w").write(new_text)
+        out.append({**sp, "applied": True, "title": title, "sites": 1,
+                    "placement": {"kind": "fuse-arm", "instance": sp["proc"],
+                                  "trigger_method": "proc"}})
     # register-flip guards edit the game class's always-live method (script 0 = Main), not a room.
     for sp in specs:
         if sp["site"] != "register-write" or sp["refused"]:

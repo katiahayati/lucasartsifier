@@ -1202,7 +1202,7 @@ release runs the stock st6 death — the roc-edge guard (has 19 at rm40→41) is
 that, unchanged. Corpus: LSL2/KQ4/KQ6/LB2 byte-identical at both steps; KQ5's only surface
 movement is the fold row and `rm042: edge-exit → hold-advance`.
 
-## §23. The castle cat is a WHALE — an unanswered encounter is a remote death fuse (2026-08-19c, USER play-found + ruled; RED, not yet built)
+## §23. The castle cat is a WHALE — an unanswered encounter is a remote death fuse (2026-08-19c, USER play-found + ruled; ✅ CURED SAME SESSION — detection `missability.fuse_death_armings`, guard `guards.fuse_arming_remedies` → `proc550_16` wrap in 550.SCR, installed + boot-verified)
 
 **The play finding.** The USER walked away from the castle cat and died to Mordack minutes
 later, on another screen: *"you can't just walk away from the cat. that sets up the mordack
@@ -1273,3 +1273,45 @@ loose-patch list.
 
 **Safe play order until the guard ships:** pea the beast FIRST, re-take the dropped bag, keep
 the fish; then fish→cat, then bag→cat.
+
+### ✅ CURED 2026-08-19c, same session (red → green → shipped)
+
+**Detection** (`missability.fuse_death_armings`) — three classifications, each structural:
+  1. **Death phases**: (S,V) pinned by an `_room_unavoidable` machine's entry off an unpriced
+     spine — (331,3)→theWizardScript in nine rooms, (331,6)→wakeUpScript in rm63.
+  2. **The clock**: a CTR-gated handler write with a running-countdown atom and no item/owner/
+     positional atom on the spine. Fuses close under chaining (353's expiry writes 352:=3) but
+     NOT under self-re-arm — `353:=5` gated on 353 running is the cycle continuing, and without
+     that exclusion the henchman's global333 (positive on the same spine) classified as a fuse.
+  3. **Fuse-arming machines**: a state writing any fuse to a nonzero literal — theCatRunScript
+     st3's `353:=3` (its `352 := Random 5 10` twin is invisible to the write extractor: a
+     non-literal write, a bounded gap the 353 branch covers).
+
+The demand is the saving-writer FIXPOINT over the root's slot escapes, exactly as derived
+above: catInBag prices `own(24) ∧ 63 ∧ 62` off its chain-composed entry; catGetFish prices
+`own(37)` conjoined with the re-armed encounter's price DISCHARGED of flag 62 (its armer
+theThrowFishScript writes it); catInBag's second entry (the `332==7` init arm) prices as its
+writer theBagCatScript and merges away. Rows once per (root, item) at proc550_16's real call
+sites {60, 61, 63} (a caller walk — the proc's position switch names seven rooms, its callers
+three). Corpus: LSL2/KQ4/KQ6/LB2 all emit [] — KQ6's wedding fuse writes a flag no unavoidable
+machine's entry pins, so it has no death phase and stays `register_strandings`' item seal.
+NOT a snapshot key (bless-gated).
+
+**Guard** (`guards.fuse_arming_remedies` → patcher `fuse-arm` site): the derived demand,
+FACTORED (common atoms hoisted out of the OR), conjoined into proc550_16's own arming `(if`:
+
+    (if (and (and (!= global332 7) (> (Random 0 100) 20))
+             (and (proc0_12 63) (global0 has: 24) (or (proc0_12 62) (global0 has: 37))))
+
+One balanced-expression edit holds all four call sites; a withheld spawn is byte-for-byte the
+stock 20% no-spawn roll (the arm-event soundness premise satisfied by the game's own design —
+a spawnless castle room IS open play). Silent kind: stock mode would bypass via `stock_or`,
+but KQ5's set is modeless (no chooser shape derives), matching every other KQ5 wrap. The
+catInBag arm in castle::init (the already-caught cat, `332==7`) is untouched — the guard
+holds only the ENCOUNTER's spawn.
+
+**Shipped**: v16 build — every other emitted .SCR byte-identical to v15; 550.SCR installed to
+~/sierra/patched/kq5 (cmp'd) and the game BOOTS (title screen under the harness). Suite green
+with the red PROMOTED and the guard pinned (`test_kq5_ground_truth`: 52 checks). Play-retest
+owed: M4 in docs/KQ5-TESTPLAN.md — the USER holds castle testing until they can run the whole
+M-block against this guard.

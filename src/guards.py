@@ -1730,6 +1730,70 @@ def window_remedies(s):
     return out
 
 
+def fuse_arming_remedies(s):
+    """The whale-shape arm hold for `missability.fuse_death_armings` rows (docs/KQ5-ORACLE.md
+    §23): the encounter must not ARM until the player can survive it. The spawn procedure's
+    own arming condition gains the derived demand -- ONE wrap at the proc covers every call
+    site, and a withheld spawn is indistinguishable from the stock no-spawn roll (KQ5's
+    proc550_16 spawns nothing 20% of the time by the game's own design), which is the
+    arm-event soundness premise satisfied structurally: a spawnless castle room IS the open
+    play next door.
+
+    The condition renders FACTORED: atoms every demand alternative shares are hoisted out of
+    the OR, so KQ5 ships `(and (proc0_12 63) (gEgo has: 24) (or (proc0_12 62) (gEgo has:
+    37)))` -- the USER's ruling spelled in the game's own flag test -- rather than the
+    expanded DNF. Same truth table; the site stays readable.
+
+    Refused, never half-shipped: no proc to wrap (the spawn is not proc-shaped), a flag
+    demand with no derivable flag-test spelling, or an empty demand."""
+    ir = s.em.ir
+    testp = getattr(ir, "flag_test_proc", None)
+    out, seen = [], set()
+    for r in s.fuse_death_armings():
+        alts = [frozenset([("flag", f) for f in a["flags"]]
+                          + [("own", i) for i in a["items"]])
+                for a in r["demand_alts"]]
+        key = (r["machine"], tuple(sorted(tuple(sorted(a)) for a in alts)))
+        if key in seen or not alts:
+            continue
+        seen.add(key)
+        refused = []
+        proc = r.get("arm_proc")
+        if not proc:
+            refused.append("the spawn is not proc-shaped -- no single arming site to wrap")
+        if any(k == "flag" for a in alts for (k, _v) in a) and not testp:
+            refused.append("a flag demand with no derivable flag-test spelling")
+
+        def _tok(t):
+            k, v = t
+            return "(%s %d)" % (testp, v) if k == "flag" else "(gEgo has: %d)" % v
+
+        common = frozenset.intersection(*alts)
+        rests = [sorted(a - common) for a in alts]
+        parts = [_tok(t) for t in sorted(common)]
+        if all(rests):
+            ors = ["(and %s)" % " ".join(_tok(t) for t in rr) if len(rr) > 1 else _tok(rr[0])
+                   for rr in rests]
+            parts.append(ors[0] if len(ors) == 1 else "(or %s)" % " ".join(ors))
+        # an empty rest means that alternative IS the common core -- the OR is vacuous
+        if not parts:
+            refused.append("empty demand -- nothing to hold the arming on")
+        cond = (parts[0] if len(parts) == 1 else "(and %s)" % " ".join(parts)) \
+            if parts else None
+        out.append({"site": "fuse-arm",
+                    "script": proc["script"] if proc else None,
+                    "proc": proc["name"] if proc else None,
+                    "machine": r["machine"], "arm_rooms": r["arm_rooms"],
+                    "items": sorted({i for a in r["demand_alts"] for i in a["items"]}),
+                    "flags": sorted({f for a in r["demand_alts"] for f in a["flags"]}),
+                    "condition": cond, "fuse": r["fuse"], "death": r["death"],
+                    "why": "an unanswered encounter arms a remote death fuse (fuse %s -> "
+                           "phase %s -> %s); the encounter must not arm until survivable"
+                           % (r["fuse"], r["phases"], r["death"]),
+                    "refused": refused})
+    return out
+
+
 def fold_carryins(s):
     """Owner-value demands on the CROSSING an entry-fold's context names -- patch B's derivation.
 
@@ -1971,6 +2035,10 @@ def guard_specs(s):
     # ...and the one-shot windows (`window_closures`): hold each durable closer's raise until
     # the demand it seals is banked, and never re-arm a banked scene. See window_remedies.
     specs.extend(window_remedies(s))
+    # ...and the remote death fuses (`fuse_death_armings`): the whale-shape arm hold -- the
+    # encounter's spawn procedure refuses to arm until the derived kit is in hand. Silent
+    # kind (a withheld spawn is the stock no-spawn roll). See fuse_arming_remedies.
+    specs.extend(fuse_arming_remedies(s))
     for gt in survival_gates(s):
         cp, cn, rest = factor(gt["alts"])
         pos_spec = render(cp, set(), rest)
