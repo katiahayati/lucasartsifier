@@ -1277,6 +1277,49 @@ def test_a_region_never_starts_inside_a_message():
           detail="read %r of %r. Every 'five source trees' figure this file prints is a "
                  "%d-tree figure." % (sorted(seen_trees), list(CORPUS), len(seen_trees)))
 
+    # ⛔ AN EXEMPTION IS AN OBLIGATION, AND IT WAS NEVER CHECKED (2026-08-20 fourth review, P3).
+    # `QUOTED` takes `(method (` out of the `hot` set above, and the comment justifies that by
+    # claiming every scanner reading it is code-filtered -- "which is what the `WriteFeature`
+    # checks above and `test_a_dispatch_region_is_code` below assert". They do not. They cover
+    # `_find_region`, which got `code_search`; THIRTEEN other scanners read `(method (` with a
+    # bare `re.search`/`re.finditer`, and nothing looked at them. So the one pattern in this
+    # corpus with non-code hits was the one pattern the tripwire could not fire for -- N3's
+    # shape a second time, now in the exemption rather than in the family.
+    #
+    # This makes the claim measurable instead: no scanner in the shipping modules may read a
+    # KNOWN-quoted pattern raw. It reads the source text because that is where the question
+    # lives; `_ANTI_VACUITY` below keeps a scan that finds nothing from passing as compliance.
+    import inspect as _insp
+    raw_readers = []
+    scanned_calls = 0
+    _RAW_CALL = _re.compile(r"\bre\.(?:search|finditer|match|fullmatch|compile)\(\s*(r?[\"'])")
+    for mod in (_P, T):
+        srcfile = _insp.getsourcefile(mod)
+        lines = open(srcfile, errors="replace").read().splitlines()
+        for lineno, line in enumerate(lines, 1):
+            for cm in _RAW_CALL.finditer(line):
+                scanned_calls += 1
+                # the literal that follows the call, on this line
+                tail = line[cm.end() - 1:]
+                for qk in QUOTED:
+                    # `(method (` is spelled `\(method\s+\(` in these patterns
+                    if _re.search(r"\\\((?:\(\?:)?" + _re.escape(qk.strip("( ").split()[0]),
+                                  tail):
+                        raw_readers.append("%s:%d %s"
+                                           % (_os.path.basename(srcfile), lineno, line.strip()))
+                        break
+    check("no shipping scanner reads a KNOWN-quoted pattern raw (the exemption's obligation)",
+          not raw_readers,
+          detail="%d raw scanner(s) read a pattern this corpus writes inside a message, so the "
+                 "`QUOTED` exemption is hiding them rather than discharging them. Give each one "
+                 "`sexpr.code_finditer`/`code_search`:\n    %s"
+                 % (len(raw_readers), "\n    ".join(raw_readers)))
+    check("...and that scan actually looked at something",
+          scanned_calls > 50,
+          detail="only %d raw `re.*` call sites seen in patcher+trigger -- a scan that finds "
+                 "nothing must not read as compliance (P6's anti-vacuity lesson)."
+                 % scanned_calls)
+
 
 def test_a_refused_arming_does_not_orphan_its_host():
     """🔴 F6, DECLARED RED 2026-08-19e -- the cure moves a PLAY-CONFIRMED emission.
