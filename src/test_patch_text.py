@@ -31,6 +31,30 @@ def check(name, cond, detail=""):
           + (f"\n      {detail}" if detail and not cond else ""))
 
 
+def code_parens(text):
+    """`(opens, closes)` counting ONLY the parens that are code.
+
+    A raw `text.count("(") == text.count(")")` is not a balance test for SCI source and cannot
+    be one: a message string is allowed to contain a lone paren, so a perfectly good file fails
+    it and a file broken by an edit INSIDE a message still fails it by the same amount. Every
+    fixture below that carries an unbalanced message is measured with this instead -- which is
+    the same walk `patcher._skip_noncode` performs, so the test asks the question the patcher
+    has to answer rather than an easier one."""
+    o = c = 0
+    j, n = 0, len(text)
+    while j < n:
+        nxt = P._skip_noncode(text, j, n)
+        if nxt is not None:
+            j = nxt
+            continue
+        if text[j] == "(":
+            o += 1
+        elif text[j] == ")":
+            c += 1
+        j += 1
+    return o, c
+
+
 # LB2's rm520::newRoom, verbatim from build/sweep/dagger/src/rm520.sc. The second arm is the
 # commit: at act 4 with the grapes, every exit is diverted into rm26, the act-break card.
 RM520 = """(instance rm520 of Rm
@@ -464,9 +488,19 @@ ELSE_ARM = """(instance rm300 of Rm
 )
 """
 
-# ...and the same fork held INSIDE an outer arming. The inner `if` is disqualified, but the
-# outer one holds the whole fork in its then branch, so it is a sound hold and the search must
-# keep going OUTWARD rather than refusing.
+# ...and the same fork held INSIDE an outer arming.
+#
+# ⚠️ RE-DERIVED 2026-08-20 (R2). This fixture used to assert that the search CLIMBS OUTWARD to
+# `(not (proc0_12 41))` and holds there, on the reasoning that an outer `if` holding the whole
+# fork in its then branch is a sound hold. It withholds the ambush, so it is sound in that one
+# sense -- and it is the WRONG SITE, for the reason `trigger.py`'s `proc-arm` branch has carried
+# in prose since it was written: "wrap ONLY the arming form, never its enclosing clause: the
+# `else` sibling is the game's own other outcome and must stay free". Climbing outward suppresses
+# `patrolScript` too, which no row derived and no spec scoped -- the wall-shaped failure this
+# file's `test_stage_match_is_structural` already refuses elsewhere. The innermost `if` whose
+# branch holds the arming is the game's own arming condition; when it cannot be strengthened, the
+# answer is to wrap the arming STATEMENT (the shape `arm-event` and `proc-arm` both ship), not to
+# gate a wider scope.
 NESTED_ELSE_ARM = """(instance rm300 of Rm
 \t(method (init)
 \t\t(super init:)
@@ -513,9 +547,25 @@ def test_enclosing_if_test_respects_the_else_branch():
 
     pos = NESTED_ELSE_ARM.index("setScript: ambushScript")
     span = P._enclosing_if_test(NESTED_ELSE_ARM, pos)
-    check("...but an OUTER if holding the whole fork in its then branch is still a hold",
-          span is not None and NESTED_ELSE_ARM[span[0]:span[1]] == "(not (proc0_12 41))",
-          detail="span=%r -> %r" % (span, span and NESTED_ELSE_ARM[span[0]:span[1]]))
+    check("...and the search does NOT climb outward past the fork to a wider scope",
+          span is None,
+          detail="span=%r -> %r. `(not (proc0_12 41))` withholds the ambush, but it also "
+                 "withholds `patrolScript`, which no row derived -- the game's own other "
+                 "outcome. The innermost arming `if` is the only site this function may "
+                 "strengthen; when it has an else, the caller wraps the STATEMENT instead."
+                 % (span, span and NESTED_ELSE_ARM[span[0]:span[1]]))
+
+    # ...and that is what the applier does with it: the ambush alone is held, and the sibling
+    # the game arms on the other side of the fork is left exactly as it was.
+    out, n, why = P._place_capture_arm(NESTED_ELSE_ARM, "ambushScript", "rm300",
+                                       "(gEgo has: 24)")
+    between = out[out.index("else"):out.index("setScript: ambushScript")] if why is None else ""
+    check("the applier holds the arming STATEMENT and leaves the else sibling free",
+          why is None and n == 1
+          and "(and (not (proc0_12 41))" not in out          # the outer scope is untouched
+          and "(if (gEgo has: 24)" in between                # the hold is inside the else
+          and "\t\t\t\t(theGuard setScript: patrolScript)\n" in out,   # the sibling is stock
+          detail="n=%r why=%r\n%s" % (n, why, out))
 
 
 # F15. `_balanced_span` counted raw parens with no string or comment handling, and
@@ -527,6 +577,26 @@ STRINGY = """(instance rm300 of Rm
 \t\t(Print {a paren ( in a message})
 \t\t; and a paren ( in a comment
 \t\t(if (not (proc0_12 41))
+\t\t\t(theGuard setScript: ambushScript)
+\t\t)
+\t)
+)
+"""
+
+
+# ...and the fourth construct, which the 2026-08-20 review's minor list named: SCI's said and
+# menu specs are `'...'`, and they are the only non-code form in this corpus that really does
+# carry parens (`'(get,take)/lamp'` is a grouped alternation). Measured across the five source
+# trees: 3,100 of them in code position on LSL2 and KQ4, ZERO unbalanced -- so this fixture is
+# synthetic, the `test_deletion_soundness` doctrine (a game states a failure mode only if it
+# happens to have one). The `"` branch `_skip_noncode` carries instead is DEAD on all five trees:
+# every double quote in the corpus is inside a `{...}` message, which is consumed first.
+SAID_IF = """(instance rm300 of Rm
+\t(method (handleEvent param1)
+\t\t(if (not (proc0_12 41))
+\t\t\t(if (Said 'open/door(gate')
+\t\t\t\t(proc0_29 12)
+\t\t\t)
 \t\t\t(theGuard setScript: ambushScript)
 \t\t)
 \t)
@@ -546,6 +616,13 @@ def test_balanced_span_ignores_strings_and_comments():
     check("...and the arming test is still found past an unbalanced string and comment",
           span is not None and STRINGY[span[0]:span[1]] == "(not (proc0_12 41))",
           detail="span=%r -> %r" % (span, span and STRINGY[span[0]:span[1]]))
+
+    pos = SAID_IF.index("setScript: ambushScript")
+    span = P._enclosing_if_test(SAID_IF, pos)
+    check("...and past a said spec, the one non-code form that really carries parens",
+          span is not None and SAID_IF[span[0]:span[1]] == "(not (proc0_12 41))",
+          detail="span=%r -> %r -- `'open/door(gate'` shifts every span computed after it"
+                 % (span, span and SAID_IF[span[0]:span[1]]))
 
 
 # F2. The `fuse-arm` applier took the FIRST `(if` in the procedure, not the one containing the
@@ -585,8 +662,16 @@ KQ5_SPAWNER = """(procedure (proc550_16)
 )
 """
 
-# ...and a spawn with no arming around it: refusing WHOLE is the doctrine, because holding the
-# guarded sites and leaving this one open is a claim of coverage the patch does not have.
+# ...and a spawn with no arming around it.
+#
+# ⚠️ RE-DERIVED 2026-08-20 (R2). This used to assert a WHOLE REFUSAL, on the doctrine that
+# holding the guarded sites and leaving this one open is a claim of coverage the patch does not
+# have. The doctrine is right and the assertion was the wrong way to satisfy it: once the
+# applier can wrap an arming STATEMENT -- which R2 forces it to grow anyway, for the `(if ...
+# else ...)` it must never conjoin onto -- the bare spawn is HELD, and full coverage beats a
+# refusal at the same claim. What must never happen is the third thing: one site held, one open,
+# `applied: True`. So the invariant is stated directly below, and refusal is only one way to
+# meet it.
 BARE_SPAWNER = """(procedure (proc550_16)
 \t(if (== global5 1)
 \t\t(theCat posn: 91 172 init:)
@@ -626,13 +711,33 @@ def test_fuse_arm_holds_the_if_that_spawns():
           detail="n=%r why=%r\n%s" % (n2, why2, out2))
 
     out3, n3, why3 = place(BARE_SPAWNER, "proc550_16", ["theCat"], DEMAND)
-    check("a spawn outside every `(if` refuses WHOLE rather than half-holding",
-          why3 is not None and n3 == 0 and out3 == BARE_SPAWNER,
-          detail="n=%r why=%r\n%s" % (n3, why3, out3))
+    check("EVERY spawn is held -- the bare one gets a wrap of its own, never left open",
+          why3 is None and n3 == 2 and out3.count("softlock-guard") == 2
+          and "(and (== global5 1) %s)" % DEMAND in out3
+          and out3.index("(if %s" % DEMAND) < out3.index("(theCat posn: 103 115 init:)"),
+          detail="n=%r why=%r held %d of 2 spawns. One site held and one open with "
+                 "`applied: True` is findings #4 and #8 exactly.\n%s"
+                 % (n3, why3, out3.count("softlock-guard"), out3))
+    check("...and the file still balances after the mixed edit",
+          out3.count("(") == out3.count(")"), detail=out3)
 
     out4, n4, why4 = place(SPAWNER, "proc550_16", ["theRat"], DEMAND)
     check("a host the procedure never inits is a refusal, not a guess",
           why4 is not None and n4 == 0 and out4 == SPAWNER, detail="why=%r" % (why4,))
+
+    # THE INLINE MARKER MUST NOT EAT THE REST OF ITS LINE. `; softlock-guard` is a line comment,
+    # so conjoining onto a one-line `(if <test> <arming>)` comments out the arming, the closing
+    # parens and everything after them -- `applied: True`, and the file no longer compiles.
+    # Measured 2026-08-20: 562 one-line `(if ...)` forms across the corpus's five source trees,
+    # none of them containing an arming TODAY, which is the only reason this has never shipped.
+    one_line = "(procedure (proc550_16)\n\t(if (== global5 1) (theCat posn: 91 172 init:))\n)\n"
+    out5, n5, why5 = place(one_line, "proc550_16", ["theCat"], DEMAND)
+    check("a ONE-LINE arming `if` is not commented out by the marker",
+          why5 is None and n5 == 1 and out5.count("(") == out5.count(")")
+          and out5.index("softlock-guard") < out5.index("(theCat posn:")
+          and "\n" in out5[out5.index("softlock-guard"):out5.index("(theCat posn:")],
+          detail="n=%r why=%r -- everything after `; softlock-guard` on that line is a "
+                 "comment:\n%s" % (n5, why5, out5))
 
 
 # F5. `capture-arm` only landed on KQ5 because an UNRELATED spec (the rm54 fish discriminator)
@@ -712,30 +817,49 @@ MESSAGE_IF = """(instance rm300 of Rm
 )
 """
 
+# ...the same shape as a spawn procedure. Spelled out rather than derived from MESSAGE_IF by
+# string surgery: the 2026-08-20 red built it with two `.replace` calls that dropped the
+# `(method` line and left its two closing parens behind, so the fixture the fuse applier was
+# measured against did not itself balance and could not have told a good edit from a bad one.
+MESSAGE_IF_SPAWNER = """(procedure (proc550_16)
+\t(if (not (proc0_12 41))
+\t\t(Print {you wonder (if (the guard saw you})
+\t\t(theCat posn: 91 172 init:)
+\t)
+)
+"""
+
+MESSAGE_TEXT = "{you wonder (if (the guard saw you}"
+
 
 def test_an_if_inside_a_message_is_not_an_arming():
     print("\n-- the candidate scan must skip strings too, not just the span walk (R1) --")
-    for nm, fn, args in (
+    # ⚠️ RE-DERIVED 2026-08-20. The red as first written asked for `out.count("(") ==
+    # out.count(")")` and for the marker to land after the last `}`. Neither can hold: the
+    # fixture's message carries two unmatched `(` BY DESIGN, so the raw counts are 10/8 before
+    # any edit and 10/8 after a perfect one; and the arming `(if` sits BEFORE the message, so a
+    # correct hold lands before the `}`, not after it. What the fix actually has to deliver is
+    # three things, and they are what is asked here: the message comes through byte-identical,
+    # the CODE still balances, and the demand lands on the real arming test.
+    for nm, fn, args, arming in (
             ("capture-arm", getattr(P, "_place_capture_arm", None),
-             (MESSAGE_IF, "ambushScript", "theGuard", "(gEgo has: 24)")),
+             (MESSAGE_IF, "ambushScript", "rm300", "(gEgo has: 24)"), "(not (proc0_12 41))"),
             ("fuse-arm", getattr(P, "_place_fuse_arm", None),
-             (MESSAGE_IF.replace("(instance rm300 of Rm\n\t(method (init)",
-                                 "(procedure (proc550_16)")
-                        .replace("(theGuard setScript: ambushScript)",
-                                 "(theCat posn: 91 172 init:)"),
-              "proc550_16", ["theCat"], "(gEgo has: 24)"))):
+             (MESSAGE_IF_SPAWNER, "proc550_16", ["theCat"], "(gEgo has: 24)"),
+             "(not (proc0_12 41))")):
         if fn is None:
             check("%s: the applier exists" % nm, False)
             continue
+        src = args[0]
         out, n, why = fn(*args)
+        o, c = code_parens(out)
         check("%s: an `(if` inside a message text is never the arming" % nm,
-              out.count("(") == out.count(")")
-              and "{you wonder (if (and " not in out
-              and (why is not None or "softlock-guard" in out.split("}")[-1]),
-              detail="n=%r why=%r balanced=%s -- the demand was written INSIDE the message, so "
-                     "nothing is held and the source no longer compiles, while the placement "
-                     "row reports applied=True:\n%s"
-                     % (n, why, out.count("(") == out.count(")"), out))
+              MESSAGE_TEXT in out and o == c and why is None
+              and "(and %s (gEgo has: 24))" % arming in out,
+              detail="n=%r why=%r code parens %d/%d (stock %r) -- the demand was written INSIDE "
+                     "the message, so nothing is held and the source no longer compiles, while "
+                     "the placement row reports applied=True:\n%s"
+                     % (n, why, o, c, code_parens(src), out))
 
 
 # R2. A demand conjoined onto the test of an `(if T ... else B)` does not merely withhold the
