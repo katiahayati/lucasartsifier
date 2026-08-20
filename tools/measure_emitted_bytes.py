@@ -45,18 +45,29 @@ def emit(src_dir, out_dir, games):
             print("SKIP %s -- no IR" % name)
             continue
         s = M.load(cfg=cfg)
-        specs, sinks = G.guard_specs(s), G.sink_remedies(s)
         dest = os.path.join(out_dir, name)
         shutil.rmtree(dest, ignore_errors=True)
         os.makedirs(dest)
         P.configure(s.em.ir)
         nums = P.assemble(dest, cfg)
         titles = {n: t for t, n in nums.items()}
-        P.apply_sink_remedies(dest, sinks, titles)
-        P.apply_guards(dest, specs, titles, nums,
+        # ⛔ `patcher.main`'s CANONICAL ORDER, and the mode chooser is not optional. It is a
+        # FEASIBILITY GATE that runs before any wrap: where the chooser cannot be installed it
+        # RETRACTS the mode (`T.MODE = None`, `_MODE_DEST` pinned so `_init_mode` cannot re-arm
+        # later), and `stock_or` then emits the bare condition instead of
+        # `(or (== global<mode> 2) <cond>)`. Skip it and `apply_guards` arms a mode of its own,
+        # so every guarded site emits a wrapper the shipped patch does not have -- measured on
+        # KQ5, that alone is 18 differing source files against the play-tested v17. Both sides
+        # of a diff would still agree, so the comparison stays valid, but "byte-identical" would
+        # stop meaning "byte-identical to what ships", which is the only claim worth making.
+        P.install_mode_chooser(dest, titles)
+        P.apply_sink_remedies(dest, G.sink_remedies(s), titles)
+        P.apply_resource_remedies(dest, G.resource_remedies(s), titles)
+        P.apply_guards(dest, G.guard_specs(s), titles, nums,
                        s_drops=lambda it: s.drops.get(it, set()), rooms=set(s.rooms),
                        entry_frontier=lambda r: G.commit_entry_frontier(s, r),
                        defer_info=lambda sp: G.defer_to_entry(s, sp))
+        P.declare_mode_globals(dest)
         done.append(name)
         print("DONE %s -> %s" % (name, dest))
     print("emitted %d game(s): %s%s"
