@@ -1145,7 +1145,8 @@ def run():
     # are `global332 == 7` against the write set {2, 3, 4}, where every write contradicts. That
     # is what makes the choice unmeasurable HERE, and it is a fact about this game, not a
     # property of the rule -- so it is measured, and a game that does ask says so before its
-    # hold ships.
+    # hold ships. ⭐ PARKED [USER, 2026-08-20]: the permissive reading ships and the question
+    # waits for a game that asks it. This check is what makes "waits" safe.
     div = [d for d in getattr(M, "_DIVERGENT", ())]
     check("KQ5 never asks the falsification question nobody can answer",
           not div,

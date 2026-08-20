@@ -2501,7 +2501,10 @@ def _falsifies(g, writes):
     shipped demand does not move either way. R4 is latent here exactly as F1 and F2 were, and
     so is its reversal. `_DIVERGENT` below records the case so the choice stops being invisible:
     a game that produces one says so in the suite BEFORE the hold built on it ships.
-    ⭐ THE CHOICE IS THE USER'S, and it is a design decision like R6's, not a patch."""
+
+    ⭐ PARKED [USER, 2026-08-20]. The permissive reading ships, deliberately, and this is NOT an
+    open question blocking anything -- there is nothing in the corpus to decide it with, so it
+    waits for a game that asks. ⛔ Do not flip it on a derivation; the tripwire is the point."""
     for a in (_nn(x) for x in _conj_spine(g)):
         neg = isinstance(a, GNot)
         k = a.kid if neg else a

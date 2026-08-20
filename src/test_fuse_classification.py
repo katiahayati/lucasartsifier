@@ -408,8 +408,8 @@ def test_falsifies_reads_a_set_of_writes_not_a_state():
     # `chain_writes` says the run can leave the register either way; keeping the entry admits
     # an escape that may exist only on the path not taken, at its discharged price, which is
     # F10's own failure in the function written to prevent F10. Dropping it is what R4 called
-    # deleting a real escape. Neither is a deduction, so the divergence is RECORDED -- the
-    # choice is the USER's, and it may not be invisible while it waits.
+    # deleting a real escape. Neither is a deduction, so the divergence is RECORDED -- ⭐ PARKED
+    # [USER, 2026-08-20], and it may not be invisible while it waits.
     div = getattr(M, "_DIVERGENT", None)
     check("a divergent write set is RECORDED, not silently guessed at",
           div is not None and any(d[0] == 901 and d[4] == (5, 7) for d in div),

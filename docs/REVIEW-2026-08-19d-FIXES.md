@@ -352,7 +352,7 @@ written; the reds are committed at `51d43b6`.
 | N1b | `_arming_statement_span` returns the innermost balanced form, which is routinely an expression in VALUE position | `patcher.py` → `sexpr.py` | ✅ |
 | N2 | R2's anti-wall doctrine is enforced for the `else` SPELLING only — a `cond`/`switch` fork between the arming and the `if` is invisible | `patcher._depth1_else` | ✅ |
 | N3 | the census tripwire cannot fail for the reason it names: the family omits `(method (`, the one pattern with hits, and both loops omit KQ5 | `test_patch_text.py` | ✅ |
-| N4 | R4's cure has a SECOND error direction, undeclared: a value written on a branch NOT TAKEN can now *satisfy* a conjunct and keep an escape the run never offers | `missability._falsifies` | ⚠️ **declared + instrumented — the choice is the USER's** |
+| N4 | R4's cure has a SECOND error direction, undeclared: a value written on a branch NOT TAKEN can now *satisfy* a conjunct and keep an escape the run never offers | `missability._falsifies` | ⏸ **declared + instrumented, then PARKED [USER]** |
 
 ## What was measured
 
@@ -465,7 +465,14 @@ R4 is latent here exactly as F1 and F2 were, and so is its reversal.
 So the divergence is now **recorded** (`missability._DIVERGENT`) rather than guessed at in
 silence, the docstring states both directions, and `test_kq5_ground_truth` pins the measured
 fact that KQ5 never asks the question — a game that does asks it out loud, before its hold
-ships. ⭐ **Which way it should read is a design decision like R6's, and it is the USER's.**
+ships. Re-measured 2026-08-20: 26 firings, all `global332 == 7` against `{2, 3, 4}`, **0
+divergent**.
+
+⏸ **PARKED [USER, 2026-08-20].** The permissive reading ships, deliberately. This is not a red
+and not a pending decision — there is nothing in the corpus to decide it with, so it waits for a
+game that asks. Three answers were laid out (keep / drop / refuse-the-row-and-report), plus the
+real fix, a path-sensitive last-write model. The `_DIVERGENT` tripwire is what makes waiting
+safe; ⛔ do not re-raise it, and do not flip it on a derivation.
 
 ## Minor list — the four that were open
 
