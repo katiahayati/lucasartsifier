@@ -561,6 +561,51 @@ def test_ambiguous_registers_are_refused():
           detail="rendered %r" % (G.render_register(fake, 400, 1),))
 
 
+# --- 8. an entry disjunction read as a conjunction (the 2026-08-19d review's F8) -----------------
+#
+# `_fold_disarmed` suppresses a `capture_fold_armings` row when the arrival fold's own entry
+# guard excludes the room the carrier starts in -- KQ5's rm67 dispatches on `prevRoom`, so the
+# maze's own carrier never arms the fork and demanding the locket of it would be a false
+# positive. That is a real and load-bearing rule. What it does with MORE THAN ONE ENTRY is not:
+# entries are ALTERNATIVES (any one of them arms the machine), and the loop returns True as soon
+# as ANY of them excludes the arrival. One alternative that excludes an arrival the next one
+# admits therefore deletes a real finding, and a deleted finding is a softlock we ship.
+def _fold_model(entries):
+    fold = _machine("henchCaught", 67, entries, {8: [([], (), (), (), ("DEATH", 0))]},
+                    recv=[("G", 2)] * len(entries))
+    prev = 12
+    em = types.SimpleNamespace(machines=[fold], dropped_entries=(),
+                               ir=types.SimpleNamespace(_prev_room_reg=prev))
+    s = types.SimpleNamespace(em=em, reach_rooms={54, 55, 67}, sources={}, regs={prev})
+    return s, prev
+
+
+def test_fold_disarmed_reads_the_entry_disjunction_as_alternatives():
+    print("\n-- missability._fold_disarmed: entries are ALTERNATIVES, not conjuncts --")
+    import unittest.mock as _mock
+    kq5 = [(0, GAnd([GNot(Pred("CMP", 12, "==", 55))]))] * 2       # arms unless prev == 55
+    pinned = [(0, GAnd([Pred("CMP", 12, "==", 55)]))]              # arms ONLY on prev == 55
+    both = pinned + [(0, GAnd([Pred("CMP", 12, "==", 60)]))]       # ...or on prev == 60
+
+    def _run(entries, from_room):
+        s, prev = _fold_model(entries)
+        with _mock.patch.object(M, "prev_room_reg", lambda em: prev):
+            return M.IrSccReach._fold_disarmed(s, 67, "henchCaught", from_room)
+
+    check("the rule still fires: KQ5's rm67 fork is disarmed for the maze's own carrier",
+          _run(kq5, 55) is True,
+          detail="`(not (== prev 55))` on every entry excludes an arrival from rm55, which is "
+                 "the false positive this rule was written for.")
+    check("...and stays armed for the arrival it does not exclude", _run(kq5, 54) is False)
+    check("a pinned single entry excludes every other arrival", _run(pinned, 60) is True)
+    check("a SECOND entry that ADMITS the arrival keeps the fold armed",
+          _run(both, 60) is False,
+          detail="entry 1 is `prev == 55` (excluding 60) and entry 2 is exactly `prev == 60`. "
+                 "Entries are ALTERNATIVES -- the machine arms on either -- so reporting it "
+                 "disarmed deletes a real carry-in finding, and a deleted finding is a "
+                 "softlock we ship.")
+
+
 def run():
     print("=== test_deletion_soundness ===")
     test_forwarding_sole_producer()
@@ -574,6 +619,7 @@ def run():
     test_edge_bands_are_derived()
     test_death_values_are_measured()
     test_ambiguous_registers_are_refused()
+    test_fold_disarmed_reads_the_entry_disjunction_as_alternatives()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
     return not FAIL
