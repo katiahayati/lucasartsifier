@@ -100,6 +100,20 @@ def run():
         print(f"  [note] a KNOWN GAP is now being caught: {sorted(promoted)} -- if the user confirms "
               f"it is correct, promote it from KNOWN_GAPS into EXPECTED_CAUGHT.")
 
+
+    # ⭐ N4's TRIPWIRE, ASKED OF THIS GAME TOO (2026-08-20 fourth review, P6). `_falsifies` picks
+    # the PERMISSIVE reading when a chain's writes leave a register either way, and that choice
+    # is parked rather than derived -- so a game that actually asks the question has to say so
+    # before the hold built on it ships. The assertion lived in KQ5's ground truth and nowhere
+    # else, which made it a claim about one game instead of about the rule.
+    _div, _fired, _shapes = M.n4_tripwire()
+    print(f"  [n4] falsification questions asked: {_fired}, divergent: {len(_div)}")
+    check("KQ4 (and the LSL2 cross-check) asks no divergent falsification question", not _div,
+          f"divergent: {_div!r} (shapes asked: {_shapes!r}). The demand this game ships rests "
+          f"on a reading of `chain_writes` that was CHOSEN, not derived -- see "
+          f"`missability._falsifies`, N4. The USER decides which way it reads before this "
+          f"game's hold is trusted.")
+
     print(f"\n  caught now: {sorted(caught)}")
     print(f"  still-missed ground truth: {sorted(KNOWN_GAPS - caught)}")
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))

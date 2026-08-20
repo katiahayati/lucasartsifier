@@ -420,6 +420,45 @@ def test_falsifies_reads_a_set_of_writes_not_a_state():
           and not fal(GAnd([GNot(_cmp(901, "==", 5))]), frozenset({(901, 5), (901, 7)})),
           detail="`¬(901 == 5)` is impossible only if the register can hold nothing but 5")
 
+    # ⭐ P6 (2026-08-20 FOURTH review). The record was ORDER-DEPENDENT, because the scan returned
+    # at the first conjunct it could falsify outright. A spine holding both a divergent conjunct
+    # and a falsifying one therefore logged the divergence or did not, purely by their order --
+    # over-reporting in one order (the answer never depended on the divergent conjunct: the spine
+    # is false either way, so nothing is undecided) and under-reporting in the other (the case
+    # the tripwire exists for, missed). Whether the suite hears about a divergence may not depend
+    # on the order the conjuncts happen to be written in.
+    #
+    # The rule now scans the whole spine and records only MATERIAL divergences -- those where no
+    # sibling falsifies outright, so the divergent reading really is what decides the answer.
+    before = len(getattr(M, "_DIVERGENT", ()))
+    div_first = GAnd([_cmp(901, "==", 7), _cmp(902, "==", 1)])
+    fal_first = GAnd([_cmp(902, "==", 1), _cmp(901, "==", 7)])
+    w = frozenset({(901, 5), (901, 7), (902, 9)})       # 901 divergent, 902 falsifies outright
+    check("a divergence a falsifying sibling makes immaterial is NOT recorded",
+          fal(div_first, w) and fal(fal_first, w)
+          and len(getattr(M, "_DIVERGENT", ())) == before,
+          detail="`902 == 1` is false whatever 901 holds, so the spine is false either way and "
+                 "nothing about it is undecided. Recorded %d new entries: %r"
+                 % (len(getattr(M, "_DIVERGENT", ())) - before,
+                    list(getattr(M, "_DIVERGENT", ()))[before:]))
+    check("...and the answer does not depend on which conjunct is read first",
+          fal(div_first, w) == fal(fal_first, w) is True)
+
+    before = len(getattr(M, "_DIVERGENT", ()))
+    w2 = frozenset({(901, 5), (901, 7), (902, 1)})      # 901 divergent, 902 now SATISFIED
+    check("a divergence with no falsifying sibling IS recorded, in either order",
+          not fal(div_first, w2) and not fal(fal_first, w2)
+          and len(getattr(M, "_DIVERGENT", ())) == before + 2,
+          detail="here the divergent conjunct is the whole question -- the spine holds or not "
+                 "depending on which value 901 is left at. Recorded %r"
+                 % (list(getattr(M, "_DIVERGENT", ()))[before:],))
+
+    check("the tripwire counts what it was ASKED, so silence is not read as absence",
+          hasattr(M, "n4_tripwire") and M.n4_tripwire()[1] > 0,
+          detail="`_DIVERGENT` being empty is evidence only while `_falsifies` is running at "
+                 "all; a refactor that stopped calling it would look identical. fired=%r"
+                 % (M.n4_tripwire()[1] if hasattr(M, "n4_tripwire") else None,))
+
 
 def _fuse_room(room, esc_entry):
     """One room of the two-room fuse world: a death, a fuse-lighter, the encounter that hands

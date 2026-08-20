@@ -11,7 +11,7 @@ Matches' room reachable), debug-global pinning, etc. Then it just subclasses Scc
 from __future__ import annotations
 
 import os
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 
 import ir as I
 import config
@@ -2449,6 +2449,29 @@ def _fuse_machines(infos, fuses):
 # way to read one is undecided (see `_falsifies`, N4).
 _DIVERGENT = []
 
+# ...and how many questions it was asked AT ALL, as `(var, op, want, neg, values) -> count`
+# (2026-08-20 fourth review, P6). `_DIVERGENT` being empty is only evidence while `_falsifies`
+# is actually running: a refactor that stopped calling it, a model answered from a cache built
+# by other code, or a `writes` set that never mentions the register would all leave the list
+# empty and read as "this game does not ask the unanswerable question". The tripwire has to be
+# able to tell silence from absence, so the firings are counted too and the suite asserts a
+# NUMBER, not just emptiness.
+_FIRINGS = Counter()
+
+
+def n4_tripwire():
+    """`(divergent, fired, shapes)` -- the N4 tripwire's state for THIS process.
+
+    ⭐ ONE RULE, ASKED OF EVERY GAME (2026-08-20 fourth review, P6). The tripwire that makes N4's
+    parking safe was asserted in KQ5's ground truth and nowhere else, so a divergent question
+    from LSL2, KQ4, KQ6 or LB2 would have been recorded and never looked at. It lives here so the
+    four files that already hold a loaded model can each ask it without spelling the rule again
+    ([[same-rule-two-places]]).
+
+    `divergent` is the material questions (see `_falsifies`); `fired` is how many falsification
+    questions were asked at all, which is what tells silence from absence."""
+    return list(_DIVERGENT), sum(_FIRINGS.values()), dict(_FIRINGS)
+
 
 def _falsifies(g, writes):
     """Do `writes` -- everything a chain has already committed -- contradict this entry guard?
@@ -2505,6 +2528,18 @@ def _falsifies(g, writes):
     ⭐ PARKED [USER, 2026-08-20]. The permissive reading ships, deliberately, and this is NOT an
     open question blocking anything -- there is nothing in the corpus to decide it with, so it
     waits for a game that asks. ⛔ Do not flip it on a derivation; the tripwire is the point."""
+    # ⛔ THE WHOLE SPINE, AND ONLY MATERIAL DIVERGENCES (2026-08-20 fourth review, P6). Returning
+    # at the first falsifying conjunct made the record ORDER-DEPENDENT in both directions: a
+    # divergent conjunct read BEFORE an outright-falsifying one was logged even though the answer
+    # never depended on it (a false alarm on a question this spine does not actually ask), and one
+    # read AFTER it was never logged at all (the tripwire missing the case it exists for). Whether
+    # the suite hears about a divergence cannot depend on the order the conjuncts happen to be in.
+    #
+    # So: scan every conjunct, then decide. If any conjunct falsifies outright the answer is True
+    # whichever way a divergent sibling is read, and the divergence is IMMATERIAL -- it is not
+    # recorded, because the shipped demand does not rest on it. Only when nothing falsifies does
+    # the divergent reading decide the answer, and that is the case N4 is parked on.
+    falsified, divergent = False, []
     for a in (_nn(x) for x in _conj_spine(g)):
         neg = isinstance(a, GNot)
         k = a.kid if neg else a
@@ -2517,15 +2552,18 @@ def _falsifies(g, writes):
         vals = [v for (S, v) in writes if S == k.var and isinstance(v, int)]
         if not vals:
             continue                          # this register is not the chain's business
+        _FIRINGS[(k.var, k.op, want, neg, tuple(sorted(set(vals))))] += 1
         holds = [((v == want) if k.op == "==" else (v != want)) != neg for v in vals]
         if not any(holds):
-            return True                       # nothing the chain can leave makes it hold
-        if not all(holds):
+            falsified = True                  # nothing the chain can leave makes it hold
+        elif not all(holds):
             # DIVERGENT: the chain can leave this register either way, so "the escape exists"
             # and "the escape does not" are both consistent with what we know (N4). Recorded,
             # never guessed at silently -- the reading that ships is the permissive one.
-            _DIVERGENT.append((k.var, k.op, want, neg, tuple(sorted(set(vals)))))
-    return False
+            divergent.append((k.var, k.op, want, neg, tuple(sorted(set(vals)))))
+    if not falsified:
+        _DIVERGENT.extend(divergent)
+    return falsified
 
 
 def _minimal(alts):

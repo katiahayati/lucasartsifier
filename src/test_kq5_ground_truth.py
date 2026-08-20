@@ -1147,13 +1147,25 @@ def run():
     # property of the rule -- so it is measured, and a game that does ask says so before its
     # hold ships. ⭐ PARKED [USER, 2026-08-20]: the permissive reading ships and the question
     # waits for a game that asks it. This check is what makes "waits" safe.
-    div = [d for d in getattr(M, "_DIVERGENT", ())]
+    #
+    # ⛔ AND "EMPTY" IS ONLY EVIDENCE WHILE THE RULE IS RUNNING (2026-08-20 fourth review, P6).
+    # `not div` passes identically whether this game asks the question and answers it cleanly or
+    # `_falsifies` is never called at all -- a refactor that stopped calling it, or a model
+    # answered out of a cache built by other code, would read as "KQ5 does not ask". So the
+    # firings are counted and the count is asserted: silence has to be distinguishable from
+    # absence. The tripwire also no longer depends on the ORDER of a spine's conjuncts (P6).
+    div, fired, shapes = M.n4_tripwire()
+    print(f"  [n4] falsification questions asked: {fired}, divergent: {len(div)}")
     check("KQ5 never asks the falsification question nobody can answer",
           not div,
           f"divergent falsification questions: {div!r}. The demand this game ships now rests "
           f"on a reading of `chain_writes` that was chosen, not derived -- see "
           f"`missability._falsifies`, N4. The USER decides which way it reads before this "
           f"game's hold is trusted.")
+    check("...and it was ASKED the question, so the empty answer means something",
+          fired > 0,
+          f"`_falsifies` was never called, so `_DIVERGENT` is empty for a reason that has "
+          f"nothing to do with KQ5. Shapes asked: {shapes!r}")
 
     print(f"  {len(PASS)} passed, {len(FAIL)} failed")
     return not FAIL

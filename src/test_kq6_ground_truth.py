@@ -383,6 +383,20 @@ def run():
         return sorted(next(iter(u)) if len(u) == 1 else "(" + " | ".join(sorted(u)) + ")"
                       for u in units)
 
+
+    # ⭐ N4's TRIPWIRE, ASKED OF THIS GAME TOO (2026-08-20 fourth review, P6). `_falsifies` picks
+    # the PERMISSIVE reading when a chain's writes leave a register either way, and that choice
+    # is parked rather than derived -- so a game that actually asks the question has to say so
+    # before the hold built on it ships. The assertion lived in KQ5's ground truth and nowhere
+    # else, which made it a claim about one game instead of about the rule.
+    _div, _fired, _shapes = M.n4_tripwire()
+    print(f"  [n4] falsification questions asked: {_fired}, divergent: {len(_div)}")
+    check("KQ6 asks no divergent falsification question", not _div,
+          f"divergent: {_div!r} (shapes asked: {_shapes!r}). The demand this game ships rests "
+          f"on a reading of `chain_writes` that was CHOSEN, not derived -- see "
+          f"`missability._falsifies`, N4. The USER decides which way it reads before this "
+          f"game's hold is trusted.")
+
     print(f"\n  caught now ({len(caught)} units): {show(caught)}")
     print(f"  still-missed ground truth: {show(KNOWN_GAPS - caught)}")
     print(f"  long-ending-only (deliberately not caught): {show(LONG_ENDING_ONLY)}")
