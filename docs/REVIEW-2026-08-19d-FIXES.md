@@ -568,7 +568,7 @@ old innermost-form rule differ, in real room scripts (`dagger/rm460.sc`, `KQ6/rm
 | P2 | the `setscript` branch of the SAME function still uses the raw scan + innermost-form rule — "Now they do [use the same rule]" is false | `trigger.py:1476` | MED-HIGH | 🔴 confirmed by reading |
 | P3 | `QUOTED` exempts `(method (` from the census while **twelve** raw scanners still read it | `test_patch_text.py:1038` | MED-HIGH | 🔴 relayed |
 | P4 | the `co_varnames` check no longer catches un-threading `site=row_site` — the same weakness its own comment criticises | `test_mode.py:331` | MED | 🔴 relayed (reviewer proved by mutation) |
-| P5 | `_enclosing_if_test` climbs outward past an INNER `if`'s `else` when the arming sits in that inner `if`'s test | `patcher.py:3300` | MED | ⏸ **COMMENT ONLY [USER]** — see below |
+| P5 | `_enclosing_if_test` climbs outward past an INNER `if`'s `else` when the arming sits in that inner `if`'s test | `patcher.py:3300` | MED | ✅ **CURED** — see below |
 | P6 | the `_DIVERGENT` tripwire reads KQ5 only, short-circuits on the first falsifying conjunct, and has no anti-vacuity check | `missability.py:2519` | MED | 🔴 relayed |
 | P7 | `test_model_cache` writes a `.py` into the LIVE `src/`, changing every game's cache key for the duration | `test_model_cache.py:109` | MED | 🔴 relayed |
 | P8 | the pipeline-union check was deleted and its replacement is vacuous on the only input the test provides (a SKIP row) | `test_mode.py:249` | LOW-MED | 🔴 relayed |
@@ -593,17 +593,28 @@ site or none"*). The N1b rule was ported into `trigger` without its refusal, so 
 moved from LOUD (a broken build) to SILENT. **Latent**: 0 of the corpus's 3,303 `setScript:`
 sites are in a test, but 157 `init:` sends are.
 
-## ⏸ P5 — COMMENT ONLY [USER RULING, 2026-08-20]
+## ✅ P5 — CURED, one line [USER, 2026-08-20]
 
-Reproduced: `(if (== global5 1) (if (self setScript: capture) (foo) else (bar)))` puts the demand
-on the OUTER test, so a player who cannot pay gets neither `(foo)` nor `(bar)`.
+Reproduced: `(if (== global5 1) (if (self setGuard setScript: capture) (foo) else (bar)))` puts
+the demand on the OUTER test, so a player who cannot pay gets neither `(foo)` nor `(bar)`.
 
-> *"I feel uneasy about #5. let's just put a comment there on the code and not invent some
-> walking upwards that is not currently exercised."*
+First ruled COMMENT-ONLY — *"I feel uneasy about #5. let's just put a comment there on the code
+and not invent some walking upwards that is not currently exercised"* — then reversed once it
+was clear the cure REMOVES an outward climb rather than adding walking: the `continue` at the
+"pos is inside this candidate's test" case became `return None`, so an outer `if` found earlier
+in the scan can no longer stay `best`.
 
-So: **document the shape at the site, ship no cure.** The minimal cure was stated (one line,
-`continue` → `return None`, which REMOVES an outward climb rather than adding walking) and the
-ruling stands anyway. Latent: 0 of 3,303 `setScript:` sites are in a test position.
+⛔ Why a REFUSAL is the right answer and not a wider scope: an arming evaluated while a test runs
+cannot be held by that test without duplicating it, and no ENCLOSING test can hold it either —
+suppressing it changes the value the test computes, so the hold would decide which branch runs
+rather than whether the arming fires. `_place_fuse_arm` was already immune (`statement_span`
+refuses first); `_place_capture_arm` calls `_enclosing_if_test` with no statement check and was
+not.
+
+**Measured**: of **9,508** arming candidate sites across the five trees, the answer changes at
+**6** — every one of them inside SCI's own dev tools (`DialogEditor.sc`, `PolyEdit.sc`,
+`WriteFeature.sc`, in KQ6 and LB2), which no placement touches. Emitted trees byte-identical;
+suite **693 passed, 1 known-red, 0 unexpected, 0 crashed**.
 
 ## What it could NOT verify
 

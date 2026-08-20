@@ -3298,7 +3298,13 @@ def _enclosing_if_test(text, pos, armings=None):
         i = m.end()
         tend = _balanced_span(text, i) if i < len(text) and text[i] == "(" else None
         if tend is not None and pos < tend:
-            continue                              # inside the test itself, not a branch
+            return None                           # ⛔ INSIDE THE TEST -- and that is a REFUSAL,
+            #   not a skip (2026-08-20 fourth review, P5). Skipping the candidate left an OUTER
+            #   `if` found earlier in the scan as `best`, so the demand climbed outward and
+            #   walled BOTH arms of the inner fork. An arming evaluated while a test runs cannot
+            #   be held by that test without duplicating it, and no ENCLOSING test can hold it
+            #   either: suppressing it changes the value the test computes, so the hold would
+            #   decide which branch runs rather than whether the arming fires.
         if best is None or m.start() > best[0]:
             best = (m.start(), i, tend, end)
     if best is None or best[2] is None:
