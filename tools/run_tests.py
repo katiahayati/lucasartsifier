@@ -38,65 +38,31 @@ SRC = os.path.join(_ROOT, "src")
 # is reported as a promotion, not quietly accepted. Keep the reason short and name the gap, so
 # the next reader can tell a known limitation from a broken test without opening the file.
 #
-# ⏳ THE 2026-08-20 BLOCK IS DIFFERENT FROM EVERY OTHER ENTRY HERE. The five R-findings below
-# are NOT declared limitations -- they are OPEN DEFECTS with their cures known, declared so the
-# next run reads as "no movement" rather than as ten fresh regressions. Each one turning green
-# is the promotion it looks like. Full statements in commit 58aedb0 and in the 2026-08-19e
-# handoff; every one was verified by hand before its test was written.
+# ✅ PROMOTED 2026-08-20 -- NINE of the ten 2026-08-20 review defects are GREEN and no longer
+# listed. They were declared (commit 58aedb0) as OPEN DEFECTS with their cures known rather than
+# as limitations, so that closing them would read as the promotion it is; this is that reading.
+#
+#   R1 `_enclosing_if_test`'s candidate scan is `_code_finditer` now, not a raw one, so an `(if`
+#      inside a `{...}` message can never be picked as the arming (`_place_capture_arm`'s
+#      `setScript:` scan and `_init_send_positions` went through the same filter).
+#   R2 an `(if` carrying a depth-1 `else` is disqualified WHOLE -- conjoining onto its test
+#      diverts control into the else -- and the search no longer climbs outward past it: the
+#      caller wraps the arming STATEMENT instead (`_wrap_statement`), which holds exactly the
+#      arming and leaves the game's other outcome free. `NESTED_ELSE_ARM` was re-derived, not
+#      patched around, and `BARE_SPAWNER` with it.
+#   R3 `_place_fuse_arm` enumerates `setScript: <machine>` alongside the host's `init:` sends,
+#      so a procedure arming one machine both ways holds both sites or refuses whole.
+#   R4 `_falsifies` asks "can this conjunct still hold?" -- falsified only when the register IS
+#      written and NO write satisfies it -- instead of "does SOME write contradict it?".
+#   R5 the `fuse_death_armings` row key carries the room's DEMAND, so a second room deriving a
+#      stronger hold reaches `fuse_arming_remedies`' clash gate instead of vanishing.
+#
+# All five games' emitted patch source trees are byte-identical across the change
+# (`tools/measure_emitted_bytes.py` against a worktree at cc3b897), which is the check that
+# matters for a patcher edit: the snapshot surface freezes whether a guard landed, never its
+# text. R6 is not here because it never had a test -- it needs a design decision from the USER.
 KNOWN_RED = {
-    "test_fuse_classification.py": {
-        # R4 -- `_falsifies` reads `chain_writes` (an unordered UNION over every state of a
-        # machine AND its armer) as if it were a register STATE. Discharge can read that union
-        # safely because the flag store is monotone; a register is not. MEASURED on KQ5: 26
-        # firings, every one resting on a register the chain writes three different values to.
-        # The error direction DELETES an escape, so the demand rises (a wall) or the row
-        # vanishes (a shipped softlock). CURE: falsify only when NO write of that register
-        # satisfies the conjunct -- and the open question the reviewer raised is whether the
-        # pricing walk wants an ORDERED last-write instead of a set.
-        "a chain that writes the register SEVERAL values falsifies nothing":
-            "OPEN: chain_writes is a set of writes, not a register state",
-        "...and the same is true whichever order the pair is read in":
-            "OPEN: same rule, read from the other side",
-        "a NEGATED conjunct is falsified only when EVERY write contradicts it":
-            "OPEN: `¬(S == v)` is impossible only if S can hold nothing but v",
-        # R5 -- `emitted` lives OUTSIDE the per-room loop and is keyed `(machine, item)` while
-        # `demand_alts` is derived PER ROOM. A second room deriving a STRONGER demand never
-        # emits, so the guard ships the weaker hold and that room's softlock ships open. The
-        # clash gate in `fuse_arming_remedies` cannot see it: it only sees rows `emitted` let
-        # through. CURE: put the room's demand in the key.
-        "the dedupe key distinguishes two rooms' demands for one (machine, item)":
-            "OPEN: the row key drops the room, so a stronger second demand is never emitted",
-    },
     "test_patch_text.py": {
-        # R1 -- `_skip_noncode` was wired into `_balanced_span` and NOT into the scan that feeds
-        # it: `_enclosing_if_test` still enumerates candidates with a raw `finditer` over the
-        # whole file. An `(if` inside a `{...}` message is picked as the arming, the demand is
-        # written INTO the message, the arming is not held, the file stops balancing -- and the
-        # row reports applied=True. CURE: filter the candidate scan through `_skip_noncode` too.
-        "capture-arm: an `(if` inside a message text is never the arming":
-            "OPEN: the candidate scan is raw finditer; only the span walk skips strings",
-        "fuse-arm: an `(if` inside a message text is never the arming":
-            "OPEN: same scan, same defect",
-        # R2 -- conjoining a demand onto the test of `(if T ... else B)` does not withhold the
-        # arming, it DIVERTS CONTROL INTO B. The 2026-08-19e fix asked whether the arming sat in
-        # the else branch; it never asked whether the `if` HAS one. On the fixture the else arms
-        # theWizardScript, so a player who cannot pay meets the committed death instead of the
-        # encounter. CURE: disqualify any `(if` carrying a depth-1 `else` and fall back to
-        # wrapping the arming STATEMENT (the arm-event shape both appliers can already reach).
-        # ⚠️ `NESTED_ELSE_ARM` in that file currently BLESSES the shape and must be re-derived.
-        "fuse-arm: the demand is NOT conjoined onto a test whose else runs instead":
-            "OPEN: a hold on a test with an else arms the else -- here, the death itself",
-        "capture-arm: the same, on the arming shape it owns":
-            "OPEN: same rule, the other applier",
-        # R3 -- `_place_fuse_arm` enumerates armings as `init:` sends to the HOST OBJECT, but the
-        # arming of a machine is `setScript: <machine>`; `init:` is a proxy that is right on KQ5
-        # only because `theCat::init` happens to do the setScript itself (castle.sc:760). A
-        # procedure arming the same machine both ways holds one site and leaves one open, with
-        # applied=True sites=1 -- findings #4 and #8's shape. Note the two appliers shipped in
-        # ONE commit with opposite definitions of "the arming site". CURE: enumerate both
-        # spellings; the spec already carries `machine`.
-        "both armings of the same machine are held, or the applier refuses whole":
-            "OPEN: `init:` is a proxy for the arming; a `setScript:` sibling is left open",
         "🔴 KNOWN GAP: the hold covers `(super init:)`, or refuses by disposing the host":
             # The 2026-08-19d review's F6. Every arming hold placed inside a host's OWN `init`
             # -- the rm54 fish discriminator and the capture hold both -- sits AFTER
