@@ -943,6 +943,72 @@ def test_every_spelling_of_the_arming_is_held():
                  % (n, why, out.count("softlock-guard"), out))
 
 
+# R1, GENERALISED -- and this half is NOT latent.
+#
+# The 2026-08-20 review's hand-off list said a next reviewer should take "the OTHER raw-text
+# scanners ... R1 is a property of 'scan raw text for a candidate, then span from it'". Measured
+# across the five source trees, one of them really does misfire TODAY: `trigger._find_region`
+# takes its region from `re.search(header_re, text)`, first match wins, and KQ6's and LB2's
+# `WriteFeature.sc` is a SOURCE-CODE GENERATOR whose message strings are themselves SCI source --
+# `{ \t(method (doVerb theVerb)\0d\n\t\t(switch theVerb\0d\n}`. That message contains the first
+# `(method (doVerb` in the file, so `_find_region` returns a 560-byte "region" that starts in the
+# middle of a string, and every span computed inside it is arithmetic on text that is not code.
+#
+# Census of the whole family, five trees: `(instance|class` 6,356 matches / 0 in non-code;
+# `(procedure (` 328 / 0; `setScript:` 2,192 / 0; `(if` 11,073 / 0; `(cond` 1,676 / 0;
+# `newRoom:` 763 / 0; `put: <n>` 340 / 0 -- and `(method (` 7,747 / **2**, which are these.
+WRITEFEATURE = """(instance WriteFeature of Code
+\t(method (doit param1)
+\t\t(Format
+\t\t\t@temp0
+\t\t\t{ \\t(method (doVerb theVerb)\\0d\\n\\t\\t(switch theVerb\\0d\\n}
+\t\t)
+\t)
+
+\t(method (doVerb theVerb)
+\t\t(theGuard setScript: ambushScript)
+\t)
+)
+"""
+
+
+def test_a_region_never_starts_inside_a_message():
+    print("\n-- trigger._find_region: the region is code, not the text of a message --")
+    import trigger as T
+    span = T._find_region(WRITEFEATURE, r"\(method\s+\(doVerb\b")
+    body = WRITEFEATURE[span[0]:span[1]] if span else ""
+    check("the real `doVerb` method is the region, not the one quoted in a message",
+          span is not None and body.startswith("(method (doVerb theVerb)")
+          and "setScript: ambushScript" in body,
+          detail="span=%r -> %r -- the first raw match is inside the `{...}`, so the region "
+                 "starts mid-string and every span computed inside it is arithmetic on text "
+                 "that is not code." % (span, body[:80]))
+
+    import os as _os
+    import re as _re
+    import config
+    import patcher as _P
+    bad = []
+    for name in ("LSL2", "KQ4", "KQ6", "dagger"):
+        cfg = config.by_name(name)
+        if cfg is None or not _os.path.isdir(cfg.src_dir):
+            continue
+        for fn in sorted(_os.listdir(cfg.src_dir)):
+            if not fn.endswith(".sc"):
+                continue
+            text = open(_os.path.join(cfg.src_dir, fn), errors="replace").read()
+            spans = _P._noncode_spans(text)
+            for (s, e) in spans:
+                for hm in _re.finditer(r"\((?:method|procedure)\s+\((\w+)", text[s:e]):
+                    got = T._find_region(text, r"\(%s\s+\(%s\b"
+                                         % (hm.group(0)[1:].split()[0], hm.group(1)))
+                    if got and s <= got[0] < e:
+                        bad.append("%s/%s @%d %s" % (name, fn, got[0], hm.group(1)))
+    check("...and no header quoted in any corpus message is ever taken as a region",
+          not bad,
+          detail="regions taken from inside a string: %r" % (bad,))
+
+
 def test_a_refused_arming_does_not_orphan_its_host():
     """🔴 F6, DECLARED RED 2026-08-19e -- the cure moves a PLAY-CONFIRMED emission.
 
@@ -992,6 +1058,7 @@ def run():
     test_an_if_inside_a_message_is_not_an_arming()
     test_a_hold_never_diverts_into_an_else_branch()
     test_every_spelling_of_the_arming_is_held()
+    test_a_region_never_starts_inside_a_message()
     test_a_refused_arming_does_not_orphan_its_host()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"
           + (f"  FAILURES: {FAIL}" if FAIL else ""))
