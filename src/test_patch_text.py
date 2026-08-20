@@ -321,6 +321,82 @@ def test_arm_event_wraps_the_whole_cascade():
           detail=flat)
 
 
+# ⭐ P1, 2026-08-20 FOURTH REVIEW. KQ4's whale shape with a SECOND arming of the same machine,
+# this one evaluated inside an `if`'s TEST -- the resume-on-re-entry idiom written the other way
+# round. `statement_span` correctly returns None for it (P5's answer: an arming a test EVALUATES
+# has no test that can hold it), but the arm-event loop skipped it and kept going, so one door
+# shipped guarded, the other shipped open, and the row said `sites: 1  applied: True`.
+#
+# That is findings #4 and #8's shape a fourth time. The sibling applier already refuses whole for
+# the identical rule -- `patcher._place_fuse_arm`: "The invariant is EVERY arming site or none"
+# -- and the N1b port into `trigger` left the refusal behind, moving the failure from LOUD (a
+# broken build) to SILENT (an unguarded softlock behind a truthful-looking row).
+TWO_ARMS_ONE_IN_A_TEST = """(instance Room31 of Rm
+\t(properties
+\t\tpicture 31
+\t)
+
+\t(method (init)
+\t\t(super init:)
+\t\t(if (== global105 14)
+\t\t\t(global0 setScript: whaleActions)
+\t\t)
+\t\t(if (global0 setScript: whaleActions)
+\t\t\t(= global105 14)
+\t\t)
+\t)
+)
+"""
+
+
+# ...and the SECOND half of the same invariant, found while curing the first: two armings whose
+# statements NEST. The wrap loop splices in reverse document order, which is only safe for
+# DISJOINT spans -- wrapping the inner one first makes the outer one's end offset stale, and the
+# splice then cuts mid-identifier. Measured on this fixture before the cure: `n=2`, `applied:
+# True`, and an emitted `setScript: wh` / `aleActions)` that no compiler will take. It passes a
+# raw paren count, which is exactly why the count is not the test.
+#
+# `_place_fuse_arm` refuses this too ("two armings want overlapping holds -- refusing whole
+# rather than emitting a nested edit"); the same port dropped the same refusal.
+NESTED_ARM_STATEMENTS = """(instance Room31 of Rm
+\t(method (init)
+\t\t(super init:)
+\t\t(= local0 (foo (global0 setScript: whaleActions)
+\t\t\t(switch (global5)
+\t\t\t\t(1 (global1 setScript: whaleActions))
+\t\t\t)
+\t\t))
+\t)
+)
+"""
+
+
+def test_arm_event_refuses_whole_when_one_arming_cannot_be_held():
+    print("\n-- P1: EVERY arming site or none -- the arm-event wrap may not drop one silently --")
+    import trigger as T
+    place = {"kind": "arm-event", "trigger_instance": "Room31", "trigger_method": "init",
+             "target_script": "whaleActions", "target_room": 32}
+    out, n = T.wrap_trigger_in_source(TWO_ARMS_ONE_IN_A_TEST, place, "(gEgo has: 8)", "(Refuse)")
+    check("an arming that cannot be held refuses the WHOLE site (no partial guard)",
+          n == 0 and out == TWO_ARMS_ONE_IN_A_TEST,
+          detail="n=%r, source has 2 armings, %d held.\n%s"
+                 % (n, out.count("arm only when survivable"), out))
+    check("...and the arming it CAN hold is not left wrapped in the returned text",
+          "arm only when survivable" not in out,
+          detail="a half-applied rewrite is the worst of both: the row reports a number, the "
+                 "player walks through the other door.\n%s" % out)
+
+    nest, n2 = T.wrap_trigger_in_source(NESTED_ARM_STATEMENTS, place, "(gEgo has: 8)", "(Refuse)")
+    check("two armings whose statements NEST refuse whole rather than splicing a nested edit",
+          n2 == 0 and nest == NESTED_ARM_STATEMENTS,
+          detail="n=%r -- the reverse-order splice cuts mid-identifier once the outer span's "
+                 "end offset has gone stale.\n%s" % (n2, nest))
+    check("...and the emission is not merely paren-balanced but INTACT",
+          "setScript: whaleActions" in nest and nest.count("setScript: whaleActions") == 2,
+          detail="a raw paren count passes on the corrupted splice, which is why it is not the "
+                 "test.\n%s" % nest)
+
+
 # KQ5's computed edge exit, verbatim shape from rm036.sc: `doit` reads `(gEgo edgeHit:)`,
 # resolves the destination through `edgeToRoom:` into a temp, and `newRoom:`s the temp. Three
 # derivations in one site: edgeHit is a positional fact (the ego WALKED there), an
@@ -1448,6 +1524,7 @@ def run():
     test_unreadable_deliverer_is_not_a_cleared_one()
     test_interceptor_shape_census()
     test_arm_event_wraps_the_whole_cascade()
+    test_arm_event_refuses_whole_when_one_arming_cannot_be_held()
     test_computed_edge_exit_is_a_positional_direct()
     test_market_wrap_spares_the_reget_branch()
     test_enclosing_if_test_respects_the_else_branch()
