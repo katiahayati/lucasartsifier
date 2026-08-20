@@ -1286,7 +1286,7 @@ def _install_menu_chooser(src_dir, g):
     # quit -- so they are excluded by the game's own vocabulary rather than by reading their
     # English titles. What remains is the gameplay menu; take the last of those (LSL2 and KQ4
     # both land on `Action`, beside Pause and Inventory).
-    hm0 = re.search(r"\(method\s+\(handleEvent\b", text)
+    hm0 = code_search(text, r"\(method\s+\(handleEvent\b")
     sw_text = text[_block_span(text, hm0.start())[0]:_block_span(text, hm0.start())[1]] \
         if hm0 else ""
     _DEVICE = ("DoSound", "setSpeed:", "save:", "restore:", "restart:", "quitGame:",
@@ -1309,7 +1309,7 @@ def _install_menu_chooser(src_dir, g):
     code = (menu_idx << 8) | item_idx
     text = text[:host_menu.end(1)] + ":Guards..." + text[host_menu.end(1):]
     # the handler case, before the switch's own top-level else (same file, same method)
-    hm = re.search(r"\(method\s+\(handleEvent\b", text)
+    hm = code_search(text, r"\(method\s+\(handleEvent\b")
     if not hm:
         return {"applied": False, "ui": "menu", "title": best[:-3],
                 "why": "menu bar has no handleEvent to extend"}
@@ -1344,7 +1344,7 @@ def _install_menu_chooser(src_dir, g):
     # as the SCI1.1 chooser does [user, 2026-08-06: "it should give you the currently selected
     # level, same as kq6"] -- built by picking one of three literals, because this display proc
     # takes a single text argument and `Format` would need a game-specific buffer global.
-    decl = re.search(r"\(method\s+\(handleEvent[^)]*&tmp([^)]*)\)", text)
+    decl = code_search(text, r"\(method\s+\(handleEvent[^)]*&tmp([^)]*)\)")
     temps = [t for t in re.findall(r"\b(\w+)\b", decl.group(1) or "") if t != tmp] if decl else []
     label = temps[0] if temps else None
     if label is None:
@@ -1409,7 +1409,7 @@ def _dialog_icon(text):
     found = None
     for m in re.finditer(r"\(instance\s+(\w+)\s+of\s+\w+", text):
         body = text[m.start():_balanced_span(text, m.start())]
-        sm = re.search(r"\(method\s+\(select\b", body)
+        sm = code_search(body, r"\(method\s+\(select\b")
         if not sm:
             continue
         sel = body[sm.start():_balanced_span(body, sm.start())]
@@ -1710,7 +1710,7 @@ def guard_board_commit(text, cond):
     clause. Wrap that whole clause so it refuses without the item: the ride never starts, no hang.
     Distinct from guard_edgehit_clause, which guards an edge REACTION; here nothing reacts, the
     vehicle drives into the edge."""
-    if not re.search(r"\(method\s+\(handleEvent\b", text):
+    if not code_search(text, r"\(method\s+\(handleEvent\b"):
         return text, 0
     m = re.search(r"\(User\s+canControl:\s*0\b", text)
     if not m:
@@ -1777,7 +1777,7 @@ def guard_edge_exit(text, inst_name, to_room, cond):
     bt, bn = guard_board_commit(text, cond)
     if bn:
         return bt, bn, "board-commit"
-    init = re.search(r"\(method\s+\(init\)", text[m.start():])
+    init = code_search(text[m.start():], r"\(method\s+\(init\)")
     if not init:
         return text, 0, None
     # `(super init:)` in SCI0; SCI1.1 rooms write `(super init: &rest)` -- same anchor.
@@ -1802,7 +1802,7 @@ def guard_register_write(text, register, trap, cond):
     or debug event, not free-running) is deliberately left alone: only the newRoom/doit write is the
     adversary the player cannot refuse."""
     for meth in ("newRoom", "doit"):
-        for mm in re.finditer(r"\(method\s+\(%s\b" % meth, text):
+        for mm in code_finditer(text, r"\(method\s+\(%s\b" % meth):
             bs, be = _block_span(text, mm.start())
             region = text[bs:be]
             wm = re.search(r"\(=\s+global%d\s+%d\s*\)" % (register, trap), region)
@@ -2009,7 +2009,7 @@ def guard_prop_flag_owner_write(text, prop_name, mask, cond):
     siblings, finding B#2's lesson.)"""
     pat = re.compile(r"\(\|=\s+%s\s+(?:\$0*%x|%d)\s*\)" % (re.escape(prop_name), mask, mask))
     for meth in ("newRoom", "doit"):
-        for mm in re.finditer(r"\(method\s+\(%s\b" % meth, text):
+        for mm in code_finditer(text, r"\(method\s+\(%s\b" % meth):
             bs, be = _block_span(text, mm.start())
             region = text[bs:be]
             wm = pat.search(region)
@@ -2173,7 +2173,7 @@ def guard_flip_interceptor(text, pocket, stage_src, cond):
 
     edits, n = [], 0
     for meth in ("newRoom", "doit"):
-        for mm in re.finditer(r"\(method\s+\(%s\b" % meth, text):
+        for mm in code_finditer(text, r"\(method\s+\(%s\b" % meth):
             ms, me = _block_span(text, mm.start())
             region = text[ms:me]
             for cm in re.finditer(r"\(cond\b", region):
@@ -4150,7 +4150,7 @@ def hoist_rest_targets(text, lines):
         target = body[tgs:tge]
         # the enclosing method/procedure header, for the &tmp declaration
         hm = None
-        for cand in re.finditer(r"\((?:method|procedure)\s*\(", out[:bs]):
+        for cand in code_finditer(out[:bs], r"\((?:method|procedure)\s*\("):
             hs, he = _block_span(out, cand.start())
             if hs <= bs < he:
                 hm = cand

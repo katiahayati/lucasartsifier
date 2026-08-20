@@ -520,7 +520,7 @@ def find_cue_chain_armings(room_text, cand_text, room_global, target_script):
     Chains that cue a different case (the DOWN-climb cues 0/-1) never enter the walk, which is
     what makes refusing here unable to strand a descending player."""
     cases = set()
-    for m in re.finditer(r"\(method\s+\(cue\b", room_text):
+    for m in code_finditer(room_text, r"\(method\s+\(cue\b"):
         s, e = _block_span(room_text, m.start())
         region = room_text[s:e]
         for am in re.finditer(r"setScript:\s*%s\b" % re.escape(target_script), region):
@@ -541,7 +541,7 @@ def find_cue_chain_armings(room_text, cand_text, room_global, target_script):
 
     def method_at(pos, s, e):
         best = None
-        for mm in re.finditer(r"\(method\s+\((\w+)", cand_text[s:e]):
+        for mm in code_finditer(cand_text[s:e], r"\(method\s+\((\w+)"):
             try:
                 ms, me = _block_span(cand_text, s + mm.start())
             except Exception:                      # noqa: BLE001
@@ -652,7 +652,7 @@ def arming_contexts(text, target_script, ego=None):
         if span is None:
             continue
         meth = meth_span = None
-        for mm in re.finditer(r"\(method\s+\((\w+)", text[span[0]:span[1]]):
+        for mm in code_finditer(text[span[0]:span[1]], r"\(method\s+\((\w+)"):
             ms, me = _block_span(text, span[0] + mm.start())
             if ms <= p < me:
                 meth, meth_span = mm.group(1), (ms, me)
