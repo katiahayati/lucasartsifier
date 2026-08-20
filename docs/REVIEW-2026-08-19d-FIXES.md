@@ -572,18 +572,61 @@ old innermost-form rule differ, in real room scripts (`dagger/rm460.sc`, `KQ6/rm
 
 | # | Finding | Where | Sev | Status |
 |---|---------|-------|-----|--------|
-| P1 | the arm-event wrap SILENTLY DROPS an arming site `statement_span` cannot resolve and still reports `sites: n` — the sibling applier refuses whole for the same rule | `trigger.py:1582` | HIGH | 🔴 **REPRODUCED, mine, first job** |
-| P2 | the `setscript` branch of the SAME function still uses the raw scan + innermost-form rule — "Now they do [use the same rule]" is false | `trigger.py:1476` | MED-HIGH | 🔴 confirmed by reading |
-| P3 | `QUOTED` exempts `(method (` from the census while **twelve** raw scanners still read it | `test_patch_text.py:1038` | MED-HIGH | 🔴 relayed |
-| P4 | the `co_varnames` check no longer catches un-threading `site=row_site` — the same weakness its own comment criticises | `test_mode.py:331` | MED | 🔴 relayed (reviewer proved by mutation) |
+| P1 | the arm-event wrap SILENTLY DROPS an arming site `statement_span` cannot resolve and still reports `sites: n` — the sibling applier refuses whole for the same rule | `trigger.py:1582` | HIGH | ✅ **CURED** (red→green), **+ a second half I found**: nested arming statements corrupted the splice |
+| P2 | the `setscript` branch of the SAME function still uses the raw scan + innermost-form rule — "Now they do [use the same rule]" is false | `trigger.py:1476` | MED-HIGH | ✅ **CURED** (red→green), **+ a third half**: two verbs in one handler collapsed to one wrap |
+| P3 | `QUOTED` exempts `(method (` from the census while **twelve** raw scanners still read it | `test_patch_text.py:1038` | MED-HIGH | ✅ **CURED** — **thirteen**, all converted; the exemption is now a checked obligation |
+| P4 | the `co_varnames` check no longer catches un-threading `site=row_site` — the same weakness its own comment criticises | `test_mode.py:331` | MED | ✅ **CURED** — AST check that mutation-tests itself; no product defect under it |
 | P5 | `_enclosing_if_test` climbs outward past an INNER `if`'s `else` when the arming sits in that inner `if`'s test | `patcher.py:3300` | MED | ✅ **CURED** — see below |
-| P6 | the `_DIVERGENT` tripwire reads KQ5 only, short-circuits on the first falsifying conjunct, and has no anti-vacuity check | `missability.py:2519` | MED | 🔴 relayed |
-| P7 | `test_model_cache` writes a `.py` into the LIVE `src/`, changing every game's cache key for the duration | `test_model_cache.py:109` | MED | 🔴 relayed |
-| P8 | the pipeline-union check was deleted and its replacement is vacuous on the only input the test provides (a SKIP row) | `test_mode.py:249` | LOW-MED | 🔴 relayed |
-| P9 | three more four-tree figures still labelled "five trees" — in the very file N3 was about | `test_patch_text.py:731,957`, `trigger.py:1278` | LOW | 🔴 relayed |
-| P10 | `skip_noncode` ignores the `\}` escape its own lexer honours — 8 corpus messages end their span early (0 parens, 0 `;`, 0 `{` leak, so nothing moves) | `sexpr.py:225` | LOW | 🔴 relayed, benign |
-| P11 | a magic `-40` byte offset assertion; `_turnback_emit(region=None)` defaults back to the UNSAFE marker; a stale "still-raw scanners" comment | mixed | LOW | 🔴 relayed |
-| P12 | `until`/`switchto` have zero corpus occurrences, and `switchto` is in `_FORKS` *and* `_BODY_HEADS`, which disagree about its arms | `sexpr.py:334` | LOW | 🔴 relayed |
+| P6 | the `_DIVERGENT` tripwire reads KQ5 only, short-circuits on the first falsifying conjunct, and has no anti-vacuity check | `missability.py:2519` | MED | ✅ **CURED** — all three; ⛔ N4 itself untouched |
+| P7 | `test_model_cache` writes a `.py` into the LIVE `src/`, changing every game's cache key for the duration | `test_model_cache.py:109` | MED | ✅ **CURED** — `_model_cache_key(here=...)`, probing a copy |
+| P8 | the pipeline-union check was deleted and its replacement is vacuous on the only input the test provides (a SKIP row) | `test_mode.py:249` | LOW-MED | ✅ **CURED** — a second mini project with a menu bar makes the chooser LAND |
+| P9 | three more four-tree figures still labelled "five trees" — in the very file N3 was about | `test_patch_text.py:731,957`, `trigger.py:1278` | LOW | ✅ **CURED** — **all eight** family figures were four-tree, plus 562→780 |
+| P10 | `skip_noncode` ignores the `\}` escape its own lexer honours — 8 corpus messages end their span early (0 parens, 0 `;`, 0 `{` leak, so nothing moves) | `sexpr.py:225` | LOW | ✅ **CURED** — benignity re-derived first (80 chars, 0/0/0), then fixed |
+| P11 | a magic `-40` byte offset assertion; `_turnback_emit(region=None)` defaults back to the UNSAFE marker; a stale "still-raw scanners" comment | mixed | LOW | ✅ **CURED** — all three, **+ the `-400` next door** |
+| P12 | `until`/`switchto` have zero corpus occurrences, and `switchto` is in `_FORKS` *and* `_BODY_HEADS`, which disagree about its arms | `sexpr.py:334` | LOW | ✅ **CURED** — not a contradiction, but an unverified reading; documented + tripwire |
+
+## ✅ ALL TWELVE WORKED (2026-08-20, this session) — and what it cost to check them
+
+**Measured, both gates:**
+
+* **Emitted bytes: BYTE-IDENTICAL across all five trees** (LSL2, KQ4, KQ6, dagger, kq5; 1,084
+  `.sc` files, 57 carrying a guard), against the `6aa0a1d` baseline in `/tmp/emit_pre`. Every
+  `src/` change this session — P1, P2, P3, P6, P7, P10, P11 — closes a shape rather than moving
+  an emission.
+* **Suite: 718 passed, 1 known-red, 0 unexpected, 0 crashed** (1,051s). ⛔ NOT a clean bill of
+  health: F6 is still open and declared. 693 → 718 is +25 new checks.
+
+**⚠️ One scare, and it was mine.** An early `diff -r` after P1's cure showed the KQ4 whale guards
+REMOVED from `Room31.sc` — a golden, play-tested emission. It was a half-written tree: I diffed
+while the background emit was still on KQ4. Re-derived directly on `build/kq4/src/Room31.sc`
+(both `whaleActions` armings resolve to statements, neither refusal can fire) and the completed
+run agreed. **Never diff a tree that is still being written.**
+
+**Three defects the review did not file, found while reproducing the ones it did** — the
+[[review-the-fix-not-only-the-feature]] pattern, fifth time running:
+
+1. **P1's second half.** Two armings whose statements NEST were spliced in reverse document
+   order, which is safe only for disjoint spans: the outer span's end offset goes stale after the
+   inner wrap and the splice cuts mid-identifier (`setScript: wh` / `aleActions)`). It reports
+   `n=2, applied: True`, and it passes a raw paren count, which is why the count is not the test.
+   `_place_fuse_arm` refuses this too; the same port dropped both refusals.
+2. **P2's third half.** `find_all_armings` fans out per (instance, method), but `patcher.py:3138`
+   skips any extra arming matching the primary's instance AND method, and the branch itself took
+   `re.search`'s first match — so one handler arming one machine under two verbs shipped guarded
+   on one verb and open on the other. 160 methods in the corpus carry 2+ sites for one target.
+3. **A second magic offset** beside P11's, `out.index("(Refuse)") > out.index("put: 19 1") - 400`,
+   satisfied by almost any arrangement of the file.
+
+**And two figures that only became checkable once something counted them:** P6's `_FIRINGS`
+counter shows KQ5 puts **39** questions to `_falsifies` in one `guard_specs` pass, not 26 — 26
+are `global332 == 7` vs {2,3,4} (the shape the argument rests on, correctly quoted all along) and
+**13 more are `global464 != 0` vs {1}**, which nothing had ever counted. "Every firing is
+`global332 == 7`" was two thirds of the picture.
+
+**⚠️ Coverage note, reported loudly:** the N4 tripwire now runs on all five games but only KQ5
+reaches it. KQ4/LSL2, KQ6 and LB2 each ask `_falsifies` **zero** questions, so their new checks
+pass VACUOUSLY today. That is a fact about those games, not a clean result, and the `[n4]` line
+each of them prints is what makes it visible.
 
 ## P1, reproduced
 

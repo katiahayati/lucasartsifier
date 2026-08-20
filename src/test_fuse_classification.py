@@ -380,8 +380,17 @@ def test_falsifies_reads_a_set_of_writes_not_a_state():
     # armed it. Discharge can read that union safely, because the flag store is monotone: a
     # flag once set stays set. A REGISTER is not monotone -- KQ5's global332 is written 2, 3
     # and 4 by one chain -- so "the chain wrote (332, 3), therefore `332 == 2` is false" is not
-    # a deduction. Measured on KQ5: `_falsifies` fires 26 times and EVERY firing rests on a
-    # register the chain writes three different values to.
+    # a deduction. Measured on KQ5, one `guards.guard_specs` pass, by the `_FIRINGS` counter P6
+    # added: `_falsifies` is asked **39** questions in two shapes --
+    #
+    #     (332, '==', 7, {2, 3, 4})   x26      the register written three different values
+    #     (464, '!=', 0, {1})         x13      a single-value register, satisfied, not falsified
+    #
+    # ⛔ so "26 firings, EVERY one on a three-value register" -- what this comment said before the
+    # counter existed -- was two thirds of the picture. The 26 is right and is the shape the
+    # argument rests on; the other 13 were invisible because nothing counted them. (The number
+    # printed by the suite is larger, ~117: `_FIRINGS` is cumulative for the process and the
+    # ground-truth run makes several passes.)
     #
     # The error direction is the dangerous one. A falsified entry is dropped, so the escape it
     # was is deleted: the demand rises (a wall) or the row vanishes (a shipped softlock).

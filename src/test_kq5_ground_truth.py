@@ -1141,8 +1141,12 @@ def run():
     # DIVERGENT case -- some write satisfies the conjunct, some contradicts it -- where nothing
     # in `chain_writes` can say which the run leaves behind. Keeping such an entry admits an
     # escape that may exist only on the path not taken (F10's failure); dropping it deletes one
-    # the game really offers (R4's complaint). KQ5 has never asked the question: all 26 firings
-    # are `global332 == 7` against the write set {2, 3, 4}, where every write contradicts. That
+    # the game really offers (R4's complaint). KQ5 has never asked the question: of the 39
+    # questions one `guard_specs` pass puts to `_falsifies`, 26 are `global332 == 7` against the
+    # write set {2, 3, 4}, where EVERY write contradicts, and the other 13 are `global464 != 0`
+    # against {1}, where every write satisfies -- neither shape is divergent. ("all 26 firings
+    # are global332 == 7" was this comment's claim before P6's counter could check it; the 26 is
+    # right, the "all" was not.) That
     # is what makes the choice unmeasurable HERE, and it is a fact about this game, not a
     # property of the rule -- so it is measured, and a game that does ask says so before its
     # hold ships. ⭐ PARKED [USER, 2026-08-20]: the permissive reading ships and the question
