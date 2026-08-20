@@ -529,6 +529,49 @@ THEN_ARM = """(instance rm300 of Rm
 """
 
 
+# ⭐ P5, 2026-08-20 FOURTH REVIEW. The one fork spelling the R2/N2 rules do not test between
+# them: the arming sits in an INNER `if`'s TEST. `_depth1_else` is only ever applied to the `if`
+# the scan settled on, `fork_arms` excludes `if` deliberately (an `else` is DIVERTED into, not
+# withheld, which is a different failure), and the "pos is inside this test" case skipped the
+# candidate with `continue` -- so an OUTER `if` found earlier in the scan stayed `best` and the
+# demand landed there. That is the outward climb the docstring forbids in the same breath, and
+# it walls the inner fork's BOTH arms.
+#
+# An arming evaluated while a test runs cannot be held by that test without duplicating it, and
+# it cannot be held by any ENCLOSING test either -- suppressing it changes the value the test
+# computes, so the hold decides which branch runs instead of whether the arming fires.
+ARM_IN_A_TEST = """(instance rm300 of Rm
+\t(method (init)
+\t\t(super init:)
+\t\t(if (== global5 1)
+\t\t\t(if (theGuard setScript: ambushScript)
+\t\t\t\t(foo)
+\t\t\telse
+\t\t\t\t(bar)
+\t\t\t)
+\t\t)
+\t)
+)
+"""
+
+
+def test_an_arming_inside_a_test_is_not_held_by_an_outer_one():
+    print("\n-- P5: an arming in an `if`'s TEST has no test to be conjoined onto --")
+    pos = ARM_IN_A_TEST.index("setScript: ambushScript")
+    span = P._enclosing_if_test(ARM_IN_A_TEST, pos)
+    check("an arming in an inner `if`'s TEST does not return the OUTER `if`'s test",
+          span is None,
+          detail="span=%r -> %r. Conjoining there withholds the whole inner fork, so a player "
+                 "who cannot pay gets neither `(foo)` nor `(bar)` -- and suppressing an arming "
+                 "the test EVALUATES decides which branch runs, which is not what a hold is "
+                 "for." % (span, span and ARM_IN_A_TEST[span[0]:span[1]]))
+
+    out, n, why = P._place_capture_arm(ARM_IN_A_TEST, "ambushScript", "rm300", "(gEgo has: 24)")
+    check("...and the applier refuses rather than walling the fork",
+          why is not None and n == 0 and out == ARM_IN_A_TEST,
+          detail="n=%r why=%r\n%s" % (n, why, out))
+
+
 def test_enclosing_if_test_respects_the_else_branch():
     print("\n-- patcher._enclosing_if_test: the else branch is not the then branch --")
     pos = THEN_ARM.index("setScript: ambushScript")
@@ -1408,6 +1451,7 @@ def run():
     test_computed_edge_exit_is_a_positional_direct()
     test_market_wrap_spares_the_reget_branch()
     test_enclosing_if_test_respects_the_else_branch()
+    test_an_arming_inside_a_test_is_not_held_by_an_outer_one()
     test_balanced_span_ignores_strings_and_comments()
     test_fuse_arm_holds_the_if_that_spawns()
     test_capture_arm_creates_its_own_hold()
