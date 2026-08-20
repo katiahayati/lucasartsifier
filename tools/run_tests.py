@@ -214,24 +214,22 @@ KNOWN_RED = {
     # the check is a permanent green pin. docs/LB2-ORACLE.md §7ag.
 
     "test_kq5_ground_truth.py": {
-        # 🔴 DECLARED 2026-08-19c, USER PLAY-FOUND + RULED (docs/KQ5-ORACLE.md §23). The castle
-        # cat is a WHALE: an unanswered/fled encounter writes a 5-10 game-minute fuse
-        # (global352; global353=3 in the recurring cycle), castle::doit's per-game-minute clock
-        # expires it into global331 = 3, and nine castle rooms' doits then arm theWizardScript
-        # positionally -- an unavoidable death (`proc0_26 73`) `_room_unavoidable` ALREADY
-        # condemns; the fuse WRITE is the hop nothing classifies. THE CURE, named: classify the
-        # region-doit countdown whose expiry value arms an unavoidable death (the adversarial-
-        # clock class, three hops where KQ4's day/night was one); machines completing into the
-        # fuse write become unavoidable; the encounter's arming then demands its escapes' prices
-        # under the saving-writer FIXPOINT (an escape that re-arms the encounter is priced by
-        # its own items plus the re-armed demand under the writes it made) -- which derives the
-        # USER's ruling `63 ∧ own(24) ∧ (62 ∨ own(37))` and NOT the game-breaking bag-only
-        # collapse. Then the whale-shape arm-event guard wraps proc550_16, one site, all four
-        # call sites held, indistinguishable from the stock 20% no-spawn roll.
-        "the castle cat's arming demands the whale kit (remote fuse = death)":
-            "no detector classifies the remote fuse chain (352 write -> per-minute clock -> "
-            "331==3 -> positional wizard arm -> proc0_26), so the cat's arming carries no "
-            "demand and the play-found walk-away death is invisible",
+        # ✅ PROMOTED 2026-08-19c, SAME SESSION AS DECLARED -- "the castle cat's arming demands
+        # the whale kit (remote fuse = death)" is GREEN. `missability.fuse_death_armings`
+        # landed with the three classifications the red named: DEATH PHASES ((331,3) arms
+        # theWizardScript in nine castle rooms, (331,6) arms wakeUpScript in rm63 -- an
+        # unavoidable machine's entry pinning a register value off an unpriced spine); the
+        # CLOCK (a CTR-gated handler write with a running-countdown atom and no item on the
+        # spine -- castle::doit's per-game-minute expiry), with the fuse set closing under
+        # chaining (353's expiry writes 352 := 3) but NOT under self-re-arm (353 := 5 is the
+        # cycle continuing, and without that exclusion the henchman's global333 classified as
+        # a fuse); and FUSE-ARMING MACHINES (theCatRunScript st3 writes 353 := 3). The demand
+        # derives as the saving-writer FIXPOINT over the root's slot escapes -- catInBag priced
+        # own(24) ∧ 63 ∧ 62 off its chain-composed entry, catGetFish priced own(37) plus the
+        # re-armed encounter's price DISCHARGED of flag 62 (theThrowFishScript writes it) --
+        # yielding `63 ∧ own(24) ∧ (62 ∨ own(37))`, the USER's ruling verbatim, and rows once
+        # per (root, item) at the proc's real call sites {60, 61, 63}. LSL2, KQ4, KQ6 and LB2
+        # all return [] (KQ6's wedding fuse has no death phase -- it stays an item seal).
         # ✅ PROMOTED 2026-08-19b, same session as declared -- "no confirmed softlock has
         # DROPPED", "mechanism pinned: Fishhook" and "mechanism pinned: Shell" are GREEN and no
         # longer listed. Declared on the USER's play-found harpy-island ruling (the departure

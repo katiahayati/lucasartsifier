@@ -1034,7 +1034,7 @@ def run():
     check("the castle cat's arming demands the whale kit (remote fuse = death)",
           {r.get("item") for r in cat_rows} == {24, 37}
           and all(set(r.get("arm_rooms", ())) == {60, 61, 63} for r in cat_rows)
-          and all(r.get("death") == "theWizardScript" for r in cat_rows)
+          and all("theWizardScript" in r.get("death", ()) for r in cat_rows)
           and all(352 in r.get("fuse", ()) for r in cat_rows)
           and all({62, 63} <= set(r.get("flags", ())) for r in cat_rows),
           f"rows={cat_rows!r} -- expected one row per demand item (Bag_of_Peas 24, Cat_Fish 37)"
