@@ -408,23 +408,64 @@ def test_falsifies_reads_a_set_of_writes_not_a_state():
           detail="`¬(901 == 5)` is impossible only if the register can hold nothing but 5")
 
 
+def _fuse_room(room, esc_entry):
+    """One room of the two-room fuse world: a death, a fuse-lighter, the encounter that hands
+    off into it, and ONE escape whose price is the room's own."""
+    doom = _machine("sDoom", room, [(0, GAnd([_cmp(800, "==", 3)]))],
+                    {0: [([], (), (), (), ("DEATH", 0))]})
+    light = _machine("sLight", room, [(0, GAnd([]))],
+                     {3: [(GAnd([_cmp(900, "!=", 0)]), ((900, 3),), (), (), ("ADVANCE",))]})
+    cat = _machine("theCat", room, [(0, GAnd([]))], {3: [([], (), (), (), ("ADVANCE",))]})
+    esc = _machine("sEsc", room, [(0, esc_entry)], {0: [([], (), (), (), ("ADVANCE",))]})
+    return [doom, light, cat, esc], {("theCat", 3): {"sLight"}}, {"sDoom"}
+
+
+def _two_room_fuse_model():
+    """The same encounter armed in two rooms, with a DIFFERENT escape price in each.
+
+    `_death_fuses` and `_arming_call_rooms` are supplied directly rather than derived: the rule
+    under test is the row identity in `fuse_death_armings`, and deriving a two-room clock from
+    handler writes would put ten rules the test is not asking about between the fixture and the
+    answer. Room 1 can pay with item 24 alone; room 2's only way out needs 24 AND 37."""
+    f = _model([], [], (), {800, 900}, sources={24: {1}, 37: {1}}, reach=(1, 2))
+    per_room = {1: _fuse_room(1, GAnd([_own(24)])),
+                2: _fuse_room(2, GAnd([_own(24), _own(37)]))}
+    f._death_fuses = lambda: ({900}, [(800, 3)], ["sDoom"], per_room)
+    f._arming_call_rooms = lambda sn, recv: ([], [])
+    return f
+
+
 def test_a_second_room_deriving_a_stronger_demand_is_not_dropped():
-    print("\n-- missability.fuse_death_armings: the row key must carry its room (R5) --")
-    # `emitted` lives outside the per-room loop and is keyed `(machine, item)`, while the
+    print("\n-- missability.fuse_death_armings: the row key must carry its demand (R5) --")
+    # `emitted` lives outside the per-room loop and was keyed `(machine, item)`, while the
     # demand is derived PER ROOM off that room's escapes. Two rooms that arm the same encounter
-    # with different escapes available derive different demands, and only the first is ever
+    # with different escapes available derive different demands, and only the first was ever
     # emitted -- so the guard ships the weaker hold and the second room's softlock ships open.
     # The clash gate added to `fuse_arming_remedies` cannot see this: it only sees rows that
     # survived `emitted`.
-    import inspect
-    src = inspect.getsource(M.IrSccReach.fuse_death_armings)
-    body = src[src.index("out, emitted"):]
-    key = [ln for ln in body.splitlines() if "key = (" in ln]
+    rows = M.IrSccReach.fuse_death_armings(_two_room_fuse_model())
+    for_24 = [r for r in rows if r["item"] == 24]
+    alts = sorted(tuple(sorted(a["items"])) for r in for_24 for a in r["demand_alts"])
     check("the dedupe key distinguishes two rooms' demands for one (machine, item)",
-          bool(key) and ("room" in key[0] or "alt" in key[0] or "demand" in key[0]),
-          detail="key line is %r -- keyed on (machine, item) alone, across every room, while "
-                 "`demand_alts` is derived per room. The first room to emit wins and the "
-                 "second room's stronger demand is silently dropped." % (key[0] if key else None))
+          len(for_24) == 2 and alts == [(24,), (24, 37)],
+          detail="item 24 got %d row(s), demands %r -- the room that can only pay with BOTH "
+                 "items derived the stronger hold and it never reached the remedy. What ships "
+                 "is the weaker one, and that room's softlock ships open."
+                 % (len(for_24), alts))
+    check("...and an item only the second room demands is still emitted once",
+          len([r for r in rows if r["item"] == 37]) == 1,
+          detail="rows=%r" % ([(r["machine"], r["item"]) for r in rows],))
+
+    # ...and the other direction, which is the one KQ5 exercises: two rooms deriving the SAME
+    # demand are still ONE row. Measured 2026-08-20, thirteen castle rooms reach
+    # `(theCatScript, 24)` and all thirteen agree, so this fix moves no shipped byte.
+    same = _model([], [], (), {800, 900}, sources={24: {1}}, reach=(1, 2))
+    pr = {1: _fuse_room(1, GAnd([_own(24)])), 2: _fuse_room(2, GAnd([_own(24)]))}
+    same._death_fuses = lambda: ({900}, [(800, 3)], ["sDoom"], pr)
+    same._arming_call_rooms = lambda sn, recv: ([], [])
+    check("two rooms deriving the SAME demand are still one row (KQ5's own case)",
+          len(M.IrSccReach.fuse_death_armings(same)) == 1,
+          detail="rows=%r" % (M.IrSccReach.fuse_death_armings(same),))
 
 
 def run():

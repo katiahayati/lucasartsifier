@@ -2456,7 +2456,28 @@ def _falsifies(g, writes):
     what its own chain wrote. Discharge only ever makes an alternative cheaper. The same
     writes can make it IMPOSSIBLE -- and an impossible alternative admitted at its discharged
     price is the cheapest one on offer, so `_minimal` keeps it and the demand collapses to
-    less than the game asks for."""
+    less than the game asks for.
+
+    ⛔ A SET OF WRITES IS NOT A REGISTER STATE (2026-08-20 review, R4). `chain_writes` is an
+    unordered UNION over every state of a machine AND of the machine that armed it: it says
+    what the run TOUCHES, never what a register HOLDS when the run ends. Discharge may read
+    that union, because the flag store is monotone -- a flag once set stays set. A register may
+    not. The first cut asked "does SOME write contradict this conjunct?", so a chain writing
+    S := 2, 3 and 4 falsified `S == 2` as readily as `S == 7`, deleting an escape the game
+    really offers; and a deleted escape raises the demand into a wall or vanishes the row into
+    a shipped softlock. The question this asks instead is "can the conjunct still hold?" -- it
+    is falsified only when the register IS written and NO write of it satisfies the conjunct.
+    The negated form falls out of the same reading: `¬(S == v)` is impossible only when `v` is
+    the one thing S can hold.
+
+    ⚠️ STILL AN OVER-APPROXIMATION, in the same direction, and stated because the reviewer
+    raised it as an open question. A write reached on only SOME paths through the chain is in
+    the union all the same, so a register the chain MIGHT leave untouched is treated as though
+    it were certainly written -- and answering that needs an ORDERED, path-sensitive write
+    model, which `chain_writes` is not. Measured on KQ5 the day this landed: 26 firings, every
+    one of them the conjunct `global332 == 7` against a chain that writes 332 the values
+    {2, 3, 4}. None of the three satisfies it, so both readings agree on all 26 and the shipped
+    demand does not move -- R4 is latent here exactly as F1 and F2 were."""
     for a in (_nn(x) for x in _conj_spine(g)):
         neg = isinstance(a, GNot)
         k = a.kid if neg else a
@@ -2466,12 +2487,11 @@ def _falsifies(g, writes):
             want = int(k.value)
         except (TypeError, ValueError):
             continue
-        for (S, v) in writes:
-            if S != k.var or not isinstance(v, int):
-                continue
-            holds = (v == want) if k.op == "==" else (v != want)
-            if holds == neg:                  # the write makes this conjunct FALSE
-                return True
+        vals = [v for (S, v) in writes if S == k.var and isinstance(v, int)]
+        if not vals:
+            continue                          # this register is not the chain's business
+        if not any(((v == want) if k.op == "==" else (v != want)) != neg for v in vals):
+            return True                       # nothing the chain can leave makes it hold
     return False
 
 
@@ -5107,8 +5127,20 @@ class IrSccReach(SccReach):
                 fl = sorted({n for a in keep for (kind, n) in a if kind == "flag"})
                 host_sn = i.get("script")
                 rooms, procs = self._arming_call_rooms(host_sn, i.get("entry_recv"))
+                # ⛔ THE DEMAND IS PART OF THE ROW'S IDENTITY (2026-08-20 review, R5). `emitted`
+                # lives outside this per-room loop, but `keep` is derived PER ROOM, off the
+                # escapes THAT room offers. Keyed `(machine, item)` alone, the first room to
+                # emit won and a second room deriving a STRONGER demand was dropped in silence
+                # -- so the guard shipped the weaker hold and that room's softlock shipped open.
+                # The clash gate in `guards.fuse_arming_remedies` could not see it either: it
+                # only ever sees rows this set let through. With the demand in the key both rows
+                # reach it, and it refuses the pair rather than conjoining a hold neither room
+                # derived. Measured on KQ5 the day this landed: 13 rooms reach
+                # `(theCatScript, 24)` and `(theCatScript, 37)` and all 13 derive the SAME
+                # demand, so the row count and the shipped condition are unmoved.
+                demand_key = tuple(sorted(tuple(sorted(a)) for a in keep))
                 for it in items:
-                    key = (nm, it)
+                    key = (nm, it, demand_key)
                     if key in emitted:
                         continue
                     emitted.add(key)
