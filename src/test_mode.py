@@ -328,8 +328,82 @@ def test_review_defects():
     ep = inspect.signature(P._guard_arrival_entries).parameters
     check("D2: the entry frontier accepts the row's site, defaulted so a caller may omit it",
           "site" in ep and ep["site"].default is None)
-    check("D2: apply_guards threads a site of its own into the passes it drives",
-          "row_site" in P.apply_guards.__code__.co_varnames)
+    # ⛔ AND `co_varnames` HAS THE SAME WEAKNESS IT REPLACED (2026-08-20 fourth review, P4).
+    # `"row_site" in P.apply_guards.__code__.co_varnames` asks only whether a local of that name
+    # EXISTS. Delete `site=row_site` from every wrapper call and the assignment still stands, so
+    # the check still passes -- "a variable of that name assigned and never used" is the precise
+    # weakness the paragraph above criticises, reintroduced by its own cure. The reviewer proved
+    # it by mutation.
+    #
+    # THE INVARIANT, structurally: `row_site` is minted once per spec row, inside the `by_title`
+    # loop; every site-accepting call INSIDE that loop must be handed it. Calls outside the loop
+    # are the passes that make exactly one wrapper call per row (the fatal-use pass and the
+    # market squeeze), where the wrapper's own default already gives that row one bit and there
+    # is no `row_site` in scope to thread. So the rule needs no allow-list: inside the loop,
+    # always; outside it, not applicable.
+    #
+    # And the guard MUTATION-TESTS ITSELF below, because a threading check that cannot fail is
+    # exactly what this finding is about.
+    import ast as _ast
+
+    def _threading(src):
+        """(threaded, unthreaded_inside_the_row_loop, calls_seen) for apply_guards' source."""
+        accepts = set()
+        for _mod in (P, T):
+            for _nm in dir(_mod):
+                _o = getattr(_mod, _nm)
+                if callable(_o) and getattr(_o, "__module__", "") in ("patcher", "trigger"):
+                    try:
+                        if "site" in inspect.signature(_o).parameters:
+                            accepts.add(_nm)
+                    except (TypeError, ValueError):
+                        pass
+        tree = _ast.parse(src)
+        loops = [n for n in _ast.walk(tree) if isinstance(n, _ast.For)
+                 and any(isinstance(s, _ast.Assign)
+                         and any(getattr(t, "id", None) == "row_site" for t in s.targets)
+                         for s in _ast.walk(n))]
+        if not loops:
+            return 0, -1, 0            # no row loop found at all: the scan is not reading it
+        row_loop = min(loops, key=lambda n: sum(1 for _ in _ast.walk(n)))
+        inside = {id(n) for n in _ast.walk(row_loop)}
+        thr = unthr = seen = 0
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.Call):
+                continue
+            f = node.func
+            nm = f.attr if isinstance(f, _ast.Attribute) else getattr(f, "id", None)
+            if nm not in accepts:
+                continue
+            seen += 1
+            kw = next((k.value for k in node.keywords if k.arg == "site"), None)
+            passes_row = isinstance(kw, _ast.Name) and kw.id == "row_site"
+            if passes_row:
+                thr += 1
+            elif id(node) in inside:
+                unthr += 1
+        return thr, unthr, seen
+
+    _src = inspect.getsource(P.apply_guards)
+    _thr, _unthr, _seen = _threading(_src)
+    check("D2: every wrapper call inside the per-row loop is handed that row's site",
+          _unthr == 0 and _thr >= 5,
+          detail="%d threaded, %d un-threaded inside the row loop, %d site-accepting calls "
+                 "seen. An un-threaded call there mints a second warned bit for one row, so "
+                 "lite refuses the same demand twice and burns a bit doing it."
+                 % (_thr, _unthr, _seen))
+    check("D2: ...and that scan actually found the calls (not a vacuous pass)",
+          _seen >= 6 and _thr >= 5,
+          detail="saw %d site-accepting calls, %d threaded -- a scan that matches nothing "
+                 "must not read as compliance." % (_seen, _thr))
+    # the mutation the reviewer used: un-thread every call and require this check to FAIL.
+    _mutated = _src.replace(", site=row_site", "").replace("site=row_site,", "")
+    _mthr, _munthr, _mseen = _threading(_mutated)
+    check("D2: ...and the check FAILS on the un-threaded mutant (`co_varnames` did not)",
+          _munthr > 0 and _mthr == 0 and _mseen == _seen,
+          detail="mutant: %d threaded, %d un-threaded, %d seen. The old check passed on this "
+                 "mutant because `row_site = _ModeSite()` still stood."
+                 % (_mthr, _munthr, _mseen))
 
     # D1: the recycle lifts the productive continuation out of the `else`; stock must not run
     # BOTH the break and the continuation (and must not skip the clamp that bounds the store).
