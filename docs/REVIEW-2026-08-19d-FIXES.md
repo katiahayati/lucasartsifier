@@ -595,7 +595,7 @@ sites are in a test, but 157 `init:` sends are.
 
 ## ✅ P5 — CURED, one line [USER, 2026-08-20]
 
-Reproduced: `(if (== global5 1) (if (self setGuard setScript: capture) (foo) else (bar)))` puts
+Reproduced: `(if (== global5 1) (if (self setScript: capture) (foo) else (bar)))` puts
 the demand on the OUTER test, so a player who cannot pay gets neither `(foo)` nor `(bar)`.
 
 First ruled COMMENT-ONLY — *"I feel uneasy about #5. let's just put a comment there on the code
