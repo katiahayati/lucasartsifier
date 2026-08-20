@@ -2338,6 +2338,210 @@ def _hazard_is_stationary(script, name):
     return True
 
 
+def _nn(a):
+    """Collapse a double negation to its kid. `guard_ast` has no canonical negation, so
+    `GNot(GNot(x))` is a guard that constrains nothing until it is unwrapped (the same trap
+    `_negate` documents)."""
+    while isinstance(a, GNot) and isinstance(a.kid, GNot):
+        a = a.kid.kid
+    return a
+
+
+def _demands_nonzero(a):
+    """Does this comparison assert the register is NOT its zero baseline? The flag store's
+    `(proc0_12 N)` lowers to `!= 0`, but a game that spells the same demand `> 0` or `== 1`
+    is saying the identical thing."""
+    if not (isinstance(a, Pred) and a.kind == "CMP"):
+        return False
+    try:
+        v = int(a.value)
+    except (TypeError, ValueError):
+        return False
+    return ((a.op == "!=" and v == 0) or (a.op == "==" and v != 0)
+            or (a.op == ">" and v >= 0) or (a.op == ">=" and v >= 1))
+
+
+def _walk_guard(g):
+    """Every node of a guard tree, polarity-blind -- for questions that only ask WHICH names
+    a guard mentions (never whether it demands them; that is `_must_hold`'s discipline)."""
+    stack = [g]
+    while stack:
+        n = stack.pop()
+        if isinstance(n, list):
+            stack.extend(n)
+        elif isinstance(n, (GAnd, GOr)):
+            stack.extend(n.kids)
+        elif isinstance(n, GNot):
+            stack.append(n.kid)
+        elif n is not None:
+            yield n
+
+
+def _minimal(alts):
+    """Drop every alternative another one is a subset of -- the cheapest way to pay is the
+    only way worth reporting."""
+    keep = []
+    for a in sorted(set(alts), key=lambda a: (len(a), sorted(a))):
+        if not any(k <= a for k in keep):
+            keep.append(a)
+    return keep
+
+
+class _Escapes:
+    """One room's encounter machines: the ways out of each, and what they cost.
+
+    Lifted out of `fuse_death_armings` the day `capture_fold_armings` needed the identical
+    pricing fixpoint ([[same-rule-two-places]]). Both detectors ask one question of one room
+    -- KQ5's cat re-arms a remote death fuse when unanswered, KQ5's henchman CARRIES you into
+    a lethal arrival fold -- and in both the answer is "what must the player already hold for
+    a way out to exist?".
+
+    `lethal` is the caller's: machines whose running is itself the commitment (the room's
+    unavoidable deaths, plus -- for both callers -- machines that arm a death fuse, since an
+    escape that lights one trades a death for a death; KQ5's organ at rm58 is exactly that)."""
+
+    def __init__(self, s, infos, handoff, lethal):
+        self.s, self.infos, self.handoff, self.lethal = s, infos, handoff, lethal
+        self.by_name = defaultdict(list)
+        self.slots = defaultdict(set)
+        for i in infos:
+            self.by_name[i["inst"]].append(i)
+            for rc in (i.get("entry_recv") or ()):
+                if rc is not None:
+                    self.slots[rc].add(i["inst"])
+        ir = getattr(s.em, "ir", None)
+        self.fbase = getattr(ir, "flag_synth_base", None) if ir is not None else None
+        self.flags = getattr(ir, "flag_indices", None) or frozenset()
+
+    def is_flag(self, S):
+        return self.fbase is not None and S >= self.fbase and (S - self.fbase) in self.flags
+
+    def armable(self, name):
+        """Can the player arm this at all? (`_room_unavoidable`'s own test, same reason: a
+        rival gated on something unobtainable buys no escape.)"""
+        copies = self.by_name.get(name, ())
+        if not copies:
+            return False
+        for i2 in copies:
+            ents = list(i2.get("entries") or ()) + list(i2.get("init_entries") or ())
+            if not ents:
+                return True                    # no arming we can read: [[arming-floor]]
+            musts = entry_musts(i2)
+            if any(all(self.s.sources.get(it, set()) & self.s.reach_rooms
+                       for it in musts.get(K, ()))
+                   for (K, _g) in ents):
+                return True
+        return False
+
+    def hands_lethal(self, name):
+        return {m for (a, K) in self.handoff if a == name
+                for m in (self.handoff.get((a, K)) or {}) if m in self.lethal}
+
+    def slot_escapes(self, name):
+        """Machines armed into the SAME script slot -- the slot race `death_traps` and
+        `_survivable`'s pre-emption rule are both built on."""
+        rcs = {rc for i2 in self.by_name.get(name, ())
+               for rc in (i2.get("entry_recv") or ()) if rc is not None}
+        return sorted({m for rc in rcs for m in self.slots[rc]
+                       if m != name and m not in self.lethal and self.armable(m)})
+
+    def chain_writes(self, name):
+        """Everything this machine's own run -- and the run that armed it -- commits, so a
+        re-armed encounter is not charged again for what has already been paid (KQ5's fish
+        answer writes flag 62 on its way to re-arming the cat)."""
+        wset = set()
+        for i2 in self.by_name.get(name, ()):
+            for _K, ps in (i2.get("states") or {}).items():
+                for (_g, w, _gg, _c, _t) in ps:
+                    wset |= set(w or ())
+            for a in (i2.get("entry_armers") or ()):
+                if a:
+                    for i3 in self.by_name.get(a[0], ()):
+                        for _K, ps in (i3.get("states") or {}).items():
+                            for (_g, w, _gg, _c, _t) in ps:
+                                wset |= set(w or ())
+        return wset
+
+    def tokens(self, g, discharged):
+        """(tokens, register equalities) off one entry guard's AND spine.
+
+        PLAYER-SIDE STORES ONLY, in whichever polarity the game wrote them: possession, the
+        flag store, and the ITEM-PROPERTY store -- KQ5 spells "the bag is empty" as
+        `(cel == 4)` on the item itself, which extraction already types as an IPROP atom
+        rather than an opaque, so it can be demanded verbatim.
+
+        A negated REGISTER comparison is deliberately NOT a token: `¬(global333 == 4)` is the
+        encounter's own scene state ("he has not grabbed you yet"), which no player arranges
+        in advance. Positive register equalities are priced through their WRITERS instead
+        (below), which is how the cat's `332 == 7` arm resolves to the bag answer that
+        establishes it."""
+        toks, eqs = set(), set()
+        for a in (_nn(x) for x in _conj_spine(g)):
+            neg = isinstance(a, GNot)
+            k = a.kid if neg else a
+            if not isinstance(k, Pred):
+                continue
+            if k.kind == "OWN" and k.want and not neg:
+                toks.add(("own", k.var))
+            elif k.kind == "IPROP" and k.op == "==" and isinstance(k.var, tuple):
+                toks.add(("niprop" if neg else "iprop", (k.var[0], k.var[1], k.value)))
+            elif k.kind == "CMP" and self.is_flag(k.var) and _demands_nonzero(k) \
+                    and not any(s2 == k.var and v2 for (s2, v2) in discharged):
+                toks.add(("nflag" if neg else "flag", k.var - self.fbase))
+        for (S, V) in _must_equal(g):
+            if self.is_flag(S):
+                if V != 0 and not any(s2 == S and v2 for (s2, v2) in discharged):
+                    toks.add(("flag", S - self.fbase))
+            elif S in self.s.regs:
+                eqs.add((S, V))
+        return toks, eqs
+
+    def price(self, name, discharged=frozenset(), seen=frozenset()):
+        """Minimal alternatives (frozensets of tokens) that arm `name` AND survive what its
+        own run commits to. `[]` = no payable answer.
+
+        The recursion is the fixpoint the cat needed: an escape that itself hands off into the
+        lethal set is only HALF an answer -- KQ5's fish throw disposes the cat and then
+        re-arms the very encounter it answered -- so its price conjoins the price of the
+        escapes of the encounter it re-arms, discharged of everything its own chain wrote. It
+        terminates because those writes are monotone; a cycle prices as no answer."""
+        if name in seen:
+            return []
+        alts, cont = [], None
+        if self.hands_lethal(name):
+            d2 = frozenset(set(discharged) | self.chain_writes(name))
+            cont = []
+            for m2 in self.slot_escapes(name):
+                if m2 not in seen:
+                    cont += self.price(m2, d2, seen | {name})
+            if not cont:
+                return []
+        for i2 in self.by_name.get(name, ()):
+            for (_K, g) in (list(i2.get("entries") or ())
+                            + list(i2.get("init_entries") or ())):
+                toks, eqs = self.tokens(g, discharged)
+                base, bad = [frozenset(toks)], False
+                for (S, V) in sorted(eqs):
+                    writers = sorted({i3["inst"] for i3 in self.infos
+                                      if i3["inst"] != name and i3["inst"] not in self.lethal
+                                      for _K3, ps in (i3.get("states") or {}).items()
+                                      for (_g3, w, _gg3, _c3, _t3) in ps
+                                      for (s3, v3) in (w or ()) if (s3, v3) == (S, V)})
+                    sub = []
+                    for wn in writers:
+                        sub += self.price(wn, discharged, seen | {name})
+                    if not sub:
+                        bad = True
+                        break
+                    base = [a | b for a in base for b in sub]
+                if bad:
+                    continue
+                if cont is not None:
+                    base = [a | b for a in base for b in cont]
+                alts += base
+        return _minimal(alts)
+
+
 def _room_unavoidable(infos, sources, reach_rooms):
     """`(doomed, handoff, unavoidable, preempt)` for one room's machines -- the shared front
     half of every detector that must tell a death the player can still dodge from one they
@@ -4564,6 +4768,80 @@ class IrSccReach(SccReach):
                             break
         return out
 
+    def _death_fuses(self):
+        """`(fuses, live_phases, deaths, per_room)` -- the adversarial-clock classification,
+        shared by `fuse_death_armings` (which gates the encounters that LIGHT a fuse) and
+        `capture_fold_armings` (which must not mistake a fuse-lighting machine for an escape:
+        KQ5's organ disposes the henchman and starts Mordack's countdown, trading a death for
+        a death). Cached; see `fuse_death_armings` for the derivation of each step."""
+        if getattr(self, "_fusecache", None) is not None:
+            return self._fusecache
+        ir = getattr(self.em, "ir", None)
+        fbase = getattr(ir, "flag_synth_base", None) if ir is not None else None
+        known_flags = getattr(ir, "flag_indices", None) or frozenset()
+
+        def _own_atoms(spine):
+            return {a.var for a in spine
+                    if isinstance(a, Pred) and a.kind == "OWN" and a.want}
+
+        def _is_flag(S):
+            return fbase is not None and S >= fbase and (S - fbase) in known_flags
+
+        # ---- 1. death phases + the per-room classification kept for the system pass ------
+        phases, per_room = {}, {}
+        for room, infos in sorted(_trap_rooms(self.em).items()):
+            if room not in self.reach_rooms:
+                continue
+            _doomed, handoff, unavoid, _pre = _room_unavoidable(
+                infos, self.sources, self.reach_rooms)
+            per_room[room] = (infos, handoff, unavoid)
+            for i in infos:
+                if i["inst"] not in unavoid:
+                    continue
+                for (_K, g) in list(i.get("entries") or ()) + list(i.get("init_entries") or ()):
+                    spine = [_nn(a) for a in _conj_spine(g)]
+                    if _own_atoms(spine):
+                        continue
+                    for (S, V) in _must_equal(g):
+                        if S in self.regs:
+                            phases.setdefault((S, V), set()).add(i["inst"])
+        # ---- 2. clock expiry writes + 3. the fuse fixpoint --------------------------------
+        clock, seen_cw = [], set()
+        for (_room, _script, S, V, g) in self.em.handler_writes:
+            spine = [_nn(a) for a in _conj_spine(g)]
+            if not any(isinstance(a, tuple) and a and a[0] == "CTR" for a in spine):
+                continue
+            if _own_atoms(spine) or any(_is_owner_atom(a) for a in spine) \
+                    or any(isinstance(a, tuple) and a and a[0] == "POS" for a in spine):
+                continue
+            cds = frozenset(a.var for a in spine if isinstance(a, Pred) and a.kind == "CMP"
+                            and a.var in self.regs and _demands_nonzero(a))
+            if cds and (S, V, cds) not in seen_cw:
+                seen_cw.add((S, V, cds))
+                clock.append((S, V, cds))
+        # Chaining excludes a write that re-arms its OWN countdown (KQ5's `global353 := 5`,
+        # gated on 353 running): that is the periodic cycle continuing, not a new fuse being
+        # lit -- and without the exclusion it drags every mode register on its spine (the
+        # henchman's global333) into the fuse set.
+        fuses, changed = set(), True
+        while changed:
+            changed = False
+            for (S, V, cds) in clock:
+                if ((S, V) in phases or (S in fuses and V != 0 and S not in cds)) \
+                        and not (cds <= fuses):
+                    fuses |= cds
+                    changed = True
+        if not fuses:
+            self._fusecache = (set(), [], [], per_room)
+            return self._fusecache          # no clock in this game; the room map still stands
+        live_phases = sorted({(S, V) for (S, V) in phases
+                              if any((S, V) == (cs, cv) and (cds & fuses)
+                                     for (cs, cv, cds) in clock)})
+        deaths = sorted({m for (S, V) in live_phases for m in phases[(S, V)]})
+
+        self._fusecache = (fuses, live_phases, deaths, per_room)
+        return self._fusecache
+
     def fuse_death_armings(self):
         """Encounters whose unanswered outcome writes a REMOTE DEATH FUSE -- the demand rides
         the encounter's ARMING. KQ5's castle cat is the specimen and docs/KQ5-ORACLE.md §23
@@ -4626,24 +4904,12 @@ class IrSccReach(SccReach):
         `guards.fuse_arming_remedies`. Measured corpus-wide the day it landed: LSL2, KQ4, KQ6
         and LB2 all return [] -- KQ6's wedding fuse writes a flag no unavoidable machine's
         entry pins, so it has no death phase and stays `register_strandings`' item-seal."""
+        fuses, live_phases, deaths, per_room = self._death_fuses()
+        if not fuses:
+            return []
         ir = getattr(self.em, "ir", None)
         fbase = getattr(ir, "flag_synth_base", None) if ir is not None else None
         known_flags = getattr(ir, "flag_indices", None) or frozenset()
-
-        def _nn(a):
-            while isinstance(a, GNot) and isinstance(a.kid, GNot):
-                a = a.kid.kid
-            return a
-
-        def _demands_nonzero(a):
-            if not (isinstance(a, Pred) and a.kind == "CMP"):
-                return False
-            try:
-                v = int(a.value)
-            except (TypeError, ValueError):
-                return False
-            return ((a.op == "!=" and v == 0) or (a.op == "==" and v != 0)
-                    or (a.op == ">" and v >= 0) or (a.op == ">=" and v >= 1))
 
         def _own_atoms(spine):
             return {a.var for a in spine
@@ -4652,63 +4918,9 @@ class IrSccReach(SccReach):
         def _is_flag(S):
             return fbase is not None and S >= fbase and (S - fbase) in known_flags
 
-        # ---- 1. death phases + the per-room classification kept for the system pass ------
-        phases, per_room = {}, {}
-        for room, infos in sorted(_trap_rooms(self.em).items()):
-            if room not in self.reach_rooms:
-                continue
-            _doomed, handoff, unavoid, _pre = _room_unavoidable(
-                infos, self.sources, self.reach_rooms)
-            per_room[room] = (infos, handoff, unavoid)
-            for i in infos:
-                if i["inst"] not in unavoid:
-                    continue
-                for (_K, g) in list(i.get("entries") or ()) + list(i.get("init_entries") or ()):
-                    spine = [_nn(a) for a in _conj_spine(g)]
-                    if _own_atoms(spine):
-                        continue
-                    for (S, V) in _must_equal(g):
-                        if S in self.regs:
-                            phases.setdefault((S, V), set()).add(i["inst"])
-        # ---- 2. clock expiry writes + 3. the fuse fixpoint --------------------------------
-        clock, seen_cw = [], set()
-        for (_room, _script, S, V, g) in self.em.handler_writes:
-            spine = [_nn(a) for a in _conj_spine(g)]
-            if not any(isinstance(a, tuple) and a and a[0] == "CTR" for a in spine):
-                continue
-            if _own_atoms(spine) or any(_is_owner_atom(a) for a in spine) \
-                    or any(isinstance(a, tuple) and a and a[0] == "POS" for a in spine):
-                continue
-            cds = frozenset(a.var for a in spine if isinstance(a, Pred) and a.kind == "CMP"
-                            and a.var in self.regs and _demands_nonzero(a))
-            if cds and (S, V, cds) not in seen_cw:
-                seen_cw.add((S, V, cds))
-                clock.append((S, V, cds))
-        # Chaining excludes a write that re-arms its OWN countdown (KQ5's `global353 := 5`,
-        # gated on 353 running): that is the periodic cycle continuing, not a new fuse being
-        # lit -- and without the exclusion it drags every mode register on its spine (the
-        # henchman's global333) into the fuse set.
-        fuses, changed = set(), True
-        while changed:
-            changed = False
-            for (S, V, cds) in clock:
-                if ((S, V) in phases or (S in fuses and V != 0 and S not in cds)) \
-                        and not (cds <= fuses):
-                    fuses |= cds
-                    changed = True
-        if not fuses:
-            return []
-        live_phases = sorted({(S, V) for (S, V) in phases
-                              if any((S, V) == (cs, cv) and (cds & fuses)
-                                     for (cs, cv, cds) in clock)})
-        deaths = sorted({m for (S, V) in live_phases for m in phases[(S, V)]})
-
         # ---- 4. per room: the lethal set, the root, its escapes, their prices -------------
         out, emitted = [], set()
         for room, (infos, handoff, unavoid) in sorted(per_room.items()):
-            by_name = defaultdict(list)
-            for i in infos:
-                by_name[i["inst"]].append(i)
             fusem = {i["inst"] for i in infos
                      for _K, ps in (i.get("states") or {}).items()
                      for (_g, w, _gg, _c, _t) in ps for (S, v) in (w or ())
@@ -4716,114 +4928,7 @@ class IrSccReach(SccReach):
             if not fusem:
                 continue
             lethal = unavoid | fusem
-            slots = defaultdict(set)
-            for i in infos:
-                for rc in (i.get("entry_recv") or ()):
-                    if rc is not None:
-                        slots[rc].add(i["inst"])
-
-            def _armable(name):
-                copies = by_name.get(name, ())
-                if not copies:
-                    return False
-                for i2 in copies:
-                    ents = list(i2.get("entries") or ()) + list(i2.get("init_entries") or ())
-                    if not ents:
-                        return True
-                    musts = entry_musts(i2)
-                    if any(all(self.sources.get(it, set()) & self.reach_rooms
-                               for it in musts.get(K, ()))
-                           for (K, _g) in ents):
-                        return True
-                return False
-
-            def _hands_lethal(name):
-                return {m for (a, K) in handoff if a == name
-                        for m in (handoff.get((a, K)) or {}) if m in lethal}
-
-            def _slot_escapes(name):
-                rcs = {rc for i2 in by_name.get(name, ())
-                       for rc in (i2.get("entry_recv") or ()) if rc is not None}
-                return sorted({m for rc in rcs for m in slots[rc]
-                               if m != name and m not in lethal and _armable(m)})
-
-            def _chain_writes(name):
-                wset = set()
-                for i2 in by_name.get(name, ()):
-                    for _K, ps in (i2.get("states") or {}).items():
-                        for (_g, w, _gg, _c, _t) in ps:
-                            wset |= set(w or ())
-                    for a in (i2.get("entry_armers") or ()):
-                        if a:
-                            for i3 in by_name.get(a[0], ()):
-                                for _K, ps in (i3.get("states") or {}).items():
-                                    for (_g, w, _gg, _c, _t) in ps:
-                                        wset |= set(w or ())
-                return wset
-
-            def _price(name, discharged, seen):
-                """Minimal alternatives [frozenset of ('own', item) / ('flag', n)] that arm
-                `name` AND survive what its own run commits to. [] = no priced answer."""
-                if name in seen:
-                    return []
-                alts = []
-                cont = None
-                if _hands_lethal(name):
-                    d2 = frozenset(set(discharged) | _chain_writes(name))
-                    cont = []
-                    for m2 in _slot_escapes(name):
-                        if m2 in seen:
-                            continue
-                        cont += _price(m2, d2, seen | {name})
-                    if not cont:
-                        return []
-                for i2 in by_name.get(name, ()):
-                    for (_K, g) in (list(i2.get("entries") or ())
-                                    + list(i2.get("init_entries") or ())):
-                        spine = [_nn(a) for a in _conj_spine(g)]
-                        toks = {("own", it) for it in _own_atoms(spine)}
-                        bad = False
-                        eqs = set()
-                        for a in spine:
-                            if isinstance(a, Pred) and a.kind == "CMP" \
-                                    and _is_flag(a.var) and _demands_nonzero(a):
-                                if not any(s2 == a.var and v2 for (s2, v2) in discharged):
-                                    toks.add(("flag", a.var - fbase))
-                        for (S, V) in _must_equal(g):
-                            if _is_flag(S):
-                                if V != 0 and not any(s2 == S and v2
-                                                      for (s2, v2) in discharged):
-                                    toks.add(("flag", S - fbase))
-                            elif S in self.regs:
-                                eqs.add((S, V))
-                        base_alts = [frozenset(toks)]
-                        for (S, V) in sorted(eqs):
-                            writers = sorted({i3["inst"] for i3 in infos
-                                              if i3["inst"] != name
-                                              and i3["inst"] not in lethal
-                                              for _K3, ps in (i3.get("states") or {}).items()
-                                              for (_g3, w, _gg3, _c3, _t3) in ps
-                                              for (s3, v3) in (w or ())
-                                              if (s3, v3) == (S, V)})
-                            sub = []
-                            for wn in writers:
-                                sub += _price(wn, discharged, seen | {name})
-                            if not sub:
-                                bad = True
-                                break
-                            base_alts = [a | b for a in base_alts for b in sub]
-                        if bad:
-                            continue
-                        if cont is not None:
-                            base_alts = [a | b for a in base_alts for b in cont]
-                        alts += base_alts
-                # minimize: drop any alternative another one is a subset of
-                uniq = sorted(set(alts), key=lambda a: (len(a), sorted(a)))
-                keep = []
-                for a in uniq:
-                    if not any(k <= a for k in keep):
-                        keep.append(a)
-                return keep
+            esc = _Escapes(self, infos, handoff, lethal)
 
             for i in infos:
                 nm = i["inst"]
@@ -4831,19 +4936,15 @@ class IrSccReach(SccReach):
                     continue
                 if any(a for a in (i.get("entry_armers") or ()) if a):
                     continue                       # chained: priced inside, not a root
-                if not _hands_lethal(nm):
+                if not esc.hands_lethal(nm):
                     continue
-                esc = _slot_escapes(nm)
-                if not esc:
+                ways = esc.slot_escapes(nm)
+                if not ways:
                     continue
                 alts = []
-                for m in esc:
-                    alts += _price(m, frozenset(), frozenset({nm}))
-                uniq = sorted(set(alts), key=lambda a: (len(a), sorted(a)))
-                keep = []
-                for a in uniq:
-                    if not any(k <= a for k in keep):
-                        keep.append(a)
+                for m in ways:
+                    alts += esc.price(m, frozenset(), frozenset({nm}))
+                keep = _minimal(alts)
                 if not keep:
                     continue
                 items = sorted({it for a in keep for (kind, it) in a if kind == "own"})
@@ -4862,11 +4963,249 @@ class IrSccReach(SccReach):
                         "arm_proc": ({"script": host_sn, "name": procs[0]}
                                      if procs else None),
                         "fuse": sorted(fuses), "phases": live_phases,
-                        "death": deaths, "flags": fl, "escapes": esc,
+                        "death": deaths, "flags": fl, "escapes": ways,
                         "demand_alts": [{"items": sorted(x for (k, x) in a if k == "own"),
                                          "flags": sorted(x for (k, x) in a if k == "flag")}
                                         for a in keep]})
         return out
+
+    def capture_fold_armings(self):
+        """Encounters that CARRY the player into a lethal arrival fold -- the demand rides the
+        encounter's ARMING. KQ5's castle henchman is the specimen; docs/KQ5-ORACLE.md §24.
+
+        `ownedby_death_folds` already says what the arrival demands: reaching KQ5's rm67 alive
+        needs `owner(25) == 57` -- the locket already given to Cassima -- with flag 96 clear,
+        since the game sets 69 and 96 TOGETHER at the rescue, so 96 means "she has spent her
+        one rescue". `fold_carryins` places such a demand on the crossing that arms the fold,
+        but only when the fold's context NAMES that crossing as a previous room. This context
+        names a REGISTER, and the crossing is not a walk at all: `theHenchManScript` state 12
+        carries `('EXIT', 67)`. The machine that carries you is the machine to gate.
+
+        ⭐ THAT IS ALSO THE DISCRIMINATOR AGAINST THE CHASE EXCLUSION, which elsewhere stops
+        this project condemning a race the player declines by leaving (KQ4's rm49 dog, KQ5's
+        rm36 yeti -- both of which end where they start, and neither of which moves the player
+        anywhere). A chase whose own machine performs a room crossing does not offer that
+        decline: leaving is how you LOSE it. USER 2026-08-19d, from play: "if he catches you a
+        second time you die... got that without even trying."
+
+        THE SECOND DISJUNCT IS NOT OPTIONAL. The fold's condition is monotone-unsatisfiable
+        once the rescue writes flag 96, so a demand built from it alone would seal the
+        encounter forever -- and the encounter is REQUIRED past that point, its answer being
+        the only writer of the empty bag the cat catch needs. A demand that cannot be met is a
+        wall, so it admits the ANSWER's own price as an alternative: `(fold survivable) ∨
+        (answer payable)`. That is the USER's ruling ("if you have the peas, we should let it
+        happen, otherwise we should block it") derived rather than transcribed.
+
+        AN ANSWER is a machine that DISPOSES the encounter's host (`setScript: 0`; KQ5's pea
+        throw is armed into the ROOM's slot and reaches over to the henchman, so no slot map
+        records it), and that
+          * does not itself leave the room -- a machine carrying an EXIT transition DEFERS
+            rather than answers, because the host is armed region-wide and re-rolls next door
+            ([[arm-event-soundness]]'s flag-105 lesson: a "decline" that only postpones is a
+            deferral), and
+          * is not itself lethal -- `unavoidable`, or a machine that arms a death fuse
+            (`_death_fuses`' classification, which is what excludes rm58's organ: it disposes
+            the henchman and lights Mordack's countdown).
+
+        ⚠️ MEASURED LIMIT, stated because it errs toward OVER-demanding: a disposal written
+        through `(ScriptID N K)` indirection is not resolved to its object, so only
+        same-script disposers are seen. On KQ5 that costs nothing -- the indirect ones are
+        rm54's `falling`, rm58's organ and rm59's frozen-beast display, each already excluded
+        by a rule above -- but a game whose only answer is written indirectly would get a
+        demand with no alternative, which is reported as `answerless` and refused by
+        `guards.capture_fold_remedies` rather than shipped as a wall.
+
+        Rows are per (machine, fold), deduped across the region's rooms."""
+        folds = {}
+        for r in self.ownedby_death_folds():
+            folds.setdefault(r["need_room"], []).append(r)
+        if not folds:
+            return []
+        fuses, _lp, _d, per_room = self._death_fuses()
+        out, emitted = [], set()
+        for room, (infos, handoff, unavoid) in sorted(per_room.items()):
+            fusem = {i["inst"] for i in infos
+                     for _K, ps in (i.get("states") or {}).items()
+                     for (_g, w, _gg, _c, _t) in ps for (S, v) in (w or ())
+                     if S in fuses and isinstance(v, int) and v != 0}
+            lethal = unavoid | fusem
+            esc = _Escapes(self, infos, handoff, lethal)
+            disposers = self._disposers(infos)
+            leaves = {i["inst"] for i in infos
+                      for _K, ps in (i.get("states") or {}).items()
+                      for (_g, _w, _gg, _c, t) in ps if t and t[0] == "EXIT"}
+            for i in infos:
+                nm = i["inst"]
+                if nm in lethal or not i.get("states"):
+                    continue
+                exits = {t[1] for _K, ps in (i.get("states") or {}).items()
+                         for (_g, _w, _gg, _c, t) in ps if t and t[0] == "EXIT"}
+                hosts = {rc for rc in (i.get("entry_recv") or ()) if rc is not None}
+                answers = sorted({m for h in hosts for m in disposers.get(h, ())
+                                  if m != nm and m not in lethal and m not in leaves
+                                  and esc.armable(m)})
+                for R in sorted(exits & set(folds)):
+                    if R == room:
+                        continue
+                    # ...only if the FOLD ACTUALLY ARMS on this arrival. KQ5's rm67 dispatches
+                    # on where you came from -- `(switch prevRoom (55 <enterHole>) (else
+                    # <henchCaught>))` -- so the maze's own `goHoleScript` carries the player
+                    # into rm67 without ever arming the fork, and demanding the locket of it
+                    # would be a false positive. The fold machine's own entry guard is the
+                    # authority, read against the room the crossing starts in.
+                    if self._fold_disarmed(R, folds[R][0]["machine"], room):
+                        continue
+                    # ...and only for the machine the player's arming CONTROLS. A machine
+                    # gated on a register value another carrier of this same crossing
+                    # establishes is that carrier's CONTINUATION, staged one room over --
+                    # KQ5's rm59 `caughtScript` runs on `global333 == 5`, which
+                    # `theHenchManScript` writes when the rm60 chase reaches the stairs. Gating
+                    # the root covers it compositionally (the same relationship the yeti's
+                    # staged catch has to its chase); emitting both would double-patch one
+                    # encounter.
+                    if self._continuation_of(i, infos, R, folds):
+                        continue
+                    for fr in folds[R]:
+                        key = (nm, R, fr["machine"], tuple(sorted(
+                            tuple(x) for x in fr["demand_group"])))
+                        if key in emitted:
+                            continue
+                        emitted.add(key)
+                        # a fold's `demand_group` members are ALTERNATIVES -- any one banked
+                        # throwable satisfies the cellar -- so each becomes its own way to
+                        # survive, and the context rides all of them.
+                        ctx = [(("flag" if v else "nflag"), S - esc.fbase)
+                               for (S, v) in sorted((fr.get("context") or {}).items())
+                               if esc.is_flag(S)]
+                        alts = [frozenset([("owner", (it, dst))] + ctx)
+                                for (it, dst) in fr["demand_group"]]
+                        for m in answers:
+                            alts += esc.price(m, frozenset(), frozenset({nm}))
+                        keep = _minimal(alts)
+                        out.append({
+                            "pattern": "capture-fold-arming", "machine": nm,
+                            "need_room": R, "fold_machine": fr["machine"],
+                            "fold_state": fr.get("state"), "escapes": answers,
+                            "answerless": not answers,
+                            "arm_rooms": self._entry_rooms(i),
+                            "host": sorted(h[1] for h in hosts if h[0] == "O"),
+                            "script": i.get("script"),
+                            "demand_alts": [{
+                                "owners": sorted([list(x) for (k, x) in a if k == "owner"]),
+                                "items": sorted(x for (k, x) in a if k == "own"),
+                                "flags": sorted(x for (k, x) in a if k == "flag"),
+                                "not_flags": sorted(x for (k, x) in a if k == "nflag"),
+                                "iprops": sorted([list(x) for (k, x) in a if k == "iprop"]),
+                                "not_iprops": sorted([list(x) for (k, x)
+                                                      in a if k == "niprop"])}
+                                for a in keep]})
+        return out
+
+    def _fold_disarmed(self, fold_room, fold_machine, from_room):
+        """Does the fold machine's own entry guard EXCLUDE an arrival from `from_room`?
+
+        Read off the previous-room register the model already derives, and only along the AND
+        spine (`_must_hold`'s discipline): a `prev != X` conjunct excludes X, a `prev == Y`
+        conjunct excludes everything else. Anything less readable excludes nothing."""
+        prev = prev_room_reg(self.em)
+        if prev is None:
+            return False
+        for i in _trap_rooms(self.em).get(fold_room, ()):
+            if i["inst"] != fold_machine:
+                continue
+            for (_K, g) in (list(i.get("init_entries") or ())
+                            + list(i.get("entries") or ())):
+                for a in (_nn(x) for x in _conj_spine(g)):
+                    neg = isinstance(a, GNot)
+                    k = a.kid if neg else a
+                    if not (isinstance(k, Pred) and k.kind == "CMP" and k.var == prev):
+                        continue
+                    try:
+                        v = int(k.value)
+                    except (TypeError, ValueError):
+                        continue
+                    if k.op == "==" and ((v == from_room) if neg else (v != from_room)):
+                        return True
+                    if k.op == "!=" and ((v != from_room) if neg else (v == from_room)):
+                        return True
+        return False
+
+    def _continuation_of(self, info, infos, fold_room, folds):
+        """Is this machine a STAGED CONTINUATION of another carrier of the same crossing?
+
+        Its entry demands a register value that some other machine -- one that also exits into
+        the fold's room -- writes. That makes it the second half of one encounter, and the
+        encounter is gated at its root."""
+        want = {(S, V) for (_K, g) in (list(info.get("entries") or ())
+                                       + list(info.get("init_entries") or ()))
+                for (S, V) in _must_equal(g) if S in self.regs}
+        if not want:
+            return False
+        for other in infos:
+            if other["inst"] == info["inst"]:
+                continue
+            exits = {t[1] for _K, ps in (other.get("states") or {}).items()
+                     for (_g, _w, _gg, _c, t) in ps if t and t[0] == "EXIT"}
+            if fold_room not in exits:
+                continue
+            writes = {(S, v) for _K, ps in (other.get("states") or {}).items()
+                      for (_g, w, _gg, _c, _t) in ps for (S, v) in (w or ())}
+            if want & writes:
+                return True
+        return False
+
+    def _disposers(self, infos):
+        """`entry_recv slot -> {machines whose body DISPOSES that slot's object}`.
+
+        An encounter lives in its host's `setScript:` slot, so the machines that can end it
+        are not only the ones armed INTO that slot (the pre-emption rule's competitors) but
+        the ones that write 0 to it from outside -- KQ5's pea throw is armed into the ROOM's
+        slot and reaches over to the henchman. Same-script sends only; see
+        `capture_fold_armings` for what that costs."""
+        ir = getattr(self.em, "ir", None)
+        out = defaultdict(set)
+        if ir is None:
+            return out
+        want = {i["inst"]: i.get("script") for i in infos}
+        for sn in sorted({v for v in want.values() if v is not None}):
+            sc = ir.scripts.get(sn)
+            if sc is None:
+                continue
+            for o in sc.objects:
+                if o.name not in want:
+                    continue
+                for body in o.methods.values():
+                    for n in I.walk(body):
+                        if not (isinstance(n, dict) and n.get("t") == "Send"):
+                            continue
+                        try:
+                            recv, msgs = I.send_pairs(n)
+                        except Exception:                      # noqa: BLE001
+                            continue
+                        rn = recv.get("name") if isinstance(recv, dict) else None
+                        if not rn:
+                            continue
+                        for sel, ps in msgs:
+                            if sel == "setScript" and ps and I.as_int(ps[0]) == 0:
+                                out[("O", rn)].add(o.name)
+        return out
+
+    def _entry_rooms(self, info):
+        """The rooms this machine's own entry disjunction names -- a region machine says
+        where it can arm by testing the current-room global, and that is where a guard's
+        effect will be felt."""
+        import extract as X
+        cur = getattr(X, "_CURROOM", None)
+        rooms = set()
+        for (_K, g) in list(info.get("entries") or ()) + list(info.get("init_entries") or ()):
+            for n in _walk_guard(g):
+                if isinstance(n, Pred) and n.kind == "CMP" and n.op == "==" \
+                        and n.var == cur:
+                    try:
+                        rooms.add(int(n.value))
+                    except (TypeError, ValueError):
+                        pass
+        return sorted(rooms & set(self.reach_rooms))
 
     def _arming_call_rooms(self, host_sn, entry_recv):
         """(rooms, proc names): the reachable rooms whose scripts call a procedure of script

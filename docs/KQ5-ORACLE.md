@@ -1399,3 +1399,42 @@ already living on `theHenchMan::init` (the rm54 fish discriminator), which is th
 choke point; the set-dressing callers (rm059's frozen display, rm067's capture cutscene)
 override the script slot themselves, and every state in which `henchCaught` is SURVIVED
 satisfies disjunct 1 by construction, so nothing they draw is withheld.
+
+### ✅ CURED 2026-08-19d, same session (red → green → shipped)
+
+**Detection** (`missability.capture_fold_armings`). A fold's demand rides the arming of any
+machine whose OWN transition EXITs into the fold's room. Three pieces beyond the cat's:
+  * **DISPOSERS as escapes** — the pea throw is armed into the ROOM's slot and reaches over to
+    `theHenchMan setScript: 0`, which no slot map records. Same-script sends only; the
+    `(ScriptID N K)`-indirect disposals are unresolved, and on KQ5 that costs nothing (rm54's
+    `falling`, rm58's organ, rm59's frozen display — each already excluded by a rule below).
+  * **Two filters, each paid for by a real row.** FOLD-DISARMED: rm67's init dispatches
+    `prevRoom == 55` to `enterHole`, so the maze's own carrier never arms the fork — a false
+    positive, dropped by reading the fold machine's entry guard against the crossing's source
+    room. CONTINUATION: rm59's `caughtScript` runs on `global333 == 5`, which the root writes
+    when the rm60 chase reaches the stairs — the staged second half of one encounter (the
+    yeti's shape), covered compositionally by gating the root.
+  * **Answerless rows are REFUSED by the guard, not shipped** — a bare fold demand belongs on
+    the CROSSING. Verified against the shipped specs: rm40→rm41 already demands
+    `owner(19) == 34` and rm85→rm86 the banked-throwable disjunction.
+The pricing fixpoint moved into a shared `_Escapes` ([[same-rule-two-places]]); the cat's rows
+are byte-identical across the refactor, and the four frozen games emit zero rows from both
+detectors (they have no fold rows at all).
+
+**Guard** (`guards.capture_fold_remedies` → patcher `capture-arm`, placed LAST so it composes
+with the edge pass rather than being overwritten by it):
+
+    (if (and (or (not (== global11 54)) (global0 has: 37))
+             (or (and (not (proc0_12 96)) (== ((global9 at: 25) owner:) 57))
+                 (and (global0 has: 24) (not (== ((global9 at: 24) cel:) 4)))))
+        (self view: … setScript: theHenchManScript))
+
+One conjunct onto the wrap already on `theHenchMan::init` — the object's single choke point,
+which the rm54 fish discriminator shares, so both demands are one no. Every atom is the game's
+own spelling. Silent kind (a withheld ambush is a roll that did not come up). The set-dressing
+callers are unaffected: rm59's frozen display and rm67's capture cutscene override the script
+slot themselves, and every state in which `henchCaught` is SURVIVED satisfies disjunct 1 by
+construction, so nothing they draw is ever withheld.
+
+**Shipped**: v17 — every other emitted .SCR byte-identical to v16; 550.SCR installed to
+~/sierra/patched/kq5 (cmp'd) and the game BOOTS. Play-retest owed: testplan M6c.

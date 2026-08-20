@@ -3211,7 +3211,64 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
         frow = _forward_demand_to_hold(dest, dsp, fwd, stage, out)
         if frow is not None:
             out[idx] = frow
+    # CAPTURE-ARM HOLDS, placed LAST and deliberately so (missability.capture_fold_armings,
+    # docs/KQ5-ORACLE.md §24): the encounter must not arm unless the player can survive being
+    # carried off, and its host's arming may ALREADY carry a demand from the edge pass above
+    # (KQ5's henchman holds the rm54 fish discriminator). Conjoining onto whatever `(if` now
+    # guards the arming keeps both demands at one site and in one no; running earlier would
+    # edit a site the edge pass then rewrites. Silent kind -- a withheld ambush is a roll that
+    # did not come up -- so `stock_or` alone, no refusal line.
+    for sp in specs:
+        if sp["site"] != "capture-arm" or sp["refused"] or not sp.get("condition"):
+            continue
+        title = titles_by_num.get(sp["script"])
+        path = os.path.join(dest, "src", title + ".sc") if title else None
+        if not path or not os.path.exists(path):
+            out.append({**sp, "applied": False,
+                        "why": "no source for script %s" % sp["script"]})
+            continue
+        text = open(path, errors="replace").read()
+        hits = [m.start() for m in re.finditer(
+            r"setScript:\s*%s\b" % re.escape(sp["machine"]), text)]
+        if len(hits) != 1:
+            out.append({**sp, "applied": False,
+                        "why": "expected exactly one `setScript: %s` in %s, found %d"
+                               % (sp["machine"], title, len(hits))})
+            continue
+        span = _enclosing_if_test(text, hits[0])
+        demand = stock_or(to_source_syntax(sp["condition"]))
+        if span is None:
+            out.append({**sp, "applied": False,
+                        "why": "the arming of %s is not inside an `(if ...)` to strengthen"
+                               % sp["machine"]})
+            continue
+        ts, te = span
+        new_text = (text[:ts] + "(and %s %s) ; softlock-guard" % (text[ts:te], demand)
+                    + text[te:])
+        open(path, "w").write(new_text)
+        out.append({**sp, "applied": True, "title": title, "sites": 1,
+                    "placement": {"kind": "capture-arm", "instance": sp.get("host"),
+                                  "trigger_method": "init"}})
     return out
+
+
+def _enclosing_if_test(text, pos):
+    """`(start, end)` of the test of the INNERMOST `(if ...)` whose balanced span contains
+    `pos`, or None. Spans come from `_balanced_span`, never a depth-counting regex -- the same
+    discipline the rest of this module keeps, and the reason a nested arming is found rather
+    than the outermost form that happens to share a prefix."""
+    best = None
+    for m in re.finditer(r"\(if\s+", text):
+        if m.start() > pos:
+            break
+        if _balanced_span(text, m.start()) <= pos:
+            continue                              # this `if` closes before the arming
+        i = m.end()
+        if i >= len(text) or text[i] != "(":
+            continue                              # a bare-atom test: nothing to conjoin onto
+        if best is None or m.start() > best[0]:
+            best = (m.start(), i, _balanced_span(text, i))
+    return None if best is None else (best[1], best[2])
 
 
 def _gate_notify_awards(dest, cond):

@@ -966,6 +966,30 @@ def run():
           f"FIRST capture is required progression, so a pea-only demand walls the game. "
           f"docs/KQ5-ORACLE.md §24.")
 
+    # ✅ THE REMEDY, same session: the capture hold (`guards.capture_fold_remedies`). One
+    # conjunct onto the wrap already living on `theHenchMan::init` -- the object's single
+    # choke point, which the rm54 fish discriminator shares -- so both demands are one no.
+    # Every atom is the GAME'S OWN spelling, including the empty bag (`(cel:) 4`), so nothing
+    # rests on our reading of what the property means.
+    #
+    # ⛔ AND THE TWO ANSWERLESS ROWS ARE REFUSED, which is the assertion that keeps this from
+    # double-patching: rm41's roc cutscene and rm85's kidnap also carry the player into a fold,
+    # but a bare fold demand belongs on the CROSSING, where both already ship and are
+    # play-confirmed -- rm40->rm41 demands `owner(19) == 34` and rm85->rm86 the banked-throwable
+    # disjunction. An arming hold there would be a second patch on one commit.
+    cfr = G.capture_fold_remedies(s)
+    ships = [r for r in cfr if not r["refused"]]
+    check("the capture hold ships once, on the henchman's own arming, and refuses the rest",
+          len(ships) == 1 and ships[0]["script"] == 550
+          and ships[0]["host"] == "theHenchMan" and ships[0]["need_room"] == 67
+          and ships[0]["condition"] == (
+              "(or (and (not (proc0_12 96)) (== ((gInv at: 25) owner:) 57)) "
+              "(and (gEgo has: 24) (not (== ((gInv at: 24) cel:) 4))))")
+          and {r["machine"] for r in cfr if r["refused"]} == {"roomScript", "attack"},
+          f"specs={cfr!r} -- expected exactly one shipping spec (theHenchMan's arming, the "
+          f"ruled disjunction) and the rm41/rm85 rows refused as crossing-owned. A shipping "
+          f"answerless row would double-patch a commit that already carries its demand.")
+
     # ✅ REWRITTEN 2026-08-16b, USER-RULED -- this red demanded the WRONG ROW. It asserted that
     # some detector flags the Amulet, on the oracle's old verdict that entering the dark forest
     # without it is a softlock. USER: *"on rm19 you can get back out. I don't think you can get

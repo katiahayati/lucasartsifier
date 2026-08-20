@@ -214,25 +214,22 @@ KNOWN_RED = {
     # the check is a permanent green pin. docs/LB2-ORACLE.md §7ag.
 
     "test_kq5_ground_truth.py": {
-        # 🔴 DECLARED 2026-08-19d, USER PLAY-FOUND + RULED (docs/KQ5-ORACLE.md §24). The
-        # henchman capture: `henchCaught` st8 forks on `¬flag96 ∧ owner(25)==57`, and flags
-        # 69+96 are set TOGETHER at the rescue -- 96 means "Cassima has spent her rescue", so a
-        # second capture kills whatever you carry (L3, play-confirmed "without even trying").
-        # The FOLD row exists already; nothing carries its demand back to the ARMING of the
-        # machine that performs the crossing. THE CURE, named: (1) a fold demand rides the
-        # arming of any machine whose own transition EXITs into the fold's room (the adversary
-        # CARRIES you across -- the discriminator against the chase exclusion, whose
-        # decline-by-leaving premise the USER play-refuted); (2) an encounter's escapes include
-        # machines that DISPOSE its host (`setScript: 0`), not only slot competitors -- the pea
-        # throw is armed into the room's slot; (3) prices compose as the cat's did, carrying the
-        # typed item-property atom `¬IPROP((24,'cel')==4)` (the empty bag) into the rendered
-        # condition. Demand = `(¬96 ∧ owner(25)==57) ∨ (own(24) ∧ ¬cel==4)`; disjunct 1 is
-        # load-bearing because the FIRST capture is required progression. Corpus-safe by
-        # construction: LSL2/KQ4/KQ6/LB2 all have ZERO fold rows (measured 2026-08-19d).
-        "the henchman's arming demands a survivable capture or the pea answer":
-            "no detector carries a fold's demand back to the arming of the machine that "
-            "carries the player into the fold's room, so both lethal capture orderings "
-            "(before the give, and after the rescue) are unguarded",
+        # ✅ PROMOTED 2026-08-19d, SAME SESSION AS DECLARED -- "the henchman's arming demands a
+        # survivable capture or the pea answer" is GREEN, with the remedy pinned beside it.
+        # `missability.capture_fold_armings` carries a fold's demand back to the arming of any
+        # machine whose OWN transition EXITs into the fold's room (theHenchManScript st12 =
+        # EXIT 67), which is the discriminator against the chase exclusion: KQ4's dog and KQ5's
+        # yeti end where they start, this one CARRIES you, and leaving is how you lose it.
+        # Escapes gained DISPOSERS (`setScript: 0` from outside the slot -- the pea throw is
+        # armed into the room's slot), and the pricing fixpoint moved to a shared `_Escapes`
+        # ([[same-rule-two-places]]) so the cat and the henchman cannot drift; the cat's rows
+        # are byte-identical across that refactor. Two filters keep it honest and were each
+        # paid for by a real row: the FOLD-DISARMED test (rm67 dispatches maze arrivals to
+        # `enterHole`, so the maze's own carrier was a false positive) and the CONTINUATION
+        # test (rm59's `caughtScript` runs on `global333 == 5`, which the root writes -- gating
+        # the root covers it). Answerless rows are REFUSED rather than shipped: rm41's roc and
+        # rm85's kidnap already carry their fold demand at their crossing, verified against the
+        # shipped specs. LSL2/KQ4/KQ6/LB2 emit zero rows from both detectors.
         # ✅ PROMOTED 2026-08-19c, SAME SESSION AS DECLARED -- "the castle cat's arming demands
         # the whale kit (remote fuse = death)" is GREEN. `missability.fuse_death_armings`
         # landed with the three classifications the red named: DEATH PHASES ((331,3) arms

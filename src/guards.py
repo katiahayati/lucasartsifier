@@ -1794,6 +1794,63 @@ def fuse_arming_remedies(s):
     return out
 
 
+def capture_fold_remedies(s):
+    """The arming hold for `missability.capture_fold_armings` rows -- docs/KQ5-ORACLE.md §24.
+
+    The encounter must not ARM unless the player can survive it: the arrival fold's own
+    survivability condition, or the price of an answer. Rendered as a disjunction of the row's
+    alternatives in the GAME'S OWN SPELLING -- KQ5's empty bag is `(== ((gInv at: 24) cel:) 4)`,
+    the very test the henchman's dispatch refuses on, so nothing is translated into a flag
+    alias and nothing rests on our reading of what the property means.
+
+    ⛔ AN ANSWERLESS ROW IS REFUSED, never shipped. Its demand is the fold's alone, and a bare
+    fold demand belongs on the CROSSING (`fold_carryins` and the frontier specs), not on an
+    arming: placing it at the arming would double-patch one commit, and where the fold's
+    condition is monotone it could wall the crossing outright. Verified on KQ5, both instances:
+    rm40->rm41 already demands `owner(19) == 34` (the nest's lamb fold) and rm85->rm86 the
+    banked-throwable disjunction (the cellar's), each shipped and play-confirmed."""
+    ir = s.em.ir
+    testp = getattr(ir, "flag_test_proc", None)
+    out = []
+    for r in s.capture_fold_armings():
+        refused = []
+        if r.get("answerless"):
+            refused.append(
+                "no answer to the encounter, so the demand is the fold's alone -- that "
+                "belongs on the crossing (fold_carryins/frontier), not on an arming")
+        if not r.get("host") or r.get("script") is None:
+            refused.append("no host object to hold the arming on")
+        alts = []
+        for a in r.get("demand_alts", ()):
+            parts = ["(not (%s %d))" % (testp, f) for f in a.get("not_flags", ())] \
+                + ["(%s %d)" % (testp, f) for f in a.get("flags", ())] \
+                + ["(== ((gInv at: %d) owner:) %d)" % (it, dst)
+                   for (it, dst) in a.get("owners", ())] \
+                + ["(gEgo has: %d)" % it for it in a.get("items", ())] \
+                + ["(== ((gInv at: %d) %s:) %s)" % (it, prop, val)
+                   for (it, prop, val) in a.get("iprops", ())] \
+                + ["(not (== ((gInv at: %d) %s:) %s))" % (it, prop, val)
+                   for (it, prop, val) in a.get("not_iprops", ())]
+            if not parts:
+                continue
+            alts.append(parts[0] if len(parts) == 1 else "(and %s)" % " ".join(parts))
+        if (a for a in r.get("demand_alts", ())) and not alts:
+            refused.append("empty demand -- nothing to hold the arming on")
+        if any(f for a in r.get("demand_alts", ()) for f in
+               list(a.get("flags", ())) + list(a.get("not_flags", ()))) and not testp:
+            refused.append("a flag demand with no derivable flag-test spelling")
+        cond = (alts[0] if len(alts) == 1 else "(or %s)" % " ".join(alts)) if alts else None
+        out.append({"site": "capture-arm", "script": r["script"], "machine": r["machine"],
+                    "host": r["host"][0] if r.get("host") else None,
+                    "need_room": r["need_room"], "arm_rooms": r.get("arm_rooms", []),
+                    "escapes": r.get("escapes", []), "condition": cond,
+                    "why": "arming this carries the player into rm%s, whose arrival fork "
+                           "(%s) cannot be survived without it" % (r["need_room"],
+                                                                  r.get("fold_machine")),
+                    "refused": refused})
+    return out
+
+
 def fold_carryins(s):
     """Owner-value demands on the CROSSING an entry-fold's context names -- patch B's derivation.
 
@@ -2039,6 +2096,9 @@ def guard_specs(s):
     # encounter's spawn procedure refuses to arm until the derived kit is in hand. Silent
     # kind (a withheld spawn is the stock no-spawn roll). See fuse_arming_remedies.
     specs.extend(fuse_arming_remedies(s))
+    # ...and the encounters that CARRY you into a lethal arrival fold (`capture_fold_armings`):
+    # the same whale-shape hold, on the host object's own arming. See capture_fold_remedies.
+    specs.extend(capture_fold_remedies(s))
     for gt in survival_gates(s):
         cp, cn, rest = factor(gt["alts"])
         pos_spec = render(cp, set(), rest)
