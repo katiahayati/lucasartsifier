@@ -486,13 +486,19 @@ def test_edge_bands_are_derived():
             continue
         bands = PG.edge_bands(I.load_ir(cfg.ir_path))
         check("%s: the edge bands are read from the game" % name,
-              bands == {"west": 0, "east": 319, "south": 189},
+              bands == {"west": 0, "east": 319, "south": 189, "north": "horizon"},
               detail="%r -- all four titles spell `(cond ((<= x 0) 4) ((>= x 319) 2) "
-                     "((>= y 189) 3) ...)` in Ego::doit" % (bands,))
-    # ...and NORTH is absent because the game itself declines to state a number for it: its
-    # bound is `(global2 horizon:)`, a property read. The refusal is the game's, not ours.
-    check("north is not among them (the game's own bound is a property, not a literal)",
-          "north" not in (PG.edge_bands(I.load_ir(config.by_name("dagger").ir_path)) or {}))
+                     "((>= y 189) 3) ((<= y (global2 horizon:)) 1))` in Ego::doit"
+                     % (bands,))
+    # ...and NORTH is a SENTINEL, never a number: the game states the RULE (base y vs the
+    # `horizon:` property) while each ROOM states the bound (its own `horizon` prop), so a
+    # game-wide literal cannot exist. `dead_nav_exits` may combine the two only for a room
+    # that itself routes exits through an edgeHit READ and declares a literal horizon -- the
+    # KQ5 sled derivation (2026-08-18b) -- and the blanket number refusal stands (the LB2
+    # rm290 false removal fired through a ~70px ego on a rect test this spelling never sees).
+    check("north is the sentinel, never a number (per-room facts stay per-room)",
+          (PG.edge_bands(I.load_ir(config.by_name("dagger").ir_path)) or {}).get("north")
+          == "horizon")
 
 
 # --- 10. the death VALUES, whose applicability moved once already --------------------------------

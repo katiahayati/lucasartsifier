@@ -36,10 +36,13 @@ import ir as I
 import missability as M
 from sexpr import read_file
 import trigger as T
-from trigger import (find_trigger, find_arming, find_all_armings, find_cue_chain_armings,
+from trigger import (analyze_room, _var_assigned_rooms,
+                     find_trigger, find_arming, find_all_armings, find_cue_chain_armings,
                      find_nav_assign, find_proc_calls, exports_of,
                      reaching_procs, reaching_owners, wrap_trigger_in_source,
-                     wrap_all_armings_in_source, guarded_wrap, stock_or, _ModeSite,
+                     wrap_all_armings_in_source, wrap_forbidden_case, guarded_wrap, stock_or,
+                     hold_machine_advance,
+                     _ModeSite,
                      _block_span,
                      _enclosing_clause_body, enclosing_clause_head, _find_region)
 
@@ -205,10 +208,41 @@ _TYPE_EXT = {"script", "view", "pic", "text", "sound", "vocab", "font", "cursor"
 
 def _patch_scheme(cfg):
     """This game's loose-patch naming, derived from its resource map. Falls back to SCI0's
-    `script.NNN` if the map cannot be read -- the shape every existing golden was built with."""
+    `script.NNN` if the map cannot be read -- the shape every existing golden was built with.
+
+    For the bare-SCI1 scheme it also derives EXPORT WIDTH from the stock game's own script 0.
+    SCI1-middle interpreters read the export table as 32-bit entries (offset word + zero word)
+    and DOUBLE the export index -- ScummVM validateExportFunc: `if (exportsAreWide) pubfunct
+    *= 2` -- so a script we compile with a 16-bit table sends every cross-script call to
+    export N through word 2N: garbage. KQ5 CD booted into exactly that (script 0 export 12 =
+    the flag test, read as our word 24, crash three opcodes later). The stock table states its
+    own width: an exports block of size 6 + 4*count is wide, 6 + 2*count is narrow -- the same
+    self-evidence SCICompanion's _DetectIsExportWide reads. The game's OWN loose 0.SCR
+    outranks the volume copy, exactly as the interpreter resolves it (KQ5's GOG copy ships
+    Sierra's official Main patch). SCI0 and SCI1.1 are never wide (SCICompanion's rule:
+    narrow below SCI1, narrow whenever heaps are separate)."""
     try:
+        import struct
+
         import sci_resource as R
-        return R.Sci0Game(cfg.resource_dir).patch_scheme()
+        game = R.Sci0Game(cfg.resource_dir)
+        scheme = game.patch_scheme()
+        if scheme["name"] == "sci1":
+            loose = os.path.join(cfg.resource_dir, "0.SCR")
+            data = (open(loose, "rb").read()[2:] if os.path.exists(loose)
+                    else game.get_script(0))
+            i, wide = 0, False
+            while i + 4 <= len(data):
+                t, sz = struct.unpack_from("<HH", data, i)
+                if t == 0:
+                    break
+                if t == 7:
+                    cnt = struct.unpack_from("<H", data, i + 4)[0]
+                    wide = cnt > 0 and sz >= 6 + 4 * cnt
+                    break
+                i += sz
+            scheme["wide_exports"] = wide
+        return scheme
     except Exception:                              # noqa: BLE001 -- no map, or an unreadable one
         return {"name": "sci0", "script": "script.%03d", "heap": None}
 
@@ -330,8 +364,14 @@ def _ensure_use(text, name):
 
 def _version_args():
     """`--version` for scicompile, from the same derivation. SCI1.1 must be pinned or the map
-    never parses and every selector comes out unknown (793 bogus errors on KQ6)."""
-    return ["--version", _SCHEME["name"]]
+    never parses and every selector comes out unknown (793 bogus errors on KQ6). Export width
+    rides along when the stock game's own script 0 says the table is wide (see
+    `_patch_scheme`) -- without it, every cross-script call to export N of a script we ship
+    reads word 2N of a 16-bit table (KQ5 CD's boot crash, 2026-08-18)."""
+    args = ["--version", _SCHEME["name"]]
+    if _SCHEME.get("wide_exports"):
+        args.append("--wide-exports")
+    return args
 
 
 def _declare_missing_globals(src_dir):
@@ -408,6 +448,105 @@ def _init_mode(dest):
     T.MODE = {"g": base, "warned": _WARNED_LINE, "alloc": alloc}
 
 
+_MOTION_CACHE = {}
+
+
+def _init_armed_ego_chase(path):
+    """Does this room's INIT arm a machine that hunts the ego (`setMotion: Chase global<ego>`)?
+    The turn-back's lock-free form keys on this -- see the obj_globals site."""
+    try:
+        cur = open(path, errors="replace").read()
+    except Exception:                              # noqa: BLE001
+        return False
+    init_span = _find_region(cur, r"\(method\s+\(init\b")
+    if not init_span:
+        return False
+    for fm in re.finditer(r"setScript:\s*(\w+)", cur[init_span[0]:init_span[1]]):
+        ispan = _find_region(cur, r"\(instance\s+%s\s+of\s+Script\b" % re.escape(fm.group(1)))
+        if ispan and re.search(r"setMotion:\s*Chase\s+global%d\b" % _EGO,
+                               cur[ispan[0]:ispan[1]]):
+            return True
+    return False
+
+
+def _motion_form(dest):
+    """The walker the turn-back speaks, IN THIS GAME'S OWN SPELLING: `PolyPath` (the
+    obstacle-aware one) where the game sends it anywhere, else `MoveTo`. A blocked MoveTo
+    never cues and the turn-back's input lock never lifts (rm085, USER-found); a game that
+    ships PolyPath uses it for exactly these walks, and one that does not (SCI0) cannot
+    name a class it lacks."""
+    if dest in _MOTION_CACHE:
+        return _MOTION_CACHE[dest]
+    src = os.path.join(dest, "src")
+    got = "MoveTo"
+    for fn in os.listdir(src):
+        if not fn.endswith(".sc"):
+            continue
+        if "PolyPath" in open(os.path.join(src, fn), errors="replace").read():
+            got = "PolyPath"
+            break
+    _MOTION_CACHE[dest] = got
+    return got
+
+
+_HANDS_CACHE = {}
+
+
+def _hands_forms(dest):
+    """The input-lock pair the turn-back script may speak, IN THIS GAME'S OWN SPELLING.
+
+    Scanned once over the assembled sources: `handsOff:`/`handsOn:` where the game sends them
+    (LSL2, KQ4 -- their emissions stay byte-identical); `(User canControl: 0/1)` where THAT is
+    the game's idiom (KQ5 -- rm012's lamb throw locks input exactly this way); None when
+    neither is spoken, because a selector the game never sends does not compile and a brief
+    uncontrolled walk-back beats an uncompilable guard."""
+    if dest in _HANDS_CACHE:
+        return _HANDS_CACHE[dest]
+    src = os.path.join(dest, "src")
+    spoken = set()
+    for fn in os.listdir(src):
+        if not fn.endswith(".sc"):
+            continue
+        t = open(os.path.join(src, fn), errors="replace").read()
+        if "handsOff:" in t:
+            spoken.add("hands")
+        if "canControl:" in t:
+            spoken.add("cancontrol")
+        if "hands" in spoken:
+            break
+    if "hands" in spoken:
+        got = ("(global%d handsOff:)" % _GAME, "(global%d handsOn:)" % _GAME)
+    else:
+        # The PROC spelling: a game with no handsOff: selector usually wraps the whole lock
+        # in a pair of Main procedures instead -- KQ5's proc0_2/proc0_3 set and restore
+        # canControl, canInput, the icon bar, the cursor and the handsOff latch (global102)
+        # TOGETHER. Speaking raw `(User canControl:)` here restores one property of five:
+        # rm085's stock warn arm proc0_2's the room before our guard ever fires, the refused
+        # kidnap never delivers the stock restore, and the turn-back ended with the walk
+        # complete and the controls dead (USER-found, state=2 in the live game). The pair is
+        # DERIVED: the exported Main procedure whose body writes `canControl: 0` is the
+        # game's handsOff, its `canControl: 1` partner the handsOn; raw canControl remains
+        # the fallback when no such pair exists.
+        got = None
+        main = os.path.join(src, "Main.sc")
+        if os.path.exists(main):
+            txt = open(main, errors="replace").read()
+            off = on = None
+            for m in re.finditer(r"\(procedure\s+\((proc\d+_\d+)\b", txt):
+                b0, b1 = _block_span(txt, m.start())
+                body = txt[b0:b1]
+                if "canControl: 0" in body and off is None:
+                    off = m.group(1)
+                if "canControl: 1" in body and on is None:
+                    on = m.group(1)
+            if off and on:
+                got = ("(%s)" % off, "(%s)" % on)
+        if got is None and "cancontrol" in spoken:
+            got = ("(User canControl: 0)", "(User canControl: 1)")
+    _HANDS_CACHE[dest] = got
+    return got
+
+
 def apply_sink_remedies(dest, sinks, titles_by_num):
     """Withhold the item consumption in each dangerous PURE SINK.
 
@@ -458,7 +597,12 @@ def apply_sink_remedies(dest, sinks, titles_by_num):
         # takes the item and dest args by position); this makes the text pattern agree instead of
         # refusing the line for having extra tokens.
         recv = "|".join(re.escape(e) for e in sorted(ego_spellings(_IR)))
-        pat = re.compile(r"^\s*\((?:%s)\s+put:\s*%d\b\s*(?:%d\b)?[^)]*\)\s*$"
+        # The DESTINATION is literal-exact when arguments follow: `put: 19 1` is the sink and
+        # `put: 19 global11` is the half-lamb refresh two lines up -- the loose `[^)]*` tail
+        # matched both and refused the retraction as ambiguous ("found 2"). No-argument stays
+        # accepted (KQ6 destroys the hunter's lamp with a bare `put: 19`), and trailing junk
+        # is allowed only AFTER the right literal (LB2's Main pushes nine dead numbers).
+        pat = re.compile(r"^\s*\((?:%s)\s+put:\s*%d(?:\s+%d\b[^)]*)?\s*\)\s*$"
                          % (recv, sk["item"], disposal))
         hits = [i for i, l in enumerate(lines) if pat.match(l)]
         if len(hits) != 1:
@@ -1717,6 +1861,80 @@ def guard_register_write(text, register, trap, cond):
     return text, 0
 
 
+_INV_CACHE = {}
+
+
+def _inv_form(dest):
+    """The inventory-list global, IN THIS GAME'S OWN SPELLING, or None.
+
+    A window guard's bank test reads an item's owner -- `(== ((gInv at: 8) owner:) 6)` -- and
+    the spelling of `gInv` is the game's, not ours. Scanned once from the owner-test idiom the
+    game already speaks (`((globalN at: <item>) owner:)` -- KQ5's rm086 kidnap fork reads the
+    bank exactly this way), same discipline as `_hands_forms`: derive the idiom from the
+    assembled sources, refuse when the game never speaks it."""
+    if dest in _INV_CACHE:
+        return _INV_CACHE[dest]
+    src = os.path.join(dest, "src")
+    counts = defaultdict(int)
+    for fn in os.listdir(src):
+        if not fn.endswith(".sc"):
+            continue
+        t = open(os.path.join(src, fn), errors="replace").read()
+        for m in re.finditer(r"\(\(global(\d+)\s+at:\s+\d+\)\s+owner:\)", t):
+            counts[int(m.group(1))] += 1
+    got = max(counts, key=counts.get) if counts else None
+    _INV_CACHE[dest] = got
+    return got
+
+
+def guard_flag_proc_write(text, set_proc, flag, cond):
+    """Hold a boolean-flag RAISE spelled as a set-proc call -- `(proc0_9 83)` -- until `cond`.
+
+    The third flag-store spelling's write side (the first two: a global assignment,
+    `guard_register_write`; a property-word setFlag:, `guard_prop_flag_write`). The window
+    remedy's clause 1: the closer flag stops going up when the chase starts and goes up only
+    once the demand it would seal is banked -- so losing the race closes nothing and the
+    player can walk out and try again. Stock mode lets the stock raise through (`stock_or`);
+    the hold is silent, so lite behaves as full.
+
+    A multi-flag raise (`(proc0_9 82 83)`) is SPLIT, not wrapped whole: the sibling flags keep
+    their unconditional raise and only the held flag moves under the guard -- wrapping the
+    whole call would hold state this spec knows nothing about, the same discipline as
+    `guard_prop_flag_write`'s exact-mask rule."""
+    edits = []
+    for m in re.finditer(r"\(%s((?:\s+\d+)+)\s*\)" % re.escape(set_proc), text):
+        args = [int(x) for x in m.group(1).split()]
+        if flag not in args:
+            continue
+        rest = [a for a in args if a != flag]
+        guarded = ("(if %s (%s %d))  ; softlock-guard: hold the closer until banked"
+                   % (stock_or(cond), set_proc, flag))
+        if rest:
+            indent = re.search(r"[ \t]*$", text[:m.start()]).group(0)
+            guarded = "(%s %s)\n%s%s" % (set_proc, " ".join(str(a) for a in rest),
+                                         indent, guarded)
+        edits.append((m.start(), m.end(), guarded))
+    for bs, be, rep in sorted(edits, reverse=True):
+        text = text[:bs] + rep + text[be:]
+    return text, len(edits)
+
+
+def strengthen_flag_reads(text, test_proc, flag, cond):
+    """Rewrite every READ of a flag -- `(proc0_12 83)` -- into `(or (proc0_12 83) <cond>)`.
+
+    The window remedy's clause 2, and the half that carries the meaning correction: with the
+    raise held (`guard_flag_proc_write`), "the flag is up" becomes "the flag is up OR the bank
+    is filled", i.e. the closer stops meaning "the chase started" and starts meaning "the
+    business is settled". At the arming that tests it negatively this is exactly
+    `(and (not <test>) (not <cond>))` -- a banked scene never re-arms, which is the standing
+    rule a patched chase must obey. The added disjunct is withdrawn in stock mode
+    (`stock_and`); no comment is emitted because a read sits mid-expression."""
+    pat = r"\(%s\s+%d\s*\)" % (re.escape(test_proc), flag)
+    wrapped = lambda m: "(or %s %s)" % (m.group(0), T.stock_and(cond))   # noqa: E731
+    new, n = re.subn(pat, wrapped, text)
+    return new, n
+
+
 def guard_prop_flag_write(text, sel, word, bit, recv_src, cond):
     """Hold a property-word flag SET (`(<recv> setFlag: <word> <mask>)`) until `cond` holds.
 
@@ -2132,6 +2350,53 @@ def _guard_travel_dispatch(dest, sp, titles_by_num, seen_dispatch):
     return None
 
 
+def _fork_head(text, target_script, room):
+    """The portable discriminator of the fork guarding `newRoom: room` inside `target_script`,
+    or None. Play-found 2026-08-19 (the boat): `leave` serves TWO destinations from one fork
+    -- `(if (proc0_12 105) (newRoom: 113) else (newRoom: 47))` -- and a bare demand on its
+    ARMING refused them both, walling the stock harpy-island sail an unequipped player still
+    needs (the LB2 var-destination rule, for a literal behind a flag). The demand must carry
+    the crossing's own head: `(or (not <head>) <items>)`.
+
+    SAME-ACTIVATION ONLY (the caller applies this to native setscript placements, never to
+    chain-climbed refusals): a discriminator is sound only when the wrap site and the fork run
+    in the same machine activation, so the head's value at the arming still equals its value
+    at the crossing. A chain-climbed refusal guards a whole multi-scene commitment -- scenes
+    run between the click and the fork, and a head read at the click is read at the wrong
+    moment. Heads that name locals/temps are refused by `_portable_head`; a fork whose other
+    arm is missing (no else) discriminates nothing and returns None."""
+    span = _find_region(text, r"\((?:instance|class)\s+%s\b" % re.escape(target_script))
+    if not span:
+        return None
+    region = text[span[0]:span[1]]
+    m = re.search(r"newRoom:\s*%d\b" % room, region)
+    if not m:
+        return None
+    fork = None
+    s0 = region.rfind("(", 0, m.start())
+    while s0 != -1:
+        b = _block_span(region, s0)
+        if b and b[1] > m.end():
+            if re.match(r"\(\s*if\b", region[b[0]:b[0] + 8]):
+                fork = b
+                break
+            s0 = region.rfind("(", 0, b[0])
+        else:
+            s0 = region.rfind("(", 0, s0)
+    if not fork:
+        return None
+    form = region[fork[0]:fork[1]]
+    head, then_p, else_p = T._split_if(form)
+    if head is None or not then_p or not else_p or not _portable_head(head):
+        return None
+    tgt = re.compile(r"newRoom:\s*%d\b" % room)
+    in_then = any(tgt.search(p) for p in then_p)
+    in_else = any(tgt.search(p) for p in else_p)
+    if in_then == in_else:
+        return None                    # both arms (no fork to read) or neither (nested oddly)
+    return head if in_then else "(not %s)" % head
+
+
 def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), rooms=None,
                  entry_frontier=None, defer_info=None):
     """Place each EDGE guard at its CONTROLLABLE TRIGGER.
@@ -2155,6 +2420,20 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
     `(or (not <stage>) <demand>)` -- the demand deferral that prohibitions have had since the
     Spinach_Dip raft, extended to demands. Without it a sole-exit row stays honestly unplaced."""
     _init_mode(dest)               # runtime stock/lite/full dispatch for everything placed below
+    # OWNER-VALUED conditions arrive in the neutral `(gInv at: N)` spelling (window remedies,
+    # fold carry-ins); translate them into this game's own inventory-list global once, up
+    # front, so every wrap form downstream sees compilable source. A game that never speaks
+    # the owner-test idiom cannot compile such a guard -- refuse those specs rather than emit
+    # a guard that does not build.
+    for sp in specs:
+        c = sp.get("condition")
+        if c and "(gInv at:" in c:
+            inv = _inv_form(dest)
+            if inv is None:
+                sp.setdefault("refused", []).append(
+                    "no inventory-store spelling derives for this game")
+            else:
+                sp["condition"] = c.replace("(gInv at:", "(global%d at:" % inv)
     out_unplaced = []
     pending_fwd = []               # (index of the refusal row, spec, fwd, stage) -- see below
     by_title = {}
@@ -2174,7 +2453,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
         for sp in group:
             if sp.get("forbid") and title:
                 forms = read_file(os.path.join(dest, "src", title + ".sc"))
-                k = find_trigger(forms, sp["to_room"])["kind"]
+                k = find_trigger(forms, sp["to_room"], ego=_EGO)["kind"]
                 # arm-event gates an uncontrollable event on HAVING a survival item; a PROHIBITION
                 # enforced by refusing to arm an automatic cutscene would hang the game (the
                 # Spinach_Dip -> rm138 raft). So a forbid spec that resolves to arm-event is deferred
@@ -2202,6 +2481,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
     out = out_unplaced
     seen_entry = set()             # (title, from_room, guard) -- entry-commit dedup across rows
     seen_dispatch = set()          # (file, to_room, condition) -- one travel-dispatch edit
+    seen_wrap = set()              # (file, kind, target, trigger, condition) -- one wrap per site
     #   covers every crossing the dispatch fans to that destination; siblings report shared
     # FATAL USES -- refuse the ACTION. The site is the arming of the machine that kills you, in the
     # room that offers the move: KQ6's rm420 `(gCurRoom setScript: throwSkull)`. `find_arming`
@@ -2240,6 +2520,76 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             continue
         open(path, "w").write(_ensure_refusal_use(new_text, titles_by_num))
         out.append({**sp, "applied": True, "title": title, "sites": n, "placement": arm})
+    # MARKET SQUEEZES -- refuse the fatal PAYMENT. The site is the condemned token's own
+    # dispatch case (KQ5's shops switch on the offered item, so every payment has one), located
+    # by its case-head literal and its committed act -- the purchase cutscene's `setScript:` or
+    # the handler's own `put:` -- and the whole case is held, siblings included. The refusing
+    # line says why, because the player is being told no about a move the game invites; the
+    # gypsy and the princess are never in this list by construction (the detector's rows are
+    # spends at slots that merely tolerate the token while a tight consumer starves).
+    for sp in specs:
+        if sp["site"] != "market" or sp["refused"]:
+            continue
+        title = titles_by_num.get(sp["script"])
+        path = os.path.join(dest, "src", title + ".sc") if title else None
+        if not path or not os.path.exists(path):
+            out.append({**sp, "applied": False, "why": "no source for script %s" % sp["script"]})
+            continue
+        if _RETRACTION_FORM is None or REFUSE is None:
+            out.append({**sp, "applied": False,
+                        "why": "no literal-display form derives for this game"})
+            continue
+        text = open(path, errors="replace").read()
+        refuse = _RETRACTION_FORM % "Better not. You are going to need that."
+        new_text, n = wrap_forbidden_case(text, sp["anchor"], sp["item"],
+                                          to_source_syntax(sp["condition"]), refuse)
+        if not n:
+            out.append({**sp, "applied": False,
+                        "why": "no switch case headed %d anchors `%s` in %s"
+                               % (sp["item"], sp["anchor"], title)})
+            continue
+        open(path, "w").write(_ensure_refusal_use(new_text, titles_by_num))
+        out.append({**sp, "applied": True, "title": title, "sites": n,
+                    "placement": {"kind": "market-case", "instance": sp.get("machine"),
+                                  "case": sp["item"]}})
+    # FUSE-ARM HOLDS -- the whale shape (missability.fuse_death_armings, docs/KQ5-ORACLE.md
+    # §23): the encounter must not ARM until survivable, so the spawn procedure's own arming
+    # condition gains the derived demand -- one balanced-expression edit on the proc's leading
+    # `(if <cond> ...)` holds every call site at once, and a withheld spawn is
+    # indistinguishable from the stock no-spawn roll. SILENT kind: it never speaks, so lite
+    # behaves as full and stock bypasses via `stock_or` (the arm-event doctrine,
+    # user ruling 2026-08-06). Anything unexpected refuses whole rather than half-edits.
+    for sp in specs:
+        if sp["site"] != "fuse-arm" or sp["refused"]:
+            continue
+        title = titles_by_num.get(sp["script"])
+        path = os.path.join(dest, "src", title + ".sc") if title else None
+        if not path or not os.path.exists(path):
+            out.append({**sp, "applied": False,
+                        "why": "no source for script %s" % sp["script"]})
+            continue
+        text = open(path, errors="replace").read()
+        m = re.search(r"\(procedure\s+\(%s\b" % re.escape(sp["proc"]), text)
+        if not m:
+            out.append({**sp, "applied": False,
+                        "why": "no procedure %s in %s" % (sp["proc"], title)})
+            continue
+        pend = _balanced_span(text, m.start())
+        fm = re.search(r"\(if\s+", text[m.start():pend])
+        ci = m.start() + fm.end() if fm else -1
+        if not fm or ci >= len(text) or text[ci] != "(":
+            out.append({**sp, "applied": False,
+                        "why": "%s has no leading (if <cond> ...) arming to strengthen"
+                               % sp["proc"]})
+            continue
+        cend = _balanced_span(text, ci)
+        demand = stock_or(to_source_syntax(sp["condition"]))
+        new_text = (text[:ci] + "(and %s %s) ; softlock-guard"
+                    % (text[ci:cend], demand) + text[cend:])
+        open(path, "w").write(new_text)
+        out.append({**sp, "applied": True, "title": title, "sites": 1,
+                    "placement": {"kind": "fuse-arm", "instance": sp["proc"],
+                                  "trigger_method": "proc"}})
     # register-flip guards edit the game class's always-live method (script 0 = Main), not a room.
     for sp in specs:
         if sp["site"] != "register-write" or sp["refused"]:
@@ -2305,6 +2655,53 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
         if not placed:
             out.append({**sp, "applied": False, "why": "no free-running trap write found",
                         "from_room": None, "to_room": None})
+    # ONE-SHOT WINDOWS (`guards.window_remedies`) -- hold the durable closer's raise until the
+    # demand it seals is banked, and strengthen its reads so a banked scene never re-arms. The
+    # two halves are applied ATOMICALLY: the hold alone leaves the closer permanently down, so
+    # the chase would replay after success (the exact shape the standing rule forbids); the
+    # read strengthen alone cures nothing (losing the race still raises the closer). Either
+    # both land or neither, and a partial landing is reported, not shipped.
+    for sp in specs:
+        if sp["site"] != "window" or sp["refused"]:
+            continue
+        inv = _inv_form(dest)
+        if inv is None:
+            out.append({**sp, "applied": False,
+                        "why": "no owner-test spelling derives for this game"})
+            continue
+        cond = to_source_syntax(sp["condition"]).replace("(gInv at:", "(global%d at:" % inv)
+        edits = {}                     # path -> rewritten text, flushed only when both halves land
+        held = reads = 0
+        for t2 in sorted(set(titles_by_num.values())):
+            p2 = os.path.join(dest, "src", t2 + ".sc")
+            if not os.path.exists(p2):
+                continue
+            tx = edits.get(p2)
+            if tx is None:
+                tx = open(p2, errors="replace").read()
+            changed = False
+            for h in sp["holds"]:
+                tx2, n2 = guard_flag_proc_write(tx, h["set_proc"], h["flag"], cond)
+                if n2:
+                    tx, held, changed = tx2, held + n2, True
+                tx2, n3 = strengthen_flag_reads(tx, h["test_proc"], h["flag"], cond)
+                if n3:
+                    tx, reads, changed = tx2, reads + n3, True
+            if changed:
+                edits[p2] = tx
+        if held and reads:
+            for p2, tx in sorted(edits.items()):
+                open(p2, "w").write(tx)
+            titles = sorted(os.path.basename(p)[:-3] for p in edits)
+            out.append({**sp, "applied": True, "sites": held + reads,
+                        "title": ", ".join(titles),
+                        "placement": {"kind": "window", "instance": ", ".join(titles),
+                                      "holds": held, "reads_strengthened": reads}})
+        else:
+            out.append({**sp, "applied": False, "title": "window@rm%d" % sp["need_room"],
+                        "why": "window halves incomplete (holds=%d, reads=%d) -- one half "
+                               "alone replays the chase after success or cures nothing"
+                               % (held, reads)})
     for title, group in sorted((k, v) for k, v in by_title.items() if k):
         for sp in group:
             # ONE WARNED BIT PER SPEC ROW. A row is wrapped at more sites than one -- extra
@@ -2327,7 +2724,7 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                 except Exception as e:
                     out.append({**sp, "applied": False, "why": "parse failed: %s" % e})
                     break
-                p = find_trigger(cforms, sp["to_room"])
+                p = find_trigger(cforms, sp["to_room"], ego=_EGO)
                 # Best first: a placeable trigger, else a file that at least CONTAINS the newRoom
                 # (its instance is what the cross-file arming search below needs), else nothing.
                 def rank(q):
@@ -2349,10 +2746,37 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
             # which does not exist at the entry rooms the demand is re-sited to -- there the
             # model-derived stage does the same discriminating through a register that is in
             # scope everywhere.
+            if (placement["kind"] == "setscript" and not placement.get("dest_test")
+                    and sp.get("to_room") is not None):
+                # a native setscript arms the very machine whose destination may FORK past it
+                # (same activation, so the head's value holds) -- carry the fork's own head as
+                # the discriminator, exactly as a var-destination carries its dest_test
+                fh = _fork_head(open(path, errors="replace").read(),
+                                placement["target_script"], sp["to_room"])
+                if fh:
+                    placement = {**placement, "dest_test": fh}
             raw_cond = sp["condition"]
             if placement.get("dest_test"):
                 sp = {**sp, "condition": "(or (not %s) %s)"
                                          % (placement["dest_test"], sp["condition"])}
+            if placement["kind"] == "arm-event" and placement.get("unsound_hold"):
+                # THE SILENT HOLD'S PREMISE FAILED AT THIS SITE (find_trigger's annotation:
+                # no live outside exit, or every arming is a changeState handoff -- the hermit
+                # departure hang, play-found 2026-08-18). Shipping the bare arm-gate here is
+                # shipping the hang. The chain's own controllable arming takes the refusal
+                # (the give click -- USER ruling 2026-08-19, the refusal belongs before the
+                # whole committed chain starts); a chainless site takes the sole-exit flow
+                # below -- deferral, else honestly unplaced. The deferral triage keeps
+                # receiving the plain arm-event kind and is not affected -- its
+                # committed/benign judgment owns those sites.
+                if placement.get("chain_arm"):
+                    placement = {"kind": "setscript", **placement["chain_arm"],
+                                 "target_room": placement["target_room"],
+                                 "dest_test": placement.get("dest_test"),
+                                 "chain_unwrapped": placement.get("chain_unwrapped")}
+                else:
+                    placement = {**placement, "kind": "sole-exit",
+                                 "instance": placement["target_script"]}
             if placement["kind"] not in _PLACED_KINDS and placement.get("instance"):
                 # The cutscene that performs the `newRoom` is in one file and the ARMING that
                 # starts it is in another: KQ6's rm340 arms script 344's cutscenes, and script
@@ -2422,22 +2846,68 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                             title, path, placement = cand, cpath, arm
                             break
             if placement["kind"] not in _PLACED_KINDS:
-                # fall back to the room-property exit idiom before giving up
-                text = open(path, errors="replace").read()
-                new_text, n, direction = guard_edge_exit(
-                    text, title, sp["to_room"], to_source_syntax(sp["condition"]))
-                if n:
-                    open(path, "w").write(new_text)
-                    out.append({**sp, "applied": True, "title": title, "sites": n,
-                                "placement": {"kind": "edge-exit", "instance": title,
-                                              "trigger_method": "init", "trigger_state": direction}})
-                    continue
+                # Fall back to the room-property exit idiom -- ONLY when the trigger search
+                # found NO site at all. `guard_edge_exit`'s whole premise is "walking
+                # off-screen is engine-handled: there is no call site", and that premise
+                # FAILS whenever the file performs the crossing's own `newRoom:` from a
+                # machine: KQ5's rm42 declares `south 43` AND exits through the eagle-rescue
+                # cutscene's `(global2 newRoom: 43)` (hatch st7), so closing the property
+                # shipped as applied=True while the rescue sailed straight past it -- an
+                # INERT guard the surface called placed (USER-found 2026-08-18b: "it's a
+                # timed race... grab the locket before the egg cracks"). A found-but-
+                # unplaceable site falls through to the placements that can actually hold
+                # the machine.
+                if placement["kind"] == "not-found":
+                    text = open(path, errors="replace").read()
+                    new_text, n, direction = guard_edge_exit(
+                        text, title, sp["to_room"], to_source_syntax(sp["condition"]))
+                    if n:
+                        open(path, "w").write(new_text)
+                        out.append({**sp, "applied": True, "title": title, "sites": n,
+                                    "placement": {"kind": "edge-exit", "instance": title,
+                                                  "trigger_method": "init",
+                                                  "trigger_state": direction}})
+                        continue
                 # ...then the indirect travel dispatch (the magic-map class), whose crossing no
                 # from-room file performs at all
                 got = _guard_travel_dispatch(dest, sp, titles_by_num, seen_dispatch)
                 if got:
                     out.append({**sp, **got})
                     continue
+                # THE HOLD-ADVANCE: a SOLE-EXIT machine whose demand is acquirable IN THIS
+                # ROOM while it runs. Refusing the arming is a wall (nothing left to run) and
+                # the deferral would re-site the demand to rooms where it is unsatisfiable
+                # (the locket exists only in the nest), but the machine's own leading TIMED
+                # WAIT STATE is a place the game already pauses -- hold it with the game's own
+                # `(-- state)` wait idiom until the demand is banked. KQ5's roc nest is the
+                # case and the shape is the USER's ruling (2026-08-18b): the eggs simply do
+                # not crack until the locket is pocketed; the grab stays clickable the whole
+                # time because it rides the EGO's script slot, not the room's. Refused unless
+                # BOTH derivations hold: every demanded item has an ego `get:` in this room's
+                # own pristine source (in-room satisfiability -- the anti-wall half), and the
+                # machine has a leading timer state to hold (the game pauses there already).
+                if placement["kind"] == "sole-exit" and placement.get("instance"):
+                    items = re.findall(r"\(gEgo has: (\d+)\)", raw_cond)
+                    pris = globals().get("_PRISTINE_DIR")
+                    ptxt = ""
+                    if pris and os.path.exists(os.path.join(pris, title + ".sc")):
+                        ptxt = open(os.path.join(pris, title + ".sc"),
+                                    errors="replace").read()
+                    recv = "|".join(re.escape(e) for e in sorted(ego_spellings(_IR)))
+                    in_room = items and all(
+                        re.search(r"\((?:%s)\s+get:\s*%s(?!\d)" % (recv, it), ptxt)
+                        for it in items)
+                    if in_room:
+                        text = open(path, errors="replace").read()
+                        new_text, n = hold_machine_advance(
+                            text, placement["instance"],
+                            to_source_syntax(sp["condition"]))
+                        if n:
+                            open(path, "w").write(new_text)
+                            out.append({**sp, "applied": True, "title": title, "sites": n,
+                                        "placement": {"kind": "hold-advance",
+                                                      "instance": placement["instance"]}})
+                            continue
                 # THE SOLE-EXIT DEFERRAL. Refusing in place is a wall (the pocket's one
                 # `newRoom:` is inside the cutscene being refused), so the demand moves to the
                 # controllable crossings INTO the pocket, scoped by the model-derived stage --
@@ -2557,31 +3027,113 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                             "why": "no literal-display form derives for this game, so a refusal "
                                    "would be silent"})
                 continue
+            if (placement["kind"] == "arm-event" and rooms
+                    and nums.get(title) not in rooms and sp.get("from_room") is not None):
+                # AN ARM-EVENT IN A REGION FILE FIRES IN EVERY ROOM THE FILE IS LIVE IN, and the
+                # spec claims one crossing. KQ5's henchman is the case: `theHenchMan::init` runs
+                # in five castle rooms and only the beach (rm54) crossing strands, so an
+                # undiscriminated gate would also disarm the in-castle captures of a player who
+                # has already SPENT the fish -- stock behaviour the spec never condemned. The
+                # discriminator is the crossing's own from-room read through the game's
+                # current-room global (in scope everywhere, same rule as dest_test on the source
+                # side). A ROOM file needs none: it is live only where the model attributed the
+                # arming (KQ4's whale grid ships exactly as before, byte-identical).
+                import extract as _X
+                cur_g = _X.current_room_global(_IR) if _IR is not None else None
+                if cur_g is not None:
+                    sp = {**sp, "condition": "(or (not (== global%d %d)) %s)"
+                                             % (cur_g, sp["from_room"], sp["condition"])}
+            # ONE WRAP PER (file, arming site, condition). Two edge rows can ride the same
+            # arming -- the henchman's capture performs BOTH castle crossings (rm54->59 and
+            # rm54->67), and each row's demand is the same conjunction at the same site.
+            # Wrapping twice would nest the same guard inside itself; the sibling row reports
+            # shared, exactly as travel-dispatch rows do.
+            wkey = (title, placement["kind"], sp.get("from_room"),
+                    placement.get("target_script") or placement.get("instance"),
+                    placement.get("trigger_instance"), placement.get("trigger_method"),
+                    sp["condition"])
+            if wkey in seen_wrap:
+                out.append({**sp, "applied": True, "sites": 0, "title": title,
+                            "placement": {**placement, "shared": True}, "shared": True})
+                continue
             text = open(path, errors="replace").read()
-            if placement["kind"] == "arm-clause":
+            if placement["kind"] == "arm-clause" or \
+                    (placement["kind"] == "direct" and placement.get("positional")):
                 # the turn-back variant speaks and moves the ego; give the wrapper the game's
-                # own object-global spellings, and the file the class scripts it will need
+                # own object-global spellings, and the file the class scripts it will need.
+                # The INPUT-LOCK pair rides along in the game's own tongue -- see the template
+                # in trigger.py for why an unspoken selector must never be emitted. The
+                # positional DIRECT exit takes the same turn-back (a naked refusal in a doit
+                # clause machine-guns -- KQ5's temple door), so it needs the same spellings.
                 placement = {**placement,
                              "obj_globals": {"ego": "global%d" % _EGO,
                                              "room": "global%d" % _ROOM,
-                                             "game": "global%d" % _GAME}}
+                                             "game": "global%d" % _GAME,
+                                             "hands": _hands_forms(dest),
+                                             "motion": _motion_form(dest),
+                                             # the chase exclusion, at the turn-back: a room
+                                             # whose INIT arms an ego-hunter gets the
+                                             # lock-free, no-cue form -- the hunter is live
+                                             # while the refusal runs (rm036's yeti). A
+                                             # chase inside the very machine the guard
+                                             # refuses to arm (rm085's kidnap grab) can
+                                             # never overlap the turn-back and keeps the
+                                             # locked walk its play-confirmation covered.
+                                             "chase_room": _init_armed_ego_chase(path)}}
             new_text, n = wrap_trigger_in_source(
                 text, placement, to_source_syntax(sp["condition"]), REFUSE, site=row_site)
             if n == 0:
                 out.append({**sp, "applied": False, "why": "trigger found but no site rewritten",
                             "placement": placement})
                 continue
-            if placement["kind"] == "arm-clause" and "sgTurnBack" in new_text:
-                new_text = _ensure_refusal_use(new_text, titles_by_num)
+            if "sgTurnBack" in new_text:       # any kind that emitted the turn-back needs its
+                new_text = _ensure_refusal_use(new_text, titles_by_num)     # classes declared
                 new_text = _ensure_use(new_text, "Motion")
+                if "setMotion: PolyPath" in new_text:
+                    new_text = _ensure_use(new_text, "PolyPath")
+                if "(User canControl:" in new_text:
+                    new_text = _ensure_use(new_text, "User")   # the derived input-lock's class
             elif placement["kind"] not in ("arm-event", "arm-clause"):
                 new_text = _ensure_refusal_use(new_text, titles_by_num)
             open(path, "w").write(new_text)
+            seen_wrap.add(wkey)
             row = {**sp, "applied": True, "title": title, "sites": n, "placement": placement}
             # A machine with N controllable armings needs N wraps -- play-found on KQ6's short
             # door: `wearClothingScr` arms from egoDoVerbCode::doVerb AND guardHut::doVerb, and
             # wrapping the first alone left the hut a bypass. Each extra site gets the same
             # guard, reported on the row so no second edit happens silently.
+            if placement["kind"] == "direct" and sp.get("to_room") is not None:
+                # A DIRECT wrap covers the walked crossing; a MACHINE in the same file that
+                # performs the same `newRoom` is a second door into the same commitment
+                # (findings #4/#8). KQ5's sled is the case: rm032's doit routes the walked
+                # edge through edgeToRoom (wrapped above, dest-test discriminated), and
+                # `useSled`'s cutscene rides `newRoom: 33` -- the crossing the player
+                # actually takes -- through its own arming in the path handler. Wrap every
+                # such machine's CONTROLLABLE arming with the same demand (the RAW condition:
+                # the direct site's dest_test names a doit temp that does not exist in the
+                # handler's scope), on the same warned bit.
+                nr2, _cs2, _ss2, _pc2 = analyze_room(forms)
+                assigned2 = _var_assigned_rooms(forms)
+                others = {i for (i, _m, _k, d2, _p) in nr2
+                          if i and i != placement.get("instance")
+                          and (d2 == sp["to_room"]
+                               or (isinstance(d2, tuple) and d2[0] == "var"
+                                   and sp["to_room"] in assigned2.get(d2[1], ())))}
+                for inst2 in sorted(others):
+                    # EVERY arming, not the first (findings #4/#8 -- the sled is armed from
+                    # two handlers and one wrap leaves the other a bypass).
+                    for arm2 in find_all_armings(forms, inst2):
+                        if not arm2 or arm2.get("kind") not in _PLACED_KINDS:
+                            continue
+                        t2 = open(path, errors="replace").read()
+                        nt2, n2 = wrap_trigger_in_source(
+                            t2, arm2, to_source_syntax(raw_cond), REFUSE, site=row_site)
+                        if n2:
+                            open(path, "w").write(_ensure_refusal_use(nt2, titles_by_num))
+                            row["sites"] = row.get("sites", 1) + n2
+                            row.setdefault("also_wrapped", []).append(
+                                {"instance": arm2.get("trigger_instance"),
+                                 "method": arm2.get("trigger_method"), "machine": inst2})
             if placement["kind"] == "setscript":
                 for extra in find_all_armings(forms, placement["target_script"]):
                     if (extra["trigger_instance"], extra["trigger_method"]) == \
@@ -2596,6 +3148,53 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                         row.setdefault("also_wrapped", []).append(
                             {"instance": extra["trigger_instance"],
                              "method": extra["trigger_method"]})
+                # THE AUTO-ARM BACKSTOP (play-found 2026-08-19, the mermaid ride): a machine
+                # with controllable armings can ALSO arm itself from a free-running method,
+                # and the click wraps never see that door -- boatRegion::init arms `leave`
+                # off flag 105 the moment a coast room loads, and flag 105 is up from the
+                # first hermit visit onward, items or no items. Every free-running arming of
+                # the wrapped target gets the SILENT gate (the arm-event form: the auto-sail
+                # simply does not start unequipped; the click sites keep the worded refusal).
+                # changeState co-armings are continuation handoffs -- never silently holdable
+                # (the hermit-hang class) -- so they are REPORTED, not wrapped.
+                _nr3, _cs3, ss3, _pc3 = analyze_room(forms)
+                autos, cs_autos = set(), set()
+                for (i3, m3, t3, _r3, p3) in ss3:
+                    if not (isinstance(t3, str) and t3 == placement["target_script"]
+                            and i3 is not None):
+                        continue
+                    if m3 in T.CONTROLLABLE_METHODS:
+                        continue
+                    if p3 or m3 == "changeState":
+                        # a POSITIONAL arming cannot take the bare silent gate (findings
+                        # #11-#13: its clause siblings re-fire every doit tick around the
+                        # withheld send -- KQ6's rm340 walk-in strip fades the screen in a
+                        # loop); a changeState arming is a continuation handoff (the hermit
+                        # hang). Both are REPORTED for a real placement, never half-gated.
+                        cs_autos.add((i3, m3))
+                    else:
+                        autos.add((i3, m3))
+                for (i3, m3) in sorted(autos):
+                    akey = ("auto-arm", title, placement["target_script"],
+                            sp["condition"], i3, m3)
+                    if akey in seen_wrap:
+                        continue           # a sibling row already gated this exact door
+                    pl3 = {"kind": "arm-event", "trigger_instance": i3,
+                           "trigger_method": m3,
+                           "target_script": placement["target_script"],
+                           "target_pattern": re.escape(placement["target_script"])}
+                    t2 = open(path, errors="replace").read()
+                    nt2, n2 = wrap_trigger_in_source(
+                        t2, pl3, to_source_syntax(sp["condition"]), REFUSE, site=row_site)
+                    if n2:
+                        open(path, "w").write(nt2)     # a silent gate prints nothing
+                        seen_wrap.add(akey)
+                        row["sites"] = row.get("sites", 1) + n2
+                        row.setdefault("auto_arm_gated", []).append(
+                            {"instance": i3, "method": m3})
+                if cs_autos:
+                    row.setdefault("auto_arm_unwrapped",
+                                   sorted("%s::%s" % im for im in cs_autos))
             if placement["kind"] == "proc-arm":
                 gated = _gate_notify_awards(dest, to_source_syntax(sp["condition"]))
                 if gated:
@@ -2612,7 +3211,64 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
         frow = _forward_demand_to_hold(dest, dsp, fwd, stage, out)
         if frow is not None:
             out[idx] = frow
+    # CAPTURE-ARM HOLDS, placed LAST and deliberately so (missability.capture_fold_armings,
+    # docs/KQ5-ORACLE.md §24): the encounter must not arm unless the player can survive being
+    # carried off, and its host's arming may ALREADY carry a demand from the edge pass above
+    # (KQ5's henchman holds the rm54 fish discriminator). Conjoining onto whatever `(if` now
+    # guards the arming keeps both demands at one site and in one no; running earlier would
+    # edit a site the edge pass then rewrites. Silent kind -- a withheld ambush is a roll that
+    # did not come up -- so `stock_or` alone, no refusal line.
+    for sp in specs:
+        if sp["site"] != "capture-arm" or sp["refused"] or not sp.get("condition"):
+            continue
+        title = titles_by_num.get(sp["script"])
+        path = os.path.join(dest, "src", title + ".sc") if title else None
+        if not path or not os.path.exists(path):
+            out.append({**sp, "applied": False,
+                        "why": "no source for script %s" % sp["script"]})
+            continue
+        text = open(path, errors="replace").read()
+        hits = [m.start() for m in re.finditer(
+            r"setScript:\s*%s\b" % re.escape(sp["machine"]), text)]
+        if len(hits) != 1:
+            out.append({**sp, "applied": False,
+                        "why": "expected exactly one `setScript: %s` in %s, found %d"
+                               % (sp["machine"], title, len(hits))})
+            continue
+        span = _enclosing_if_test(text, hits[0])
+        demand = stock_or(to_source_syntax(sp["condition"]))
+        if span is None:
+            out.append({**sp, "applied": False,
+                        "why": "the arming of %s is not inside an `(if ...)` to strengthen"
+                               % sp["machine"]})
+            continue
+        ts, te = span
+        new_text = (text[:ts] + "(and %s %s) ; softlock-guard" % (text[ts:te], demand)
+                    + text[te:])
+        open(path, "w").write(new_text)
+        out.append({**sp, "applied": True, "title": title, "sites": 1,
+                    "placement": {"kind": "capture-arm", "instance": sp.get("host"),
+                                  "trigger_method": "init"}})
     return out
+
+
+def _enclosing_if_test(text, pos):
+    """`(start, end)` of the test of the INNERMOST `(if ...)` whose balanced span contains
+    `pos`, or None. Spans come from `_balanced_span`, never a depth-counting regex -- the same
+    discipline the rest of this module keeps, and the reason a nested arming is found rather
+    than the outermost form that happens to share a prefix."""
+    best = None
+    for m in re.finditer(r"\(if\s+", text):
+        if m.start() > pos:
+            break
+        if _balanced_span(text, m.start()) <= pos:
+            continue                              # this `if` closes before the arming
+        i = m.end()
+        if i >= len(text) or text[i] != "(":
+            continue                              # a bare-atom test: nothing to conjoin onto
+        if best is None or m.start() > best[0]:
+            best = (m.start(), i, _balanced_span(text, i))
+    return None if best is None else (best[1], best[2])
 
 
 def _gate_notify_awards(dest, cond):
@@ -3096,7 +3752,7 @@ def _guard_arrival_entries(dest, sp, titles_by_num, rooms, own_path, placement, 
                 seen.add(key)
                 placed.append({"title": ttl, "kind": "flip-interceptor-hold", "sites": n2})
                 continue
-        trig = find_trigger(forms2, sp["from_room"])
+        trig = find_trigger(forms2, sp["from_room"], ego=_EGO)
         if (stage_override is not None and defer_ctx is not None
                 and trig["kind"] in ("arm-event", "sole-exit", "setscript")):
             # THE ARRIVAL-COMMIT TRIAGE (sole-exit deferral only). A deferral site is not a

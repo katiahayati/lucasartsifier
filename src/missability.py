@@ -19,6 +19,7 @@ import opmodel as E
 import vocab
 import grid
 from guard_ast import GAnd, GOr, GNot, Pred
+from extract import _curroom_impossible
 from scc_core import tarjan_scc, reachable, SccReach
 
 # Item names are a reporting nicety; the IR JSON carries only the raw instance name, so derive the
@@ -122,6 +123,57 @@ def _loc_placed_required(guard, placed):
     return walk(guard, True)
 
 
+def _loc_values(guard, item, room=None):
+    """Owner values `guard` positively DEMANDS for `item`'s object.
+
+    `room` is where the guard was found. LSL2 writes the test as `ownedBy: gCurRoomNum`, which
+    says "here" without naming a room; KQ4 names it -- `ownedBy: 78` inside Room78. Both mean the
+    same thing, and only the caller knows which room it is in, which is why the atom keeps the
+    literal instead of collapsing it at extraction time. An empty result means the guard says
+    nothing about where the item is -- NOT that it demands nowhere."""
+    out = set()
+
+    def walk(g, pol):
+        if isinstance(g, list):
+            for x in g:
+                walk(x, pol)
+        elif isinstance(g, Pred):
+            if g.kind == "LOC" and g.var == item and pol:
+                # "room" = `ownedBy: gCurRoomNum`. A caller that did not say which room it is
+                # standing in gets the sentinel back unresolved -- it still means a location IS
+                # demanded, which is all the boolean reading ever asked.
+                out.add(room if (g.value == "room" and room is not None) else g.value)
+        elif isinstance(g, (GAnd, GOr)):
+            for k in g.kids:
+                walk(k, pol)
+        elif isinstance(g, GNot):
+            walk(g.kid, not pol)
+    walk(guard, True)
+    return out
+
+
+def _loc_item_keys(guard, out=None):
+    """Which items `guard` says anything about the LOCATION of, polarity ignored.
+
+    The index half of `_loc_values`: that one answers "which owners does this demand for item X",
+    this one answers "which X are worth asking about at all". `state_musts` needs the index before
+    it can ask the question, exactly as `_ctr_keys` indexes the counters before `_ctr_holds`."""
+    out = set() if out is None else out
+    if isinstance(guard, (list, tuple)) and not (isinstance(guard, tuple)
+                                                 and guard and guard[0] == "CTR"):
+        for x in guard:
+            _loc_item_keys(x, out)
+    elif isinstance(guard, Pred):
+        if guard.kind == "LOC":
+            out.add(guard.var)
+    elif isinstance(guard, (GAnd, GOr)):
+        for k in guard.kids:
+            _loc_item_keys(k, out)
+    elif isinstance(guard, GNot):
+        _loc_item_keys(guard.kid, out)
+    return out
+
+
 def _conj_spine(guard):
     """Flatten a guard (tree or list) to its top-level conjunct list -- the atoms that MUST
     hold. The same discipline as `_must_hold`: nothing under an OR or a negation is a
@@ -141,8 +193,106 @@ def _conj_spine(guard):
     return [guard]
 
 
+#: methods that run without the player doing anything -- the room hands you the item on arrival
+#: (`init`) or while you stand there (`doit`). Everything else (`doVerb`, `handleEvent`,
+#: `changeState`) needs an act, and an act can be declined.
+_NO_INPUT_METHODS = ("init", "doit")
+
+
+def _unrefusable_grants(em):
+    """item -> {room}: handouts you cannot decline.
+
+    A source is normally a CHOICE, which is exactly what `_reach_without`'s banned walk models:
+    you can walk past a thing and not pick it up, so the rooms beyond it are rooms you can stand
+    in lacking the item. A grant emitted by a room's `init` under no condition but the
+    idempotence check is not a choice -- the game runs it before you can act and re-runs it on
+    every entry, so there is NO state past that room in which you lack the item.
+
+    KQ5's `rm001.sc:78` is the case that named this: `(if (not (global0 has: 28)) (global0 get:
+    28))` in the first room of the game. Without it the Wand -- which Crispin hands Graham in the
+    intro, and which exactly one site in 211 scripts ever takes back (the machine tray in rm66,
+    where the same room hands it straight back) -- read as an item you can walk to the endgame
+    without, and drew two `analyze` rows plus a carry demand on the roc's one-way edge saying
+    "carry the thing you cannot not carry".
+
+    STRICT on both halves, because the failure direction here is LOST FINDINGS (a barrier
+    shrinks `_reach_without`, and a room dropped from it is a room no detector will judge):
+      * the method must run with no player input, and
+      * the guard's whole conjunct spine must be the `not (has: X)` itself. One extra conjunct
+        means the handout has a condition, and a condition is a way to be past the room without
+        the item.
+    Measured 2026-08-15 against the deliberately LOOSER reading -- any site whose guard merely
+    entails not-own, any method -- which barriers 8 KQ4 sites, 4 KQ6, 2 LB2 and KQ5's own Amulet
+    and Elf_Shoes: the full snapshot surface of LSL2, KQ4, KQ6 and LB2 is BYTE-IDENTICAL either
+    way, and KQ5 moves by exactly the two Wand rows and the Wand's conjunct in the rm40->rm41
+    spec."""
+    out = {}
+    for a in getattr(getattr(em, "ts", None), "acqs", ()):
+        if getattr(a, "method", "") not in _NO_INPUT_METHODS:
+            continue
+        spine = _conj_spine(a.guard)
+        if (len(spine) == 1 and isinstance(spine[0], GNot)
+                and isinstance(spine[0].kid, Pred) and spine[0].kid.kind == "OWN"
+                and spine[0].kid.var == a.item):
+            out.setdefault(a.item, set()).add(a.room)
+    return out
+
+
 def _is_owner_atom(g):
     return isinstance(g, Pred) and g.kind == "LOC" and g.op == "ownedBy"
+
+
+
+def _spend_exhausts_sources(s, X, a):
+    """Having SPENT X at room `a`, is every source of X now dead?
+
+    `reobtainable_rooms(X)` answers the never-picked-it-up question: banning X, can the walk reach
+    a place that hands X over. It is deliberately permissive there -- the SOURCE FLOOR keeps a site
+    whose condition nothing satisfies, because ignorance about how a condition is established is
+    not evidence that the item cannot be had. A TOLL knows strictly more: `put: X a` wrote
+    `owner(X) := a`, and a site guarded `owner(X) == r` offers X only while it still RESTS at r, so
+    every such site with `r != a` is dead the moment the toll is paid. That is the "is it still
+    there?" check `_loc_placed_required` names and correctly discounts for the REQUIREMENT
+    question; for a SOURCE's liveness it is the whole answer.
+
+    KQ5's temple is the case, and it is the reason this exists. The Staff's one source is rm17,
+    whose prop inits under `(== ((gInv at: 7) owner:) 17)`; rm214's door breaks the Staff with
+    `put: 7 214`. Walking back to rm17 afterwards finds nothing there, so rm18 really is one-visit
+    and the Brass_Bottle and Gold_Coin inside it really are stranded -- both USER-CONFIRMED, and
+    both were being kept only by a degenerate register projection until `gating_registers` stopped
+    promoting object-valued globals (see `_object_valued_globals`).
+
+    REFUSES on any site that could still be live: one with no resting-place demand at all (a
+    factory, not a resting place), or one that offers X from `a` itself. A surface with no
+    `source_guards` -- the duck-typed fakes the toll unit tests build -- refuses outright, which is
+    the pre-existing behaviour."""
+    rooms = (getattr(s, "source_guards", None) or {}).get(X) or {}
+    if not rooms:
+        return False
+    for _room, gs in rooms.items():
+        for g in gs:
+            demands = [c for c in _conj_spine(g) if _is_owner_atom(c) and c.var == X]
+            if not demands or any(c.value == a for c in demands):
+                return False
+    return True
+
+
+def _entry_owner_conjuncts(info, K):
+    """The owner-store atoms EVERY arming of state `K` agrees on, as a conjunct list.
+
+    Same discipline as `entry_musts`, and for the same reason: entries are ALTERNATIVES, so one
+    that carries no owner demand frees the whole disjunction. State 0's armings are the machine's
+    own way in; a later state reached only by its own entry carries that one."""
+    alts = [eg for (k, eg) in info.get("entries", ()) if k in (0, K)]
+    if not alts:
+        return []
+    common = None
+    for eg in alts:
+        here = {repr(g): g for g in _conj_spine(eg) if _is_owner_atom(g)}
+        common = here if common is None else {k: v for k, v in common.items() if k in here}
+        if not common:
+            return []
+    return list((common or {}).values())
 
 
 def _fold_demands(guard, placed):
@@ -492,13 +642,24 @@ def build_maps(em):
             for (g, w, gg, c, tr) in paths:
                 # ...and what EVERY way of arming this machine demands you already hold.
                 must = em_.get(K, frozenset())
+                # ...and, of the arming, the part `entry_musts` does NOT absorb: its OWNER-STORE
+                # conjuncts. `entry_musts` reads item COSTS, so an `own(X)` in the entry is
+                # accounted for above and rightly left out of the condition below; a
+                # `LOC(X ownedBy R)` is not a cost and was dropped outright. It is what
+                # `_loc_placed_required` calls the "is it still there?" check, and for a SOURCE it
+                # is the whole answer -- the site offers the item only while the item still rests
+                # there. KQ5's temple: `rm017.init` inits the staff prop under
+                # `(== ((gInv at: 7) owner:) 17)`, so breaking the Staff on rm214's door
+                # (`put: 7 214`) moves the owner and the source dies with it.
+                own_at = _entry_owner_conjuncts(info, K)
                 for it in gg:
                     if it not in must | _own_required(g):
                         sources[it].add(info["room"])
                         # The state's own path condition, NOT the machine's arming: the arming is
                         # an item cost (`entry_musts`, already applied above), while what a
                         # register walk needs is the condition under which this statement runs.
-                        source_guards.setdefault(it, {}).setdefault(info["room"], []).append(g)
+                        source_guards.setdefault(it, {}).setdefault(info["room"], []).append(
+                            GAnd(_conj_spine(g) + own_at) if own_at else g)
 
     # BULK transfers -- the whole inventory at once, written as a walk of the Inv list setting
     # each item's `owner:`. KQ4 confiscates everything at rm92 (captured) and rm81 (the wedding
@@ -620,6 +781,19 @@ def build_maps(em):
 
     def req(guard, room, script=None, only=None):
         if script is not None and script in globalsc:
+            return
+        # ...AND A REQUIREMENT IS NOT FILED IN A ROOM ITS OWN GUARD EXCLUDES. Evidence is filed
+        # under the room the walk attributed it to, and a script with no room of its own is
+        # walked into every room it serves -- so an arm that SAYS which room it belongs to was
+        # being recorded in all the others too. `_curroom_impossible` is the same test the
+        # extraction walk already applies to `newRoom:` (KQ5's ending montage, whose seven
+        # `gCurRoom`-keyed arms otherwise became exits out of Mordack's castle); it is owed here
+        # for the same reason and on the same evidence.
+        #
+        # This is the `global_homed` rule above, one scope down and with a place to stand. The
+        # icon bar has NO room, so its guards cannot be filed anywhere; a region does have rooms,
+        # and its objects say which ones -- so the fix is to read that, not to drop the scope.
+        if _curroom_impossible([guard], room):
             return
         for it in _own_required(guard):     # OR-branch items are NOT required -- see _own_required
             if only is None or it in only:
@@ -817,7 +991,49 @@ def gating_registers(em):
     prev = prev_room_reg(em)
     if prev is not None:
         written.add(prev)
-    return sorted(compared & written)
+    return sorted((compared & written) - _object_valued_globals(em))
+
+
+def _object_valued_globals(em):
+    """Globals the game stores an OBJECT in -- not numeric registers, whatever else they hold.
+
+    `edge_meta` reads a `!=`/relational demand against `reg_vals` as EXACT, on the stated ground
+    that the universe is "the set of values the MODEL can ever produce". That is true only while
+    every write is readable. An object pointer is a value the value-model cannot represent at all,
+    so such a register's universe is necessarily INCOMPLETE -- and the complement reading of
+    `!= 0` is then wrong in the RESTRICTIVE direction: it blocks movement the game allows.
+
+    KQ5's `global322` is the specimen and it cost the game its whole edge analysis. It is a
+    scratch slot holding `polyList15` (rm5), `actor_1` (rm67) and `cedric` (script 202), and also
+    a plain counter (rm212/213) and the constant 50 (rm12); the constants and the compared values
+    made a universe of {0, 50, 100, 200}. rm099 -- the boot room -- branches on the bare
+    truthiness `(if global322 (gEgo get: 28) (gCurRoom newRoom: 1))`, which lowered to
+    `global322 in {50, 100, 200}` while the start state holds 0, so in THAT projection the walk
+    could never leave the start room. `_reach_without` and `reobtainable_rooms` both INTERSECT
+    over projections, so one dead projection emptied both for every item: `analyze()` returned
+    zero rows for all of KQ5 and could not have returned any.
+
+    Structural and measured, with no game knowledge: LSL2 (8), KQ4 (10), KQ6 (26) and LB2 (20) all
+    store objects in globals and NONE of those is promoted, so this is inert on the four; KQ5's
+    global322 is the only promoted one in the corpus."""
+    got = getattr(em, "_objvalued", None)
+    if got is not None:
+        return got
+    out = set()
+    ir = getattr(em, "ir", None)             # the duck-typed emitters the unit tests build carry
+    if ir is None:                           #   no IR; with no scripts to read, nothing is refused
+        return out
+    for _rn, sc in ir.scripts.items():
+        bodies = list(sc.procs.values()) + [b for o in sc.objects for b in o.methods.values()]
+        for b in bodies:
+            for n in I.walk(b):
+                if not (isinstance(n, dict) and n.get("t") == "Assignment"):
+                    continue
+                ks = n.get("kids") or []
+                if len(ks) >= 2 and I.is_global(ks[0]) and ks[1].get("t") == "Object":
+                    out.add(ks[0]["index"])
+    em._objvalued = out
+    return out
 
 
 def all_machines(em):
@@ -1272,21 +1488,111 @@ def state_musts(info, regs):
     context's `entry_locals` -- so the two views of one machine cannot drift. A path whose counter
     guard is decidably false at the current valuation is not walked at all.
 
+    ⭐ AND IT CARRIES THE OWNER STORE ON THE SAME WALK (`sm.owners(K)`), because "what every path
+    here established" is exactly the question an ACQUISITION inside a cutscene needs asked. KQ5's
+    haystack is the case and it decided the whole shop market:
+
+        (5  (if (and (or <a throwable is the dog's>) (== ((gInv at: 3) owner:) 27))
+                ...the ants repay you...   else (client setScript: 0)))
+        (14 (gEgo get: 3))
+
+    The needle is handed over eleven states after the condition that earns it, and state 14's own
+    path guard says nothing at all -- so read state-locally the pickup is unconditional, the
+    owner graph records it under the WILDCARD owner, and NO destination is ever permanent for the
+    needle. `_acq_guards`' machine half used to read the ENTRIES only, which covers a condition on
+    the way IN (KQ6's lamp, gated in `rm520::init`) and misses every condition the cutscene checks
+    once it is running. One walk, two accumulators; a second walk would be the same rule in two
+    places.
+
     Returns a mapping usable as before (`sm.get(K, {})` merges every valuation reaching K, the
     conservative answer) plus `sm.at(K, guard)`, which keeps only the valuations that guard's own
     counter conditions admit -- what a consumer holding a specific path should ask."""
     import compile as C
     out = {}                                       # (K, loc-key) -> {R: set(values)}
+    own = {}                                       # (K, loc-key) -> {item: set(owner values)}
     work = []
+
+    # ⭐ THE NODE IS SPLIT BY THE LOCALS THIS MACHINE ACTUALLY CONSULTS, AND ONLY THOSE.
+    # Splitting on a local no guard here reads cannot change an answer -- `loc` is used for
+    # exactly two things, `C._ctr_holds` on this machine's own path guards and `_Musts.at`'s
+    # filter, both of which ask about locals the machine COMPARES -- but it does change the
+    # size of the walk, without limit. KQ4's `deadTimer` is the specimen: 11 states, no counter
+    # guard at all, and an unbounded `(++ local3)` nothing ever reads, so every increment minted
+    # a fresh valuation and the walk ran to its 200000-step cap and then threw away everything
+    # it had learned (the honest fallback below). Eleven states cost 200000 steps and shipped
+    # UNKNOWN musts.
+    #
+    # Measured on KQ4 the day the local-proc fix made those bodies bigger: with the projection
+    # the machine converges in a handful of steps and the degradation goes away. An untracked
+    # local is simply absent from the valuation, which `_ctr_holds` already reads as UNKNOWN --
+    # the permissive direction, and the same reading an unestablished local has always had.
+    # ...AND A COUNTER IS ONLY DISTINGUISHABLE UP TO THE CONSTANTS IT IS COMPARED AGAINST, so
+    # values past them SATURATE. `==`, `!=` and the relationals against a constant set C all
+    # give the same answer for every value above max(C), so collapsing them loses nothing and
+    # is what makes an incremented counter's space finite at all. Without it a `(++ local)`
+    # inside a loop mints a fresh valuation forever and the walk can only ever end at its cap.
+    def _ctr_keys(g, acc):
+        if isinstance(g, (list, tuple)) and not (isinstance(g, tuple) and g and g[0] == "CTR"):
+            for x in g:
+                _ctr_keys(x, acc)
+        elif isinstance(g, tuple) and g and g[0] == "CTR":
+            acc.setdefault(g[1], set()).add(g[3] if isinstance(g[3], int) else 0)
+        elif isinstance(g, GNot):
+            _ctr_keys(g.kid, acc)
+        elif isinstance(g, (GAnd, GOr)):
+            for k in g.kids:
+                _ctr_keys(k, acc)
+        return acc
+
+    tracked = {}
+    for _K, paths in (info.get("states") or {}).items():
+        for p in paths:
+            _ctr_keys(p[0], tracked)
+    for (_K, eg) in list(info.get("entries", ())) + list(info.get("init_entries", ())):
+        _ctr_keys(eg, tracked)
+    limit = {k: max(abs(v) for v in vs) + 1 for k, vs in tracked.items()}
+
+    # The items this machine's own guards say anything about -- the same "track only what is read
+    # HERE" discipline `tracked` applies to counters, and it keeps the second accumulator empty for
+    # the overwhelming majority of machines.
+    #
+    # ⛔ MINUS EVERY ITEM THIS MACHINE RELOCATES. The step tuple carries the path's GETS but not
+    # its moves, so a fact established before a `put:` cannot be expired at the right state. An
+    # owner fact that outlives the move it was invalidated by is too TIGHT, and this walk's whole
+    # discipline is that a partial intersection is the dangerous direction (see the cap fallback
+    # below). Dropping the item outright is the honest answer, and it costs nothing here: a
+    # machine that hands the item away is not a machine whose acquisition of it we are conditioning.
+    room = info.get("room")
+    moved = {it for (it, d, _g) in info.get("moves", ()) if d != E.EGO}   # a move INTO the ego's
+                                                                         # hands is the pickup
+                                                                         # itself, not a relocation
+    loc_items = set()
+    for _K, paths in (info.get("states") or {}).items():
+        for p in paths:
+            _loc_item_keys(p[0], loc_items)
+    loc_items -= moved
+
+    def proj(loc):
+        got = {}
+        for k, v in loc.items():
+            if k not in tracked:
+                continue                           # nothing here reads it
+            lim = limit[k]
+            if isinstance(v, int):
+                v = lim if v > lim else (-lim if v < -lim else v)
+            got[k] = v
+        return got
 
     def key(loc):
         return tuple(sorted(loc.items(), key=repr))
 
     def seed(K, loc):
+        loc = proj(loc)
         k = (K, key(loc))
         if k not in out:
             out[k] = {}
-            work.append((K, dict(loc), {}))
+            own[k] = {}
+            work.append((K, dict(loc), {}, {}))
 
     ents = list(info.get("entries", ()))
     elocs = list(info.get("entry_locals", ()))
@@ -1299,7 +1605,7 @@ def state_musts(info, regs):
     seen = 0
     while work and seen < _STATE_MUSTS_CAP:
         seen += 1
-        K, loc, cur = work.pop()
+        K, loc, cur, curo = work.pop()
         for (g, w, gg, c, tr) in info["states"].get(K, ()):
             if any(isinstance(a, tuple) and a and a[0] == "CTR" and not C._ctr_holds(a, loc)
                    for a in (g if isinstance(g, list) else [g])):
@@ -1311,6 +1617,14 @@ def state_musts(info, regs):
                     nxt[R] = (nxt[R] & v) if R in nxt else set(v)
             for (gi, _val) in w:
                 nxt.pop(gi, None)                  # the machine wrote it; prior facts expire
+            nown = dict(curo)
+            for it in loc_items:
+                v = _loc_values(g, it, room)
+                if v:
+                    nown[it] = (nown[it] & v) if it in nown else set(v)
+            for it in gg:
+                nown.pop(it, None)                 # it is in the ego's hands now; where it LAY
+                                                   # before this step says nothing after it
             if not tr:
                 continue
             if tr[0] == "ADVANCE":
@@ -1321,16 +1635,17 @@ def state_musts(info, regs):
                 dst = tr[1] + 1
             else:
                 continue
-            nloc = C._apply_counters(loc, c or ())
+            nloc = proj(C._apply_counters(loc, c or ()))
             dk = (dst, key(nloc))
             if dk in out:
                 merged = {R: out[dk][R] | nxt[R] for R in set(out[dk]) & set(nxt)}
-                if merged == out[dk]:
+                mown = {i: own[dk][i] | nown[i] for i in set(own[dk]) & set(nown)}
+                if merged == out[dk] and mown == own[dk]:
                     continue                       # fixpoint on this edge
-                out[dk] = merged
+                out[dk], own[dk] = merged, mown
             else:
-                out[dk] = nxt
-            work.append((dst, nloc, out[dk]))
+                out[dk], own[dk] = nxt, nown
+            work.append((dst, nloc, out[dk], own[dk]))
     if work:
         # THE CAP RAN OUT WITH WORK LEFT, so `out` holds constraints established by only SOME
         # of the paths that reach each state -- and a MUST is an intersection, so a partial
@@ -1343,8 +1658,8 @@ def state_musts(info, regs):
         _degraded_model("state_musts hit its %d-step cap for %s; treating its musts as "
                         "UNKNOWN (permissive) rather than shipping a partial intersection"
                         % (_STATE_MUSTS_CAP, info.get("inst", "?")))
-        return _Musts({})
-    return _Musts(out)
+        return _Musts({}, {})
+    return _Musts(out, own)
 
 
 class _Musts(dict):
@@ -1353,13 +1668,25 @@ class _Musts(dict):
     Subclasses dict so every existing `sm.get(K, {})` reads the merged (conservative) answer and
     nothing had to change to keep working."""
 
-    def __init__(self, by_node):
+    def __init__(self, by_node, own_by_node=None):
         self._by_node = by_node
+        self._own_by_node = own_by_node or {}
         merged = {}
         for (K, _lk), d in by_node.items():
             merged[K] = d if K not in merged else \
                 {R: merged[K][R] | d[R] for R in set(merged[K]) & set(d)}
+        self._own = {}
+        for (K, _lk), d in self._own_by_node.items():
+            self._own[K] = d if K not in self._own else \
+                {i: self._own[K][i] | d[i] for i in set(self._own[K]) & set(d)}
         super().__init__(merged)
+
+    def owners(self, K):
+        """`{item: {owner values}}` that every path reaching state K established.
+
+        The ownedBy half of the same walk -- see `state_musts`' haystack. Empty for all but the
+        handful of machines whose own guards read where an item is lying."""
+        return self._own.get(K, {})
 
     def at(self, K, guard):
         """The musts at K over only the valuations `guard`'s own counter conditions admit."""
@@ -1693,6 +2020,528 @@ def _survivable(info, unavoidable, handoff, start=None, preempt=frozenset()):
     return start not in states or start in safe
 
 
+_NEAR_OPS = {"Lt": 0, "Le": 1}          # `< n` bounds the distance by n, `<= n` by n+1
+
+
+def _negate(g):
+    """De Morgan, COLLAPSING the double negation -- there is no canonical negation in guard_ast.
+
+    It matters because `guard_reqs` deliberately reads nothing under a `GNot` (`_must_hold`), so
+    a `GNot(GNot(x))` built by wrapping is not "x", it is a guard that constrains nothing. The
+    first cut of the hazard gate did exactly that and lowered its demand to the empty set --
+    silently, since an empty requirement is also what a genuinely free edge produces."""
+    if isinstance(g, GNot):
+        return g.kid
+    if isinstance(g, GAnd):
+        return GOr([_negate(k) for k in g.kids])
+    if isinstance(g, GOr):
+        return GAnd([_negate(k) for k in g.kids])
+    return GNot(g)
+
+
+def _temp_measurements(ast):
+    """`Temp index -> the expression it was assigned`, for temps assigned exactly ONCE.
+
+    Sierra measures a distance into a temp in one `cond` arm and re-reads the temp in the next:
+
+        (cond ((> (= temp0 (gEgo distanceTo: self)) 70) <settle down>)
+              ((< temp0 30) <strike>))
+
+    so the lethal arm's own test is a bare `(< temp0 30)` and the measurement is two arms up.
+    Assigned twice, the binding is not a fact about the method and the temp is dropped."""
+    seen = defaultdict(list)
+    for n in I.walk(ast):
+        if isinstance(n, dict) and n.get("t") == "Assignment":
+            ks = n.get("kids") or []
+            if len(ks) > 1 and isinstance(ks[0], dict) and ks[0].get("vtype") == "Temp":
+                seen[ks[0].get("index")].append(ks[1])
+    return {k: v[0] for k, v in seen.items() if len(v) == 1}
+
+
+def _unwrap_assign(n):
+    while isinstance(n, dict) and n.get("t") == "Assignment":
+        ks = n.get("kids") or []
+        n = ks[1] if len(ks) > 1 else None
+    return n
+
+
+def _distance_subject(n):
+    """The OTHER party of an ego `distanceTo:` send -- `"SELF"` or an object name.
+
+    Both spellings, because Sierra uses them interchangeably in the same game: KQ6's rm630 asks
+    `(gEgo distanceTo: self)` and its rm660 asks `(self distanceTo: gEgo)`."""
+    if not (isinstance(n, dict) and n.get("t") == "Send"):
+        return None
+    try:
+        recv, msgs = I.send_pairs(n)
+    except Exception:                                       # noqa: BLE001
+        return None
+    for sel, ps in msgs:
+        if sel != "distanceTo" or not ps:
+            continue
+        if I.is_global(recv, 0):
+            other = ps[0]
+        elif isinstance(ps[0], dict) and I.is_global(ps[0], 0):
+            other = recv
+        else:
+            continue
+        if isinstance(other, dict):
+            if other.get("t") == "Self":
+                return "SELF"
+            if other.get("t") in ("Object", "Ident"):
+                return other.get("name")
+    return None
+
+
+def _near_bounds(node, binds, out):
+    """Collect `(subject, radius)` for every "the ego is within N of X" this condition ASSERTS.
+
+    Descends `And` only. An `Or` asserts nothing about either side, and a negation asserts the
+    complement -- both are the permissive readings, and both keep a zone out of the set, which
+    is the direction that does not invent a wall."""
+    if not isinstance(node, dict):
+        return
+    if node.get("t") == "And":
+        for k in (node.get("kids") or []):
+            _near_bounds(k, binds, out)
+        return
+    if node.get("t") in _NEAR_OPS:
+        ks = node.get("kids") or []
+        if len(ks) != 2:
+            return
+        lhs = _unwrap_assign(ks[0])
+        if isinstance(lhs, dict) and lhs.get("vtype") == "Temp":
+            lhs = _unwrap_assign(binds.get(lhs.get("index")))
+        r, who = I.as_int(ks[1]), _distance_subject(lhs)
+        if who and r is not None:
+            out.append((who, r + _NEAR_OPS[node["t"]]))
+
+
+def _conjuncts(node):
+    """A condition flattened at its `And`s -- the only connective that composes into "must"."""
+    if isinstance(node, dict) and node.get("t") == "And":
+        out = []
+        for k in (node.get("kids") or []):
+            out += _conjuncts(k)
+        return out
+    return [node]
+
+
+def _is_distance_cmp(node, binds):
+    """Any comparison of the ego's distance against a literal, in either direction."""
+    if not (isinstance(node, dict) and node.get("t") in ("Lt", "Le", "Gt", "Ge")):
+        return False
+    ks = node.get("kids") or []
+    if len(ks) != 2:
+        return False
+    lhs = _unwrap_assign(ks[0])
+    if isinstance(lhs, dict) and lhs.get("vtype") == "Temp":
+        lhs = _unwrap_assign(binds.get(lhs.get("index")))
+    return _distance_subject(lhs) is not None
+
+
+def _is_ego_onctl(node):
+    """Is this node `(gEgo onControl: ...)` -- the ego's control-plane read, either mode?
+
+    Mode 1 samples the ego's origin pixel; mode 0 (or none) ORs its base rect. Both mean "the
+    ego is standing on this ground", which is all a zone test needs -- the rect form can only
+    touch MORE cells, and the walk's own 4px grid already blocks a cell any lethal pixel is
+    in, so the point reading under-claims by at most an ego's footprint."""
+    if not (isinstance(node, dict) and node.get("t") == "Send"):
+        return False
+    try:
+        recv, msgs = I.send_pairs(node)
+    except Exception:                                      # noqa: BLE001
+        return False
+    return I.is_global(recv, 0) and any(s == "onControl" for s, _ in msgs)
+
+
+def _ctl_masks(node, out):
+    """Collect the control-color masks this condition ASSERTS the ego is standing on.
+
+    `(& (gEgo onControl: ...) M)` is the SCI idiom for "the ego touches a colour in M"
+    (docs/SCI1.1-SEMANTICS.md §3: kOnControl returns the 1<<colour bitmask). Same connective
+    discipline as `_near_bounds`: descend `And` only -- an `Or` asserts nothing about either
+    side and a negation asserts the complement, and both keep the zone out, which is the
+    direction that does not invent a wall. KQ5's harpy patrol is the motivating spelling:
+    `(if (& (global0 onControl: 0) $0002) ... (setScript: harpyScript))`."""
+    if not isinstance(node, dict):
+        return
+    if node.get("t") == "And":
+        for k in (node.get("kids") or []):
+            _ctl_masks(k, out)
+        return
+    if node.get("t") in ("BinAnd", "BitAnd"):
+        ks = node.get("kids") or []
+        if len(ks) != 2:
+            return
+        a, b = ks
+        if _is_ego_onctl(a) and I.as_int(b) is not None:
+            out.append(I.as_int(b))
+        elif _is_ego_onctl(b) and I.as_int(a) is not None:
+            out.append(I.as_int(a))
+
+
+def _is_ctl_cmp(node):
+    """The conjunct IS a `(& (gEgo onControl:) mask)` zone test."""
+    got = []
+    _ctl_masks(node, got)
+    return bool(got)
+
+
+def _is_script_running(node):
+    """`(<obj> script:)` or a bare `script` property -- IS A CUTSCENE RUNNING RIGHT NOW.
+
+    The one condition allowed to sit on a lethal arm without disqualifying it, and the reason
+    is not convenience: this is transient INTERPRETER state, not game state. The modeling-gap
+    census classifies it FREE for exactly this reason ("is a cutscene currently running on this
+    object", ~70 of 91 bare-property edge gates), and a player cannot arrange to have a script
+    permanently running -- every one of them ends. So "the snake does not strike while a
+    cutscene plays" is not a way past the snake."""
+    n = node
+    while isinstance(n, dict) and n.get("t") == "Not":
+        n = (n.get("kids") or [None])[0]
+    if isinstance(n, dict) and n.get("t") in ("Eq", "Ne"):
+        n = (n.get("kids") or [None])[0]
+    if isinstance(n, dict) and n.get("t") == "Property":
+        return n.get("name") == "script"
+    if not (isinstance(n, dict) and n.get("t") == "Send"):
+        return False
+    try:
+        _r, msgs = I.send_pairs(n)
+    except Exception:                                       # noqa: BLE001
+        return False
+    return any(sel == "script" for sel, _ in msgs)
+
+
+def _unconditionally_lethal(conds, binds, kind="disc"):
+    """Does this arm say "inside the zone, FULL STOP", or only "inside the zone, and..."?
+
+    A gate built on this claims the zone is ground the player may not cross. If the arm carries
+    any OTHER condition -- a room local, a view, a `status` -- then the zone is only sometimes
+    lethal, and barring the exit outright over-states it. So anything that is not the zone's
+    OWN test (a distance comparison for a disc, an onControl mask for a control zone) or a
+    cutscene-running test disqualifies the arm, in either polarity: this is a syntactic
+    "mentions nothing else" test, which is the reading that refuses rather than the one that
+    reasons. The kinds are mutually disqualifying on purpose -- an onControl conjunct on a
+    disc arm (or a distance conjunct on a control arm) is exactly the "and..." this exists to
+    refuse, and the disc funnel below was measured with onControl in the refusing set.
+
+    ⭐ MEASURED (discs), and this is what makes it a rule rather than a preference: of the 17
+    corpus arms that arm something, EXACTLY ONE passes -- KQ5's snake. Every other one is
+    conditional. KQ6's `zombie` needs `(not local73)`, its `deadGuy` pair need `(not local61)`
+    and a mover, LB2's `rat3` needs `(== (gEgo view:) 732)` and `(not local5)`, QFG's
+    `antwerp` needs `(== status 1)`. Those hazards are real, but "walk here and die" is not
+    what their scripts say, and a wall is not what we may build out of them.
+    ⭐ MEASURED (ctl zones), 2026-08-19b, at this filter 44 arms pass corpus-wide -- KQ4 39,
+    KQ5 5, LSL2/KQ6/LB2 0 -- because `onControl` is ALSO how rooms spell walk-out triggers
+    (KQ4's stair rooms, KQ5's shop exits: leaveRoom/walkTo7/walkOutScript machines). The
+    funnel's next conjunct does the real work: `_room_unavoidable` in `_apply_hazard_gates`
+    keeps only arms whose armed machine is an unsurvivable death, and exactly ONE survives --
+    KQ5's rm049 harpy patrol, the play-found return kill. Zero gates move on the four frozen
+    games."""
+    own = (lambda a: _is_distance_cmp(a, binds)) if kind == "disc" else _is_ctl_cmp
+    for (test, _pol) in conds:
+        for a in _conjuncts(test):
+            if not (own(a) or _is_script_running(a)):
+                return False
+    return True
+
+
+def positional_hazards(ir, script):
+    """[(objname, radius, [machine names])] -- this room's "come closer and it happens" triggers.
+
+    A `doit` runs every game cycle whether the player wants it to or not, so a `doit` branch
+    whose condition bounds the ego's DISTANCE to an object is the script saying "walk within N
+    pixels of this and the following is done to you". When the following is an unsurvivable
+    death, the object is not scenery: it is a wall with a body count, and the disc of radius N
+    around it is ground the player may not cross. That is the CONTROL-MAP / POSITIONAL gap --
+    #1 by frequency in the modeling-gap census -- in its cleanest form, because nothing here
+    is opaque: the radius is a literal, the position is a property, and (for the snake that
+    motivated it) the disarming condition is an ordinary flag we already track.
+
+    This is only the SYNTAX, plus `_unconditionally_lethal`. Whether the armed machine actually
+    kills, whether the object stands still, and whether the disc actually seals an exit are
+    three separate questions asked by `_apply_hazard_gates`, `_room_unavoidable` and
+    `polygons.hazard_barred_exits`.
+
+    MEASURED corpus-wide: 27 `doit` arms bound the ego's distance (KQ5 8, KQ6 6, QFG-VGA 8,
+    LB2 5); 17 of those ARM something (6/5/4/2); ONE of the 17 is unconditionally lethal. LSL2
+    and KQ4 have none at all: SCI0 spells the same idea as `inRect` over the PIC control plane,
+    which is `control_oracle.crossing_gates`' half of this rule."""
+    out = []
+    for o in script.objects:
+        doit = o.methods.get("doit")
+        if not doit:
+            continue
+        binds = _temp_measurements(doit)
+        for n in I.walk(doit):
+            shape = I.control_shape(n)
+            if shape[0] != "branch":
+                continue
+            for conds, body in shape[1]:
+                if body is None:
+                    continue
+                zones, masks = [], []
+                for (test, pol) in conds:
+                    if pol:                        # a FAILED prior arm says the ego is FAR, and
+                        _near_bounds(test, binds, zones)     # far is not a hazard
+                        _ctl_masks(test, masks)
+                if zones and masks:
+                    continue                       # a mixed trigger is conditional either way
+                kind = "disc" if zones else ("ctl" if masks else None)
+                if kind is None or not _unconditionally_lethal(conds, binds, kind):
+                    continue
+                armed = []
+                for send in I.sends(body):
+                    try:
+                        _r, msgs = I.send_pairs(send)
+                    except Exception:              # noqa: BLE001
+                        continue
+                    armed += [ps[0]["name"] for sel, ps in msgs if sel == "setScript"
+                              and ps and isinstance(ps[0], dict) and ps[0].get("name")]
+                if not armed:
+                    continue
+                for (who, r) in zones:
+                    out.append((o.name if who == "SELF" else who, ("disc", r), armed))
+                # a control-mask trigger's host is the machine OWNING the doit -- the zone is
+                # ground, not an object, so the host matters only for liveness (who arms it)
+                for m in masks:
+                    out.append((o.name, ("ctl", m), armed))
+    return out
+
+
+def _hazard_is_stationary(script, name):
+    """Is this object's `(x, y)` a PLACE, or just where it happens to start?
+
+    A lethal disc is drawn around the object's declared position, so an object anything ever
+    gives a motion to -- or re-`posn:`s, or assigns `x`/`y` -- has no fixed disc and gets none.
+    A SECOND, INDEPENDENT reason KQ6's catacombs are out: measured before `_unconditionally_
+    lethal` existed (which now refuses them first), `deadGuy`, `deadGuy2`, `zombie` and rm670's
+    `gate` matched the syntax and all four MOVE, so all four were refused here."""
+    for o in script.objects:
+        for body in o.methods.values():
+            for n in I.walk(body):
+                if not (isinstance(n, dict) and n.get("t") == "Send"):
+                    continue
+                try:
+                    recv, msgs = I.send_pairs(n)
+                except Exception:                          # noqa: BLE001
+                    continue
+                rn = recv.get("name") if isinstance(recv, dict) else None
+                if rn != name and not (o.name == name and isinstance(recv, dict)
+                                       and recv.get("t") == "Self"):
+                    continue
+                if any(sel in ("setMotion", "posn", "moveTo", "setTarget", "x", "y")
+                       for sel, _ps in msgs):
+                    return False
+    return True
+
+
+def _nn(a):
+    """Collapse a double negation to its kid. `guard_ast` has no canonical negation, so
+    `GNot(GNot(x))` is a guard that constrains nothing until it is unwrapped (the same trap
+    `_negate` documents)."""
+    while isinstance(a, GNot) and isinstance(a.kid, GNot):
+        a = a.kid.kid
+    return a
+
+
+def _demands_nonzero(a):
+    """Does this comparison assert the register is NOT its zero baseline? The flag store's
+    `(proc0_12 N)` lowers to `!= 0`, but a game that spells the same demand `> 0` or `== 1`
+    is saying the identical thing."""
+    if not (isinstance(a, Pred) and a.kind == "CMP"):
+        return False
+    try:
+        v = int(a.value)
+    except (TypeError, ValueError):
+        return False
+    return ((a.op == "!=" and v == 0) or (a.op == "==" and v != 0)
+            or (a.op == ">" and v >= 0) or (a.op == ">=" and v >= 1))
+
+
+def _walk_guard(g):
+    """Every node of a guard tree, polarity-blind -- for questions that only ask WHICH names
+    a guard mentions (never whether it demands them; that is `_must_hold`'s discipline)."""
+    stack = [g]
+    while stack:
+        n = stack.pop()
+        if isinstance(n, list):
+            stack.extend(n)
+        elif isinstance(n, (GAnd, GOr)):
+            stack.extend(n.kids)
+        elif isinstance(n, GNot):
+            stack.append(n.kid)
+        elif n is not None:
+            yield n
+
+
+def _minimal(alts):
+    """Drop every alternative another one is a subset of -- the cheapest way to pay is the
+    only way worth reporting."""
+    keep = []
+    for a in sorted(set(alts), key=lambda a: (len(a), sorted(a))):
+        if not any(k <= a for k in keep):
+            keep.append(a)
+    return keep
+
+
+class _Escapes:
+    """One room's encounter machines: the ways out of each, and what they cost.
+
+    Lifted out of `fuse_death_armings` the day `capture_fold_armings` needed the identical
+    pricing fixpoint ([[same-rule-two-places]]). Both detectors ask one question of one room
+    -- KQ5's cat re-arms a remote death fuse when unanswered, KQ5's henchman CARRIES you into
+    a lethal arrival fold -- and in both the answer is "what must the player already hold for
+    a way out to exist?".
+
+    `lethal` is the caller's: machines whose running is itself the commitment (the room's
+    unavoidable deaths, plus -- for both callers -- machines that arm a death fuse, since an
+    escape that lights one trades a death for a death; KQ5's organ at rm58 is exactly that)."""
+
+    def __init__(self, s, infos, handoff, lethal):
+        self.s, self.infos, self.handoff, self.lethal = s, infos, handoff, lethal
+        self.by_name = defaultdict(list)
+        self.slots = defaultdict(set)
+        for i in infos:
+            self.by_name[i["inst"]].append(i)
+            for rc in (i.get("entry_recv") or ()):
+                if rc is not None:
+                    self.slots[rc].add(i["inst"])
+        ir = getattr(s.em, "ir", None)
+        self.fbase = getattr(ir, "flag_synth_base", None) if ir is not None else None
+        self.flags = getattr(ir, "flag_indices", None) or frozenset()
+
+    def is_flag(self, S):
+        return self.fbase is not None and S >= self.fbase and (S - self.fbase) in self.flags
+
+    def armable(self, name):
+        """Can the player arm this at all? (`_room_unavoidable`'s own test, same reason: a
+        rival gated on something unobtainable buys no escape.)"""
+        copies = self.by_name.get(name, ())
+        if not copies:
+            return False
+        for i2 in copies:
+            ents = list(i2.get("entries") or ()) + list(i2.get("init_entries") or ())
+            if not ents:
+                return True                    # no arming we can read: [[arming-floor]]
+            musts = entry_musts(i2)
+            if any(all(self.s.sources.get(it, set()) & self.s.reach_rooms
+                       for it in musts.get(K, ()))
+                   for (K, _g) in ents):
+                return True
+        return False
+
+    def hands_lethal(self, name):
+        return {m for (a, K) in self.handoff if a == name
+                for m in (self.handoff.get((a, K)) or {}) if m in self.lethal}
+
+    def slot_escapes(self, name):
+        """Machines armed into the SAME script slot -- the slot race `death_traps` and
+        `_survivable`'s pre-emption rule are both built on."""
+        rcs = {rc for i2 in self.by_name.get(name, ())
+               for rc in (i2.get("entry_recv") or ()) if rc is not None}
+        return sorted({m for rc in rcs for m in self.slots[rc]
+                       if m != name and m not in self.lethal and self.armable(m)})
+
+    def chain_writes(self, name):
+        """Everything this machine's own run -- and the run that armed it -- commits, so a
+        re-armed encounter is not charged again for what has already been paid (KQ5's fish
+        answer writes flag 62 on its way to re-arming the cat)."""
+        wset = set()
+        for i2 in self.by_name.get(name, ()):
+            for _K, ps in (i2.get("states") or {}).items():
+                for (_g, w, _gg, _c, _t) in ps:
+                    wset |= set(w or ())
+            for a in (i2.get("entry_armers") or ()):
+                if a:
+                    for i3 in self.by_name.get(a[0], ()):
+                        for _K, ps in (i3.get("states") or {}).items():
+                            for (_g, w, _gg, _c, _t) in ps:
+                                wset |= set(w or ())
+        return wset
+
+    def tokens(self, g, discharged):
+        """(tokens, register equalities) off one entry guard's AND spine.
+
+        PLAYER-SIDE STORES ONLY, in whichever polarity the game wrote them: possession, the
+        flag store, and the ITEM-PROPERTY store -- KQ5 spells "the bag is empty" as
+        `(cel == 4)` on the item itself, which extraction already types as an IPROP atom
+        rather than an opaque, so it can be demanded verbatim.
+
+        A negated REGISTER comparison is deliberately NOT a token: `¬(global333 == 4)` is the
+        encounter's own scene state ("he has not grabbed you yet"), which no player arranges
+        in advance. Positive register equalities are priced through their WRITERS instead
+        (below), which is how the cat's `332 == 7` arm resolves to the bag answer that
+        establishes it."""
+        toks, eqs = set(), set()
+        for a in (_nn(x) for x in _conj_spine(g)):
+            neg = isinstance(a, GNot)
+            k = a.kid if neg else a
+            if not isinstance(k, Pred):
+                continue
+            if k.kind == "OWN" and k.want and not neg:
+                toks.add(("own", k.var))
+            elif k.kind == "IPROP" and k.op == "==" and isinstance(k.var, tuple):
+                toks.add(("niprop" if neg else "iprop", (k.var[0], k.var[1], k.value)))
+            elif k.kind == "CMP" and self.is_flag(k.var) and _demands_nonzero(k) \
+                    and not any(s2 == k.var and v2 for (s2, v2) in discharged):
+                toks.add(("nflag" if neg else "flag", k.var - self.fbase))
+        for (S, V) in _must_equal(g):
+            if self.is_flag(S):
+                if V != 0 and not any(s2 == S and v2 for (s2, v2) in discharged):
+                    toks.add(("flag", S - self.fbase))
+            elif S in self.s.regs:
+                eqs.add((S, V))
+        return toks, eqs
+
+    def price(self, name, discharged=frozenset(), seen=frozenset()):
+        """Minimal alternatives (frozensets of tokens) that arm `name` AND survive what its
+        own run commits to. `[]` = no payable answer.
+
+        The recursion is the fixpoint the cat needed: an escape that itself hands off into the
+        lethal set is only HALF an answer -- KQ5's fish throw disposes the cat and then
+        re-arms the very encounter it answered -- so its price conjoins the price of the
+        escapes of the encounter it re-arms, discharged of everything its own chain wrote. It
+        terminates because those writes are monotone; a cycle prices as no answer."""
+        if name in seen:
+            return []
+        alts, cont = [], None
+        if self.hands_lethal(name):
+            d2 = frozenset(set(discharged) | self.chain_writes(name))
+            cont = []
+            for m2 in self.slot_escapes(name):
+                if m2 not in seen:
+                    cont += self.price(m2, d2, seen | {name})
+            if not cont:
+                return []
+        for i2 in self.by_name.get(name, ()):
+            for (_K, g) in (list(i2.get("entries") or ())
+                            + list(i2.get("init_entries") or ())):
+                toks, eqs = self.tokens(g, discharged)
+                base, bad = [frozenset(toks)], False
+                for (S, V) in sorted(eqs):
+                    writers = sorted({i3["inst"] for i3 in self.infos
+                                      if i3["inst"] != name and i3["inst"] not in self.lethal
+                                      for _K3, ps in (i3.get("states") or {}).items()
+                                      for (_g3, w, _gg3, _c3, _t3) in ps
+                                      for (s3, v3) in (w or ()) if (s3, v3) == (S, V)})
+                    sub = []
+                    for wn in writers:
+                        sub += self.price(wn, discharged, seen | {name})
+                    if not sub:
+                        bad = True
+                        break
+                    base = [a | b for a in base for b in sub]
+                if bad:
+                    continue
+                if cont is not None:
+                    base = [a | b for a in base for b in cont]
+                alts += base
+        return _minimal(alts)
+
+
 def _room_unavoidable(infos, sources, reach_rooms):
     """`(doomed, handoff, unavoidable, preempt)` for one room's machines -- the shared front
     half of every detector that must tell a death the player can still dodge from one they
@@ -1928,7 +2777,27 @@ def entry_musts(info):
     positive mention of own(X) anywhere in the guard is evidence the action presupposes X. That is
     a mention, not a proof, so it can over-state -- which is why it is intersected over every
     alternative, and why the consumers that subtract on it (a source, a register's cost) keep the
-    room or the write whenever ANY other site is free."""
+    room or the write whenever ANY other site is free.
+
+    ⛔ TWO CURES MEASURED AND REVERTED HERE, 2026-08-15, both aimed at KQ5's Wand FP (rm066 puts
+    the wand down with `put: 28 gCurRoom` and `getCWandScript` picks it back up, so rm66 sits in
+    `drops[28]` while this function's mention reading keeps it OUT of `sources[28]`):
+
+      * reading one entry with `_own_required` (OR-branches intersect) -- drops KQ6's
+        **holeInTheWall** outright, because rm420..440's `lookInHole` carries own(18) inside a
+        large register OR, so every labyrinth cell became a source and the rm420->rm435 carry-in
+        toll died;
+      * subtracting only an item the entry says is LYING IN THIS ROOM (a positive
+        `LOC(X ownedBy room)` disjunct, the "is it still there?" atom read on the arming side) --
+        narrower, and it leaves all five frozen surfaces byte-identical, but it still adds rm230
+        to `sources[18]`, breaking the enforced KQ6 fact that the hole has ONE source. rm230's
+        `removeHoleScr` is "take the hole back off the wall": the SAME put-then-get shape as the
+        wand, already ruled not-a-source. The two are not distinguishable by arming structure, so
+        there is nothing here to fix -- the Wand wants the NEVER-STRANDABLE class instead.
+
+    Note the second attempt was invisible to `snapshot.py`: `sources` is not in the frozen surface,
+    so only test_kq6_ground_truth's structural pin caught it. Detector-adjacent state needs its own
+    assertions."""
     ea = entry_alts(info)
     return {K: (frozenset(set.intersection(*[set(a) for a in alts])) if alts else frozenset())
             for K, alts in ea.items()}
@@ -1937,6 +2806,31 @@ def entry_musts(info):
 def blocked(alts, banned):
     """Is an edge with these DNF alternatives blocked when `banned` items are unavailable?"""
     return bool(alts) and all(a & banned for a in alts)
+
+
+def _saturating_matching(left, adj):
+    """Assign every node in `left` a DISTINCT partner from `adj[node]`, or None if impossible.
+
+    Textbook Kuhn augmenting-path matching. The distinctness IS the content: one shopkeeper
+    eats one token, which is what separates a market from a mere disjunction. Deterministic --
+    callers pass `left` and each `adj` list sorted -- so a reported witness does not wander
+    between runs."""
+    matchL, matchR = {}, {}
+
+    def augment(u, seen):
+        for v in adj.get(u, ()):
+            if v in seen:
+                continue
+            seen.add(v)
+            if v not in matchR or augment(matchR[v], seen):
+                matchR[v], matchL[u] = u, v
+                return True
+        return False
+
+    for u in left:
+        if not augment(u, set()):
+            return None
+    return matchL
 
 
 def edge_meta(em, regs):
@@ -2078,6 +2972,7 @@ class IrSccReach(SccReach):
     """SccReach fed from the JSON-IR model instead of model.Game (same algorithm)."""
     def __init__(self, em):
         self.em = em
+        self._gfx_game = None          # lazy resource reader for control-zone hazard gates
         self.g = _ItemNames(vocab.item_names(em.ir))
         (self.edges, self.edge_kind, self.sources, self.drops, self.required,
          self.guard_required, self.source_guards, self.required_guards) = build_maps(em)
@@ -2319,6 +3214,7 @@ class IrSccReach(SccReach):
                     self._rstep[gi][room] |= {(u, v) for u in vals if u <= v}
                     wr.discard(v)
         self._joints = []
+        self._apply_hazard_gates()
         self._apply_death_traps()
         self._own_fixpoint()
         # Projections = one per register, PLUS the few joints the death traps ask for. See
@@ -2356,12 +3252,10 @@ class IrSccReach(SccReach):
             want.append(named)
         return want
 
-    def _apply_death_traps(self):
-        """Conjoin `death_traps`' disjunction onto every way OUT of a room whose arrival kills you.
-
-        The rows are alternatives and each existing meta is an alternative, so the two cross: a
-        crossing is possible when some (existing way) and some (way to survive) both hold."""
-        dom = defaultdict(set)                     # values each register is ever given
+    def _register_dom(self):
+        """Every value each promoted register is ever given -- the COMPLETE domain `guard_reqs`
+        needs before it may read a `!=` or a relational op exactly."""
+        dom = defaultdict(set)
         for R in self.regs:
             dom[R] |= {v for vs in (self._inroom.get(R) or {}).values() for v in vs}
             dom[R] |= {t for pairs in self._rstep[R].values() for (_f, t) in pairs}
@@ -2371,6 +3265,199 @@ class IrSccReach(SccReach):
                 for R, v in sets.items():
                     if R in dom:
                         dom[R].add(v)
+        return dom
+
+    def _ctl_zone_cells(self, script, mask):
+        """The pixels of this room's PIC whose control colour is in `mask` -- a hazard zone.
+
+        `onControl` returns `1 << colour` bits (docs/SCI1.1-SEMANTICS.md §3), so mask $0002 is
+        control colour 1. The PIC number is the room object's own `picture` property, and the
+        plane is `sci_gfx.render_control` -- the KQ4-era renderer, which reads SCI1 pics too
+        (the extended-op table dispatch, 2026-08-19b). Anything unreadable -- no room object,
+        no picture literal, a pic the renderer refuses -- returns nothing, and the caller
+        makes no wall claim: refusal toward NOT barring, like every other conjunct here."""
+        import polygons as PG_
+        rm = PG_._room_object(script, self.em.ir)
+        pic = rm.props.get("picture") if rm is not None else None
+        if not isinstance(pic, int):
+            return None
+        rd = getattr(self.em.cfg, "resource_dir", None)
+        if not rd:
+            return None
+        try:
+            import sci_gfx
+            from sci_resource import Sci0Game
+            game = self._gfx_game
+        except Exception:                                  # noqa: BLE001
+            return None
+        if game is None:
+            try:
+                game = self._gfx_game = Sci0Game(rd)
+            except Exception as e:                         # noqa: BLE001
+                _degraded_model("hazard zone: resources unreadable (%s)" % e)
+                return None
+        try:
+            con = sci_gfx.render_control(game, pic)
+        except Exception as e:                             # noqa: BLE001
+            _degraded_model("hazard zone: pic %s control plane (%s)" % (pic, e))
+            return None
+        W = 320
+        return {(i % W, i // W) for i, c in enumerate(con) if c < 16 and (1 << c) & mask}
+
+    def _apply_hazard_gates(self):
+        """A POSITIONAL DEATH IS A WALL. Gate the exits a stationary killer's radius seals.
+
+        The gap this closes is #1 in the modeling-gap census and the oracle names the instance
+        (docs/KQ5-ORACLE.md §15). KQ5's rm2 is the road out of town, and a snake sits on it:
+
+            (if (not (proc0_12 47)) (snake ... init:))     ; it is there while flag 47 is clear
+            (method (doit) ... ((< temp0 30)               ; ...and inside 30px...
+                (global2 setScript: strike)))              ; ...strike st3 = (proc0_26 243), death
+            (34 ... (proc0_9 47) ... )                     ; the tambourine sets 47, and NO `put:`
+
+        The player cannot leave town eastward without charming it, so everyone past that point
+        is carrying the tambourine -- which is exactly what the user ruled. But the snake blocks
+        by KILLING YOU AT A DISTANCE rather than by guarding an edge, so all four of rm2's exits
+        read FREE, and the tool claimed you might cross the roc without the tambourine and be
+        stranded. That was a FALSE POSITIVE with a geometric cause.
+
+        FOUR THINGS MUST HOLD, and each is asked of a part of the model that already exists:
+          1. the trigger is positional             -- `positional_hazards`
+          2. what it arms cannot be survived       -- `_room_unavoidable`, the SAME classifier
+             `fatal_uses` and `ownedby_death_folds` answer to, with the same pre-emption rule
+          3. the killer stands still               -- `_hazard_is_stationary`
+          4. its radius seals the exit             -- `polygons.hazard_barred_exits`, which
+             proves it over the room's own obstacle polygons
+
+        The demand placed on the sealed edge is the NEGATION OF THE HAZARD'S CAST CONDITION --
+        "it is not here" -- and nothing more. Not the death's own guard, not the branch the
+        `doit` took: the only fact that makes the exit passable is that the killer is gone, and
+        `cast_conditions` is where this codebase already keeps "under what condition does this
+        object exist". For the snake that is `not (flag 47)` negated to `flag 47`, whose price
+        `_reg_cost` independently derives as the Tambourine.
+
+        REFUSALS, all toward leaving the edge free, because this REMOVES movement:
+          * an object with no cast condition (unconditionally present) states no way to be rid
+            of it, so gating on its absence would wall the exit forever;
+          * a cast condition containing an unreadable atom lowers to no requirement at all
+            (`guard_reqs`), and an empty requirement is applied as nothing rather than as
+            "impossible" -- the row is dropped instead;
+          * everything `positional_hazards` and `hazard_barred_exits` refuse on their own.
+
+        MEASURED across the corpus: 27 candidate arms, ONE surviving gate. KQ6 supplies four
+        candidates and loses all four to (3) -- its zombies walk. LSL2 and KQ4 have no such
+        arms at all and no obstacle polygons to prove one with. That the survivor is the snake
+        is the geometry's answer, not a clause about KQ5: the disc is 30px at (298,64), the
+        walkable slice of rm2's east handoff is the y in (48,81) gap poly1 and poly4 leave, and
+        every cell of it is inside the disc."""
+        import extract as X
+        import polygons as PG
+        self.hazard_gates = []
+        ir = self.em.ir
+        by_room = defaultdict(list)
+        for i in self.em.machines:
+            by_room[i["room"]].append(i)
+        dom = self._register_dom()
+        regset = set(self.regs)
+        for room in sorted(by_room):
+            script = ir.scripts.get(room)
+            if script is None:
+                continue
+            found = positional_hazards(ir, script)
+            if not found:
+                continue
+            _d, _h, unavoidable, _p = _room_unavoidable(
+                by_room[room], self.sources, self.reach_rooms)
+            try:
+                cast = X.cast_conditions(script)
+            except Exception as e:                          # noqa: BLE001
+                _degraded_model("hazard gate: cast conditions rm%d (%s)" % (room, e))
+                continue
+            for (name, zone, armed) in found:
+                lethal = sorted(m for m in armed if m in unavoidable)
+                if not lethal:
+                    continue
+                if zone[0] == "disc":
+                    # a disc is drawn around the OBJECT, so the object must stand still and
+                    # its absence condition comes from the cast (the snake's shape, unchanged)
+                    if not _hazard_is_stationary(script, name):
+                        continue
+                    obj = next((o for o in script.objects if o.name == name), None)
+                    x, y = (obj.props.get("x"), obj.props.get("y")) if obj else (None, None)
+                    if not isinstance(x, int) or not isinstance(y, int):
+                        continue
+                    gs = cast.get(name)
+                    discs, cells = [(x, y, zone[1])], ()
+                    where = {"at": (x, y), "radius": zone[1]}
+                else:
+                    # a control zone is GROUND -- it cannot move, and its trigger's host is a
+                    # machine, live exactly when something arms it (KQ5's harpy patrol:
+                    # harpyInitScript armed in init under flag 54). The liveness condition is
+                    # the cast condition when the host has one, else the arming sites' own
+                    # guards (`extract.arming_conditions`) -- and every site must carry one,
+                    # the same "always live means no absence to demand" contract as the cast.
+                    gs = cast.get(name) or X.arming_conditions(script, name)
+                    zc = self._ctl_zone_cells(script, zone[1])
+                    if not zc:
+                        continue        # unreadable pic or empty zone: no wall claim
+                    discs, cells = [], zc
+                    where = {"mask": zone[1], "zone_px": len(zc)}
+                if not gs or any(g is None for g in gs):
+                    continue                    # always in the cast: no absence to demand
+                absent = _negate(gs[0] if len(gs) == 1 else GOr(list(gs)))
+                req = guard_reqs(absent, regset, dom)
+                if not req:
+                    continue                    # nothing readable to demand -> leave it free
+                for edge, dst in sorted(PG.hazard_barred_exits(
+                        ir, room, discs, cells=cells).items()):
+                    self.hazard_gates.append({
+                        "room": room, "edge": edge, "dst": dst, "hazard": name,
+                        **where, "machine": lethal,
+                        "req": {R: sorted(v) for R, v in sorted(req.items())}})
+                    key = (room, dst)
+                    out = []
+                    for (breq, sets, alts) in list(self._emeta.get(key) or [self._FREE]):
+                        r2 = dict(breq)
+                        for R, vals in req.items():
+                            r2[R] = (r2[R] & set(vals)) if R in r2 else set(vals)
+                            if not r2[R]:
+                                break
+                        else:
+                            out.append((r2, sets, alts))
+                    if out:
+                        self._emeta[key] = out
+                # A HAZARD PRICES IN-ROOM PICKUPS LIKE IT PRICES EXITS. An item whose pickup
+                # spot is walkable with the hazard gone and sealed with it live is exactly as
+                # gone as a room past a barred edge -- KQ5's Shell: the conch sits at
+                # (120, 100) on the harpy beach, the kill zone stands between it and the boat
+                # landing, so a player who sailed off without it cannot safely return for it,
+                # which is the play-found death of 2026-08-19b. The absence condition is
+                # CONJOINED onto every acquisition guard for (item, room) -- the source-side
+                # store `reobtainable_rooms` and `register_strandings` already read -- so the
+                # value-trapped walk sees the pickup die at the flip with no new machinery.
+                # The pickup spot is the literal position of the object the get-performing
+                # machine itself stages (refused when ambiguous), and the same
+                # some-layout-free / no-layout-hurt rule as the edges applies.
+                for item, spot in sorted(PG.item_pickup_spots(script).items()):
+                    if room not in self.sources.get(item, ()):
+                        continue
+                    verdict = PG.hazard_bars_point(ir, room, spot, discs, cells=cells)
+                    if not verdict:
+                        continue
+                    slots = self.source_guards.setdefault(item, {})
+                    gs2 = slots.get(room) or [None]
+                    slots[room] = [absent if g is None else GAnd([g, absent]) for g in gs2]
+                    self.hazard_gates.append({
+                        "room": room, "pickup": item, "at": spot, "hazard": name,
+                        **where, "machine": lethal,
+                        "req": {R: sorted(v) for R, v in sorted(req.items())}})
+
+    def _apply_death_traps(self):
+        """Conjoin `death_traps`' disjunction onto every way OUT of a room whose arrival kills you.
+
+        The rows are alternatives and each existing meta is an alternative, so the two cross: a
+        crossing is possible when some (existing way) and some (way to survive) both hold."""
+        dom = self._register_dom()                 # values each register is ever given
         traps = death_traps(self.em, self.regs, dom)
         self._joints = self._trap_joints(traps, dom)
         # ⭐ WHICH REGISTER VALUES MEAN "YOU ARE DEAD" (2026-08-09). A room's rows are ALTERNATIVE
@@ -2669,8 +3756,12 @@ class IrSccReach(SccReach):
                                   else sets.get(Ri, st[i]) for i, Ri in enumerate(Rs))))
         return out
 
-    def _walk(self, R, banned, starts=None, commit=frozenset()):
-        """Forward reachable (room, value) states in projection R."""
+    def _walk(self, R, banned, starts=None, commit=frozenset(), barrier=frozenset()):
+        """Forward reachable (room, value) states in projection R.
+
+        `barrier` rooms are entered and not left: the walk keeps the state but expands no
+        successor. Its one caller is `_reach_without`, where a room that hands the banned item
+        over unrefusably ends the "without it" story -- see `_unrefusable_grants`."""
         if starts:
             seen = set(starts)
         else:
@@ -2686,6 +3777,8 @@ class IrSccReach(SccReach):
         q = list(seen)
         while q:
             u = q.pop()
+            if u[0] in barrier:
+                continue
             for v in self._psucc(R, u, banned, commit):
                 if v not in seen:
                     seen.add(v)
@@ -2957,13 +4050,24 @@ class IrSccReach(SccReach):
 
         A room whose own(item) guard can only be reached BY holding item isn't a stranding site
         at all -- you can never stand there lacking it. rm61 tests own(Airline_Ticket) but every
-        route in already spends the ticket, which is why the ticket looked missable."""
+        route in already spends the ticket, which is why the ticket looked missable.
+
+        ...and a room that HANDS THE ITEM OVER unrefusably ends the walk for the same reason from
+        the other side: you can arrive there without it, and you cannot leave without it. See
+        `_unrefusable_grants` -- KQ5's rm1 gives Graham Crispin's wand on every entry, so no
+        state past rm1 lacks it."""
         ban = item if isinstance(item, frozenset) else frozenset({item})
         if ban in self._rw:
             return self._rw[ban]
+        grants = getattr(self, "_unref", None)
+        if grants is None:
+            grants = self._unref = _unrefusable_grants(getattr(self, "em", None))
+        barrier = set()
+        for it in ban:
+            barrier |= grants.get(it, set())
         out = None
         for R in self.proj:
-            rooms = {r for r, _ in self._walk(R, ban)}
+            rooms = {r for r, _ in self._walk(R, ban, barrier=barrier)}
             out = rooms if out is None else (out & rooms)
         self._rw[ban] = out if out is not None else set(self.reach_rooms)
         return self._rw[ban]
@@ -3226,36 +4330,25 @@ class IrSccReach(SccReach):
     def _loc_required(self, guard, item, room=None):
         """Does this guard REQUIRE item `item`'s object to still be lying in THIS room?
 
-        `room` is where the guard was found. LSL2 writes the test as `ownedBy: gCurRoomNum`, which
-        says "here" without naming a room; KQ4 names it -- `ownedBy: 78` inside Room78. Both mean
-        the same thing, and only the caller knows which room it is in, which is why the atom keeps
-        the literal instead of collapsing it at extraction time."""
-        found = []
-        def walk(g, pol):
-            if isinstance(g, list):
-                for x in g:
-                    walk(x, pol)
-            elif isinstance(g, Pred):
-                if (g.kind == "LOC" and g.var == item and pol
-                        and (g.value == "room" or (room is not None and g.value == room))):
-                    found.append(True)
-            elif isinstance(g, (GAnd, GOr)):
-                for k in g.kids:
-                    walk(k, pol)
-            elif isinstance(g, GNot):
-                walk(g.kid, not pol)
-        walk(guard, True)
-        return bool(found)
+        The BOOLEAN half of `_loc_values`, which answers WHICH owners it demands -- one reading,
+        asked two ways, so the pair cannot drift ([[same-rule-two-places]]). Note the question is
+        "is THIS room among them", not "does it demand a location at all": a guard naming some
+        OTHER room requires nothing here. With no room to resolve against, the `"room"` sentinel
+        is the only thing that can be about here."""
+        return (room if room is not None else "room") in _loc_values(guard, item, room)
 
-    def destroyed_is_permanent(self, item):
-        """Once destroyed with `put: X -1`, is `item` gone for good?
+    def _machine_musts(self, info):
+        """`state_musts` for one machine, memoised. The walk is per-machine and the owner-graph
+        callers ask it once per ITEM, so without this the corpus pays for it forty times over."""
+        if not hasattr(self, "_mmusts"):
+            self._mmusts = {}
+        key = (info.get("script"), info.get("inst"), info.get("room"))
+        if key not in self._mmusts:
+            self._mmusts[key] = state_musts(info, self.regs)
+        return self._mmusts[key]
 
-        True when EVERY acquisition demands the object still be lying in the world
-        (`(gInv at: X) ownedBy: gCurRoomNum`). `put: X -1` sets the owner to -1 -- NOWHERE, not a
-        room -- so that test can never hold again. This is the one-time-pickup idiom, and it is
-        why barfing into the Airsick_Bag costs you the game at rm82 even though rm62 is still
-        walkable. Note it does NOT make the item unobtainable for someone who simply never took
-        it, so it is deliberately scoped to DESTRUCTION and leaves the stranding sweep alone."""
+    def _acq_guards(self, item):
+        """Every acquisition of `item`, as `(guard, room-it-was-found-in)`."""
         mg = getattr(self.em, "machine_gets", set())
         guards = [(a.guard, a.room) for a in self.em.ts.acqs
                   if a.item == item and (a.room, a.via, a.item) not in mg]
@@ -3270,13 +4363,33 @@ class IrSccReach(SccReach):
         # can know it. Entries are ALTERNATIVES, so the acquisition is location-gated only if every
         # one of them is; a machine with no entry contributes an unconditional acquisition, which is
         # the permissive answer.
+        #
+        # ...AND ITS CONDITION CAN ALSO BE ON THE WAY THROUGH, which is the second half and the
+        # one KQ5's whole shop market turned on. `searchHay` is armed by clicking the haystack --
+        # no condition at all -- and the ants only repay their debt at state 5 under
+        # `(== ((gInv at: 3) owner:) 27)`, the needle still lying in the hay; the `(gEgo get: 3)`
+        # is nine states later, on a path guard that says nothing. Read at the entries alone the
+        # pickup is unconditional, so the owner graph records it under the WILDCARD owner, every
+        # owner reaches EGO and NO destination is permanent -- the needle, the game's tightest
+        # shop token, read as infinitely re-suppliable. `state_musts` already computes exactly
+        # "what every path reaching this state established"; it now carries the ownedBy store on
+        # the same walk, so this is a lookup rather than a second traversal.
         for info in self.em.machines:
-            if not any(item in gg for paths in info["states"].values()
-                       for (_g, _w, gg, _c, _tr) in paths):
+            got = [K for K, paths in info["states"].items()
+                   if any(item in gg for (_g, _w, gg, _c, _tr) in paths)]
+            if not got:
                 continue
-            ents = [eg for (_seen, eg, _loc) in _entry_reach_walk_of(info)]
-            guards.extend((eg, info["room"]) for eg in ents) if ents else \
-                guards.append((None, info["room"]))
+            # One conjunct per getting state, because two states that both hand the item over are
+            # ALTERNATIVE acquisitions and the permissive reading takes them apart, not together.
+            musts = self._machine_musts(info)
+            ents = [eg for (_seen, eg, _loc) in _entry_reach_walk_of(info)] or [None]
+            for K in got:
+                vals = musts.owners(K).get(item) or ()
+                at = [Pred("LOC", var=item, op="ownedBy", value=v) for v in sorted(vals, key=str)]
+                on = at[0] if len(at) == 1 else (GOr(tuple(at)) if at else None)
+                for eg in ents:
+                    guards.append((GAnd(tuple(_conj_spine(eg) + [on])) if on else eg,
+                                   info["room"]))
         dbg = frozenset(self.em.cfg.debug_globals)
         guards = [(g, r) for (g, r) in guards if not _debug_gated_guard(g, dbg)]
         # ...and the same for an acquisition you could only reach by arriving from somewhere that
@@ -3286,11 +4399,71 @@ class IrSccReach(SccReach):
         # rm470's developer warp contributes an unconditional acquisition, and one unconditional
         # alternative is all it takes to make a destruction look undoable.
         prev = prev_room_reg(self.em)
-        guards = [(g, r) for (g, r) in guards if not _prev_impossible(g, r, prev, self.edges)]
-        return bool(guards) and all(self._loc_required(g, item, r) for (g, r) in guards)
+        return [(g, r) for (g, r) in guards if not _prev_impossible(g, r, prev, self.edges)]
 
-    def _groups(self):
-        return {frozenset(g) for gs in self.disjunctive_groups().values() for g in gs}
+    def _owner_graph(self, item):
+        """`owner -> {owner}`, the little transition system the ownedBy store IS for one item.
+
+        Nodes are owner values (room numbers, SCI's -1/limbo, and EGO); every transfer of the item
+        is an edge. An edge's SOURCE is what the transfer's guard demands about where the item is
+        (`_loc_values`); a site that demands nothing can fire from ANY owner and is recorded under
+        `None`, the wildcard -- the permissive reading, and the direction that refuses to invent a
+        loss. Edges into EGO are the acquisitions.
+
+        Reading transfers this way is what stops `moveTo:` being confused with destruction. KQ4's
+        Cupid parks his bow in room 202 whenever you leave it lying in room 3 (`Room3::newRoom`),
+        and re-appears one visit in three to drop it back (`doCupid`) -- so owner 202 is
+        "Cupid has it", the state the bow is SUPPOSED to rest in, and the one-step test that asked
+        only "does any acquisition demand owner == 202" called it destroyed."""
+        if not hasattr(self, "_ograph"):
+            self._ograph = {}
+        if item in self._ograph:
+            return self._ograph[item]
+        out = defaultdict(set)
+        for (g, r) in self._acq_guards(item):
+            for src in (_loc_values(g, item, r) or {None}):
+                out[src].add(E.EGO)
+        moves = [(room, g, dest) for room, script, it, g, dest in self.em.handler_drops
+                 if it == item]
+        moves += [(room, g, dest) for room, script, it, g, dest, _inst
+                  in getattr(self.em, "machine_moves", ()) if it == item and dest != E.EGO]
+        for (room, g, dest) in moves:
+            for src in (_loc_values(g, item, room) or {None}):
+                out[src].add(dest)
+        self._ograph[item] = dict(out)
+        return self._ograph[item]
+
+    def drop_is_permanent(self, item, dest):
+        """Handing `item` to owner `dest`, can the player ever hold it again?
+
+        `False` while EGO is reachable from `dest` in the item's owner graph -- following the
+        game's own re-homing moves, not just the acquisitions. An item with NO acquisition at all
+        cannot be regained and would be trivially permanent everywhere, so an empty graph answers
+        `False`: silence about how an item is obtained is ignorance, not evidence."""
+        graph = self._owner_graph(item)
+        if not any(E.EGO in v for v in graph.values()):
+            return False
+        seen, stack = {dest}, [dest]
+        while stack:
+            node = stack.pop()
+            for nxt in graph.get(node, set()) | graph.get(None, set()):
+                if nxt == E.EGO:
+                    return False
+                if nxt not in seen:
+                    seen.add(nxt)
+                    stack.append(nxt)
+        return True
+
+    def destroyed_is_permanent(self, item):
+        """Once destroyed with `put: X -1`, is `item` gone for good?
+
+        The special case of `drop_is_permanent` where the destination is NOWHERE: owner -1 is not
+        a room, so no `(gInv at: X) ownedBy: gCurRoomNum` acquisition can ever be satisfied from
+        it and nothing in the world can pick it back up. This is the one-time-pickup idiom, and it
+        is why barfing into the Airsick_Bag costs you the game at rm82 even though rm62 is still
+        walkable. Note it does NOT make the item unobtainable for someone who simply never took
+        it, so it is deliberately scoped to DESTRUCTION and leaves the stranding sweep alone."""
+        return self.drop_is_permanent(item, self.NOWHERE[0])
 
     # Main: its handleEvent runs in EVERY room. Hardcoded, and legitimately so -- script 0 IS
     # Main in every SCI dialect, which is a fact about the format rather than about a game.
@@ -3339,18 +4512,36 @@ class IrSccReach(SccReach):
         rain spell instead of caging you: `(if (and (gEgo has: 19) (== global161 15)) makeRain else
         inTheCage)`.
 
-        Deliberately narrow: only `put:` with NO destination. That is SCI's owner = -1, which no
-        `owner == gCurRoomNum` acquisition can ever satisfy again, so the loss is a fact rather than
-        an inference -- no re-obtainability reasoning is involved and none of `pure_sinks`' judgement
-        is being second-guessed. A `put:` to a ROOM is a different question (the item is lying
-        somewhere, and whether anything there can pick it up is a real question) and is left alone.
+        The test is `drop_is_permanent`: can the player ever hold the item again once it belongs to
+        this destination? `put:` with NO destination -- SCI's owner = -1 -- is the case that needs
+        no reasoning at all, since -1 is not a room and no `owner == gCurRoomNum` acquisition can
+        ever be satisfied from it. But it is only the DEGENERATE case, and reading it as the whole
+        rule is what left KQ5's throwable pool unread: `(gEgo put: 5 6)` gives the fish to the cat's
+        room, which is every bit as final as limbo -- nothing in rm6 hands it back, and the fish's
+        one acquisition wants it lying in rm4. Asking the owner graph instead admits the trade and
+        still refuses KQ4's Cupid, who moves his bow to room 202 and brings it back.
 
         The "was it the intended move" worry is answered by `dangerous_sinks` itself rather than
-        here: an intended use does not leave the item still needed in a room you can still reach."""
+        here: an intended use does not leave the item still needed in a room you can still reach.
+
+        ⛔ HANDLERS ONLY, and the boundary is a KNOWN GAP rather than a principle. A shop counter
+        is a CUTSCENE -- KQ5's tailor takes his fee in `soldCloak` state 0, a `changeState` body --
+        so none of that game's four shop payments is visible here, and the Heart (whose other
+        consumer, the enchanted princess at rm9, accepts nothing else and is the Harp's only
+        source) is a real one-payment walking dead we do not catch. MEASURED 2026-08-17: walking
+        `machine_moves` as well finds those 3 rows and 19 false ones -- 13 `Cat_Fish` and 3
+        `Beeswax` where the spend and the "still needed" use are THE SAME SITE seen in every room
+        its region serves, plus a `Wand@rm66` that re-creates an FP the user ruled on 2026-08-15.
+        The missing conjunct is a same-scope test (a consumer in the spend's own script is one
+        event, not two competing ones); it did not cover the Wand, so nothing shipped. Declared red
+        in `test_kq5_ground_truth`."""
         seen = {(sk["room"], sk["script"], sk["item"]) for sk in self.pure_sinks()}
-        out = []
+        out, emitted = [], set()
         for room, script, it, g, dest in self.em.handler_drops:
-            if dest in self.NOWHERE and (room, script, it) not in seen:
+            if (room, script, it) in seen or (room, script, it, dest) in emitted:
+                continue          # ...or two objects running one clause: KQ5's cat and catStrip
+            if dest in self.NOWHERE or self.drop_is_permanent(it, dest):    # both handle `put: 5 6`
+                emitted.add((room, script, it, dest))
                 out.append({"room": room, "script": script, "item": it, "dest": dest})
         return out
 
@@ -3399,7 +4590,7 @@ class IrSccReach(SccReach):
                 # PER ENTRY, because the state an arming enters at decides whether it is
                 # survivable: LSL2's bore talks you to death from state 0 and is SHUT UP by
                 # `(boreScript changeState: 10)`, which is what giving him the pamphlet does.
-                lethal = [(K, g) for K, g in (info.get("entries") or ())
+                lethal = [(i, K, g) for i, (K, g) in enumerate(info.get("entries") or ())
                           if not _survivable(info, unavoidable, handoff, start=K,
                                              preempt=_preempt(info))]
                 if not lethal:
@@ -3414,12 +4605,33 @@ class IrSccReach(SccReach):
                 #
                 # (`_own_required` inside each, for the usual reason: an item in one arm of an OR
                 # is a way to arm this, not a thing you must hold.)
-                blame = set.intersection(*[set(_own_required(g)) for _K, g in lethal])
+                #
+                # ...AND READ AT THE ARMING SITE, NOT THROUGH THE INHERITED CHAIN -- the SIXTH
+                # correction, and it is a new polarity. Every one before it assumed the item is
+                # named because the player DID something with it. `entries[i]` is not that: the
+                # strengthening passes conjoin the armer's preconditions (`_chain_entries`) and
+                # the latch writes onto it, so an item that merely had to be in your pocket for
+                # the SCENE to exist lands in the same conjunction as one you clicked.
+                #
+                # KQ5's tambourine is the case and the row it produced was advice you cannot
+                # follow. Dink is `init:`ed only under `(has: 34)` (rm055 `localproc_5`), his own
+                # script arms `hugScript`, and hugScript's state 5 is `(proc0_26 545)` -- so
+                # own(34) reached the lethal entry as DINK'S EXISTENCE CONDITION. Meanwhile the
+                # tambourine's actual use, `giveTamboScript`, is the ESCAPE from that machine and
+                # the hairpin's source. Blaming the item told the player to drop the one thing
+                # that saves them -- the same shape as condemning the hole-in-the-wall, one scope
+                # further out. `entry_site` is the guard as built at the site, so the item has to
+                # be part of what was DONE here to be blamed. Falls back to the full entry guard
+                # when a machine predates the field, which is the previous reading.
+                sites = info.get("entry_site") or ()
+                blame = set.intersection(*[
+                    set(_own_required(sites[i] if i < len(sites) else g))
+                    for i, _K, g in lethal])
                 for it in blame:
                     if (it, room) not in seen:
                         seen.add((it, room))
                         out.append({"item": it, "room": room, "machine": info["inst"],
-                                    "states": sorted(K for K, _g in lethal)})
+                                    "states": sorted(K for _i, K, _g in lethal)})
         return out
 
     def ownedby_death_folds(self):
@@ -3511,7 +4723,638 @@ class IrSccReach(SccReach):
                                         and isinstance(a.value, int) \
                                         and a.value in self.em.ts.placed.get(a.var, ()):
                                     _emit(info, [[(a.var, a.value)]], [], state=K)
+                # ---- DELEGATED fork: the arms commit by ARMING SIBLINGS -------------------
+                # KQ5's rm67 `henchCaught` st8 (USER-confirmed 2026-08-18b: locketless capture
+                # = death): `(if (and (not flag96) (owner(25)==57)) (stone setScript: moveStone)
+                # else (stone setScript: dieScumScript))`. The transitions say nothing -- BOTH
+                # arms JUMP on, because the commitment is the `setScript:`, one machine away --
+                # so the spine matcher above is blind twice over: the arms are WHOLE-GUARD
+                # complements (a GAnd and its GNot, not a spine pair), and the death lives in
+                # the ARMED sibling, recorded only in `handoff[(inst, K)]`. The fork is read
+                # where the facts are: a state arming complementary-guarded siblings, one
+                # unavoidable and one not, demands the placed owner atoms on the SURVIVING
+                # arming's own spine; its register conjuncts (flag 96 clear) are the context.
+                # `_complementary` is _survivable's own branch test, shared, not copied.
+                for K in states:
+                    hmap = handoff.get((info["inst"], K)) or {}
+                    lethal_gs = [g for m2, g in hmap.items()
+                                 if m2 in unavoidable and g is not None]
+                    for m2, gsafe in sorted(hmap.items()):
+                        if m2 in unavoidable or gsafe is None:
+                            continue
+                        sspine = _conj_spine(gsafe if isinstance(gsafe, list) else [gsafe])
+                        for gl in lethal_gs:
+                            lspine = _conj_spine(gl if isinstance(gl, list) else [gl])
+                            # the machine's own entry context rides both armings as a
+                            # shared prefix; the fork is the RESIDUES -- one side a single
+                            # GNot whose kid's spine IS the other side (whole-guard
+                            # complement), or _survivable's bare g/NOT-g pair.
+                            shared = [x for x in sspine if x in lspine]
+                            sres = [x for x in sspine if x not in shared]
+                            lres = [x for x in lspine if x not in shared]
+                            comp = (_complementary(sres, lres)
+                                    or (len(lres) == 1 and isinstance(lres[0], GNot)
+                                        and _conj_spine([lres[0].kid]) == sres))
+                            if not comp:
+                                continue
+                            owners = [a for a in sres if _is_owner_atom(a)
+                                      and isinstance(a.value, int)
+                                      and a.value in self.em.ts.placed.get(a.var, ())]
+                            if not owners:
+                                continue
+                            rest = [x for x in sres if not _is_owner_atom(x)]
+                            _emit(info, [[(a.var, a.value)] for a in owners], rest,
+                                  state=K)
+                            break
         return out
+
+    def _death_fuses(self):
+        """`(fuses, live_phases, deaths, per_room)` -- the adversarial-clock classification,
+        shared by `fuse_death_armings` (which gates the encounters that LIGHT a fuse) and
+        `capture_fold_armings` (which must not mistake a fuse-lighting machine for an escape:
+        KQ5's organ disposes the henchman and starts Mordack's countdown, trading a death for
+        a death). Cached; see `fuse_death_armings` for the derivation of each step."""
+        if getattr(self, "_fusecache", None) is not None:
+            return self._fusecache
+        ir = getattr(self.em, "ir", None)
+        fbase = getattr(ir, "flag_synth_base", None) if ir is not None else None
+        known_flags = getattr(ir, "flag_indices", None) or frozenset()
+
+        def _own_atoms(spine):
+            return {a.var for a in spine
+                    if isinstance(a, Pred) and a.kind == "OWN" and a.want}
+
+        def _is_flag(S):
+            return fbase is not None and S >= fbase and (S - fbase) in known_flags
+
+        # ---- 1. death phases + the per-room classification kept for the system pass ------
+        phases, per_room = {}, {}
+        for room, infos in sorted(_trap_rooms(self.em).items()):
+            if room not in self.reach_rooms:
+                continue
+            _doomed, handoff, unavoid, _pre = _room_unavoidable(
+                infos, self.sources, self.reach_rooms)
+            per_room[room] = (infos, handoff, unavoid)
+            for i in infos:
+                if i["inst"] not in unavoid:
+                    continue
+                for (_K, g) in list(i.get("entries") or ()) + list(i.get("init_entries") or ()):
+                    spine = [_nn(a) for a in _conj_spine(g)]
+                    if _own_atoms(spine):
+                        continue
+                    for (S, V) in _must_equal(g):
+                        if S in self.regs:
+                            phases.setdefault((S, V), set()).add(i["inst"])
+        # ---- 2. clock expiry writes + 3. the fuse fixpoint --------------------------------
+        clock, seen_cw = [], set()
+        for (_room, _script, S, V, g) in self.em.handler_writes:
+            spine = [_nn(a) for a in _conj_spine(g)]
+            if not any(isinstance(a, tuple) and a and a[0] == "CTR" for a in spine):
+                continue
+            if _own_atoms(spine) or any(_is_owner_atom(a) for a in spine) \
+                    or any(isinstance(a, tuple) and a and a[0] == "POS" for a in spine):
+                continue
+            cds = frozenset(a.var for a in spine if isinstance(a, Pred) and a.kind == "CMP"
+                            and a.var in self.regs and _demands_nonzero(a))
+            if cds and (S, V, cds) not in seen_cw:
+                seen_cw.add((S, V, cds))
+                clock.append((S, V, cds))
+        # Chaining excludes a write that re-arms its OWN countdown (KQ5's `global353 := 5`,
+        # gated on 353 running): that is the periodic cycle continuing, not a new fuse being
+        # lit -- and without the exclusion it drags every mode register on its spine (the
+        # henchman's global333) into the fuse set.
+        fuses, changed = set(), True
+        while changed:
+            changed = False
+            for (S, V, cds) in clock:
+                if ((S, V) in phases or (S in fuses and V != 0 and S not in cds)) \
+                        and not (cds <= fuses):
+                    fuses |= cds
+                    changed = True
+        if not fuses:
+            self._fusecache = (set(), [], [], per_room)
+            return self._fusecache          # no clock in this game; the room map still stands
+        live_phases = sorted({(S, V) for (S, V) in phases
+                              if any((S, V) == (cs, cv) and (cds & fuses)
+                                     for (cs, cv, cds) in clock)})
+        deaths = sorted({m for (S, V) in live_phases for m in phases[(S, V)]})
+
+        self._fusecache = (fuses, live_phases, deaths, per_room)
+        return self._fusecache
+
+    def fuse_death_armings(self):
+        """Encounters whose unanswered outcome writes a REMOTE DEATH FUSE -- the demand rides
+        the encounter's ARMING. KQ5's castle cat is the specimen and docs/KQ5-ORACLE.md §23
+        the derivation; the class is the adversarial clock ([[softlock-mechanism-taxonomy]]
+        class 5, KQ4's day/night, KQ6's wedding fuse) grown a third hop: the clock does not
+        seal an item, it arms a DEATH, and the countdown is not free-running, it is ARMED by
+        the encounter the player failed to answer.
+
+        Three derived classifications compose, each read from structure nothing here names:
+
+          1. DEATH PHASES -- (S, V) register values whose holding arms a machine
+             `_room_unavoidable` already condemns, off an entry spine that offers the player
+             nothing (no own() atom: a priced arming is an act, and an act can be declined).
+             KQ5: (331, 3) arms theWizardScript in nine castle rooms; (331, 6) arms
+             wakeUpScript in rm63.
+          2. THE CLOCK -- a handler write of S := V gated by a tick counter (a CTR atom on the
+             spine: `(!= local5 (GetTime 1))` is the game saying "once per game-minute") and by
+             a RUNNING COUNTDOWN (a positive nonzero comparison on a gating register), with no
+             item and no owner atom anywhere on the spine: the write fires on wall time, not on
+             anything the player does. The countdown register of a phase-writing clock is a
+             FUSE, and the set closes under chaining -- KQ5's global353 is a fuse because its
+             expiry writes global352 := 3, and 352's expiry writes the phase.
+          3. FUSE-ARMING MACHINES -- a machine one of whose states writes any fuse to a
+             nonzero literal (theCatRunScript st3: `global353 := 3`; the `Random 5 10` spelling
+             of the same write is invisible to the write extractor, a bounded gap the 353
+             branch covers). Running one is a COMMITTED death: the expiry is nondeterministic
+             (the KQ4-clock doctrine -- it may fire at any qualifying moment), so a localized
+             defuse downstream cannot un-fire it.
+
+        The row is the demand at the arming of the SYSTEM that can fall into a fuse-arming
+        machine: the ROOT is a spawned machine (every `entry_armers` empty -- armed by its
+        host's init, not chained from another machine) with a state handoff into the lethal
+        set; its ESCAPES are the armable same-slot competitors outside that set (the
+        `setScript:` slot race `death_traps` and `_survivable`'s preempt rule are built on).
+        An escape's price is read off its own chain-composed entry guards -- own() atoms plus
+        positive flag demands -- with two closures that make the price the FIXPOINT the oracle
+        derives rather than the bare disjunction:
+
+          * a non-flag register equality on the spine (catInBag's `332 == 7` init arm, "the
+            cat is already bagged") prices as the demands of its WRITERS -- the value is not a
+            thing you hold, it is a thing some other answer establishes;
+          * an escape that itself hands off into the lethal set (catGetFish ends in
+            theCatRunScript -- the fish answer re-arms the fuse) is only half an answer: its
+            price conjoins the price of the escapes of the encounter it re-arms, DISCHARGED of
+            every atom its own chain already writes (theThrowFishScript writes flag 62, so the
+            re-armed encounter's 62-demand is already paid). Each escape's writes are monotone
+            here, which is what terminates the recursion; a cycle prices as no answer.
+
+        KQ5 derives `(own37 ∧ 63 ∧ own24) ∨ (63 ∧ 62 ∧ own24)` = flag63 ∧ own(24) ∧
+        (flag62 ∨ own(37)) -- the USER's ruling verbatim, and NOT the bag-only collapse the
+        naive "fuse write = death" reading produces (which would wall the cat's first spawn
+        forever, flag 62's only writer being the fish answer inside an encounter).
+
+        Rows are emitted once per (root machine, demanded item), not per region room; the
+        arming rooms are the CALL SITES of the host-script procedure that inits the root's
+        host object (the [[a-procedure-is-not-a-handler]] attribution, walked directly), which
+        is also where a guard goes: one wrap on that procedure holds every spawn site at once.
+
+        NOT a snapshot key (that is a bless); consumed by the KQ5 oracle test and by
+        `guards.fuse_arming_remedies`. Measured corpus-wide the day it landed: LSL2, KQ4, KQ6
+        and LB2 all return [] -- KQ6's wedding fuse writes a flag no unavoidable machine's
+        entry pins, so it has no death phase and stays `register_strandings`' item-seal."""
+        fuses, live_phases, deaths, per_room = self._death_fuses()
+        if not fuses:
+            return []
+        ir = getattr(self.em, "ir", None)
+        fbase = getattr(ir, "flag_synth_base", None) if ir is not None else None
+        known_flags = getattr(ir, "flag_indices", None) or frozenset()
+
+        def _own_atoms(spine):
+            return {a.var for a in spine
+                    if isinstance(a, Pred) and a.kind == "OWN" and a.want}
+
+        def _is_flag(S):
+            return fbase is not None and S >= fbase and (S - fbase) in known_flags
+
+        # ---- 4. per room: the lethal set, the root, its escapes, their prices -------------
+        out, emitted = [], set()
+        for room, (infos, handoff, unavoid) in sorted(per_room.items()):
+            fusem = {i["inst"] for i in infos
+                     for _K, ps in (i.get("states") or {}).items()
+                     for (_g, w, _gg, _c, _t) in ps for (S, v) in (w or ())
+                     if S in fuses and isinstance(v, int) and v != 0}
+            if not fusem:
+                continue
+            lethal = unavoid | fusem
+            esc = _Escapes(self, infos, handoff, lethal)
+
+            for i in infos:
+                nm = i["inst"]
+                if nm in lethal or not i.get("states"):
+                    continue
+                if any(a for a in (i.get("entry_armers") or ()) if a):
+                    continue                       # chained: priced inside, not a root
+                if not esc.hands_lethal(nm):
+                    continue
+                ways = esc.slot_escapes(nm)
+                if not ways:
+                    continue
+                alts = []
+                for m in ways:
+                    alts += esc.price(m, frozenset(), frozenset({nm}))
+                keep = _minimal(alts)
+                if not keep:
+                    continue
+                items = sorted({it for a in keep for (kind, it) in a if kind == "own"})
+                fl = sorted({n for a in keep for (kind, n) in a if kind == "flag"})
+                host_sn = i.get("script")
+                rooms, procs = self._arming_call_rooms(host_sn, i.get("entry_recv"))
+                for it in items:
+                    key = (nm, it)
+                    if key in emitted:
+                        continue
+                    emitted.add(key)
+                    out.append({
+                        "pattern": "fuse-death-arming", "item": it,
+                        "item_name": self.g.item_name(it), "machine": nm,
+                        "arm_rooms": rooms,
+                        "arm_proc": ({"script": host_sn, "name": procs[0]}
+                                     if procs else None),
+                        "fuse": sorted(fuses), "phases": live_phases,
+                        "death": deaths, "flags": fl, "escapes": ways,
+                        "demand_alts": [{"items": sorted(x for (k, x) in a if k == "own"),
+                                         "flags": sorted(x for (k, x) in a if k == "flag")}
+                                        for a in keep]})
+        return out
+
+    def capture_fold_armings(self):
+        """Encounters that CARRY the player into a lethal arrival fold -- the demand rides the
+        encounter's ARMING. KQ5's castle henchman is the specimen; docs/KQ5-ORACLE.md §24.
+
+        `ownedby_death_folds` already says what the arrival demands: reaching KQ5's rm67 alive
+        needs `owner(25) == 57` -- the locket already given to Cassima -- with flag 96 clear,
+        since the game sets 69 and 96 TOGETHER at the rescue, so 96 means "she has spent her
+        one rescue". `fold_carryins` places such a demand on the crossing that arms the fold,
+        but only when the fold's context NAMES that crossing as a previous room. This context
+        names a REGISTER, and the crossing is not a walk at all: `theHenchManScript` state 12
+        carries `('EXIT', 67)`. The machine that carries you is the machine to gate.
+
+        ⭐ THAT IS ALSO THE DISCRIMINATOR AGAINST THE CHASE EXCLUSION, which elsewhere stops
+        this project condemning a race the player declines by leaving (KQ4's rm49 dog, KQ5's
+        rm36 yeti -- both of which end where they start, and neither of which moves the player
+        anywhere). A chase whose own machine performs a room crossing does not offer that
+        decline: leaving is how you LOSE it. USER 2026-08-19d, from play: "if he catches you a
+        second time you die... got that without even trying."
+
+        THE SECOND DISJUNCT IS NOT OPTIONAL. The fold's condition is monotone-unsatisfiable
+        once the rescue writes flag 96, so a demand built from it alone would seal the
+        encounter forever -- and the encounter is REQUIRED past that point, its answer being
+        the only writer of the empty bag the cat catch needs. A demand that cannot be met is a
+        wall, so it admits the ANSWER's own price as an alternative: `(fold survivable) ∨
+        (answer payable)`. That is the USER's ruling ("if you have the peas, we should let it
+        happen, otherwise we should block it") derived rather than transcribed.
+
+        AN ANSWER is a machine that DISPOSES the encounter's host (`setScript: 0`; KQ5's pea
+        throw is armed into the ROOM's slot and reaches over to the henchman, so no slot map
+        records it), and that
+          * does not itself leave the room -- a machine carrying an EXIT transition DEFERS
+            rather than answers, because the host is armed region-wide and re-rolls next door
+            ([[arm-event-soundness]]'s flag-105 lesson: a "decline" that only postpones is a
+            deferral), and
+          * is not itself lethal -- `unavoidable`, or a machine that arms a death fuse
+            (`_death_fuses`' classification, which is what excludes rm58's organ: it disposes
+            the henchman and lights Mordack's countdown).
+
+        ⚠️ MEASURED LIMIT, stated because it errs toward OVER-demanding: a disposal written
+        through `(ScriptID N K)` indirection is not resolved to its object, so only
+        same-script disposers are seen. On KQ5 that costs nothing -- the indirect ones are
+        rm54's `falling`, rm58's organ and rm59's frozen-beast display, each already excluded
+        by a rule above -- but a game whose only answer is written indirectly would get a
+        demand with no alternative, which is reported as `answerless` and refused by
+        `guards.capture_fold_remedies` rather than shipped as a wall.
+
+        Rows are per (machine, fold), deduped across the region's rooms."""
+        folds = {}
+        for r in self.ownedby_death_folds():
+            folds.setdefault(r["need_room"], []).append(r)
+        if not folds:
+            return []
+        fuses, _lp, _d, per_room = self._death_fuses()
+        out, emitted = [], set()
+        for room, (infos, handoff, unavoid) in sorted(per_room.items()):
+            fusem = {i["inst"] for i in infos
+                     for _K, ps in (i.get("states") or {}).items()
+                     for (_g, w, _gg, _c, _t) in ps for (S, v) in (w or ())
+                     if S in fuses and isinstance(v, int) and v != 0}
+            lethal = unavoid | fusem
+            esc = _Escapes(self, infos, handoff, lethal)
+            disposers = self._disposers(infos)
+            leaves = {i["inst"] for i in infos
+                      for _K, ps in (i.get("states") or {}).items()
+                      for (_g, _w, _gg, _c, t) in ps if t and t[0] == "EXIT"}
+            for i in infos:
+                nm = i["inst"]
+                if nm in lethal or not i.get("states"):
+                    continue
+                exits = {t[1] for _K, ps in (i.get("states") or {}).items()
+                         for (_g, _w, _gg, _c, t) in ps if t and t[0] == "EXIT"}
+                hosts = {rc for rc in (i.get("entry_recv") or ()) if rc is not None}
+                answers = sorted({m for h in hosts for m in disposers.get(h, ())
+                                  if m != nm and m not in lethal and m not in leaves
+                                  and esc.armable(m)})
+                for R in sorted(exits & set(folds)):
+                    if R == room:
+                        continue
+                    # ...only if the FOLD ACTUALLY ARMS on this arrival. KQ5's rm67 dispatches
+                    # on where you came from -- `(switch prevRoom (55 <enterHole>) (else
+                    # <henchCaught>))` -- so the maze's own `goHoleScript` carries the player
+                    # into rm67 without ever arming the fork, and demanding the locket of it
+                    # would be a false positive. The fold machine's own entry guard is the
+                    # authority, read against the room the crossing starts in.
+                    if self._fold_disarmed(R, folds[R][0]["machine"], room):
+                        continue
+                    # ...and only for the machine the player's arming CONTROLS. A machine
+                    # gated on a register value another carrier of this same crossing
+                    # establishes is that carrier's CONTINUATION, staged one room over --
+                    # KQ5's rm59 `caughtScript` runs on `global333 == 5`, which
+                    # `theHenchManScript` writes when the rm60 chase reaches the stairs. Gating
+                    # the root covers it compositionally (the same relationship the yeti's
+                    # staged catch has to its chase); emitting both would double-patch one
+                    # encounter.
+                    if self._continuation_of(i, infos, R, folds):
+                        continue
+                    for fr in folds[R]:
+                        key = (nm, R, fr["machine"], tuple(sorted(
+                            tuple(x) for x in fr["demand_group"])))
+                        if key in emitted:
+                            continue
+                        emitted.add(key)
+                        # a fold's `demand_group` members are ALTERNATIVES -- any one banked
+                        # throwable satisfies the cellar -- so each becomes its own way to
+                        # survive, and the context rides all of them.
+                        ctx = [(("flag" if v else "nflag"), S - esc.fbase)
+                               for (S, v) in sorted((fr.get("context") or {}).items())
+                               if esc.is_flag(S)]
+                        alts = [frozenset([("owner", (it, dst))] + ctx)
+                                for (it, dst) in fr["demand_group"]]
+                        for m in answers:
+                            alts += esc.price(m, frozenset(), frozenset({nm}))
+                        keep = _minimal(alts)
+                        out.append({
+                            "pattern": "capture-fold-arming", "machine": nm,
+                            "need_room": R, "fold_machine": fr["machine"],
+                            "fold_state": fr.get("state"), "escapes": answers,
+                            "answerless": not answers,
+                            "arm_rooms": self._entry_rooms(i),
+                            "host": sorted(h[1] for h in hosts if h[0] == "O"),
+                            "script": i.get("script"),
+                            "demand_alts": [{
+                                "owners": sorted([list(x) for (k, x) in a if k == "owner"]),
+                                "items": sorted(x for (k, x) in a if k == "own"),
+                                "flags": sorted(x for (k, x) in a if k == "flag"),
+                                "not_flags": sorted(x for (k, x) in a if k == "nflag"),
+                                "iprops": sorted([list(x) for (k, x) in a if k == "iprop"]),
+                                "not_iprops": sorted([list(x) for (k, x)
+                                                      in a if k == "niprop"])}
+                                for a in keep]})
+        return out
+
+    def _fold_disarmed(self, fold_room, fold_machine, from_room):
+        """Does the fold machine's own entry guard EXCLUDE an arrival from `from_room`?
+
+        Read off the previous-room register the model already derives, and only along the AND
+        spine (`_must_hold`'s discipline): a `prev != X` conjunct excludes X, a `prev == Y`
+        conjunct excludes everything else. Anything less readable excludes nothing."""
+        prev = prev_room_reg(self.em)
+        if prev is None:
+            return False
+        for i in _trap_rooms(self.em).get(fold_room, ()):
+            if i["inst"] != fold_machine:
+                continue
+            for (_K, g) in (list(i.get("init_entries") or ())
+                            + list(i.get("entries") or ())):
+                for a in (_nn(x) for x in _conj_spine(g)):
+                    neg = isinstance(a, GNot)
+                    k = a.kid if neg else a
+                    if not (isinstance(k, Pred) and k.kind == "CMP" and k.var == prev):
+                        continue
+                    try:
+                        v = int(k.value)
+                    except (TypeError, ValueError):
+                        continue
+                    if k.op == "==" and ((v == from_room) if neg else (v != from_room)):
+                        return True
+                    if k.op == "!=" and ((v != from_room) if neg else (v == from_room)):
+                        return True
+        return False
+
+    def _continuation_of(self, info, infos, fold_room, folds):
+        """Is this machine a STAGED CONTINUATION of another carrier of the same crossing?
+
+        Its entry demands a register value that some other machine -- one that also exits into
+        the fold's room -- writes. That makes it the second half of one encounter, and the
+        encounter is gated at its root."""
+        want = {(S, V) for (_K, g) in (list(info.get("entries") or ())
+                                       + list(info.get("init_entries") or ()))
+                for (S, V) in _must_equal(g) if S in self.regs}
+        if not want:
+            return False
+        for other in infos:
+            if other["inst"] == info["inst"]:
+                continue
+            exits = {t[1] for _K, ps in (other.get("states") or {}).items()
+                     for (_g, _w, _gg, _c, t) in ps if t and t[0] == "EXIT"}
+            if fold_room not in exits:
+                continue
+            writes = {(S, v) for _K, ps in (other.get("states") or {}).items()
+                      for (_g, w, _gg, _c, _t) in ps for (S, v) in (w or ())}
+            if want & writes:
+                return True
+        return False
+
+    def _disposers(self, infos):
+        """`entry_recv slot -> {machines whose body DISPOSES that slot's object}`.
+
+        An encounter lives in its host's `setScript:` slot, so the machines that can end it
+        are not only the ones armed INTO that slot (the pre-emption rule's competitors) but
+        the ones that write 0 to it from outside -- KQ5's pea throw is armed into the ROOM's
+        slot and reaches over to the henchman. Same-script sends only; see
+        `capture_fold_armings` for what that costs."""
+        ir = getattr(self.em, "ir", None)
+        out = defaultdict(set)
+        if ir is None:
+            return out
+        want = {i["inst"]: i.get("script") for i in infos}
+        for sn in sorted({v for v in want.values() if v is not None}):
+            sc = ir.scripts.get(sn)
+            if sc is None:
+                continue
+            for o in sc.objects:
+                if o.name not in want:
+                    continue
+                for body in o.methods.values():
+                    for n in I.walk(body):
+                        if not (isinstance(n, dict) and n.get("t") == "Send"):
+                            continue
+                        try:
+                            recv, msgs = I.send_pairs(n)
+                        except Exception:                      # noqa: BLE001
+                            continue
+                        rn = recv.get("name") if isinstance(recv, dict) else None
+                        if not rn:
+                            continue
+                        for sel, ps in msgs:
+                            if sel == "setScript" and ps and I.as_int(ps[0]) == 0:
+                                out[("O", rn)].add(o.name)
+        return out
+
+    def _entry_rooms(self, info):
+        """The rooms this machine's own entry disjunction names -- a region machine says
+        where it can arm by testing the current-room global, and that is where a guard's
+        effect will be felt."""
+        import extract as X
+        cur = getattr(X, "_CURROOM", None)
+        rooms = set()
+        for (_K, g) in list(info.get("entries") or ()) + list(info.get("init_entries") or ()):
+            for n in _walk_guard(g):
+                if isinstance(n, Pred) and n.kind == "CMP" and n.op == "==" \
+                        and n.var == cur:
+                    try:
+                        rooms.add(int(n.value))
+                    except (TypeError, ValueError):
+                        pass
+        return sorted(rooms & set(self.reach_rooms))
+
+    def _arming_call_rooms(self, host_sn, entry_recv):
+        """(rooms, proc names): the reachable rooms whose scripts call a procedure of script
+        `host_sn` that `init:`s the object the entries name -- the spawn's real sites, and
+        the one place a guard wraps them all. Empty when the arming is not proc-shaped."""
+        ir = getattr(self.em, "ir", None)
+        host = ir.scripts.get(host_sn) if ir is not None else None
+        objs = {rc[1] for rc in (entry_recv or ()) if rc and rc[0] == "O"}
+        if host is None or not objs:
+            return [], []
+        targets = set()
+        for pname, body in (host.procs or {}).items():
+            for n in I.walk(body):
+                if not (isinstance(n, dict) and n.get("t") == "Send"):
+                    continue
+                try:
+                    recv, msgs = I.send_pairs(n)
+                except Exception:                          # noqa: BLE001
+                    continue
+                rn = recv.get("name") if isinstance(recv, dict) else None
+                if rn in objs and any(sel == "init" for sel, _ps in msgs):
+                    targets.add(pname)
+                    break
+        if not targets:
+            return [], []
+        rooms = set()
+        for sn, sc in ir.scripts.items():
+            if sn == host_sn or sn not in self.reach_rooms:
+                continue
+            bodies = [m for o in sc.objects for m in o.methods.values()] \
+                + list((sc.procs or {}).values())
+            for body in bodies:
+                if any(isinstance(n, dict) and n.get("t") in ("PublicCall", "LocalCall")
+                       and n.get("name") in targets for n in I.walk(body)):
+                    rooms.add(sn)
+                    break
+        return sorted(rooms), sorted(targets)
+
+    def window_closures(self):
+        """Demands whose PRODUCERS all die when a register flips -- the one-shot window.
+
+        `ownedby_death_folds` states the demand: arriving at KQ5's rm86 from the kidnap, some
+        throwable must be owned by room 6 or `yourStuck` is a pure-timer death. It does not state
+        that the only way to satisfy it is behind a door that shuts by itself, and that is the
+        half a player actually loses the game to. rm006 is the case and it is the game's worst
+        softlock:
+
+            (if (and (or (has: 8) (has: 16)) (not (proc0_12 83)))   ; the cat and the rat exist
+                (rat init:) (cat init:))                            ; only while the window is open
+            ...
+            ((and (global5 contains: rat) (> (gEgo x:) 290) ...)    ; rm006::doit -- the trigger
+                (proc0_9 83) (self setScript: catAndMouse))         ; SETS 83 as the chase STARTS
+
+        Flag 83 goes up when the chase begins, not when it is won, so losing the race is silently
+        terminal -- and what kills you is a timer in a cellar hours later and half the map away.
+
+        THE CONJUNCT A ROOM-REACHABILITY TEST CANNOT SUPPLY is producer liveness. rm6 stays
+        walkable forever; what stops being possible is the throw. So a producer is read through
+        `guard_reqs` against the register being flipped: a site whose own guard needs R to be
+        anything but `w` is dead in the post-flip world, and a row needs EVERY producer dead --
+        one survivor and there is no closure.
+
+        The rest is `register_strandings`' three conjuncts, unchanged in meaning and for the same
+        reasons: the flip must be REACHABLE (`_flip_seeds`, not "every room ever seen at w"), the
+        room that READS the demand must still be ahead of the post-flip player (a read behind you
+        demands nothing), and the goal must still be reachable (else this is a dead end, which is
+        a different finding). The pre-flip conjunct is the causality one: if no producer was
+        reachable before the flip either, the flip did not close anything.
+
+        ⚠️ DEPENDS ON `extract.feature_adders`, and would be blind without it. Three of the seven
+        `put: <item> 6` sites live on `catStrip`, which reaches the cast only through
+        `(gGame setFeatures: catStrip)` inside the chase's own state 0; read without that cast
+        event they carry none of the scene's arming, three producers look alive at flag 83 = 1,
+        and the closure disappears.
+
+        Rows are per demand-group MEMBER, like the fold rows they extend, and carry every closer
+        found rather than the first: KQ5's window has two, flag 83 (closes on ARMING) and rm6's
+        `local0` (closes on LOSING the race, after which the throws answer "too late"). Both are
+        true and a remedy has to know about both."""
+        out = []
+        goal = self.goal_rooms_set()
+        demands = {}
+        for r in self.ownedby_death_folds():
+            key = (tuple(sorted(tuple(x) for x in r["demand_group"])), r["need_room"])
+            demands.setdefault(key, r)
+        for (group, need_room), row in sorted(demands.items(), key=lambda kv: kv[0][1]):
+            gset = {tuple(x) for x in group}
+            prods = [(rm, g) for (rm, _sc, it, g, dst) in self.em.handler_drops
+                     if (it, dst) in gset]
+            if not prods:
+                continue                       # nothing we can see produces it: no claim
+            prod_rooms = {rm for rm, _g in prods}
+            closers, flips = [], set()
+            for R in self.proj:
+                if not isinstance(R, int):
+                    continue                   # scalars; a joint closure has no instance yet
+                states = self._pstates.get(R) or set()
+                vals = {v for (_r, v) in states}
+                if len(vals) < 2:
+                    continue
+                for w in sorted(vals):
+                    if any(self._producer_live(g, R, w) for _rm, g in prods):
+                        continue               # a producer survives this value: no closure
+                    seeds = self._flip_seeds(R, w, states)
+                    if not seeds:
+                        continue
+                    after = {q for (q, _v) in self._walk(R, frozenset(), starts=seeds)}
+                    if goal and not (goal & after):
+                        continue               # already unwinnable: a dead end, not a softlock
+                    if need_room not in after:
+                        continue               # the read is behind you; nothing is demanded
+                    pre = {(q, v) for (q, v) in states if v != w}
+                    if not pre:
+                        continue               # never seen at another value: an arrival, not a flip
+                    before = {q for (q, _v) in self._walk(R, frozenset(), starts=pre)}
+                    if not (prod_rooms & before):
+                        continue               # unreachable before too: the flip closed nothing
+                    closers.append((R, w))
+                    flips |= {q for (q, _v) in seeds}
+            if not closers:
+                continue
+            for (it, dst) in sorted(gset):
+                out.append({"pattern": "window-closure",
+                            "item": it, "item_name": self.g.item_name(it), "dest": dst,
+                            "need_room": need_room,
+                            "demand_group": sorted(gset),
+                            "producer_rooms": sorted(prod_rooms),
+                            "closes_on": sorted(closers),
+                            "flip_rooms": sorted(flips)})
+        return out
+
+    def _producer_live(self, guard, R, w):
+        """Can this producer still fire while register `R` holds `w`?
+
+        `guard_reqs` is the one reading of "what does this guard demand of a register" this
+        codebase keeps ([[same-rule-two-places]]), and its permissiveness is the right direction
+        here too: a guard it cannot read constrains nothing, so the producer counts as ALIVE and
+        the closure is not claimed.
+
+        NO DOMAIN IS PASSED, deliberately. With one, `guard_reqs` also lowers `!=` and the
+        relational ops ("not v" is "one of the others"), which would let more guards be judged
+        dead -- and killing a producer is the direction that INVENTS a closure. Positive
+        equalities are enough for the shape this detector is about: SCI writes a closed window as
+        `(not (proc0_12 <flag>))`, and a negated `!=` is already read as the positive equality it
+        is. KQ5's seven producers all yield `485: {0}` without a domain."""
+        if guard is None:
+            return True
+        req = guard_reqs(guard, {R})
+        return w in req[R] if R in req else True
 
     def dangerous_sinks(self):
         """Consumptions that COST you the game: the item is still needed somewhere you can still
@@ -3537,10 +5380,22 @@ class IrSccReach(SccReach):
                     continue
                 # ...but a DISJUNCTIVE alternative rescues you: throwing the Ashes away is
                 # survivable while the Sand is still gettable, since rm81 accepts either.
-                if any(it in G and any(room in self.reobtainable_rooms(o) for o in G - {it})
-                       for G in self._groups()):
+                #
+                # ⭐ AN ALTERNATIVE IS ONLY AN ALTERNATIVE FOR THE GATE IT OPENS, so the group is
+                # read at the CONSUMER -- the room where the item is still needed -- not at the
+                # spend site. Both KQ5 scenes that trade throwables draw on one pool, and asking
+                # the question at the spend site conflates them: spending the Fish at the cat is
+                # excused by "the cat takes a Shoe too" while the room that still needs the Fish
+                # is rm11, where the bear takes nothing else. Read at the consumer, the Shoe and
+                # the Stick keep their rescue (each scene accepts the other's ammunition, the
+                # user's own 2026-08-16b ruling) and the Fish loses it.
+                live = {r for r in ahead
+                        if not any(it in G
+                                   and any(room in self.reobtainable_rooms(o) for o in G - {it})
+                                   for G in self.disjunctive_groups().get(r, ()))}
+                if not live:
                     continue
-                out.append({**sk, "at_room": room, "still_needed_at": sorted(ahead)})
+                out.append({**sk, "at_room": room, "still_needed_at": sorted(live)})
                 break          # one witness room is enough to condemn the site
         return out
 
@@ -3727,7 +5582,8 @@ class IrSccReach(SccReach):
                 def _flip_at(r, ban=frozenset()):
                     key = (r, ban)
                     if key not in per_room:
-                        a = {q for (q, _v) in self._walk(R, ban, starts={(r, w)})}
+                        a_st = self._walk(R, ban, starts={(r, w)})
+                        a = {q for (q, _v) in a_st}
                         # ...and the pre-flip player must be one who can BE there without the
                         # item. `states` is the permissive product; inside a sealed region it
                         # contains arrivals no item-less player ever makes, and those vouch
@@ -3735,10 +5591,25 @@ class IrSccReach(SccReach):
                         # prev==410 "reaching" the coin at rm430, both in the labyrinth).
                         b0 = ({(r2, v) for (r2, v) in states if r2 == r and v != w}
                               & _live(R, ban))
-                        b = ({q for (q, _v) in self._walk(R, ban, starts=b0)}
+                        b_st = self._walk(R, ban, starts=b0) if b0 else None
+                        b = ({q for (q, _v) in b_st}
                              if b0 else None)       # None: no pre-flip player -> an arrival
-                        per_room[key] = (a, b)
+                        per_room[key] = (a, b, a_st, b_st)
                     return per_room[key]
+
+                def _live_srcs(it, srcs, walk_states):
+                    """Source rooms this walk reaches WITH A LIVE ACQUISITION -- reaching the
+                    room is not reaching the item when every acquisition guard there is dead
+                    at the walked value (`_source_live`, the same standard `reobtainable_rooms`
+                    applies). KQ5's Shell forced the distinction: the beach stays reachable
+                    after the departure flip, but the pickup's guard now carries the harpy
+                    wall's flag-54-clear demand, so the post-flip walk stands in the source
+                    room and cannot have the item."""
+                    if walk_states is None:
+                        return set()
+                    fit = frozenset({it})
+                    return {q[0] for q in walk_states
+                            if q[0] in srcs and self._source_live(fit, q, R)}
                 if goal and not (goal & rooms_after):
                     continue                        # already unwinnable: a dead end, not a softlock
                 for it in sorted(self.required):
@@ -3754,7 +5625,9 @@ class IrSccReach(SccReach):
                         # neither walk is worth running. Pure speed: the rows are the same
                         # either way, and it is the difference between one walk pair per
                         # (flip, room) and one per (flip, room, item).
-                        if (srcs & _flip_at(r)[0]) and it not in _priced_in_region(r):
+                        _ap, _bp, ast_p, _bs = _flip_at(r)
+                        if _live_srcs(it, srcs, ast_p) \
+                                and it not in _priced_in_region(r):
                             continue
                         # ONE standard for both halves of the comparison. The question the row
                         # asks is about a player who does NOT hold the item -- can they still
@@ -3763,14 +5636,15 @@ class IrSccReach(SccReach):
                         # this change did to leave old rows untouched, keeps the very
                         # circularity the ban exists to remove: LB2's pressPass rows survived
                         # only because the pre-flip walk fetched the pass while holding it.
-                        a, b = _flip_at(r, ban)
+                        a, b, a_st, b_st = _flip_at(r, ban)
                         if b is None:
                             continue                # no item-less pre-flip player -> arrival
                         if goal and not (goal & _flip_at(r, frozenset())[0]):
                             continue                # that flip is a dead end, not a softlock
                         #   ^ PERMISSIVE deliberately: a flip is a softlock only if some
                         #     equipped player still wins; the item-less one provably cannot.
-                        if (srcs & a) or not (srcs & b):
+                        if _live_srcs(it, srcs, a_st) \
+                                or not _live_srcs(it, srcs, b_st):
                             continue                # still obtainable, or never was from here
                         if self.required[it] & a:
                             strand_at.append(r)
@@ -4475,11 +6349,35 @@ class IrSccReach(SccReach):
         # him some mint leaves"). Read off the entries rather than the edges, this is the same
         # shape and the same rule; reading only edges made every such puzzle look like a
         # conjunction of all its solutions.
+        #
+        # TWO readings this needs and neither is the obvious one.
+        #
+        # BY STATE. Entries are alternatives only when they arm the SAME thing, and a machine's
+        # entries do not all enter the same state. KQ5's cat has seven entries at the throw state
+        # -- one per pool item -- and one at state 0 that requires no item at all; pooled flat,
+        # that free entry says "one alternative is free" and the whole disjunction is discarded.
+        # Bucketing by target state keeps the throw's alternatives together and lets the free
+        # entry speak only for its own state.
+        #
+        # BY REQUIREMENT, not by mention. An entry's guard carries BOTH the scene's arming
+        # condition and the specific act: throwing the Shoe at the cat reads
+        # `(has 8 or has 16) and not flag83 and ... and own(8)`. `_own_positive` returns {8, 16}
+        # from that -- the arming disjunction hoisted in alongside the throw -- so every entry
+        # looks like every other and the shared intersection kills the group. `_own_required` is
+        # the reading that already answers the question being asked: an item inside an OR is not
+        # required, so this entry demands {8} and its sibling {16}. Measured, the two together
+        # derive rm6 -> {Fish, Shoe, Stick, Leg_of_Lamb} and rm12 -> {Shoe, Stick, Leg_of_Lamb} --
+        # the asymmetric throwable pool, dog refusing the Fish, exactly as play-tested.
         for info in self.em.machines:
             ents = list(info.get("entries", ())) + list(info.get("init_entries", ()))
             if len(ents) < 2:
                 continue
-            offer(info["room"], tuple(frozenset(_own_positive(eg)) for _K, eg in ents))
+            by_state = defaultdict(list)
+            for K, eg in ents:
+                by_state[K].append(frozenset(_own_required(eg)))
+            for K in sorted(by_state, key=str):
+                if len(by_state[K]) >= 2:
+                    offer(info["room"], tuple(by_state[K]))
         return out
 
     def group_strandings(self):
@@ -4498,6 +6396,308 @@ class IrSccReach(SccReach):
                              "items": sorted(G),
                              "item_names": [self.g.item_name(i) for i in sorted(G)],
                              "need_room": R, "source_rooms": sorted(srcs)})
+        return rows
+
+    def _market(self):
+        """The game's MARKET: who must be paid, out of which one-copy tokens.
+
+        A CONSUMER is a site that permanently absorbs an item and must be satisfied on every
+        winning path. A TOKEN is a single-copy item some consumer accepts. KQ5's town is the
+        motivating instance and the USER's own framing (2026-08-17b): four merchants and the
+        enchanted princess, five one-use tokens, zero slack --
+
+            gypsy   {Needle, Gold_Coin}          -> the Amulet
+            tailor  {Needle, Gold_Coin, Heart}   -> the Cloak
+            toy maker  + Marionette              -> the Sled
+            baker      + Coin                    -> the Pie
+            princess {Heart, and nothing else}   -> the Harp
+
+        Returns (consumers, tokens): consumers as a list of dicts with `accept` / `rooms` /
+        `dests` / `keys` (the (kind, script, inst) site identities behind it) / `why`, split by
+        `constrains` -- a consumer whose accept-set contains a RESTOCKABLE token can never
+        starve, so it exerts no pressure on the matching and is kept only so its own payment
+        edges read as satisfaction rather than as waste.
+
+        HOW A SITE BECOMES A CONSUMER -- one absorbing-site sweep, then four independent
+        derivations of "must be satisfied", each with its corpus witness:
+
+          (a) it SELLS a required product: the machine that takes the fee also performs the
+              `get:` of an item `required` somewhere (KQ5's tailor -- `soldCloak` takes
+              needle/coin/heart and hands over the Cloak, demanded at rm29/30).
+          (b) banning its whole accept-set SEALS a required item, and this site is on the
+              BOUNDARY of the sealed region (its rooms are in the lost region or open the door
+              into it). The gypsy: without ever holding {3, 11} the walk never reaches rm680,
+              the amulet handover, and rm13 is the door. ⛔ The boundary conjunct is the
+              attribution: banning a token kills EVERY consumer of it at once, and without the
+              conjunct KQ6's gears DEATH TRAP inherited the night mare's skull requirement.
+          (c) every acquisition of a required item happens AT THIS SITE and demands one of its
+              tokens (KQ5's toy chain: the Marionette is acquired at rm10 and every acquisition
+              demands the Spinning_Wheel).
+          (c2) an acquisition READS THE OWNER STORE as "paid here or still unspent": the Harp's
+              one acquisition guard demands owner(Heart) in {9, 21} -- given to the princess, or
+              still at the witch's house -- so a foreign spend (owner := a shop) makes it
+              permanently false. The game wrote the market constraint down itself.
+          (d) a DEATH FOLD is a consumer: `ownedby_death_folds` rows demand owner(t) == dest on
+              the surviving arm -- "the yeti must have been thrown the Pie" (rm35), "the eagle
+              must have been fed the Lamb" (rm42). Same read as (c2) with the death standing in
+              for the acquisition.
+
+        Sites are merged twice: alternative armings of one purchase (same rooms + accept --
+        changePrincess/slowChangePrincess), then machine/fold views of one counter (a shared
+        POSITIVE destination with overlapping accepts -- the rm86 fold and the rm6 cat handler
+        are one bank). ⛔ -1/limbo is not a counter and never merges: "everything ever destroyed"
+        is not a consumer, and merging on it swallowed KQ6's `useBrick` whole."""
+        if getattr(self, "_market_cache", None) is not None:
+            return self._market_cache
+        pockets = self._single_copy_pockets()
+        single = lambda t: self.destroyed_is_permanent(t) or t in pockets
+        lost = lambda it, dest: dest != E.EGO and (
+            dest in self.NOWHERE or self.drop_is_permanent(it, dest) or it in pockets)
+        mg = getattr(self.em, "machine_gets", set())
+
+        raw = {}
+        for info in self.em.machines:
+            ents = list(info.get("entries", ())) + list(info.get("init_entries", ()))
+            spend = {it for (it, dest, g) in info.get("moves", ()) if lost(it, dest)}
+            if not spend or not ents:
+                continue
+            accept = set()
+            for K, eg in ents:
+                accept |= _own_required(eg)
+            if not (accept & spend):
+                continue
+            c = raw.setdefault(("m", info["script"], info["inst"]),
+                               {"accept": set(), "rooms": set(), "products": set(),
+                                "dests": set(), "fold": None})
+            c["accept"] |= accept
+            c["rooms"].add(info["room"])
+            c["dests"] |= {d for (it, d, g) in info.get("moves", ()) if d != E.EGO}
+            c["products"] |= {it for (r, i, it) in mg
+                              if r == info["room"] and i == info["inst"]}
+        for room, script, it, g, dest in self.em.handler_drops:
+            if lost(it, dest):
+                c = raw.setdefault(("h", script, dest),
+                                   {"accept": set(), "rooms": set(), "products": set(),
+                                    "dests": {dest}, "fold": None})
+                c["accept"].add(it)
+                c["rooms"].add(room)
+        for r in self.ownedby_death_folds():
+            by_dest = defaultdict(set)
+            for (t, d) in r.get("demand_group", ()):
+                by_dest[d].add(t)
+            for d, ts in by_dest.items():
+                c = raw.setdefault(("f", d, None),
+                                   {"accept": set(), "rooms": set(), "products": set(),
+                                    "dests": {d}, "fold": None})
+                c["accept"] |= ts
+                c["rooms"].add(r["need_room"])
+                c["fold"] = "the rm%s death fold demands owner in %s" % (
+                    r["need_room"], sorted(ts))
+
+        merged = {}
+        for key, c in sorted(raw.items(), key=str):
+            sig = (frozenset(c["rooms"]), frozenset(c["accept"]))
+            if sig in merged:
+                merged[sig]["keys"].append(key)
+                for f in ("products", "dests"):
+                    merged[sig][f] |= c[f]
+                merged[sig]["fold"] = merged[sig]["fold"] or c["fold"]
+            else:
+                merged[sig] = {**c, "keys": [key]}
+        by_dest, out = {}, []
+        for sig, c in sorted(merged.items(), key=str):
+            real = sorted(d for d in c["dests"] if isinstance(d, int) and d > 0)
+            hit = next((by_dest[d] for d in real
+                        if d in by_dest and (by_dest[d]["accept"] & c["accept"])), None)
+            if hit is not None:
+                for f in ("accept", "rooms", "products", "dests"):
+                    hit[f] |= c[f]
+                hit["keys"] += c["keys"]
+                hit["fold"] = hit["fold"] or c["fold"]
+            else:
+                out.append(c)
+            for d in real:
+                by_dest.setdefault(d, hit if hit is not None else c)
+
+        # ⭐ SCARCITY IS CONSUMER-RELATIVE, and this is what closed the lamb red -- by refuting
+        # its stated cure. The red said the eagle's consumer is auto-satisfiable "because the
+        # lamb reads restockable (the cupboard pickup is not owner-gated in the model)", and
+        # the fix it prescribed was at the acquisition read. Both halves miss the true fact:
+        # the eagle's fold is at rm42, PAST THE ROC's point of no return, and
+        # `reobtainable_rooms(19)` -- the same gate-aware walk `analyze`'s carry-across row
+        # already rests on -- excludes rm42. Even a cupboard that restocked lambs forever
+        # could not supply the eagle. So a token waives a consumer's pressure only when it is
+        # BOTH re-suppliable in the model AND re-suppliable FROM THE CONSUMER'S OWN ROOMS;
+        # the cat's bank (rm6/rm86, in town) keeps its waiver and the pool stays safe, the
+        # eagle loses it and starts to constrain.
+        consumers = []
+        for c in out:
+            why = self._required_consumer(c)
+            if why is None:
+                continue
+            restock = sorted(t for t in c["accept"] if not single(t)
+                             and (c["rooms"] & self.reobtainable_rooms(t)))
+            c["constrains"] = not restock
+            c["why"] = why if not restock else why + " [auto-satisfiable: %s restock]" % (
+                [self.g.item_name(t) for t in restock])
+            consumers.append(c)
+        tokens = sorted({t for c in consumers if c["constrains"] for t in c["accept"]})
+        self._market_cache = (consumers, tokens)
+        return self._market_cache
+
+    def _single_copy_pockets(self):
+        """Items whose ONE copy is one-visit-pocketed: the second way a world holds one of a
+        thing. `drop_is_permanent` asks the owner graph, and for KQ5's Gold_Coin it honestly
+        answers NO -- `rm018::init` re-inits the coin on every entry and nothing gates
+        `getCoin`. What makes yours the only one is that the temple door already ate the Staff:
+        `toll_strandings`' one-visit-toll-pocket rows, which is the only store that knows."""
+        if getattr(self, "_pocketed", None) is None:
+            self._pocketed = frozenset(t["item"] for t in self.toll_strandings()
+                                       if t.get("pattern") == "one-visit-toll-pocket")
+        return self._pocketed
+
+    def _required_consumer(self, c):
+        """Why this absorbing site must be satisfied on every winning path, or None."""
+        A = frozenset(c["accept"])
+        if c.get("fold"):
+            return "(d) " + c["fold"]
+        for P in sorted(c["products"]):
+            if self.required.get(P) and self.sources.get(P):
+                return "(a) sells %s" % self.g.item_name(P)
+        for P in sorted(self.required):
+            if P in A or not (self.sources.get(P, set()) & self.reach_rooms):
+                continue
+            dem = []
+            for (g, r) in self._acq_guards(P):
+                dem.append((r, set(_own_required([g] if g is not None
+                                                 and not isinstance(g, list) else (g or [])))))
+            dem = [d for d in dem if d[0] in self.reach_rooms]
+            if dem and all(r in c["rooms"] and (d & A) for (r, d) in dem):
+                return "(c) every acquisition of %s is here and demands the tokens" % (
+                    self.g.item_name(P))
+            for t in sorted(A):
+                good = {d for d in c["dests"] if isinstance(d, int)} | \
+                    self.sources.get(t, set())
+                ok = []
+                for (g, r) in self._acq_guards(P):
+                    if g is None:
+                        ok = []
+                        break
+                    V = _loc_values(g, t, r)
+                    if not V or not (V & c["dests"]) or not (V <= good):
+                        ok = []
+                        break
+                    ok.append(sorted(V, key=str))
+                if ok:
+                    return "(c2) %s's acquisition reads owner(%s) in %s" % (
+                        self.g.item_name(P), self.g.item_name(t), ok[0])
+        rw = self._reach_without(A)
+        for P in sorted(self.required):
+            srcs = self.sources.get(P, set())
+            if P in A or not (srcs & self.reach_rooms):
+                continue
+            if not (srcs & rw):
+                lost_rooms = (self.reach_rooms - rw) | srcs
+                boundary = {a for (a, b) in self._emeta if b in lost_rooms and a in rw}
+                if c["rooms"] & (lost_rooms | boundary):
+                    return "(b) banning the slot seals %s; this site is the boundary" % (
+                        self.g.item_name(P))
+        return None
+
+    def market_squeezes(self):
+        """A payment that leaves some merchant UNPAYABLE -- the market squeeze.
+
+        THE SHAPE, in the USER's framing (2026-08-17b): *"the 3 vendors and the gypsy each
+        accepting some payments that can starve other merchants, when everything you get from
+        the merchants is required."* No single-spend detector can state this -- every token is
+        excused by its siblings at its own slot -- and no per-group detector states it either
+        without re-deriving half the market. The whole question is one matching: the game is
+        winnable iff every required consumer can be assigned a DISTINCT token it accepts, and
+
+            a spend is FATAL iff the residual market has no such assignment.
+
+        Residual: spending token t at a consumer that accepts it satisfies that consumer (remove
+        both); spending t anywhere else -- a merchant that merely tolerates it, an EAT verb --
+        removes t alone. First-order from the fresh market, which is exactly the guard question:
+        with the Cloak, the Harp and the pies all required, KQ5's seven fatal payments are fatal
+        from the very first token, not only after an earlier mistake.
+
+        ⛔ A spend you do not SURVIVE is excluded (`fatal_uses` sites): there is no surviving
+        world to starve, and the harm is already stated -- and remedied -- as a fatal use. KQ6's
+        skull-into-the-gears is a death, not a payment.
+
+        MEASURED 2026-08-17b: LSL2 0, KQ4 0, KQ6 0, LB2 0, KQ5 9 -- the squeeze (needle/gold
+        coin to the toy maker or baker starves the gypsy-tailor-princess triangle), the Heart at
+        any shop (starves the princess, the Harp's sole source), and the pie eaten or fed to the
+        eagle (starves the yeti, riding the rm35 fold). Every USER-ruled safe play stays silent:
+        needle->gypsy, coin->tailor, marionette->toy maker, heart->princess, the whole throwable
+        pool.
+
+        RE-MEASURED 2026-08-17b WITH CONSUMER-RELATIVE SCARCITY (see `_market`): +3 Leg_of_Lamb
+        rows -- eaten (Main's second bite), thrown at the cat, thrown at the dog -- each
+        starving the eagle's rm42 fold, whose surviving arm demands owner(19) == 34 and which
+        sits past the roc where no lamb can be re-fetched. USER-ruled real ("you need both the
+        pie and the lamb"); the cat and dog throws are oracle §1a's long-standing TRUE softlock,
+        caught here for the first time. The corpus stays 0 everywhere else."""
+        consumers, tokens = self._market()
+        cons = [c for c in consumers if c["constrains"]]
+
+        def pm(cs, toks):
+            adj = {i: sorted(c["accept"] & set(toks)) for i, c in enumerate(cs)}
+            return _saturating_matching(list(range(len(cs))), adj)
+
+        if pm(cons, tokens) is None:
+            # the fresh market is already unsolvable: that is a defect in THIS derivation (an
+            # over-included consumer), never a finding. Loud, and no rows.
+            _degraded_model("market_squeezes: no baseline matching -- consumer derivation "
+                            "over-includes; emitting nothing")
+            return []
+        fatal_sites = {(f["room"], f["machine"]) for f in self.fatal_uses()}
+        edges = [(it, room, script, None, dest)
+                 for room, script, it, g, dest in self.em.handler_drops]
+        edges += [(it, room, script, inst, dest)
+                  for room, script, it, g, dest, inst in self.em.machine_moves]
+        # An edge is a LOSS worth testing when the token is gone for good (destroyed, kept by
+        # its taker, or pocket-sealed) -- OR when some constraining consumer could never
+        # re-supply it anyway: the eagle cannot tell a permanently spent lamb from one lying
+        # in a town it can never walk back to, and neither kind returns to rm42.
+        starved_for = {t for c in cons for t in c["accept"]
+                       if not (c["rooms"] & self.reobtainable_rooms(t))}
+        rows, seen = [], set()
+        for (it, room, script, inst, dest) in sorted(edges, key=str):
+            if it not in tokens or (room, inst) in fatal_sites:
+                continue
+            if dest == E.EGO:
+                continue
+            if not (dest in self.NOWHERE or self.drop_is_permanent(it, dest)
+                    or it in self._single_copy_pockets() or it in starved_for):
+                continue
+            ekey = ("m", script, inst) if inst is not None else ("h", script, dest)
+            # ...and a spend SATISFIES a consumer by identity (its own arming took the fee) or
+            # by DESTINATION: a fold consumer demands `owner(t) == dest`, and an edge that puts
+            # t exactly there has just established it -- feeding the lamb TO THE EAGLE is the
+            # solution, whatever machine performed it.
+            sat = [c for c in consumers
+                   if ekey in c["keys"] or (dest in c["dests"] and it in c["accept"])]
+            rest = [c for c in cons if c not in sat]
+            toks = [t for t in tokens if t != it]
+            if pm(rest, toks) is not None:
+                continue
+            sig = (it, script, inst)
+            if sig in seen:
+                continue
+            seen.add(sig)
+            starved = [c for c in rest
+                       if pm([x for x in rest if x is not c], toks) is not None]
+            rows.append({
+                "pattern": "market-squeeze", "item": it,
+                "item_name": self.g.item_name(it),
+                "at_room": room, "script": script, "inst": inst,
+                "pays": sorted(str(k[2] if k[2] is not None else k[1])
+                               for c in sat for k in c["keys"])[:3],
+                "starves": sorted({r for c in starved for r in c["rooms"]}),
+                "starved_accepts": sorted({t for c in starved for t in c["accept"]}),
+            })
         return rows
 
     def free_running_traps(self):
@@ -4753,7 +6953,8 @@ class IrSccReach(SccReach):
                         #   it. Everything downstream (the carry-out rows, and the carry-in rows
                         #   below) is then reasoning about a room the player can walk back into.
                     spent = a in self.drops.get(X, set()) or a in placed.get(X, set())
-                    if not spent or a in self.reobtainable_rooms(X):
+                    if not spent or (a in self.reobtainable_rooms(X)
+                                     and not _spend_exhausts_sources(self, X, a)):
                         continue                 # not spent here, or spent but re-gettable -> benign
                 cut = {u: (v - {b} if u == a else v) for u, v in self.edges.items()}
                 pocket = full - reachable(cut, {start})
@@ -5090,6 +7291,10 @@ def _build(cfg, ir_path):
         # register R is flag `R - synth_base`, tested by the proc the derivation already named.
         ir.flag_synth_base = synth_base
         ir.flag_test_proc = next((n for n, op in flags[1].items() if op == "test"), None)
+        # ...and the SET spelling, for the WRITE side of the same reversal: a window remedy
+        # holds the closer flag's raise (`(proc0_9 83)`) until the demand is banked, and the
+        # proc that performs a raise is a fact the derivation already named.
+        ir.flag_set_proc = next((n for n, op in flags[1].items() if op == "set"), None)
     # SECOND flag store: the same bit-in-a-word abstraction kept in an object's PROPERTY words
     # instead of a global array (SCI1.1 regions do this). Lowered to the same synthetic globals,
     # after lower_flags so the two synthetic blocks cannot overlap. Games without it are

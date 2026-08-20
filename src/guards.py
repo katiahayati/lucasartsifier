@@ -827,6 +827,17 @@ def register_flip_frontier(s):
     prev = M.prev_room_reg(s.em)
 
     def flip_edges(R, v, from_room=None):
+        # A PREV-ROOM register's exclusion is STRUCTURAL, not spelled in the edge's req: standing
+        # in rm85, prev != 85 by construction, because `prev := 85` is what leaving rm85 means --
+        # the same fact the JOINT reduction below already uses ("the positional component names
+        # the from-room"). The req test below cannot see it (no edge constrains prev in its own
+        # req), which left KQ5's kidnap row [REFUSED]/UNENFORCED: the one crossing that strands
+        # the Hammer carried no demand. Every edge out of room v writes the value from a state
+        # that excludes it; the caller's `land` filter then keeps only the arrivals the walk
+        # measured as sealing.
+        if R == prev:
+            return {(a, b) for (a, b) in s._emeta
+                    if a == v and b != v and (from_room is None or a == from_room)}
         sites = set()
         for (a, b), metas in s._emeta.items():
             if from_room is not None and a != from_room:
@@ -837,12 +848,37 @@ def register_flip_frontier(s):
                     break
         return sites
 
+    def staged_flip_edges(R, v):
+        """Flip edges whose WRITE is unconstrained -- the crossing writes `v` whatever the
+        register held, so the req test above cannot see the entry. KQ5's harpy departure is
+        the case: `rm49->rm48` sets flag 54 with no flag-54 req of its own (you can sail home
+        again later). The crossing still ENTERS the seal -- from the pre-flip state -- but
+        the demand may bind ONLY there: a post-flip player re-crossing must never be walled
+        (the items it would demand are exactly what the flip sealed away). So these edges
+        carry a STAGE, the pre-flip test, for the spec builder to fold in as
+        `(or <already flipped> <items>)` -- and they qualify only when the flip is ONE-WAY
+        (every write of R anywhere is `v`), because with a writer back the pre-flip test
+        does not mean "first commitment"."""
+        writes = {sets[R] for metas in s._emeta.values()
+                  for (_rq, sets, _al) in metas if R in sets}
+        writes |= {vv for vs in (s._inroom.get(R) or {}).values() for vv in vs}
+        if writes != {v}:
+            return set()
+        sites = set()
+        for (a, b), metas in s._emeta.items():
+            for (req, sets, _alts) in metas:
+                if sets.get(R) == v and not req.get(R):
+                    sites.add((a, b))
+                    break
+        return sites
+
     out = defaultdict(lambda: {"items": set(), "groups": []})
     rows = list(s.register_strandings()) + [
         {"register": r["register"], "value": r["trap"], "item": r["item"]}
         for r in s.register_flip_strandings()]
     for r in rows:
         R, V = r["register"], r["value"]
+        stage = None
         if isinstance(R, tuple):
             comps = dict(zip(R, V))
             from_room = comps.get(prev)
@@ -852,6 +888,10 @@ def register_flip_frontier(s):
                     sites |= flip_edges(Ri, vi, from_room=from_room)
         else:
             sites = flip_edges(R, V)
+            if not sites and R != prev:
+                sites = staged_flip_edges(R, V)
+                if sites:
+                    stage = (R, V)
         need = set(r.get("still_needed_at") or ())
         # ...AND THE EDGE MUST LAND WHERE THE FLIP STRANDS (2026-08-14). `flip_edges` selects
         # by the WRITE -- an edge whose meta sets the value from a state that excludes it --
@@ -870,6 +910,14 @@ def register_flip_frontier(s):
             if need and s.crossing_retires_need(a, b, r["item"], need):
                 continue
             out[(a, b)]["items"].add(r["item"])
+            if stage is not None:
+                # rides the rec to the spec builder; a merge that finds two different stages
+                # on one edge, or a stage beside an unstaged claim, refuses the edge loudly
+                # rather than demanding at the wrong moment (none exist in the corpus today)
+                prior = out[(a, b)].get("stage")
+                if prior is not None and prior != stage:
+                    out[(a, b)]["stage_conflict"] = True
+                out[(a, b)]["stage"] = stage
     return dict(out)
 
 
@@ -992,6 +1040,17 @@ def _carryout_frontier(s, item, pocket, toll_reg=None, toll_edge=None):
     if toll_reg in s.regs:
         named.add(toll_reg)
     if prev in s.regs and split:
+        named.add(prev)
+    if not named and toll_edge is not None and prev in s.regs:
+        # AN ITEM TOLL IS ITS OWN SEAL. "No seal to judge in" was written for the register
+        # spelling (KQ6's Realm), and refused the ITEM spelling outright -- KQ5's temple, where
+        # the Staff is SPENT opening the door (`put: 7 214`), had both its carry-out rows
+        # detected and NO guard emitted, because rm18's exits name no register. But the fact
+        # that makes the pocket one-visit is already in this function's hands: `csucc` below
+        # deletes the toll edge from the successor graph, which IS "the toll is spent, the door
+        # will not reopen". Only a register toll needs a register dimension; an item toll needs
+        # only the committed walk, and `prev` -- promoted in every game -- is the dimension the
+        # funnel walk already uses.
         named.add(prev)
     if not named:
         return []                             # no seal to judge in -- nothing provable, refuse
@@ -1290,6 +1349,121 @@ def unsatisfiable(s, a, b, rec):
     return bad
 
 
+def fold_respell(s, a, b, rec):
+    """Re-spell a frontier spec's conjuncts by their CONSUMERS' OWN reading -- the owner-store
+    correction ([[an-item-some-armings-demand-is-not-a-gate]]'s rule applied to edge guards).
+
+    KQ5's roc edge is the case that forced it (USER playtest prep, 2026-08-18b): the lamb's
+    need past rm40->rm41 is rm42's hatch fold, which reads `owner(19) == 34` -- the eagle was
+    FED, at rm34, BEHIND the edge -- while the spec spelled it `(gEgo has: 19)`. That demands
+    the exact state the fold condemns (carrying it across = nothing can feed the eagle any
+    more) and turns back the winning one (banked, hands empty): the Spinach_Dip shape, caught
+    before it shipped to play.
+
+    The derivation, per unit: the need rooms PAST the edge decide the spelling.
+      * a need room whose demand for the item is an `ownedby_death_folds` row is satisfied by
+        THAT room's own read -- the owner test over the fold's destinations. Possession is an
+        alternative only when some producer of (item -> dest) lies past the edge (there is
+        still somewhere to bank it); producers are the `put:` sites, handler and machine both.
+      * a need room the folds do not explain keeps the possession spelling -- both can be
+        demanded at once (carry for the possession need AND banked for the fold), which is the
+        conservative conjunction.
+      * a GROUP converts only when EVERY past-edge need room is fold-covered for some member
+        -- the group rode in on a member's fold room, and that room accepts exactly what its
+        fold names (rm42 does not take the pie; `(or (has 2) (has 19))` there guards nothing).
+        Any unexplained room keeps the group as spelled.
+    An owner atom subsumed by a kept possession conjunct is dropped; one whose producers are
+    unreachable EVERYWHERE is a refusal, not a guard. Games with no fold rows (all four frozen
+    ones, measured) pass through untouched by construction.
+
+    Returns (rec2, atoms, refusals)."""
+    folds = {}
+    for r in s.ownedby_death_folds():
+        folds.setdefault(r["need_room"], {}).setdefault(r["item"], set()).add(r["dest"])
+    if not folds:
+        return rec, [], []
+    fwd = s.rooms_after(b)
+    prods = {}                     # (item, dest) -> rooms that put it there
+    for row in list(getattr(s.em, "handler_drops", ())):
+        room, _sc, it, _g, dest = row
+        prods.setdefault((it, dest), set()).add(room)
+    for row in list(getattr(s.em, "machine_moves", ())):
+        room, _sc, it, _g, dest, _inst = row
+        prods.setdefault((it, dest), set()).add(room)
+
+    def atom_for(it, R):
+        parts = []
+        for dst in sorted(folds[R][it]):
+            parts.append("(== ((gInv at: %d) owner:) %d)" % (it, dst))
+        atom = parts[0] if len(parts) == 1 else "(or %s)" % " ".join(parts)
+        past = any(prods.get((it, dst), set()) & fwd for dst in folds[R][it])
+        anywhere = any(prods.get((it, dst), set()) & s.reach_rooms for dst in folds[R][it])
+        return atom, past, anywhere
+
+    items2, atoms, refused = [], [], []
+    for it in sorted(rec["items"]):
+        nr = s._unit_need_rooms(frozenset({it})) & fwd
+        fold_rooms = {R for R in nr if it in folds.get(R, {})}
+        poss = nr - fold_rooms
+        if poss or not fold_rooms:
+            items2.append(it)
+        for R in sorted(fold_rooms):
+            atom, past, anywhere = atom_for(it, R)
+            if not anywhere:
+                refused.append("owner demand for item %d at rm%d has no reachable producer"
+                               % (it, R))
+                continue
+            if it in items2 and past:
+                continue           # `(gEgo has: it)` already implies this atom's alternative
+            if past:
+                atom = "(or (gEgo has: %d) %s)" % (it, atom)
+            atoms.append(atom)
+    groups2 = []
+    for g in rec["groups"]:
+        nr = s._unit_need_rooms(frozenset(g)) & fwd
+        if nr and all(any(m in folds.get(R, {}) for m in g) for R in nr):
+            for R in sorted(nr):
+                parts = []
+                for m in sorted(g):
+                    if m in folds.get(R, {}):
+                        atom, past, anywhere = atom_for(m, R)
+                        if not anywhere:
+                            continue
+                        if past:
+                            atom = "(or (gEgo has: %d) %s)" % (m, atom)
+                        parts.append(atom)
+                if parts:
+                    atoms.append(parts[0] if len(parts) == 1
+                                 else "(or %s)" % " ".join(parts))
+        else:
+            groups2.append(g)
+    # ...and the fold demands THIS CROSSING seals, whether or not the requirement maps
+    # carried the item here. The lamb taught the gap twice in one day: with the sled one-way
+    # derived, the lamb's reob boundary moved to rm32->rm33 and the roc edge silently lost
+    # `owner(19)==34` -- but crossing rm40->rm41 is what kills the eagle-feed's producers,
+    # so a player who crossed the sled CARRYING the lamb (legal there) and never fed would
+    # sail past an unguarded roc into the nest death. A fold row whose need room lies ahead
+    # of this edge while EVERY producer of its value lies behind is this edge's demand, in
+    # the fold's own owner spelling; rows whose producers survive past the edge are some
+    # later crossing's business (or a carry-in context's), not this one's.
+    for r in s.ownedby_death_folds():
+        if r["need_room"] not in fwd:
+            continue
+        rooms_p = set()
+        for (it2, dst2) in {(r["item"], r["dest"])}:
+            rooms_p |= prods.get((it2, dst2), set())
+        if not rooms_p or rooms_p & fwd or not rooms_p & s.reach_rooms:
+            continue
+        atom = "(== ((gInv at: %d) owner:) %d)" % (r["item"], r["dest"])
+        atoms.append(atom)
+    seen, deduped = set(), []
+    for x in atoms:
+        if x not in seen:
+            seen.add(x)
+            deduped.append(x)
+    return {"items": set(items2), "groups": groups2}, deduped, refused
+
+
 def render_frontier(rec):
     terms = [f"(gEgo has: {i})" for i in sorted(rec["items"])]
     for grp in rec["groups"]:
@@ -1349,9 +1523,21 @@ def sink_remedies(s):
     for gt in survival_gates(s):
         _, cn, _ = factor(gt["alts"])
         forbidden |= cn
+    # A SPEND THE MARKET ALREADY REFUSES GETS NO RETRACTION (USER-found at the eagle,
+    # 2026-08-18b: "just kidding" played, then the full feed scene, then the eagle flew off
+    # unfed with the pie retained). An IMPURE sink -- the put: arms the scene -- is exactly
+    # what the retraction cannot hold: withholding the disposal lets the commitment run
+    # anyway, and by editing first it also consumed the market wrap's own anchor, so the
+    # refusal that should have preceded the scene never placed. The market's case wrap
+    # refuses BEFORE anything arms; where it covers a (script, item), it is the whole
+    # remedy. Pure jokes (the EATs) keep their kinder retraction -- the market defers to
+    # those in the other direction, and the two exclusions together are a partition.
+    covered = {(r["script"], r["item"]) for r in market_remedies(s)}
     out = []
     for d in s.dangerous_sinks():
         it = d["item"]
+        if (d["script"], it) in covered:
+            continue
         refused = ([f"{s.g.item_name(it)} is fatal to CARRY -- keeping it would trade one "
                     f"softlock for another"] if it in forbidden else [])
         score = scores.get((d["script"], it))
@@ -1363,6 +1549,386 @@ def sink_remedies(s):
                     "edit": f"delete `(gEgo put: {it} {dest})`",
                     "why": f"wastes {s.g.item_name(it)}, still needed at "
                            f"rm{d['still_needed_at']} and not re-obtainable",
+                    "refused": refused})
+    return out
+
+
+def market_remedies(s):
+    """Refuse the payments the market condemns -- one spec per `market_squeezes` row.
+
+    The remedy the USER approved (2026-08-17, the design; 2026-08-17b, the build): guard the
+    three shops, never the gypsy or the princess -- the tight slots must keep taking their
+    tokens, and every row the detector emits is a spend at a slot that merely TOLERATES the
+    token while some tight consumer starves. Because the market proved each row fatal in EVERY
+    live state (holding the token pins the residual enough that no ordering saves the spend),
+    the guard needs no runtime re-obtainability conjunct: it is a plain refusal of that (site,
+    token) payment, routed through the game's own refusal form.
+
+    PLACEMENT IS THE CASE, NOT THE MACHINE. A shop's cutscene (`soldCloak`) is armed from one
+    switch case per accepted token, so the wrap selects the case whose head literal IS the
+    condemned item and holds its whole body -- `trigger.wrap_forbidden_case`. The `anchor`
+    names the committed act inside that case: the `setScript:` arming for a purchase, the
+    handler's own `put:` for a throw or an eat (where the clause IS the act). The condition
+    keeps the corpus-wide `(not (gEgo has: X))` spelling; inside item X's own case it is
+    identically false, which is exactly the unconditional refusal the matching derived.
+
+    ⛔ A PURE SINK'S RETRACTION OUTRANKS THE MARKET'S REFUSAL, and the market defers to it.
+    KQ5's pie is the case: eating it is a pure sink (message + `put:`, nothing else), so
+    `sink_remedies` already withholds the disposal while LETTING THE JOKE PLAY -- strictly
+    kinder than a refusal. Wrapping the same case here as well stacked a refusal OUTSIDE the
+    retraction and full mode never reached the joke again (measured on the emitted source).
+    The deferral is exactly the pure-sink set: an IMPURE spend of the same item (the pie fed
+    to the eagle arms `feedEagle`, so the retraction cannot place there) keeps its market wrap.
+
+    Emits nothing on a game whose market has no fatal spends -- LSL2, KQ4, KQ6 and LB2 today,
+    measured -- so the frozen surfaces carry an empty key, not an absent one."""
+    # ...and "a retraction exists" means BOTH halves: the clause is pure AND `dangerous_sinks`
+    # actually carries the row `sink_remedies` will act on. The lamb's EAT is pure too, but its
+    # danger is stated only by the market (the sink sweep excuses it through the eagle's group),
+    # so no retraction ever ships for it and deferring would leave the spend unguarded.
+    pure = {(p["script"], p["item"]) for p in s.pure_sinks()}
+    remedied = pure & {(d["script"], d["item"]) for d in s.dangerous_sinks()}
+    out = []
+    for r in s.market_squeezes():
+        if r.get("inst") is None and (r["script"], r["item"]) in remedied:
+            continue          # the sink retraction already holds this exact clause, more kindly
+        anchor = (r"setScript:\s*%s\b" % re.escape(r["inst"])) if r.get("inst") else \
+                 (r"put:\s*%d\b" % r["item"])
+        out.append({
+            "site": "market", "room": r["at_room"], "script": r["script"],
+            "machine": r.get("inst"), "item": r["item"], "forbid": [r["item"]],
+            "anchor": anchor,
+            "condition": f"(not (gEgo has: {r['item']}))",
+            "why": (f"paying with {s.g.item_name(r['item'])} here starves rm{r['starves']} -- "
+                    f"the market has no assignment left for "
+                    f"{[s.g.item_name(t) for t in r['starved_accepts']]}"),
+            "refused": []})
+    # ...and the IMPURE dangerous sinks the retraction cannot hold. A pure sink's cure is the
+    # retraction above (strictly kinder: the joke plays, the item stays); an impure spend does
+    # more than destroy -- KQ5's fish thrown at the cat arms the chase machine and BANKS the
+    # pool value rm86's fork reads -- so withholding its `put:` would advance the scene while
+    # unfilling the bank it claims to fill: unsound, not merely unplaceable. The remedy is the
+    # same market-case refusal, and it needs no matching for its un-walling: `dangerous_sinks`
+    # proved this spend LOSES THE GAME, and a winning line never contains a losing move, so
+    # refusing it cannot take anything from a winning player. (KQ5's cat scene also arms only
+    # under a non-refused pool member in hand -- the refusal never strands the scene itself.)
+    #
+    # TRADES ARE EXCLUDED: a clause that also GETs hands the player the other side of an
+    # exchange (KQ6's lamp peddler, user-ruled working-as-designed), and whether an exchange
+    # starves anything is the matching's question, judged in the owner graph
+    # ([[a-trade-is-a-destruction]]) -- never refused off a sink row.
+    covered = {(r["script"], r["item"]) for r in s.market_squeezes()}
+    get_keys = {s._clause_key(room, g) for room, _sc, _it, g in s.em.handler_gets}
+    for d in s.dangerous_sinks():
+        key = (d["script"], d["item"])
+        if key in pure or key in covered:
+            continue      # the retraction (kinder) or a market row (same wrap) holds it already
+        covered.add(key)
+        if any(s._clause_key(room, g) in get_keys
+               for room, sc, it, g, _dst in s.em.handler_drops
+               if sc == d["script"] and it == d["item"]):
+            continue      # a TRADE -- the matching's territory, never refused from a sink row
+        out.append({
+            "site": "market", "room": d["at_room"], "script": d["script"],
+            "machine": None, "item": d["item"], "forbid": [d["item"]],
+            "anchor": r"put:\s*%d\b" % d["item"],
+            "condition": f"(not (gEgo has: {d['item']}))",
+            "why": (f"spending {s.g.item_name(d['item'])} here loses the game -- still needed "
+                    f"at rm{d['still_needed_at']}, not re-obtainable, and the clause does more "
+                    f"than destroy, so the retraction cannot hold it"),
+            "refused": []})
+    return out
+
+
+def window_remedies(s):
+    """Re-open the one-shot window until its demand is BANKED -- one spec per `window_closures`
+    window, the remedy half of the fold+closure pair.
+
+    KQ5's cat chase is the case: flag 83 goes up when the chase STARTS (rm006::doit), not when
+    it is won, so losing the race closes the only door to the state rm86's kidnap fork demands
+    (some throwable owned by room 6) -- and the punishment is a timer death in a cellar hours
+    later. The design is the USER-shaped two-clause form (2026-08-14, clause 2 ruled REQUIRED):
+
+      1. HOLD every durable closer's raise behind V, the bank test -- the flip waits until the
+         demand it would seal is already banked. The chase still plays; losing no longer closes
+         anything, so the player can walk out and try again.
+      2. Conjoin the SAME V, disjunctively, onto every READ of the closer -- "the window has
+         closed" becomes "the window has closed OR the bank is filled". With 1, that is the
+         whole meaning correction: the closer flag stops meaning "the chase started" and starts
+         meaning "the mouse business is settled". It is also what enforces the standing rule
+         that ⛔ a patched chase must NEVER replay after success: the arming that tests the
+         closer now refuses while V holds.
+
+    V is spelled in the CONSUMER'S OWN idiom -- rm086 reads the bank as
+    `(== ((gInv at: 8) owner:) 6)` over the pool, and the guard repeats that reading exactly,
+    which is [[a-trade-is-a-destruction]]'s owner graph paying off at run time a second time
+    (the market's re-obtainability conjunct was the first).
+
+    A window is remediable only when EVERY closer is accounted for -- one unheld closer still
+    shuts it and the patch would claim a cure it does not deliver. Two accounts exist:
+      - DURABLE: a lowered boolean flag raised to its closing value; hold its raise (the set
+        proc the flag derivation already named) and strengthen its reads. Only the raise
+        polarity (w == 1) has a derived spelling today; anything else is refused, not guessed.
+      - PER-VISIT: a lowered ROOM LOCAL whose recorded entry reset differs from the closing
+        value -- the script reloads on entry and the latch re-opens by itself (rm006's local0,
+        "you lost this race", holds only until the player walks back in). No hold is needed,
+        and none would have a cross-script spelling anyway.
+    Anything else -- an un-spellable store, a local with no differing reset, a clear-polarity
+    closer -- lands in `refused` and the whole spec ships unplaceable rather than half-held.
+
+    The holds are SILENT guard kinds (nothing is refused to the player's face; a scene arms or
+    does not), so lite behaves as full and only stock bypasses -- the patcher applies that
+    dispatch at placement time; the conditions emitted here stay mode-free (test_mode pins
+    this file out of the mode machinery)."""
+    rows = s.window_closures()
+    if not rows:
+        return []
+    ir = getattr(s.em, "ir", None)
+    rli = getattr(ir, "_room_local_index", None) or {}
+    resets = getattr(ir, "_room_local_resets", None) or {}
+    base = getattr(ir, "flag_synth_base", None)
+    known = getattr(ir, "flag_indices", None) or frozenset()
+    setp = getattr(ir, "flag_set_proc", None)
+    testp = getattr(ir, "flag_test_proc", None)
+    windows = {}
+    for r in rows:
+        key = (tuple(tuple(x) for x in r["demand_group"]), r["need_room"])
+        windows.setdefault(key, r)
+    out = []
+    for (group, need_room), row in sorted(windows.items(), key=lambda kv: kv[0][1]):
+        members = sorted({tuple(x) for x in group})
+        conds = ["(== ((gInv at: %d) owner:) %d)" % (it, dst) for it, dst in members]
+        vcond = conds[0] if len(conds) == 1 else "(or %s)" % " ".join(conds)
+        holds, per_visit, refused = [], [], []
+        for (R, w) in sorted({tuple(c) for c in row["closes_on"]}):
+            if R in rli:
+                sn, idx = rli[R]
+                init = resets.get(sn, {}).get(R)
+                if init is not None and init != w:
+                    per_visit.append([R, "local%d of script %d resets to %d on entry"
+                                      % (idx, sn, init)])
+                else:
+                    refused.append("closer reg%d: room local with no differing entry reset -- "
+                                   "nothing re-opens it" % R)
+                continue
+            if (base is not None and R >= base and (R - base) in known
+                    and w == 1 and setp and testp):
+                holds.append({"register": R, "trap": w, "flag": R - base,
+                              "set_proc": setp, "test_proc": testp})
+                continue
+            refused.append("closer reg%d=%d has no holdable spelling" % (R, w))
+        if not holds and not refused:
+            refused.append("every closer resets on re-entry -- no durable closure to hold")
+        out.append({"site": "window", "need_room": need_room,
+                    "items": [it for it, _d in members],
+                    "banked_at": sorted({dst for _it, dst in members}),
+                    "producer_rooms": row["producer_rooms"],
+                    "condition": vcond, "holds": holds, "self_resetting": per_visit,
+                    "why": ("the window these items are banked through closes by itself; "
+                            "hold the closure until banked, and never re-arm once banked"),
+                    "refused": refused})
+    return out
+
+
+def fuse_arming_remedies(s):
+    """The whale-shape arm hold for `missability.fuse_death_armings` rows (docs/KQ5-ORACLE.md
+    §23): the encounter must not ARM until the player can survive it. The spawn procedure's
+    own arming condition gains the derived demand -- ONE wrap at the proc covers every call
+    site, and a withheld spawn is indistinguishable from the stock no-spawn roll (KQ5's
+    proc550_16 spawns nothing 20% of the time by the game's own design), which is the
+    arm-event soundness premise satisfied structurally: a spawnless castle room IS the open
+    play next door.
+
+    The condition renders FACTORED: atoms every demand alternative shares are hoisted out of
+    the OR, so KQ5 ships `(and (proc0_12 63) (gEgo has: 24) (or (proc0_12 62) (gEgo has:
+    37)))` -- the USER's ruling spelled in the game's own flag test -- rather than the
+    expanded DNF. Same truth table; the site stays readable.
+
+    Refused, never half-shipped: no proc to wrap (the spawn is not proc-shaped), a flag
+    demand with no derivable flag-test spelling, or an empty demand."""
+    ir = s.em.ir
+    testp = getattr(ir, "flag_test_proc", None)
+    out, seen = [], set()
+    for r in s.fuse_death_armings():
+        alts = [frozenset([("flag", f) for f in a["flags"]]
+                          + [("own", i) for i in a["items"]])
+                for a in r["demand_alts"]]
+        key = (r["machine"], tuple(sorted(tuple(sorted(a)) for a in alts)))
+        if key in seen or not alts:
+            continue
+        seen.add(key)
+        refused = []
+        proc = r.get("arm_proc")
+        if not proc:
+            refused.append("the spawn is not proc-shaped -- no single arming site to wrap")
+        if any(k == "flag" for a in alts for (k, _v) in a) and not testp:
+            refused.append("a flag demand with no derivable flag-test spelling")
+
+        def _tok(t):
+            k, v = t
+            return "(%s %d)" % (testp, v) if k == "flag" else "(gEgo has: %d)" % v
+
+        common = frozenset.intersection(*alts)
+        rests = [sorted(a - common) for a in alts]
+        parts = [_tok(t) for t in sorted(common)]
+        if all(rests):
+            ors = ["(and %s)" % " ".join(_tok(t) for t in rr) if len(rr) > 1 else _tok(rr[0])
+                   for rr in rests]
+            parts.append(ors[0] if len(ors) == 1 else "(or %s)" % " ".join(ors))
+        # an empty rest means that alternative IS the common core -- the OR is vacuous
+        if not parts:
+            refused.append("empty demand -- nothing to hold the arming on")
+        cond = (parts[0] if len(parts) == 1 else "(and %s)" % " ".join(parts)) \
+            if parts else None
+        out.append({"site": "fuse-arm",
+                    "script": proc["script"] if proc else None,
+                    "proc": proc["name"] if proc else None,
+                    "machine": r["machine"], "arm_rooms": r["arm_rooms"],
+                    "items": sorted({i for a in r["demand_alts"] for i in a["items"]}),
+                    "flags": sorted({f for a in r["demand_alts"] for f in a["flags"]}),
+                    "condition": cond, "fuse": r["fuse"], "death": r["death"],
+                    "why": "an unanswered encounter arms a remote death fuse (fuse %s -> "
+                           "phase %s -> %s); the encounter must not arm until survivable"
+                           % (r["fuse"], r["phases"], r["death"]),
+                    "refused": refused})
+    return out
+
+
+def capture_fold_remedies(s):
+    """The arming hold for `missability.capture_fold_armings` rows -- docs/KQ5-ORACLE.md §24.
+
+    The encounter must not ARM unless the player can survive it: the arrival fold's own
+    survivability condition, or the price of an answer. Rendered as a disjunction of the row's
+    alternatives in the GAME'S OWN SPELLING -- KQ5's empty bag is `(== ((gInv at: 24) cel:) 4)`,
+    the very test the henchman's dispatch refuses on, so nothing is translated into a flag
+    alias and nothing rests on our reading of what the property means.
+
+    ⛔ AN ANSWERLESS ROW IS REFUSED, never shipped. Its demand is the fold's alone, and a bare
+    fold demand belongs on the CROSSING (`fold_carryins` and the frontier specs), not on an
+    arming: placing it at the arming would double-patch one commit, and where the fold's
+    condition is monotone it could wall the crossing outright. Verified on KQ5, both instances:
+    rm40->rm41 already demands `owner(19) == 34` (the nest's lamb fold) and rm85->rm86 the
+    banked-throwable disjunction (the cellar's), each shipped and play-confirmed."""
+    ir = s.em.ir
+    testp = getattr(ir, "flag_test_proc", None)
+    out = []
+    for r in s.capture_fold_armings():
+        refused = []
+        if r.get("answerless"):
+            refused.append(
+                "no answer to the encounter, so the demand is the fold's alone -- that "
+                "belongs on the crossing (fold_carryins/frontier), not on an arming")
+        if not r.get("host") or r.get("script") is None:
+            refused.append("no host object to hold the arming on")
+        alts = []
+        for a in r.get("demand_alts", ()):
+            parts = ["(not (%s %d))" % (testp, f) for f in a.get("not_flags", ())] \
+                + ["(%s %d)" % (testp, f) for f in a.get("flags", ())] \
+                + ["(== ((gInv at: %d) owner:) %d)" % (it, dst)
+                   for (it, dst) in a.get("owners", ())] \
+                + ["(gEgo has: %d)" % it for it in a.get("items", ())] \
+                + ["(== ((gInv at: %d) %s:) %s)" % (it, prop, val)
+                   for (it, prop, val) in a.get("iprops", ())] \
+                + ["(not (== ((gInv at: %d) %s:) %s))" % (it, prop, val)
+                   for (it, prop, val) in a.get("not_iprops", ())]
+            if not parts:
+                continue
+            alts.append(parts[0] if len(parts) == 1 else "(and %s)" % " ".join(parts))
+        if (a for a in r.get("demand_alts", ())) and not alts:
+            refused.append("empty demand -- nothing to hold the arming on")
+        if any(f for a in r.get("demand_alts", ()) for f in
+               list(a.get("flags", ())) + list(a.get("not_flags", ()))) and not testp:
+            refused.append("a flag demand with no derivable flag-test spelling")
+        cond = (alts[0] if len(alts) == 1 else "(or %s)" % " ".join(alts)) if alts else None
+        out.append({"site": "capture-arm", "script": r["script"], "machine": r["machine"],
+                    "host": r["host"][0] if r.get("host") else None,
+                    "need_room": r["need_room"], "arm_rooms": r.get("arm_rooms", []),
+                    "escapes": r.get("escapes", []), "condition": cond,
+                    "why": "arming this carries the player into rm%s, whose arrival fork "
+                           "(%s) cannot be survived without it" % (r["need_room"],
+                                                                  r.get("fold_machine")),
+                    "refused": refused})
+    return out
+
+
+def fold_carryins(s):
+    """Owner-value demands on the CROSSING an entry-fold's context names -- patch B's derivation.
+
+    `ownedby_death_folds` states a demand the fold's own room can no longer satisfy: arriving
+    at KQ5's rm86 with `prev == 85` (the kidnap), some throwable must already be OWNED by room
+    6 or `yourStuck` is a pure-timer death -- and the Rope is sourced INSIDE rm86, so the
+    kidnap is mandatory and a gate cannot live there. But an entry-fold whose context names
+    the previous room IS a fact about one crossing: `{12: 85}` means the losing arm arms
+    exactly on rm85 -> rm86, so the demand's last controllable moment is that crossing --
+    the same doctrine as `sink_survival_carryins` (the mists), in the owner store's spelling.
+
+    The condition is the CONSUMER'S OWN reading (`(== ((gInv at: X) owner:) 6)` over the
+    demand group -- rm086's kidnap fork spells it exactly so), the same rendering
+    `window_remedies` ships; the patcher derives the game's `gInv` global at placement.
+
+    A-BEFORE-B, derived: if the demanded value's producers sit behind a window that CLOSES
+    (`window_closures` claims the group), this demand is only satisfiable in a game where the
+    window remedy holds that window open -- so the spec requires a PLACEABLE `window_remedies`
+    row for the same group and refuses without one. Refusing the kidnap while the bank can
+    never be filled again would wall a mandatory crossing forever, which is worse than the
+    softlock. A group no closure claims keeps its producers alive by the closure detector's
+    own liveness reading, and carries no gate.
+
+    STATE-FORK rows (KQ5's rm42 hatch: context {}) name no crossing and emit nothing --
+    their demands already ride the item frontiers (the roc edge carries the lamb)."""
+    prev = M.prev_room_reg(s.em)
+    closures = {(tuple(sorted(tuple(x) for x in r["demand_group"])), r["need_room"])
+                for r in s.window_closures()}
+    placeable = {(tuple(sp["items"]), sp["need_room"]): not sp["refused"]
+                 for sp in window_remedies(s)}
+    out, seen = [], set()
+    for r in s.ownedby_death_folds():
+        ctx = r.get("context") or {}
+        a = ctx.get(prev)
+        if a is None:
+            continue
+        b = r["need_room"]
+        group = sorted({tuple(x) for x in r["demand_group"]})
+        if (a, b, tuple(group)) in seen:
+            continue
+        seen.add((a, b, tuple(group)))
+        conds = ["(== ((gInv at: %d) owner:) %d)" % (it, dst) for it, dst in group]
+        cond = conds[0] if len(conds) == 1 else "(or %s)" % " ".join(conds)
+        refused = []
+        # THE CHASE EXCLUSION, ACROSS THE ROOM SEAM (USER-prompted, 2026-08-18b: "why are we
+        # turning you back in the first place?"). A fold whose context room ARMS AN EGO-CHASE
+        # under the NEGATION of this very demand is not an independent trap -- it is the
+        # chase's CATCH, staged one screen over (KQ5's yeti: rm036's init arms `chaseEgo` iff
+        # `owner(Pie) != 36`, so every crossing this fold condemns is made mid-chase, and the
+        # rm35 kill is the yeti catching a player who ran with the counter in hand). The
+        # exclusion's own rationale applies uniformly: a race the player can decline -- feed,
+        # duck, or not run -- gets no gate, and the death is Sierra's lesson (the KGB-beach
+        # class). The demand stays a FINDING (the row is how the pie's necessity is known);
+        # only the crossing guard is declined, visibly.
+        for info in s.em.machines:
+            if info.get("room") != a or not info.get("chase_states"):
+                continue
+            for (_k, eg) in (list(info.get("entries", ()))
+                             + list(info.get("init_entries", ()))):
+                spine = M._conj_spine([eg] if not isinstance(eg, list) else eg)
+                if any(isinstance(x, M.GNot) and M._is_owner_atom(x.kid)
+                       and (x.kid.var, x.kid.value) in set(map(tuple, group))
+                       for x in spine):
+                    refused.append(
+                        "the fold is rm%d's chase catching you (its hunter arms on the "
+                        "complement of this demand) -- a declinable race, no gate owed" % a)
+                    break
+            if refused:
+                break
+        gkey = (tuple(group), b)
+        ikey = (tuple(it for it, _d in group), b)
+        if gkey in closures and not placeable.get(ikey):
+            refused.append("the window producing this value closes and no placeable window "
+                           "remedy holds it open -- demanding it here would wall the crossing")
+        out.append({"site": "edge", "from_room": a, "to_room": b, "condition": cond,
+                    "items": [], "groups": [], "owner_group": [list(g) for g in group],
+                    "why": (f"arriving at rm{b} from rm{a} is unsurvivable unless the value "
+                            f"is already banked -- the fold's demand rides its crossing"),
                     "refused": refused})
     return out
 
@@ -1420,8 +1986,17 @@ def guard_specs(s):
     for src in (joint_frontier(s), pocket_frontier(s), pocket_carryout_frontier(s), rff):
         for (a, b), rec in src.items():
             if (a, b) in frontier:
-                frontier[(a, b)] = {"items": set(frontier[(a, b)]["items"]) | rec["items"],
-                                    "groups": frontier[(a, b)]["groups"] + rec.get("groups", [])}
+                old = frontier[(a, b)]
+                merged = {"items": set(old["items"]) | rec["items"],
+                          "groups": old["groups"] + rec.get("groups", [])}
+                # a STAGED claim (demand only pre-flip) merging with an unstaged one, or with
+                # a different stage, cannot share one condition -- refuse loudly downstream
+                if old.get("stage") != rec.get("stage") \
+                        or old.get("stage_conflict") or rec.get("stage_conflict"):
+                    merged["stage_conflict"] = True
+                elif rec.get("stage") is not None:
+                    merged["stage"] = rec["stage"]
+                frontier[(a, b)] = merged
             else:
                 frontier[(a, b)] = rec
     for (a, b), rec in sorted(frontier.items()):
@@ -1439,22 +2014,70 @@ def guard_specs(s):
         if gone:
             rec = {"items": set(rec["items"]) - gone,
                    "groups": [g for g in rec["groups"] if not (g & gone)]}
-        bad = unsatisfiable(s, a, b, rec)
+        # the owner-store correction: past-edge needs that are fold demands are spelled by
+        # their consumer's own reading (see fold_respell) -- the possession conjuncts keep
+        # their satisfiability check below, the owner atoms carry their own refusals.
+        rec2, fold_atoms, fold_refused = fold_respell(s, a, b, rec)
+        bad = unsatisfiable(s, a, b, rec2) + fold_refused
+        base = render_frontier(rec2)
+        terms = ([base] if base else []) + fold_atoms
+        cond = (terms[0] if len(terms) == 1 else "(and " + " ".join(
+            ([base[5:-1]] if base and base.startswith("(and ") else ([base] if base else []))
+            + fold_atoms) + ")") if terms else None
+        stage = rec.get("stage")
+        if rec.get("stage_conflict"):
+            bad = bad + ["stage conflict: a staged (pre-flip-only) demand and an unstaged one "
+                         "met on this edge; demanding at the wrong moment walls a player, so "
+                         "nothing ships until the claims are reconciled"]
+        elif stage is not None and cond:
+            # THE STAGED FLIP EDGE (see register_flip_frontier.staged_flip_edges): the demand
+            # binds only on the COMMITTING crossing -- the one made pre-flip. A post-flip
+            # player re-crossing holds none of the sealed items by construction, and an
+            # unstaged demand here would wall them on the wrong side (KQ5: the returning
+            # sailor, shell-less forever, refused the boat home). The stage is spelled in the
+            # game's own flag test so the wrap reads at the site exactly what the model
+            # proved: `(or (proc0_12 54) <items>)` -- already committed, or fully equipped.
+            R2, _v2 = stage
+            ir2 = s.em.ir
+            base2 = getattr(ir2, "flag_synth_base", None)
+            testp2 = getattr(ir2, "flag_test_proc", None)
+            if base2 is not None and testp2 and R2 >= base2:
+                cond = "(or (%s %d) %s)" % (testp2, R2 - base2, cond)
+            else:
+                bad = bad + ["staged flip edge: no flag spelling derives for register %r, and "
+                             "an unstaged demand walls the post-flip crossing" % (R2,)]
         sp = {"site": "edge", "from_room": a, "to_room": b,
-              "condition": render_frontier(rec),
-              "items": sorted(rec["items"]), "groups": [sorted(g) for g in rec["groups"]],
+              "condition": cond,
+              "items": sorted(rec2["items"]), "groups": [sorted(g) for g in rec2["groups"]],
               "refused": bad}
+        if fold_atoms:
+            sp["owner_atoms"] = fold_atoms
+        rec = rec2
         if ann:
             sp["dropped_incompatible"] = sorted(ann)
             sp["dropped_why"] = "cannot be held here: " + "; ".join(
                 sorted({f"{s.g.item_name(i)} -- {r}" for i, r in ann.items()}))
-        if not rec["items"] and not rec["groups"]:
+        if not rec["items"] and not rec["groups"] and not fold_atoms:
             # Everything this edge would have demanded is unholdable here, so there is no guard to
             # place -- but say so. Dropping the row silently is how an edge stops being guarded
             # without anyone noticing; `refused` is the channel that already exists for "we
             # deliberately emit nothing", and every reporting path prints it.
             sp["refused"] = [sp["dropped_why"] + " -- nothing left to demand at this edge"]
         specs.append(sp)
+    # ...and the OWNER-VALUED demands the entry-folds put on their own crossings (patch B):
+    # conjoined onto the frontier spec for the same edge when one exists -- rm85->rm86 demands
+    # the Hammer (the flip frontier) AND the banked throwable (the fold) in ONE guard, one no --
+    # appended standalone otherwise, refusals included so an unplaceable demand stays visible.
+    for fc in fold_carryins(s):
+        host = next((sp for sp in specs if sp["site"] == "edge" and not sp["refused"]
+                     and sp["from_room"] == fc["from_room"]
+                     and sp["to_room"] == fc["to_room"]), None)
+        if host is not None and not fc["refused"]:
+            host["condition"] = "(and %s %s)" % (host["condition"], fc["condition"])
+            host.setdefault("owner_groups", []).extend(fc["owner_group"])
+            host.setdefault("merged", []).append(fc["condition"])
+        else:
+            specs.append(fc)
     # ...and the REGISTER-valued half of a one-visit pocket: bringing the teacup in is one guard,
     # having filled it on the way out is the other. Appended after the frontier specs because it
     # READS them -- an exit guard may only ship alongside the entrance guard that makes it
@@ -1463,6 +2086,19 @@ def guard_specs(s):
     # An unguardable sink whose item later decides a death: demand the item at the crossings
     # into the death's room instead (the mists doctrine -- refuse the trip, keep the trade).
     specs.extend(sink_survival_carryins(s))
+    # ...and the market's fatal payments (KQ5's shops, the lamb's wastes) -- refusals of a
+    # (site, token) pair, placed on the token's own dispatch case. See market_remedies.
+    specs.extend(market_remedies(s))
+    # ...and the one-shot windows (`window_closures`): hold each durable closer's raise until
+    # the demand it seals is banked, and never re-arm a banked scene. See window_remedies.
+    specs.extend(window_remedies(s))
+    # ...and the remote death fuses (`fuse_death_armings`): the whale-shape arm hold -- the
+    # encounter's spawn procedure refuses to arm until the derived kit is in hand. Silent
+    # kind (a withheld spawn is the stock no-spawn roll). See fuse_arming_remedies.
+    specs.extend(fuse_arming_remedies(s))
+    # ...and the encounters that CARRY you into a lethal arrival fold (`capture_fold_armings`):
+    # the same whale-shape hold, on the host object's own arming. See capture_fold_remedies.
+    specs.extend(capture_fold_remedies(s))
     for gt in survival_gates(s):
         cp, cn, rest = factor(gt["alts"])
         pos_spec = render(cp, set(), rest)

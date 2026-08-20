@@ -81,6 +81,38 @@ ACCEPTED = {
                    "arrival taxi, the street seal). A single-purpose lifecycle reader, not "
                    "control flow: no other walker asks where an object ENDS.",
     "setRegions":  "region membership is built once, in opmodel.",
+    "BinAnd":      "missability._ctl_masks reads `(& (gEgo onControl:) M)` as a positional "
+                   "hazard ZONE (the harpy patrol, 2026-08-19b) -- a trigger-shape reader, "
+                   "not control flow; the guard extractors already lower the same idiom "
+                   "through their own comparison path.",
+    "get":         "polygons.item_pickup_spots reads `get: N` only to LOCATE a pickup on the "
+                   "room's floor (which object the get-machine stages, for the hazard-priced "
+                   "pickup rule, 2026-08-19b); acquisition SEMANTICS -- who owns what -- stay "
+                   "extract/opmodel's alone.",
+    "edgeHit":     "the ego's own screen-edge signal, read in exactly the two places that ask "
+                   "about screen edges and nowhere else. trigger reads the argument-free "
+                   "`(gEgo edgeHit:)` as a POSITIONAL fact (the player walked there -- the "
+                   "rm036 computed exit, 2026-08-18b) and polygons.edge_bands reads the cond "
+                   "that ASSIGNS it for the game's own handoff bands (plus dead_nav_exits' "
+                   "north discriminator: a room routing exits through an edgeHit READ is the "
+                   "base-y world where the horizon bound is provable). extract/opmodel consume "
+                   "the resulting EDGES, never the signal -- same division as newRoom.",
+    "x":           "the same two letters asking opposite questions, which is why neither can "
+                   "drift into the other. polygons.edge_bands reads `x` as the VARIABLE one side "
+                   "of the ego's own `edgeHit` cond (`(<= x 0)` -> west), deriving where THIS "
+                   "GAME hands off at a screen edge. missability._hazard_is_stationary reads "
+                   "`x:` as a SELECTOR SENT to an object -- a write, i.e. evidence that the "
+                   "object's declared position is not a place -- alongside setMotion/posn/"
+                   "moveTo/setTarget. One reads a comparison to learn a constant, the other "
+                   "looks for an assignment to disqualify a hazard.",
+    "y":           "as x.",
+    "handleEvent": "two different questions wearing one name. machine/opmodel DISPATCH it -- "
+                   "`handleEvent` is one of the methods whose body they walk for armings and "
+                   "effects -- while extract.feature_adders reads it as a CLASS-TABLE FACT: a "
+                   "class that forwards `handleEvent:` to elements pulled out of a collection is "
+                   "SCI's EventHandler, so adding an object to that collection is a cast event "
+                   "(KQ5's `(gGame setFeatures: catStrip)`). Nothing to drift: one asks whose "
+                   "body to walk, the other asks which collection the engine clicks through.",
     "Add":         "arithmetic appears in guard atoms (extract) and in counter detection (vocab).",
     "Sub":         "as Add.",
     "Eq":          "comparison node types are guard-atom concerns: extract builds atoms, vocab "

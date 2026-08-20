@@ -39,6 +39,16 @@ SRC = os.path.join(_ROOT, "src")
 # the next reader can tell a known limitation from a broken test without opening the file.
 KNOWN_RED = {
     "test_toll.py": {
+        # ✅ PROMOTED 2026-08-16 -- "KQ5 temple strands Brass_Bottle + Gold_Coin" and "KQ5 toll
+        # item is the Staff via rm214->rm18" are GREEN and no longer listed. Both demanded that
+        # KQ5's WHOLE toll set be the temple and nothing else, and both were held red by the two
+        # rm57->rm683 carry-in rows the cutscene FP produced. `extract.room_valued_globals` now
+        # reads `(== global338 gCurRoom)` -- the bagged cat is in the room where you bagged it --
+        # so `theCat` is in the cast in seven castle rooms rather than all sixteen, and the toll
+        # set is the temple's two items on the edge rm214->rm18, exactly as declared. This is the
+        # promotion contract working: the red was declared 2026-08-15 with the cure named, and
+        # curing it turned both green in the same commit. LSL2, KQ4, KQ6 and LB2 byte-identical
+        # on the full snapshot surface, placements included.
         # ✅ PROMOTED 2026-08-06 -- both mists REDs ("the carry-in demands rain-readiness
         # (global161==15), not just the lamp" and "the isle landing is guarded when the
         # shore-carry revisit is armed") are GREEN and no longer listed. Three derivations
@@ -98,15 +108,19 @@ KNOWN_RED = {
         # GREEN. `guard_specs` emits an `action` spec per `fatal_uses` row and the patcher places
         # it on the arming of the fatal machine (KQ6: rm420's `setScript: throwSkull`). Inert on
         # LSL2, KQ4 and the Dagger, which have no fatal uses.
-        "🔴 KNOWN GAP (KQ6): every non-refused spec places":
-            "PHASE 4. The arrival-commit re-site LANDED 2026-08-04: the capture demand sits on "
-            "the isle's entry frontier (rm320's cue arm-gate + rm300's shortcut nav-assign "
-            "re-route -- finding #8's bypass -- stage-conditioned with the game's own "
-            "capture-arm test, sites from guards.commit_entry_frontier -- model knowledge, "
-            "not text search), so the rm340 rows all place. Remaining skips, both "
-            "deliberate: rm420->rm435 (the shared-dispatcher seam; its demand is covered by "
-            "the capture guards) and the huntersLamp sink (a TRADE; its remedy is the mists "
-            "carry-in). Goes green only when those two either place or become refusals.",
+        # ✅ RETIRED BY RULING 2026-08-17b -- "🔴 KNOWN GAP (KQ6): every non-refused spec
+        # places" is gone because the USER ruled the state it complained about is the INTENDED
+        # output, not a gap: *"whatever we have there is working as intended and should not be
+        # a red."* The two skips it was held open by are both deliberate and both already
+        # carry their remedy or their coverage: the huntersLamp sink is a TRADE (deleting the
+        # disposal would refuse the magic lamp with it; trading the lamp commits you to the
+        # short ending -- the shipped remedy is the mists carry-in, the 2026-08-03 "refuse the
+        # trip, keep the trade" doctrine), and rm420->rm435 is the shared-dispatcher seam
+        # whose demand the capture guards on the isle's entry frontier already carry. Rebuilt
+        # GREEN as a PIN of exactly that two-skip set -- a new skip is a regression, a
+        # declared one moving is a mechanism change, and neither is a standing red. No model,
+        # patcher or surface change; the Shoe/Stick shape -- a red retired by DISAGREEING
+        # with it, this time about what the red's own state meant.
         # ✅ PROMOTED 2026-08-05 (same day as the play find) -- "the Realm-entry demand wraps
         # catchNiteMare's arming, not blowinIt's" is GREEN. The cross-file block now READS the
         # helper's arming graph (trigger.reaching_owners/reaching_procs) instead of assuming any
@@ -200,6 +214,88 @@ KNOWN_RED = {
     # the check is a permanent green pin. docs/LB2-ORACLE.md §7ag.
 
     "test_kq5_ground_truth.py": {
+        # ✅ PROMOTED 2026-08-19d, SAME SESSION AS DECLARED -- "the henchman's arming demands a
+        # survivable capture or the pea answer" is GREEN, with the remedy pinned beside it.
+        # `missability.capture_fold_armings` carries a fold's demand back to the arming of any
+        # machine whose OWN transition EXITs into the fold's room (theHenchManScript st12 =
+        # EXIT 67), which is the discriminator against the chase exclusion: KQ4's dog and KQ5's
+        # yeti end where they start, this one CARRIES you, and leaving is how you lose it.
+        # Escapes gained DISPOSERS (`setScript: 0` from outside the slot -- the pea throw is
+        # armed into the room's slot), and the pricing fixpoint moved to a shared `_Escapes`
+        # ([[same-rule-two-places]]) so the cat and the henchman cannot drift; the cat's rows
+        # are byte-identical across that refactor. Two filters keep it honest and were each
+        # paid for by a real row: the FOLD-DISARMED test (rm67 dispatches maze arrivals to
+        # `enterHole`, so the maze's own carrier was a false positive) and the CONTINUATION
+        # test (rm59's `caughtScript` runs on `global333 == 5`, which the root writes -- gating
+        # the root covers it). Answerless rows are REFUSED rather than shipped: rm41's roc and
+        # rm85's kidnap already carry their fold demand at their crossing, verified against the
+        # shipped specs. LSL2/KQ4/KQ6/LB2 emit zero rows from both detectors.
+        # ✅ PROMOTED 2026-08-19c, SAME SESSION AS DECLARED -- "the castle cat's arming demands
+        # the whale kit (remote fuse = death)" is GREEN. `missability.fuse_death_armings`
+        # landed with the three classifications the red named: DEATH PHASES ((331,3) arms
+        # theWizardScript in nine castle rooms, (331,6) arms wakeUpScript in rm63 -- an
+        # unavoidable machine's entry pinning a register value off an unpriced spine); the
+        # CLOCK (a CTR-gated handler write with a running-countdown atom and no item on the
+        # spine -- castle::doit's per-game-minute expiry), with the fuse set closing under
+        # chaining (353's expiry writes 352 := 3) but NOT under self-re-arm (353 := 5 is the
+        # cycle continuing, and without that exclusion the henchman's global333 classified as
+        # a fuse); and FUSE-ARMING MACHINES (theCatRunScript st3 writes 353 := 3). The demand
+        # derives as the saving-writer FIXPOINT over the root's slot escapes -- catInBag priced
+        # own(24) ∧ 63 ∧ 62 off its chain-composed entry, catGetFish priced own(37) plus the
+        # re-armed encounter's price DISCHARGED of flag 62 (theThrowFishScript writes it) --
+        # yielding `63 ∧ own(24) ∧ (62 ∨ own(37))`, the USER's ruling verbatim, and rows once
+        # per (root, item) at the proc's real call sites {60, 61, 63}. LSL2, KQ4, KQ6 and LB2
+        # all return [] (KQ6's wedding fuse has no death phase -- it stays an item seal).
+        # ✅ PROMOTED 2026-08-19b, same session as declared -- "no confirmed softlock has
+        # DROPPED", "mechanism pinned: Fishhook" and "mechanism pinned: Shell" are GREEN and no
+        # longer listed. Declared on the USER's play-found harpy-island ruling (the departure
+        # cutscene writes flag 54; every flag-54 return arms a 50%-roll positional kill on
+        # control mask $0002 with no counter, so the island is ONE SAFE VISIT and the true
+        # frontier for the Shell and the Fishhook is the boat click). The cure differed from
+        # the reds' named guess in ONE respect ([[re-derive-a-reds-premise]]): analyze's
+        # value-blind frontier does not move -- the catch is register_strandings' reg456=1
+        # rows, the (room, register-value) trapped state. Five derivations, each measured:
+        # the SCI1 PIC extended-op dialect (sci_gfx renders KQ5 pics), the onControl-mask
+        # positional-hazard spelling + Script-host liveness via arming_conditions, staged
+        # control-return seeds with prevRoom tags (the boat landing; the per-edge tag
+        # exclusion), per-layout obstacle alternatives, and hazard-priced PICKUPS (the
+        # shell's spot) conjoined into source_guards -- read by register_strandings' walks
+        # through the new liveness-aware source test (_live_srcs/_source_live, the same
+        # standard reobtainable_rooms already applied). Snake gate byte-identical; the
+        # hazard-gates pin now freezes all three rows.
+        # ✅ PROMOTED 2026-08-17 -- "no UNEXPECTED item flagged (suspicion)" is GREEN and no
+        # longer listed. It was declared red the day before with the cure named ("goes green the
+        # day positional gates land"), and this is that day: the Tambourine's
+        # `need@rm55 sources=[13] frontier=rm40->rm41` row is gone because the model now knows
+        # you cannot leave town without charming the snake.
+        #
+        # THE CURE, and it is the ranked #1 census gap in its cleanest form. A `doit` runs every
+        # cycle whether the player likes it or not, so `((< (gEgo distanceTo: snake) 30)
+        # (setScript: strike))` is the script saying "come within 30 pixels and you die". That
+        # makes the disc around a STATIONARY killer ground the player may not cross, i.e. an
+        # obstacle -- and an obstacle is a thing `polygons.py` already reasons about. So the
+        # geometry answers the question `control_oracle.crossing_forces_rect` asks of the SCI0
+        # control plane, over the polygons an SCI1 room hands its pathfinder instead: rm2's east
+        # handoff is walkable only through the y in (48,81) slit poly1 and poly4 leave, and every
+        # cell of it is inside the disc. The edge inherits the NEGATION OF THE SNAKE'S CAST
+        # CONDITION (flag 47), whose price `_reg_cost` independently derives as item 34.
+        #
+        # It needed `polygons.instance_polygons` first: KQ5 declares obstacles as named
+        # `Polygon` instances filled from local arrays, and reading only the inline spelling
+        # meant 84 `addObstacle:` sites across 67 rooms produced NO polygons -- every KQ5 room
+        # read as open floor. LSL2/KQ4 have no obstacles at all and KQ6/QFG/LB2 pass expressions
+        # rather than named instances, so all five frozen surfaces are untouched by it.
+        #
+        # MEASURED, as a funnel: 27 `doit` arms corpus-wide bound the ego's distance (KQ5 8,
+        # KQ6 6, QFG-VGA 8, LB2 5); 17 of them ARM something (6/5/4/2); and exactly ONE of the
+        # 17 says "inside the radius, full stop" rather than "inside the radius, AND some local
+        # is clear". That one is the snake. Every other hazard in the corpus is conditional --
+        # KQ6's zombie wants `(not local73)`, LB2's rat3 wants `(== (gEgo view:) 732)` -- and
+        # four of KQ6's five also move, so their `(x,y)` is not a place either. The rule is
+        # general and the corpus is simply thin in unconditional killers.
+        # KQ5's full surface (placements included) moved by exactly two lines, both this FP
+        # leaving. Three green pins replace this entry, one per conjunct. docs/KQ5-ORACLE.md §15.
+
         # KQ5's oracle landed 2026-08-14 (docs/KQ5-ORACLE.md: game source + three independent
         # walkthroughs) with five caught softlocks pinned green and these five declared red the
         # same day. The first two share one root -- the (room, register-value) trapped state --
@@ -225,32 +321,199 @@ KNOWN_RED = {
         # surfaces byte-identical plus the new empty key; KQ5 moved by pure addition.
         # The fish flipped with the same rows (its rm86 demand); the BEES half is the
         # narrower red below.
-        "🔴 KNOWN GAP (KQ5): the bees' flag-36 window closure is caught":
-            "flag 36's only writer is bearScript (runs only while `has: 5` spawns the bear); "
-            "the hive arms deathByBees under not-flag36, so the honeycomb -> beeswax -> boat "
-            "chain dies with the wasted fish. Phase 3 (window closure): a demanded value "
-            "whose every producer is guarded on a flag the producers' own trigger sets.",
-        "🔴 KNOWN GAP (KQ5): the cat window's closure on arming is caught":
-            "The rm86 demand rows are green, but flag 83 is set the moment the chase STARTS "
-            "(rm006::doit) -- every producer of `owner == 6` sits inside a window that "
-            "closes on arming, win or lose, and no row states the window. Phase 3; the same "
-            "fact is patch A's hold site.",
-        "🔴 KNOWN GAP (KQ5): the fortune teller's needle substitution is caught":
-            "rm13's amulet slot takes Gold_Coin(11) OR Golden_Needle(3); the needle's real "
-            "consumer is the tailor (-> cloak). Exchange-slot class ([[exchange-slots-one-"
-            "statement-one-item]]) -- the detector for 'a slot consumed by an item another "
-            "slot demands' does not exist yet.",
-        "🔴 KNOWN GAP (KQ5): the witch-region worn-amulet death fold is caught":
-            "witchRegion.sc's fireball is survived only under `(and (has: 27) flag84)` -- worn "
-            "IS modelled (flag 84, the ordinary bit store), but the fold lives in a REGION "
-            "script and the death-fold scope stops at rooms. Extending it to setRegions "
-            "scripts is the build.",
-        "🔴 KNOWN FP (KQ5): fatal_uses does not condemn the tambourine":
-            "hugScript (Dink's hug, proc0_26 death) arms under own(34) because Dink only "
-            "EXISTS while you hold the tambourine, and giving it (giveTamboScript, the "
-            "hairpin's source) is the escape from that very machine. Savior-condemned family, "
-            "sixth member, NEW POLARITY: the item rides the arming guard, not a branch. The "
-            "cure belongs in fatal_uses' survivability reading, not in the oracle.",
+        # ✅ RULED AND RE-PINNED 2026-08-16b -- "mechanism pinned: Shoe" / "Stick" were
+        # declared red earlier the same day pending this ruling, and are GREEN. They pinned the
+        # `dangerous_sinks Shoe@rm12 / Stick@rm12` rows ("spending it at the dog leaves it needed
+        # at the cat"), which f623aa2 retired. USER: *"you can't skip the bear... use your shoe on
+        # the dog, that's okay, finish the bear, get the stick, and use that on the cat. it's not
+        # a softlock."* The source agrees and says why the pool cannot be starved at all:
+        # `rm006.sc:112` inits the cat and the rat only under `(or (has: 8) (has: 16))`, and
+        # flag 83 -- the window -- is set by `rm006::doit` only once the rat is on screen, so
+        # walking in empty-handed neither spends anything nor closes anything. The rows were
+        # FALSE POSITIVES; both items are now pinned to the rm86 pool demand alone and sit in
+        # EXPECTED_CAUGHT. docs/KQ5-ORACLE.md §1.
+        # ✅ PROMOTED 2026-08-17 -- "🔴 KNOWN GAP (KQ5): the bees' flag-36 window closure is
+        # caught" is GREEN and no longer listed. It was never a register-flip window at all (the
+        # 2026-08-16b note here already corrected that): flag 36's only writer is `bearScript`,
+        # the bear exists only while `has: 5`, and the bear takes item 5 alone -- so what shuts
+        # the window is an ITEM SPENT SOMEWHERE ELSE, and the shape is a sink, not a closure.
+        # Three derivations, none of which moves anything alone (docs/KQ5-ORACLE.md §16):
+        #
+        # (a) A TRADE TO A ROOM IS A DESTRUCTION WHEN THE ITEM CANNOT COME BACK. `destroying_
+        # sinks` admitted only `put:` with NO destination, on the ground that owner -1 is not a
+        # room so no `ownedBy: gCurRoomNum` acquisition can be met again -- but that argument is
+        # about the DESTINATION, not about -1, and `(gEgo put: 5 6)` hands the fish to the cat's
+        # room just as finally. ⛔ The one-step version of that test ("does any acquisition demand
+        # owner == dest") is WRONG and KQ4 proved it: `Room3::newRoom` parks Cupid's bow at 202
+        # whenever you leave it lying, and `doCupid` -- armed one visit in three under
+        # `ownedBy: 202` -- brings it back, so 202 is where the bow is SUPPOSED to rest and the
+        # naive rule condemned it. The reading is a graph: `_owner_graph` makes each owner value a
+        # node and each transfer an edge (source = what its guard demands about the item's
+        # location, wildcard when it demands nothing), and `drop_is_permanent` asks whether EGO is
+        # reachable. `destroyed_is_permanent` is now that same function called with NOWHERE -- one
+        # rule, one implementation. It needed `opmodel.machine_moves`: `Step.moves` has always
+        # carried `(item, dest)` and `_machine_info` reduced it to a bare set of item numbers, so
+        # a cutscene handing an item back to the world was invisible in every reading.
+        #
+        # (b) `disjunctive_groups` GROUPED BY STATE AND READ BY REQUIREMENT. Entries are
+        # alternatives only when they arm the same thing, and the cat's one item-free entry at
+        # state 0 was discarding the seven throw entries as "one alternative is free"; and a throw
+        # entry's guard carries the scene's arming disjunction alongside the act, so
+        # `_own_positive` returned {8,16} for every entry and the shared intersection killed the
+        # group. By state, with `_own_required`, the derivation is rm6 -> {Fish, Shoe, Stick,
+        # Leg_of_Lamb} and rm12 -> {Shoe, Stick, Leg_of_Lamb} -- the asymmetric pool the USER
+        # PLAY-CONFIRMED on 2026-08-16 ("that wouldn't divert the dog's attention"), derived
+        # rather than recorded.
+        #
+        # (c) THE DISJUNCTIVE RESCUE READ AT THE CONSUMER. An alternative is only an alternative
+        # for the gate it opens. Asked at the spend site, "the cat takes a Shoe too" excuses
+        # spending the Fish there -- while the room that still needs the Fish is rm11, where the
+        # bear takes nothing else. Read at the room where the item is STILL NEEDED, the Shoe and
+        # the Stick keep their rescue (the user's own 2026-08-16b ruling, pinned green) and the
+        # Fish loses it. Same rule as [[an-item-some-armings-demand-is-not-a-gate]].
+        #
+        # MEASURED across the corpus: LSL2's golden sink set is the v1.0-lsl2 tag exactly
+        # (Matches / Hair_Rejuvenator x3 / Parachute / Airsick_Bag x3) and its one group is
+        # unchanged; KQ4 keeps its single Magic_Fruit row and gains no group (the Cupid FP the
+        # one-step test created is gone); KQ6 holds at four rows and two groups; LB2 stays at zero
+        # sinks and gains one group that moves no finding. KQ5 gains the Fish row, and the Pie's
+        # pinned sink moves rm38 -> rm1 (a strengthening -- see the pin) plus a second row at
+        # rm34. Rebuilt as two green pins, one per direction of (c).
+        # ✅ PROMOTED 2026-08-16b -- "🔴 KNOWN GAP (KQ5): the cat window's closure on arming is
+        # caught" is GREEN and no longer listed. `missability.window_closures` is phase 3: the
+        # fold rows state that the kidnap DEMANDS a banked throw, and these state that the only
+        # way to bank one shuts by itself. The conjunct a room-reachability test cannot supply is
+        # PRODUCER LIVENESS -- rm6 stays walkable forever, what stops being possible is the throw
+        # -- so each producer is read through `guard_reqs` against the register being flipped and
+        # a row needs every one of them dead at that value. Two closers, both real: flag 83 goes
+        # up as the chase ARMS (rm006::doit, win or lose) and rm6's `local0` when you LOSE the
+        # race. It landed with `extract.feature_adders`, without which three of the seven
+        # `put: <item> 6` sites -- `catStrip`, which joins the cast only via
+        # `(gGame setFeatures: catStrip)` -- carry none of the scene's arming and the closure is
+        # invisible. Four rows, one per pool member, mechanism-pinned.
+        # ✅ PROMOTED 2026-08-16 -- "🔴 KNOWN FP (KQ5): no carry-in demand rides the rm57->rm683
+        # cutscene" is GREEN and no longer listed, and it took `test_toll.py`'s two KQ5
+        # assertions green with it, as the red said it would. rm683 is `cdCassimaToon`, a CD
+        # cutscene that tests no item at all; the own(Cat_Fish)/own(Bag_of_Peas) demands were
+        # broadcast into it because `castle.sc` is the region live in all 16 castle rooms and
+        # `theCat` had NO presence condition -- its bagged arm is
+        # `(and (== global332 7) (== global338 gCurRoom))` and an unreadable disjunct frees the
+        # whole OR. `extract.room_valued_globals` derives what such a global can hold (least
+        # fixpoint based at false, because the machine that writes it is armed from the cat's own
+        # handler) and lowers the compare to the room disjunction it means. Measured:
+        # g338 -> {57,58,59,60,61,63,64}, the rm57->rm683 toll rows and their patch guard gone,
+        # every other KQ5 row unmoved; LSL2, KQ4, KQ6 and LB2 byte-identical on the FULL surface
+        # with placements (KQ4 and LB2 derive a room-valued global of their own and do not move).
+        # ✅ PROMOTED 2026-08-15 -- "🔴 KNOWN FP (KQ5): no detector demands the Wand" is GREEN and
+        # no longer listed. `missability._unrefusable_grants`: rm001.sc:78 hands Crispin's wand to
+        # anyone entering room 1 without it, in `init`, under no other condition, so
+        # `_reach_without(28)` stops at rm1 and the two analyze rows (plus the Wand's conjunct in
+        # the rm40->rm41 spec) go with it. The full snapshot surface of LSL2, KQ4, KQ6 and LB2 is
+        # byte-identical, placements included. Mechanism in docs/KQ5-ORACLE.md §10 -- including
+        # the site that DOES take the wand (rm066's machine tray), which the old reason denied.
+        # ✅ RETIRED 2026-08-17, USER-RULED IN THE GAME -- "🔴 KNOWN GAP (KQ5): the fortune
+        # teller's needle substitution is caught" is gone because it DEMANDED THE WRONG ROW, not
+        # because a build landed. It asserted that some detector flags the Golden_Needle, on the
+        # tier-3 claim that paying the gypsy with it makes the game unwinnable "because the
+        # needle's real consumer is the tailor". Both halves are false.
+        #
+        # The reason, refuted by the source: `tailorShop.sc:143-151` accepts Golden_Needle(3),
+        # Gold_Coin(11) OR Heart(9). KQ5 runs a FIVE-TOKEN MARKET over four purchases --
+        # gypsy{3,11}->Amulet, tailor{3,9,11}->Cloak, toyMaker{3,9,11,12}->Sled,
+        # baker{3,4,9,11}->Pie, with tokens Needle(rm27), Coin(rm4), Heart(rm21), Gold_Coin(rm18)
+        # and Marionette(rm10). Every token is reachable before the amulet is needed (the temple is
+        # a short walk from town via rm14/15 -> rm212/213 -> rm214), so a perfect assignment
+        # survives ANY single payment.
+        #
+        # The verdict, refuted by the USER in two steps: the gypsy takes the needle, and the tailor
+        # then sells the cloak for the gold coin. So the model emitting nothing is CORRECT, and a
+        # row would have been a false positive. Rebuilt as two green pins -- the market reads as
+        # four alternative-sets (`disjunctive_groups` at rm13/rm5/rm206), and no detector strands a
+        # token -- the same shape the witch amulet's red was rebuilt into on 2026-08-16b.
+        #
+        # ⚠️ WHAT SURVIVES IS A DIFFERENT MECHANISM, and it is recorded as OPEN rather than as a
+        # missed catch (docs/KQ5-ORACLE.md §6): spending BOTH 3 and 11 away from the gypsy empties
+        # a slot no other token fills, because the Heart is two screens into the forest the amulet
+        # opens. That is a Hall deficiency over the market and needs TWO wrong payments, so no
+        # single-spend detector can state it. Do not re-declare it as this row.
+        #
+        # ⛔ The scoring tell is NOT evidence and must not be used as any detector's conjunct:
+        # `proc0_27 3` fires only for coin->gypsy and `proc0_27 4` only for needle->tailor, which
+        # marks Sierra's intended pairing. We already knew that tell is not a softlock signal --
+        # the Lamb and the Fish score nothing at the cat and still save the mouse.
+        #
+        # ✅ BOTH 2026-08-17 REDS PROMOTED 2026-08-17b -- "the shop market squeeze is caught" and
+        # "spending the Heart at a shop is condemned by the Harp it costs" are GREEN and no longer
+        # listed, closed by ONE detector because they were never two problems. The USER's framing,
+        # verbatim: "the 3 vendors and the gypsy each accepting some payments that can starve
+        # other merchants, when everything you get from the merchants is required."
+        # `missability.market_squeezes` derives the market (who must be paid, out of which
+        # one-copy tokens -- four requiredness readings, each corpus-witnessed, see its
+        # docstring) and condemns a payment exactly when the residual has no perfect matching.
+        # KQ5 9 rows: the heart at any shop (the princess starves -- the Harp's sole source),
+        # the needle/gold coin at the toy maker or baker (the gypsy-tailor-princess triangle
+        # drops to two tokens for three purchases), and the pie eaten or fed to the eagle (the
+        # yeti's rm35 fold, restated from the matching side). MEASURED: LSL2 0, KQ4 0, KQ6 0,
+        # LB2 0. Every user-ruled safe play is silent: needle->gypsy, coin->tailor, the pool.
+        #
+        # ⚠️ The squeeze's old "needs TWO payments" framing was SHARPENED by the user's cloak
+        # ruling ("the cloak is needed", 2026-08-17b): with all five products required the
+        # needle/coin rows are ONE-payment dead ends -- the old two-payment story rested on the
+        # heart covering the tailor, which the Heart ruling itself removed.
+        #
+        # ⛔ The Heart red's DECLARED CURE was wrong, and it was measured twice and rejected
+        # twice: widening `destroying_sinks` over `machine_moves` cost 19 FPs on 2026-08-17,
+        # and after the region-broadcast and put-HERE causes were fixed it still cost 8 KQ6
+        # rows (the pawn shop reading intended uses as competing with the rm280 counter) and
+        # 2 LB2 pressPass rows CARRYING TWO SHIPPED PLACEMENTS -- and KQ6 is GOLDEN, exactly
+        # like LSL2/KQ4 (user, "as I've said many times"). The market states the same Heart
+        # facts with zero movement anywhere else. [[re-derive-a-reds-premise]], for a cure.
+        #
+        # ✅ PROMOTED 2026-08-17b -- "🔴 KNOWN GAP (KQ5): eating the lamb is condemned by the
+        # eagle it starves" is GREEN and no longer listed, and its stated cure was REFUTED
+        # rather than built ([[re-derive-a-reds-premise]], on a cure, twice in one day). It
+        # prescribed owner-gating the cupboard acquisition; the true fact is that SCARCITY IS
+        # CONSUMER-RELATIVE: the eagle's fold sits at rm42, past the roc, and
+        # `reobtainable_rooms(19)` already excludes rm42 -- the same gate-aware fact the lamb's
+        # analyze carry-across row rests on -- so to the one consumer that matters every lamb
+        # is the last lamb, restockable cupboard or not. `_market` now waives pressure only for
+        # a token re-suppliable FROM THE CONSUMER'S OWN ROOMS, and the loss/satisfaction reads
+        # follow (a spend is a loss to a consumer that can never re-fetch; a spend TO the
+        # fold's own destination is its satisfaction). THREE rows landed, not one: the EAT
+        # verb, and the cat and dog throws -- oracle §1a's "throw the lamb at the cat or dog
+        # -> rm42 death", a declared TRUE softlock never before caught. Corpus: LSL2 0, KQ4 0,
+        # KQ6 0, LB2 0, KQ5 9 -> 12. Rebuilt as two green pins (the three rows; the lamb TO
+        # the eagle stays silent).
+        # ✅ RETIRED 2026-08-16b, USER-RULED -- "🔴 KNOWN GAP (KQ5): the witch-region worn-amulet
+        # death fold is caught" is gone because it DEMANDED THE WRONG ROW, not because a build
+        # landed. It asserted that some detector flags the Amulet, on the oracle's old verdict
+        # that walking into the dark forest without it strands you. USER: "on rm19 you can get
+        # back out. I don't think you can get more than 1 screen into the forest, but that's
+        # fine. so you need the amulet but it's not a stranding." Measured agreement: from rm19,
+        # 98 of the 100 reachable rooms are still reachable -- rm13, the fortune teller, among
+        # them -- and rm680, the amulet handover, is entered only from rm13.
+        #
+        # ⛔ AND ITS STATED REASON WAS WRONG TOO: region scope was never the blocker; script
+        # 200's machines are attributed to rm19-26 and always were. What hid the fork was an
+        # unread `(+= state 4)` -- the relative setstate with a stride -- which sent BOTH arms of
+        # the fireball fork into state 8's proc0_26. Fixed in compile._interp and
+        # machine._op_leaf; `required[27]` went [0, 13] -> all seven forest rooms.
+        #
+        # Rebuilt GREEN as two pins: "the worn-amulet fireball fork demands the Amulet in every
+        # forest room" (the demand, which is what the fix bought) and "no detector claims the
+        # Amulet is STRANDED" (the FP guard, same shape as the Wand's). docs/KQ5-ORACLE.md §7.
+        # ✅ PROMOTED 2026-08-16b -- "🔴 KNOWN FP (KQ5): fatal_uses does not condemn the
+        # tambourine" is GREEN and no longer listed. The SIXTH savior-condemned correction, and
+        # the first where the item was named by WHO WAS IN THE ROOM rather than by anything the
+        # player did: Dink is init:ed only under `(has: 34)`, his script arms `hugScript`, and
+        # hugScript's state 5 is a death -- so own(34) sat in the lethal entry as the monster's
+        # existence condition. Giving the tambourine is the ESCAPE, so the row became
+        # `action_specs: Tambourine@rm55: (not (has: 34))` -- a SHIPPED PATCH WITHHOLDING THE
+        # ITEM THAT SAVES YOU, the Spinach_Dip shape. Cured by `Machine.entry_site`: the guard as
+        # built at the arming site, before `_chain_entries` and `_inherit_local_continuations`
+        # strengthen it. `entries[i]` is what must hold; `entry_site[i]` is what the player did,
+        # and fatal_uses wanted the second. KQ6's skull survives (its own() comes from
+        # `theGears doVerb 51`, at the site); LSL2/KQ4/KQ6/LB2 byte-identical.
     },
 }
 
@@ -351,14 +614,31 @@ def main(argv=None):
     # --strict, because skipping is correct on a machine that does not have the game.
     bad = bool(unexpected or crashed or promoted or silent or (strict and skipped))
     if not bad:
-        for f, red in KNOWN_RED.items():
-            if f in names:
-                for name in red:
-                    print(f"  \033[2mknown-red\033[0m  {f}: {name}")
-        print("\n\033[32mThe suite agrees with KNOWN_RED.\033[0m"
-              + ("" if not skipped else
-                 f"  \033[33m({len(skipped)} section(s) skipped -- those gates did not run; "
-                 f"`--strict` fails on them)\033[0m"))
+        # ⛔ "AGREES WITH KNOWN_RED" IS NOT "GREEN", AND SAYING SO IN GREEN WAS A LIE OF TONE.
+        # USER 2026-08-16: "I don't like that we report a suite green when we're in the process of
+        # building a game and there are still 6 reds." The contract this file exists to enforce is
+        # about MOVEMENT -- no undeclared failure, no silent promotion -- and it is satisfied
+        # whether the declared set holds one gap or twenty. That is worth an exit code, not a
+        # colour. So the outstanding gaps are COUNTED and the closing line only turns green when
+        # there are none left to count.
+        outstanding = [(f, name) for f, red in KNOWN_RED.items() if f in names for name in red]
+        for f, name in outstanding:
+            print(f"  \033[2mknown-red\033[0m  {f}: {name}")
+        skip_note = ("" if not skipped else
+                     f"  \033[33m({len(skipped)} section(s) skipped -- those gates did not run; "
+                     f"`--strict` fails on them)\033[0m")
+        if outstanding:
+            by_file = {}
+            for f, _name in outstanding:
+                by_file[f] = by_file.get(f, 0) + 1
+            where = ", ".join(f"{f.removeprefix('test_').removesuffix('.py')} {n}"
+                              for f, n in sorted(by_file.items()))
+            print(f"\n\033[33mNo movement: the failing set is exactly the declared one. "
+                  f"{len(outstanding)} declared gap(s) still open ({where}) -- this run is NOT "
+                  f"a clean bill of health.\033[0m" + skip_note)
+        else:
+            print("\n\033[32mThe suite is green: nothing failed and nothing is "
+                  "declared red.\033[0m" + skip_note)
         return 0
     if strict and skipped and not (unexpected or crashed or promoted or silent):
         print("\n\033[31m--strict: the run is red because gates were SKIPPED, not because "

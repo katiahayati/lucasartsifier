@@ -339,6 +339,47 @@ def as_int(n):
     return n["value"] if n and n["t"] == "Number" else None
 
 
+def proc_ref(ir, node, script):
+    """`(target_script, REGISTRY name)` for a PublicCall/LocalCall -- the key its body is
+    filed under, which is not always the name the call carries.
+
+    ⛔ A LOCAL PROC IS REGISTERED BY ITS OFFSET AND CALLED BY ITS INDEX. The registry key is
+    `localproc_<hexoffset>` (`localproc_0c6c`) while the call node's `name` is a positional
+    `localproc_0`, with the real target in its `offset` field (3180 == 0xc6c). Every walker
+    looked the body up by `name`, so it silently found nothing and the call was never
+    followed -- measured missed lookups: LSL2 21, KQ4 26, KQ5 460, KQ6 196, Dagger 179.
+
+    What that costs is whole mechanisms, not detail. KQ5's rm047 is the sailing sea-map: its
+    `doit` bumps map coordinates by the screen edge you hit and then calls the local proc that
+    turns them into `newRoom:` 44/45/46/48 -- so with the call unfollowed the room has NO
+    exits, and the island beyond it (the shipwreck cluster, the Shell's and Fishhook's home)
+    is unreachable from the rest of the game.
+
+    `vocab._localproc_offset` has known this since the flag store needed it; this is the same
+    fact stated once for every walker that follows a call ([[same-rule-two-places]]). Falls
+    back to the carried name whenever the offset resolves to nothing, so a public call -- and
+    any shape this does not recognise -- behaves exactly as before."""
+    tgt = node.get("script", script)
+    name = node.get("name")
+    s = ir.scripts.get(tgt)
+    if s is None or name in s.procs:
+        return tgt, name
+    off = node.get("offset")
+    if off is None:
+        return tgt, name
+    key = "localproc_%04x" % off
+    if key in s.procs:
+        return tgt, key
+    for k in s.procs:                    # tolerate a differently-padded key
+        if k.startswith("localproc_"):
+            try:
+                if int(k[len("localproc_"):], 16) == off:
+                    return tgt, k
+            except ValueError:
+                pass
+    return tgt, name
+
+
 if __name__ == "__main__":
     import sys
     path = sys.argv[1] if len(sys.argv) > 1 else config.ACTIVE.ir_path

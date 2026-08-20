@@ -560,6 +560,16 @@ int main(int argc, char **argv)
 {
     // --version {sci0|sci1|sci11} anywhere in argv, stripped before the mode dispatch below so
     // every mode accepts it. Default sci0 keeps every existing caller byte-identical.
+    //
+    // --wide-exports: emit the export table as 32-bit entries (offset word + zero word).
+    // SCI1-middle interpreters (lofs-absolute era: KQ5 CD among them) DOUBLE the export index
+    // when reading the table -- ScummVM validateExportFunc: `if (exportsAreWide) pubfunct *= 2`
+    // -- so a script compiled with a 16-bit table sends every cross-script call to export N
+    // through word 2N: garbage. The vendor emitter already supports both widths
+    // (GenerateScriptResource.cpp: `IsExportWide ? 4 : 2`); this flag only reaches it. The
+    // caller DERIVES it from the stock game's own script 0 (patcher._version_args), same
+    // policy as --version.
+    bool wideExports = false;
     std::vector<char *> args;
     for (int i = 0; i < argc; ++i)
     {
@@ -578,7 +588,16 @@ int main(int argc, char **argv)
             }
             continue;
         }
+        if (a == "--wide-exports")
+        {
+            wideExports = true;
+            continue;
+        }
         args.push_back(argv[i]);
+    }
+    if (wideExports)
+    {
+        g_targetVersion.IsExportWide = true;
     }
     argc = (int)args.size();
     argv = args.data();
@@ -602,7 +621,9 @@ int main(int argc, char **argv)
             "  %s --all <gameProjectDir>                      Compile All (write .sco files)\n"
             "\n"
             "  --version {sci0|sci1|sci11}  (default sci0) may precede any of the above; sci11\n"
-            "                               also writes <output.bin>.hep, the heap resource\n",
+            "                               also writes <output.bin>.hep, the heap resource\n"
+            "  --wide-exports               emit 32-bit export entries (SCI1-middle interpreters\n"
+            "                               double the export index; derived from stock script 0)\n",
             argv[0], argv[0], argv[0]);
     return 2;
 }

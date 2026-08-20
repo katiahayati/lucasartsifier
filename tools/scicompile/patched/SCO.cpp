@@ -723,8 +723,25 @@ unique_ptr<CSCOFile> SCOFromScriptAndCompiledScript(const Script &script, const 
         }
     }
 
-    // Now public procedures and instances. Get their names from the script first.
-    // We assume the ordering in the script corresponds to the ordering in the compiled script.
+    // Now public procedures and instances.
+    //
+    // THE SOURCE'S PUBLIC BLOCK DECLARES THE SLOTS -- use them when it does (headless port
+    // fix, 2026-08-18). The positional zip below assumes the DEFINITION order of public
+    // procedures matches the export-table order of the compiled script, which is false
+    // whenever the decompiler emitted procedures in address order while the table orders
+    // them by slot. KQ5's Interface.sc is the case: proc255_5 is defined first, so every
+    // proc name landed on the wrong slot, and Main's `proc255_5` compiled as `calle 255,0`
+    // -- proc255_0 called with (object, event), kStrCpy signature mismatch, crash (the rm67
+    // mouse-hole look). A source with an explicit `(public name N ...)` block IS the
+    // decompiler's own slot map; record it verbatim.
+    if (!script.GetExports().empty())
+    {
+        for (const auto &entry : script.GetExports())
+        {
+            sco->GetExports().emplace_back(entry->Name, (uint16_t)entry->Slot);
+        }
+        return sco;
+    }
     uint16_t exportIndex = 0;
     vector<string> publicInstanceNames;
     for (const auto &classDef : script.GetClasses())

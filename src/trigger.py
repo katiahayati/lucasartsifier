@@ -92,6 +92,17 @@ def stock_or(cond):
     return "(or (== global%d 2) %s)" % (MODE["g"], cond)
 
 
+def stock_and(cond):
+    """`cond`, WITHDRAWN in stock mode -- the conjunctive twin of `stock_or`, for the sites
+    that ADD a condition rather than demand one. A strengthened flag READ becomes
+    `(or <test> <cond>)`; under stock the added disjunct must contribute nothing, so it
+    carries this wrapper and evaluates false while the mode global says stock. Same silent-kind
+    doctrine as `stock_or`: these never speak, so lite behaves as full."""
+    if MODE is None:
+        return cond
+    return "(and (not (== global%d 2)) %s)" % (MODE["g"], cond)
+
+
 def guarded_wrap(guard_sexpr, body, refuse, site=None, deny_extra=(),
                  indent="\t\t\t", marker="; softlock-guard"):
     """The refusal-bearing wrap, in one place for every kind that says no.
@@ -801,7 +812,38 @@ def _mentions_oncontrol(form, octx=None):
     return False
 
 
-def analyze_room(forms):
+def _mentions_ego_position(form, ego=None):
+    """Does this subtree read WHERE THE EGO IS, in the COORDINATE spelling -- `(< (gEgo y:) 150)`?
+
+    The same standing-position fact `_mentions_oncontrol` reads in control-mask form, spelled
+    with no `onControl` anywhere: KQ5's rm85 arms the kidnap on `(< (global0 y:) 150)` in
+    `doit`, and the mask-only reading classified it an adversarial arm-event -- whose bare
+    arming wrap left the `(proc0_2)` handsOff sibling un-gated, the exact shape of play
+    finding #11. RESTRICTED TO THE EGO, which is why the caller must thread the ego's global
+    index: a cond on another actor's x/y is animation logic, not a player-initiated crossing,
+    and reading those as positional would hand arm-clause wraps to scenes the player never
+    walked into. `ego=None` (callers that cannot name the ego) reads nothing -- the
+    permissive direction is the old classification, not a guess."""
+    if ego is None or not isinstance(form, list):
+        return False
+    ms = _message_send(form)
+    if ms:
+        recv, groups = ms                      # _message_send returns the receiver NORMALIZED
+        name = recv if isinstance(recv, str) else \
+            (recv.name if isinstance(recv, Sym) else None)
+        # `edgeHit` is the third spelling of the same fact: the ego WALKED to a screen edge
+        # and the engine recorded which one. A clause dispatching on `(gEgo edgeHit:)` is a
+        # player-initiated crossing exactly as an onControl mask or a coordinate compare is --
+        # KQ5's rooms spell their scripted edge exits this way (rm036's `doit` reads it twice
+        # and `newRoom:`s the result). ARGUMENT-FREE ONLY: `(gEgo edgeHit: 0)` is the WRITE
+        # that clears the code, not a read of where the player stands.
+        if name == "global%d" % ego \
+                and any(sel in ("x", "y", "edgeHit") and not args for sel, args in groups):
+            return True
+    return any(_mentions_ego_position(x, ego) for x in form if isinstance(x, list))
+
+
+def analyze_room(forms, ego=None):
     """newRoom sites, changeState-call sites and setScript-call sites, tagged with (instance,
     method, ...). setScript is the OTHER way a controllable handler starts an uncontrollable
     sequence: `(self setScript: closer)` where the `closer` Script does the frontier newRoom --
@@ -852,12 +894,14 @@ def analyze_room(forms):
         if is_sym(h, "cond"):
             for clause in form[1:]:
                 if isinstance(clause, list) and clause:
-                    cpos = pos or _mentions_oncontrol(clause[0], octx)
+                    cpos = pos or _mentions_oncontrol(clause[0], octx) \
+                        or _mentions_ego_position(clause[0], ego)
                     for b in clause[1:]:
                         walk(b, inst, meth, state, cpos, octx)
             return
         if is_sym(h, "if"):
-            tpos = pos or (len(form) > 1 and _mentions_oncontrol(form[1], octx))
+            tpos = pos or (len(form) > 1 and (_mentions_oncontrol(form[1], octx)
+                                              or _mentions_ego_position(form[1], ego)))
             for s in form[2:]:
                 walk(s, inst, meth, state, tpos, octx)
             return
@@ -932,11 +976,88 @@ def _var_assigned_rooms(forms):
     return out
 
 
-def find_trigger(forms, target_room):
-    """Return the guard placement for a frontier newRoom into `target_room`."""
-    nr, cs, ss, _pc = analyze_room(forms)
+def _edge_dispatch_vars(forms):
+    """Variable names assigned from an `edgeToRoom:` read -- `(= temp0 (self edgeToRoom: ...))`.
+
+    `edgeToRoom` maps an edge code to the room's OWN direction properties, so a variable
+    holding its result can hold exactly the rooms `nav_props` declares -- the DYNAMIC spelling
+    of the same one-indirection static exit `_nav_read` already resolves (`(gCurRoom newRoom:
+    (gCurRoom north:))`). KQ5 spells nearly every scripted edge exit this way (rm036::doit:
+    `(= temp0 (self edgeToRoom: (global0 edgeHit:)))` then `(global2 newRoom: temp0)`), and
+    without this the site is invisible and the edge reports no-trigger."""
+    out = set()
+
+    def walk(form):
+        if not isinstance(form, list):
+            return
+        if len(form) == 3 and is_sym(form[0], "=") and isinstance(form[1], Sym):
+            ms = _message_send(form[2]) if isinstance(form[2], list) else None
+            if ms and any(sel == "edgeToRoom" for sel, _args in ms[1]):
+                out.add(form[1].name)
+        for s in form:
+            walk(s)
+
+    for f in forms:
+        walk(f)
+    return out
+
+
+def _split_if(form):
+    """`(if H then... else else...)` as text -> (H, [then...], [else...]), each piece verbatim.
+
+    Purely textual, same contract as `_block_span`: comments and `{...}` strings skipped, an
+    unparseable form returns (None, [], []) so the caller declines the site instead of editing
+    it. A form with no `else` returns an empty else list -- fork-reading callers (patcher's
+    `_fork_head`) require both directions and refuse such a site."""
+    m = re.match(r"\(\s*if\b", form)
+    if not m:
+        return None, [], []
+    i, n = m.end(), len(form) - 1
+    parts = []
+    while i < n:
+        c = form[i]
+        if c in " \t\n\r":
+            i += 1
+            continue
+        if c == ";":
+            j = form.find("\n", i)
+            if j < 0:
+                break
+            i = j
+            continue
+        if c == "(":
+            b = _block_span(form, i)
+            if not b:
+                return None, [], []
+            parts.append(form[b[0]:b[1]])
+            i = b[1]
+            continue
+        mm = re.match(r"[^\s()]+", form[i:])
+        parts.append(mm.group(0))
+        i += mm.end()
+    if not parts:
+        return None, [], []
+    head, rest = parts[0], parts[1:]
+    if "else" in rest:
+        k = rest.index("else")
+        return head, rest[:k], rest[k + 1:]
+    return head, rest, []
+
+
+def find_trigger(forms, target_room, ego=None):
+    """Return the guard placement for a frontier newRoom into `target_room`.
+
+    `ego` (a global index, or None) feeds the coordinate spelling of the positional test --
+    see `_mentions_ego_position`. Callers that know the game's ego should thread it; None
+    keeps the mask-only reading."""
+    nr, cs, ss, _pc = analyze_room(forms, ego=ego)
     nav = nav_props(forms)
     assigned = _var_assigned_rooms(forms)
+    # A variable assigned from `edgeToRoom:` can hold every declared direction's room -- the
+    # dynamic nav read (see _edge_dispatch_vars). Union, not replace: a file may also assign
+    # the same variable a literal.
+    for v in _edge_dispatch_vars(forms):
+        assigned[v] |= set(nav.values())
     sites = [s for s in nr if s[3] == target_room
              or (isinstance(s[3], tuple) and s[3][0] == "nav"
                  and nav.get(s[3][1]) == target_room)
@@ -951,6 +1072,10 @@ def find_trigger(forms, target_room):
     # refusal speaks only for the crossing we mean.
     dest_test = ("(== %s %d)" % (dest[1], target_room)
                  if isinstance(dest, tuple) and dest[0] == "var" else None)
+    # ...and the wrapper needs the variable's NAME as well as the test: a var-destination
+    # `newRoom:` has no literal for the direct pattern to find (rm036's `(global2 newRoom:
+    # temp0)`), so the site is located by the variable instead.
+    dest_var = dest[1] if isinstance(dest, tuple) and dest[0] == "var" else None
     if inst is None:
         # A `newRoom` in a bare procedure: nothing to scope an edit to. Report it as unfound
         # rather than crashing the wrapper, which locates every site by its instance.
@@ -958,14 +1083,14 @@ def find_trigger(forms, target_room):
                 "target_room": target_room, "dest_test": dest_test}
     if meth in CONTROLLABLE_METHODS:
         return {"kind": "direct", "instance": inst, "method": meth,
-                "target_room": target_room, "dest_test": dest_test}
+                "target_room": target_room, "dest_test": dest_test, "dest_var": dest_var}
     if positional:
         # SCI1.1's positional exit: `doit` sees the ego standing on a control colour and calls
         # `newRoom:`. `doit` is not a handler method, but the move IS the player's -- they walked
         # there -- so it is refusable, and refusing it is exactly what an edge guard wants. Wrap
         # the whole cond-clause, not just the call: its siblings hand control off and animate.
         return {"kind": "direct", "instance": inst, "method": meth, "positional": True,
-                "target_room": target_room, "dest_test": dest_test}
+                "target_room": target_room, "dest_test": dest_test, "dest_var": dest_var}
     # newRoom is inside a cutscene (changeState). Find the controllable trigger.
     cands = [(k, m) for (i, m, k, recv) in cs
              if i == inst and m in CONTROLLABLE_METHODS and recv == "self"
@@ -1020,10 +1145,90 @@ def find_trigger(forms, target_room):
         # arm-event is safe only while some newRoom site lives OUTSIDE the script being gated.
         outside = [s for s in nr if s[0] != inst]
         if not outside:
-            return {"kind": "sole-exit", "instance": inst, "trigger_instance": i2,
-                    "trigger_method": m2, "target_room": target_room, "dest_test": dest_test}
-        return {"kind": "arm-event", "trigger_instance": i2, "trigger_method": m2,
-                "target_script": inst, "target_room": target_room, "dest_test": dest_test}
+            # `target_script` rides along for the deferral triage, whose contexts are the
+            # armings of the gated script -- which for a sole exit is `inst` itself. The key
+            # was missing for as long as no triage chain hop ever landed on a true sole-exit
+            # room; the hermit deferral was the first to (KeyError, 2026-08-19).
+            return {"kind": "sole-exit", "instance": inst, "target_script": inst,
+                    "trigger_instance": i2, "trigger_method": m2,
+                    "target_room": target_room, "dest_test": dest_test}
+        # THE PREMISE IS OPEN PLAY NEXT DOOR, and two context shapes break it (play-found
+        # 2026-08-18, the hermit departure hang -- no refusal, no exits, nothing left to run):
+        #
+        #   * an outside `newRoom:` counts as a way out only if it is REACHABLE without the
+        #     gated script. KQ5's cdHermitRoom spells the trap: goGetBoatScript's `newRoom: 44`
+        #     sits outside the gated cartoon2, but its every arming lives INSIDE cartoon2 --
+        #     withhold the cutscene and no path arms the way home. An exit whose armings are
+        #     all inside the gate is inside the gate.
+        #   * a `changeState` arming is the machine handing FORWARD its own continuation, not
+        #     an adversary arming next to open play (those arm from the free-running methods:
+        #     init, doit, newRoom, cue). Withholding a continuation parks the machine in the
+        #     client's script slot, and a room whose doit dispatches on `script` never reaches
+        #     its edge exits again (rm046's bringCedric; the 2026-08-04 finding-#11 class).
+        #
+        # ANNOTATED, NOT RECLASSIFIED. The deferral triage (`_defer_triage_site`) receives
+        # arm-events too, and it already judges these very contexts itself (committed vs
+        # benign, play-validated on LB2's rm480 chase chain, dagger-frozen); changing the kind
+        # under it crashed that path outright. Only the MAIN placement loop -- where a bare
+        # arm-event wrap would ship the silent hold as-is -- converts an unsound hold into
+        # the chain's controllable refusal or the sole-exit flow (see apply_guards).
+        armers = defaultdict(set)
+        for (i3, _m3, tgt3, _r3, _p3) in ss:
+            armers[tgt3].add(i3)
+        live = [s for s in outside
+                if not (s[0] in armers and armers[s[0]] <= {inst})]
+        sound = any(m3 != "changeState" for (_i3, m3) in arm_cands)
+        row = {"kind": "arm-event", "trigger_instance": i2, "trigger_method": m2,
+               "target_script": inst, "target_room": target_room, "dest_test": dest_test}
+        if not (sound and live):
+            row["unsound_hold"] = True
+            # THE CHAIN CLIMB, first choice (USER ruling 2026-08-19, the hermit: "prevent
+            # you from starting the whole cutscene by giving the shell until you have all
+            # you need"). The gated machine's armings are changeState handoffs, but a
+            # handoff machine may itself be armed from a CONTROLLABLE handler one or more
+            # hops up -- giveShell from hermit_a::handleEvent, the give click. That is the
+            # last controllable moment before the committed chain, and the refusal belongs
+            # there (the arrival-commit doctrine, in-file). Doors whose climb dead-ends in
+            # a free-running method are REPORTED (`chain_unwrapped`), never silently
+            # skipped -- whether they are sealed (bringCedric arms only off a flag written
+            # inside the very chain being guarded) is for the caller and the oracle to
+            # verify, and an unreported door is finding #4.
+            hop_seen = {inst}
+            level = sorted({i3 for (i3, m3) in arm_cands if m3 == "changeState"})
+            climbed_from = None
+            for _depth in range(3):
+                nxt = []
+                for carrier in level:
+                    if carrier in hop_seen:
+                        continue
+                    hop_seen.add(carrier)
+                    ups = [(i4, m4) for (i4, m4, t4, _r4, _p4) in ss
+                           if t4 == carrier and i4 is not None]
+                    ctl = [(i4, m4) for (i4, m4) in ups if m4 in CONTROLLABLE_METHODS]
+                    if ctl:
+                        row["chain_arm"] = {"trigger_instance": ctl[0][0],
+                                            "trigger_method": ctl[0][1],
+                                            "target_script": carrier}
+                        climbed_from = carrier
+                        break
+                    nxt += [i4 for (i4, m4) in ups
+                            if m4 == "changeState" and i4 not in hop_seen]
+                if climbed_from or not nxt:
+                    break
+                level = sorted(set(nxt))
+            if climbed_from:
+                others = sorted({i3 for (i3, m3) in arm_cands
+                                 if m3 == "changeState" and i3 != climbed_from})
+                if others:
+                    row["chain_unwrapped"] = others
+            # No controllable moment up the chain leaves only the annotation: the main loop
+            # routes such a row into the sole-exit flow (deferral, else honestly unplaced).
+            # A "decline-fork" cure -- conjoining the demand into the gated cutscene's own
+            # decline arm -- was BUILT here and REMOVED BY USER RULING 2026-08-19: its one
+            # real-world site (cdHermitRoom's goGetBoatScript) turned out to raise flag 105
+            # on the way out, a commitment DEFERRAL wearing a decline's clothes, and the
+            # ruling is that the refusal belongs before the chain starts, not inside it.
+        return row
     return {"kind": "no-trigger", "instance": inst, "cutscene_state": state,
             "target_room": target_room, "dest_test": dest_test}
 
@@ -1065,6 +1270,85 @@ def _find_region(text, header_re):
     return _block_span(text, m.start())
 
 
+def _turnback_emit(guard_sexpr, body, og, tb, refuse, site):
+    """The turn-back wrap + its Script instance TEMPLATE, shared by every positional-refusal
+    kind (arm-clause armings, positional direct exits) so the two cannot drift
+    ([[same-rule-two-places]]). `body` is the clause body being held. The returned instance
+    text carries two `%s` slots for the caller's derived safe target (xe, ye)."""
+    ego = og.get("ego", "global0")
+    room = og.get("room", "global2")
+    game = og.get("game", "global1")
+    forms = site.forms()
+    if forms is None:
+        wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{body}\n\t\t\telse\n"
+                   f"\t\t\t\t(if (not ({room} script:))\n"
+                   f"\t\t\t\t\t({room} setScript: {tb})\n"
+                   f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
+    else:
+        # The turn-back IS this kind's refusal; the mark rides its once-per-approach
+        # arming gate (doit re-fires every cycle -- the gate is what keeps the
+        # turn-back, and so the mark, from machine-gunning). In lite-once-warned the
+        # warned line prints and the body arms the crossing as the game built it.
+        allow, warn, mark = forms
+        wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{body}\n\t\t\telse\n"
+                   f"\t\t\t\t(if {allow}\n"
+                   f"\t\t\t\t\t{warn}\n"
+                   f"\t\t\t\t\t{body.strip()}\n"
+                   f"\t\t\t\telse\n"
+                   f"\t\t\t\t\t(if (not ({room} script:))\n"
+                   f"\t\t\t\t\t\t({room} setScript: {tb})\n"
+                   f"\t\t\t\t\t\t{mark}\n"
+                   f"\t\t\t\t\t)\n"
+                   f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
+    # THE INPUT LOCK IS SPOKEN IN THE GAME'S OWN TONGUE, or not at all. The template
+    # said `(gGame handsOff:)` unconditionally, and KQ5 -- the first game outside the
+    # LSL2/KQ4 dialect to receive a turn-back -- never sends that selector anywhere in
+    # its 211 scripts, so the guard was the one script in the game that could not
+    # compile. The caller derives the pair (`obj_globals["hands"]`): the handsOff:
+    # spelling where the game speaks it, its own idiom otherwise (KQ5 locks input with
+    # `(User canControl: 0)` -- rm012's lamb throw does exactly that), and NO lock when
+    # neither is spoken -- a brief uncontrolled walk-back beats an uncompilable file.
+    hands = og.get("hands", (f"({game} handsOff:)", f"({game} handsOn:)"))
+    h_off = ("\t\t\t\t%s\n" % hands[0]) if hands else ""
+    h_on = ("\t\t\t\t%s\n" % hands[1]) if hands else ""
+    # THE WALK-BACK IS THE GAME'S OWN WALKER, or the straight-line one only where no better
+    # exists. `MoveTo` walks a straight line and a BLOCKED straight line never completes, so
+    # its cue never fires and the input lock never lifts -- rm085's turn-back hung the game on
+    # the legitimate approach (USER-found, 2026-08-18b); rm040's only worked because open snow
+    # is straight-line-walkable. Games that speak `PolyPath` (KQ5 does, in these very rooms)
+    # get the obstacle-aware walker the game itself uses for exactly these moves; SCI0 titles
+    # have no such class and keep MoveTo -- their turn-backs were play-validated with it.
+    motion = og.get("motion", "MoveTo")
+    if og.get("chase_room"):
+        # A TURN-BACK IN A CHASE ROOM TAKES NO LOCK AND WAITS FOR NOTHING (USER-found at the
+        # yeti: the refusal's input lock plus its scripted walk delivered a fleeing player
+        # into the hunter's arms -- stock never locks input here, and the chase exclusion's
+        # whole point is that the player's legs are the counter). Refuse, start the walk,
+        # dispose immediately: the player can cancel the walk with any click, the room
+        # script frees at once so the next approach refuses again, and the modal line is
+        # what paces re-triggering. The ego ends off the trigger either way.
+        instance_tpl = (
+            "\n(instance %s of Script\n\t(properties)\n\n"
+            "\t(method (changeState param1)\n"
+            "\t\t(switch (= state param1)\n"
+            "\t\t\t(0\n\t\t\t\t%s  ; softlock-guard line\n"
+            "\t\t\t\t(= cycles 1)\n\t\t\t)\n"
+            "\t\t\t(1\n\t\t\t\t(%s setMotion: %s %%s %%s)\n"
+            "\t\t\t\t(self dispose:)\n\t\t\t)\n"
+            "\t\t)\n\t)\n)\n" % (tb, refuse, ego, motion))
+        return wrapped, instance_tpl
+    instance_tpl = (
+        "\n(instance %s of Script\n\t(properties)\n\n"
+        "\t(method (changeState param1)\n"
+        "\t\t(switch (= state param1)\n"
+        "\t\t\t(0\n%s\t\t\t\t%s  ; softlock-guard line\n"
+        "\t\t\t\t(= cycles 1)\n\t\t\t)\n"
+        "\t\t\t(1\n\t\t\t\t(%s setMotion: %s %%s %%s self)\n\t\t\t)\n"
+        "\t\t\t(2\n%s\t\t\t\t(self dispose:)\n\t\t\t)\n"
+        "\t\t)\n\t)\n)\n" % (tb, h_off, refuse, ego, motion, h_on))
+    return wrapped, instance_tpl
+
+
 def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site=None):
     """Wrap the controllable trigger's `(self changeState: K)` (scoped to the
     right instance+method) in the item guard. For a 'direct' placement, wrap the
@@ -1074,7 +1358,12 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
     two armings, or at six entry rooms, is one guard and owes the player one warning."""
     site = site if site is not None else _ModeSite()
     if placement["kind"] == "direct":
-        pat = re.compile(r"\([^()]*newRoom:\s*%d\b[^()]*\)" % placement["target_room"])
+        # A VARIABLE destination has no literal to find -- locate the site by the variable the
+        # classifier resolved (rm036's `(global2 newRoom: temp0)`); the crossing is already
+        # discriminated by the dest_test the caller conjoined into the guard.
+        pat = (re.compile(r"\([^()]*newRoom:\s*%s\b[^()]*\)" % re.escape(placement["dest_var"]))
+               if placement.get("dest_var")
+               else re.compile(r"\([^()]*newRoom:\s*%d\b[^()]*\)" % placement["target_room"]))
         # SCOPED TO THE CLASSIFIED SITE, like every other kind here. This branch used to hand
         # the WHOLE FILE to `_wrap_matches_in`, so it wrapped every textual `newRoom: N` --
         # including the ones in `changeState` cutscene tails, which is exactly what this
@@ -1102,6 +1391,45 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
             return text, 0
         clause = _enclosing_clause_body(region, m.start())
         bs, be = clause if clause else (m.start(), m.end())
+        if placement.get("positional"):
+            # A POSITIONAL direct exit machine-guns under a spoken refusal: `doit` re-fires
+            # every cycle the ego stands on the control (finding #12 -- KQ5's temple door,
+            # rediscovered in the emitted source with the naked `guarded_wrap` below). The
+            # refusal must be the turn-back: say the line once, walk the ego somewhere PROVEN
+            # SAFE, hand the controls back. Two derivable targets, in order: the clause's own
+            # coordinate boundary (its literal names the zone's edge), else THE ROOM'S OWN
+            # WALK-IN POSITION -- the spot the game itself stands the ego on at init, which a
+            # positional exit's control strip cannot contain (the player walked here from
+            # there). Neither derivable, or no refusal line -> the silent whole-clause gate:
+            # nothing runs, nothing spams, and the player walks off the strip themselves.
+            og = placement.get("obj_globals") or {}
+            ego_g = og.get("ego", "global0")
+            head = enclosing_clause_head(region, m.start()) or ""
+            bm = re.search(r"\(([<>])=?\s*\(%s\s+([xy]):\)\s+(-?\d+)\)" % re.escape(ego_g),
+                           head)
+            tgt = None
+            if bm:
+                op, axis, k = bm.group(1), bm.group(2), int(bm.group(3))
+                esc = k + 15 if op == "<" else k - 15
+                tgt = ((f"({ego_g} x:)", str(esc)) if axis == "y"
+                       else (str(esc), f"({ego_g} y:)"))
+            else:
+                init_rel = _find_region(text[span[0]:span[1]], r"\(method\s+\(init\b")
+                init_txt = (text[span[0] + init_rel[0]:span[0] + init_rel[1]]
+                            if init_rel else "")
+                im = re.search(r"\(%s\b(?:[^()]|\([^()]*\))*?posn:\s+(-?\d+)\s+(-?\d+)"
+                               % re.escape(ego_g), init_txt, re.S)
+                if im:
+                    tgt = (im.group(1), im.group(2))
+            tb = "sgTurnBack"
+            if refuse and tgt and tb not in text:
+                wrapped, instance_tpl = _turnback_emit(guard_sexpr, region[bs:be], og, tb,
+                                                       refuse, site)
+                new_text = text[:i0] + region[:bs] + wrapped + region[be:] + text[i1:]
+                return new_text + (instance_tpl % tgt), 1
+            wrapped = (f"(if {stock_or(guard_sexpr)}\n\t\t\t\t{region[bs:be]}\n\t\t\t)"
+                       f"  ; softlock-guard: positional gate, silent by design")
+            return text[:i0] + region[:bs] + wrapped + region[be:] + text[i1:], 1
         wrapped = guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
         return text[:i0] + region[:bs] + wrapped + region[be:] + text[i1:], 1
     if placement["kind"] == "proc-call":
@@ -1139,22 +1467,35 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
         m0, m1 = i0 + meth_rel[0], i0 + meth_rel[1]
         region = text[m0:m1]
         tpat = placement.get("target_pattern") or (re.escape(target) + r"\b")
-        # ONE level of nesting on either side of the selector: SCI1.1 writes both the receiver and
-        # the target as calls -- `((ScriptID 344 2) setScript: (ScriptID 344 3))` -- and a pattern
-        # that allows no parentheses cannot see that statement at all.
-        _ANY = r"(?:[^()]|\([^()]*\))*"
-        ssm = re.search(r"\(%ssetScript:\s*%s%s\)" % (_ANY, tpat, _ANY), region)
+        # THE ARMING STATEMENT IS THE SEND THAT CARRIES THE SELECTOR, not a flat regex span --
+        # the same lesson the arm-event branch already carries (KQ5's henchman): locate the
+        # selector, then expand to the INNERMOST BALANCED FORM enclosing it. The old
+        # one-level-of-nesting pattern (`((ScriptID 344 2) setScript: (ScriptID 344 3))`) is
+        # subsumed; what it could not see was a DEEPER argument -- KQ5's boat departure,
+        # `(global2 setScript: castOffScript 0 (== (global0 view:) 661))`, two levels down,
+        # which left the boat click an unwrapped second door beside the walked-edge guard.
+        ssm = re.search(r"setScript:\s*%s" % tpat, region)
         if not ssm:
             return text, 0
-        clause = _enclosing_clause_body(region, ssm.start())
+        s0 = region.rfind("(", 0, ssm.start())
+        span = None
+        while s0 != -1:
+            b0, b1 = _block_span(region, s0)
+            if b1 > ssm.end():
+                span = (b0, b1)
+                break
+            s0 = region.rfind("(", 0, s0)
+        if span is None:
+            return text, 0
+        clause = _enclosing_clause_body(region, span[0])
         if clause:
             bs, be = clause
             wrapped = guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
             new_meth = region[:bs] + wrapped + region[be:]
         else:
-            new_meth, _ = _wrap_matches_in(
-                region, site, re.compile(r"\(%ssetScript:\s*%s%s\)" % (_ANY, tpat, _ANY)),
-                guard_sexpr, refuse)
+            bs, be = span
+            wrapped = guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
+            new_meth = region[:bs] + wrapped + region[be:]
         return text[:m0] + new_meth + text[m1:], 1
     if placement["kind"] == "proc-arm":
         # The helper file's OWN arming of the crossing -- a bare procedure the room calls at a
@@ -1186,7 +1527,9 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
         # branch of the controllable cases makes no sense here: there is no player to tell "not now".
         inst, meth = placement["trigger_instance"], placement["trigger_method"]
         target = placement["target_script"]
-        inst_span = _find_region(text, r"\(instance\s+%s\b" % re.escape(inst))
+        # instance OR class: KQ5's boatRegion is a CLASS, and its init auto-arms the sail
+        # (play-found 2026-08-19); the direct branch has accepted both spellings all along.
+        inst_span = _find_region(text, r"\((?:instance|class)\s+%s\b" % re.escape(inst))
         if not inst_span:
             return text, 0
         i0, i1 = inst_span
@@ -1198,16 +1541,33 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
         # Gate EVERY arming site for this event -- KQ4's Room31::init both STARTS the swallow (the
         # Random roll) and RESUMES it on re-entry (global105==14); both must require the item, so
         # the whale is never active without the feather. No `else`: a missing item just doesn't arm.
-        pat = re.compile(r"\([^()]*setScript:\s*%s\b[^()]*\)" % re.escape(target))
-        n = [0]
+        #
+        # THE ARMING STATEMENT IS THE SEND THAT CARRIES THE SELECTOR, not a flat regex span:
+        # KQ5's henchman arms itself inside a multi-selector cascade with a nested argument --
+        # `(self view: (if ...) setCycle: Walk ... setScript: theHenchManScript)` -- which no
+        # `[^()]*` pattern can see. Locate the selector, then expand to the INNERMOST BALANCED
+        # FORM enclosing it; for the flat single-selector send every prior game spells, that is
+        # exactly the span the old pattern matched.
         gs = stock_or(guard_sexpr)     # silent kind: stock bypasses, lite behaves as full
-
-        def repl(m):
-            n[0] += 1
-            return (f"(if {gs}\n\t\t\t\t{m.group(0)}\n\t\t\t)"
-                    f"  ; softlock-guard: arm only when survivable")
-        new_meth = pat.sub(repl, region)
-        return text[:m0] + new_meth + text[m1:], n[0]
+        spans = []
+        for am in re.finditer(r"setScript:\s*%s\b" % re.escape(target), region):
+            s0 = region.rfind("(", 0, am.start())
+            b = None
+            while s0 != -1:
+                b0, b1 = _block_span(region, s0)
+                if b1 > am.end():
+                    b = (b0, b1)
+                    break
+                s0 = region.rfind("(", 0, s0)
+            if b and b not in spans:
+                spans.append(b)
+        n = 0
+        for (b0, b1) in sorted(spans, reverse=True):
+            wrapped = (f"(if {gs}\n\t\t\t\t{region[b0:b1]}\n\t\t\t)"
+                       f"  ; softlock-guard: arm only when survivable")
+            region = region[:b0] + wrapped + region[b1:]
+            n += 1
+        return text[:m0] + region + text[m1:], n
     if placement["kind"] == "arm-clause":
         # A POSITIONAL arming's gate. One guard, three play findings (2026-08-04, all rm550):
         # the bare arm-event wrap left a handsOff sibling un-gated and HUNG (#11); a refusal
@@ -1245,48 +1605,38 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
         tspan = _find_region(text, r"\(instance\s+%s\b" % re.escape(target))
         tm = re.search(r"(?:setMotion:\s+)?(?:MoveTo|PolyPath)\s+(-?\d+)\s+(-?\d+)",
                        text[tspan[0]:tspan[1]]) if tspan else None
+        # THE CLAUSE NAMES ITS OWN ESCAPE when its test is an ego-coordinate compare: the
+        # boundary literal IS the zone's edge, so the back-off is "past it, along that axis" --
+        # `(< (gEgo y:) 150)` walks back to y = 165. Derived from the guarded clause itself,
+        # which cannot pick a wrong axis; the crossing script's first motion target (below)
+        # stays as the fallback for mask-form zones, whose boundary no literal states. Without
+        # this, rm85's turn-back walked SIDEWAYS (the thug's approach motion is x-dominant),
+        # the ego never left the y<150 zone, and the once-per-approach argument -- "the
+        # turn-back ends with the ego off the zone" -- was false: the guard machine-gunned
+        # (finding #12's shape, one derivation short).
+        head = enclosing_clause_head(region, ssm.start()) or ""
+        bm = re.search(r"\(([<>])=?\s*\(%s\s+([xy]):\)\s+(-?\d+)\)" % re.escape(ego), head)
+        bnd = None
+        if bm:
+            op, axis, k = bm.group(1), bm.group(2), int(bm.group(3))
+            esc = k + 15 if op == "<" else k - 15
+            bnd = (f"({ego} x:)", str(esc)) if axis == "y" else (str(esc), f"({ego} y:)")
         tb = "sgTurnBack"
-        if refuse and tm and tb not in text:
-            tx, ty = int(tm.group(1)), int(tm.group(2))
-            if abs(ty - 95) >= abs(tx - 160):      # dominant axis of the crossing, sign away
-                xe = f"({ego} x:)"
-                ye = f"({'+' if ty < 95 else '-'} ({ego} y:) 35)"
+        if refuse and (bnd or tm) and tb not in text:
+            if bnd:
+                xe, ye = bnd
             else:
-                xe = f"({'+' if tx < 160 else '-'} ({ego} x:) 35)"
-                ye = f"({ego} y:)"
-            forms = site.forms()
-            if forms is None:
-                wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
-                           f"\t\t\t\t(if (not ({room} script:))\n"
-                           f"\t\t\t\t\t({room} setScript: {tb})\n"
-                           f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
-            else:
-                # The turn-back IS this kind's refusal; the mark rides its once-per-approach
-                # arming gate (doit re-fires every cycle -- the gate is what keeps the
-                # turn-back, and so the mark, from machine-gunning). In lite-once-warned the
-                # warned line prints and the body arms the crossing as the game built it.
-                allow, warn, mark = forms
-                wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{region[bs:be]}\n\t\t\telse\n"
-                           f"\t\t\t\t(if {allow}\n"
-                           f"\t\t\t\t\t{warn}\n"
-                           f"\t\t\t\t\t{region[bs:be].strip()}\n"
-                           f"\t\t\t\telse\n"
-                           f"\t\t\t\t\t(if (not ({room} script:))\n"
-                           f"\t\t\t\t\t\t({room} setScript: {tb})\n"
-                           f"\t\t\t\t\t\t{mark}\n"
-                           f"\t\t\t\t\t)\n"
-                           f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
-            instance_txt = (
-                "\n(instance %s of Script\n\t(properties)\n\n"
-                "\t(method (changeState param1)\n"
-                "\t\t(switch (= state param1)\n"
-                "\t\t\t(0\n\t\t\t\t(%s handsOff:)\n\t\t\t\t%s  ; softlock-guard line\n"
-                "\t\t\t\t(= cycles 1)\n\t\t\t)\n"
-                "\t\t\t(1\n\t\t\t\t(%s setMotion: MoveTo %s %s self)\n\t\t\t)\n"
-                "\t\t\t(2\n\t\t\t\t(%s handsOn:)\n\t\t\t\t(self dispose:)\n\t\t\t)\n"
-                "\t\t)\n\t)\n)\n" % (tb, game, refuse, ego, xe, ye, game))
+                tx, ty = int(tm.group(1)), int(tm.group(2))
+                if abs(ty - 95) >= abs(tx - 160):  # dominant axis of the crossing, sign away
+                    xe = f"({ego} x:)"
+                    ye = f"({'+' if ty < 95 else '-'} ({ego} y:) 35)"
+                else:
+                    xe = f"({'+' if tx < 160 else '-'} ({ego} x:) 35)"
+                    ye = f"({ego} y:)"
+            wrapped, instance_tpl = _turnback_emit(guard_sexpr, region[bs:be], og, tb,
+                                                   refuse, site)
             new_text = text[:m0] + region[:bs] + wrapped + region[be:] + text[m1:]
-            return new_text + instance_txt, 1
+            return new_text + (instance_tpl % (xe, ye)), 1
         wrapped = (f"(if {stock_or(guard_sexpr)}\n\t\t\t\t{region[bs:be]}\n\t\t\t)"
                    f"  ; softlock-guard: positional gate, silent by design")
         return text[:m0] + region[:bs] + wrapped + region[be:] + text[m1:], 1
@@ -1393,6 +1743,155 @@ def _enclosing_clause_span(region, pos):
         else:
             k += 1
     return None
+
+
+def hold_machine_advance(text, machine, guard_sexpr):
+    """Hold a cutscene machine at its leading TIMED WAIT STATE until the guard is banked.
+
+    The sole-exit shape's third answer, after refuse-the-arming (a wall: the machine is the
+    room's only way out) and the entry deferral (unsatisfiable when the demand's only source
+    is INSIDE the room the machine runs in). KQ5's roc nest: `hatch` st0 is `(= cycles 45)`,
+    the eggs crack on a timer while the locket sits grabbable beside you -- the USER-ruled
+    remedy (2026-08-18b) is that the timer simply does not elapse until the demand is met.
+
+    The emission is the game's own wait idiom -- `(-- state)` before the timer re-arm
+    (rm055's goDoorScript st6 spells exactly this to wait on audio) -- so the held state
+    re-enters itself each tick until the guard holds, then advances as built. SILENT by
+    design: nothing is refused to the player's face, the scene just waits, so stock mode
+    bypasses via `stock_or` and lite behaves as full (the register/flag-hold contract).
+
+    The held state is DERIVED: the machine's numerically first changeState arm whose body
+    writes a bare timer (`(= cycles N)` / `(= seconds N)` / `(= ticks N)`). No such state ->
+    (text, 0), honestly unplaced -- a machine that never pauses has nowhere to wait."""
+    span = _find_region(text, r"\((?:instance|class)\s+%s\b" % re.escape(machine))
+    if not span:
+        return text, 0
+    i0, i1 = span
+    mrel = _find_region(text[i0:i1], r"\(method\s+\(changeState\b")
+    if not mrel:
+        return text, 0
+    m0, m1 = i0 + mrel[0], i0 + mrel[1]
+    region = text[m0:m1]
+    best = None
+    for am in re.finditer(r"\(\s*(\d+)\s*\n", region):
+        bs, be = _block_span(region, am.start())
+        body = region[bs:be]
+        tm = re.search(r"\(=\s+(?:cycles|seconds|ticks)\s+\d+\s*\)", body)
+        if tm and (best is None or int(am.group(1)) < best[0]):
+            best = (int(am.group(1)), bs, be, am.end() - am.start())
+    if best is None:
+        return text, 0
+    _k, bs, be, head_len = best
+    hold = ("\n\t\t\t\t(if (not %s)\n"
+            "\t\t\t\t\t; softlock-guard: the scene waits until the demand is banked\n"
+            "\t\t\t\t\t(-- state)\n"
+            "\t\t\t\t)\n" % stock_or(guard_sexpr))
+    new_region = region[:bs + head_len] + hold + region[bs + head_len:]
+    return text[:m0] + new_region + text[m1:], 1
+
+
+def wrap_forbidden_case(text, anchor_pat, token, guard_sexpr, refuse, site=None):
+    """Wrap the switch case whose HEAD IS `token` around each `anchor_pat` match -- the market
+    refusal's placement primitive.
+
+    KQ5's shops dispatch on the offered item -- `(switch (gInv indexOf: (gIconBar curInvIcon:))
+    (9 (= local6 2) (gRoom setScript: soldCloak) ...))` -- so every forbidden payment has its
+    OWN case, and the case head literal IS the item number the market row names. Selecting the
+    case by that head is what lets a guard spelled `(not (gEgo has: 9))` be placed only where
+    the 9 was offered: inside its own case the condition is identically false, so the wrap is
+    the unconditional refusal the matching derived, and the sibling cases -- the payments that
+    keep the market solvable -- are never touched. (A condition alone cannot do this: wrapping
+    every arming of `soldCloak` with `(not (has: 9))` would refuse the NEEDLE payment of any
+    player merely carrying the heart.)
+
+    The anchor names the committed ACT -- the `setScript:` that arms the purchase cutscene, or
+    the handler's own `put:` for a throw/eat clause -- and the whole case body is wrapped, the
+    same siblings-must-not-outrun-the-refusal care as every other kind here. Matches that share
+    one case (Main's two lamb `put:` spellings) collapse to one wrap. Returns (text, n)."""
+    site = site if site is not None else _ModeSite()
+    # A PUT THE SAME BRANCH RE-GETS IS NOT A SPEND, and its branch must stay stock. KQ5's
+    # lamb EAT (USER-corrected 2026-08-18b: "it HAS to be half the leg of lamb") is the case:
+    # the case's first-bite arm does `put: 19 <room>` then `get: 19` -- the lamb SURVIVES as
+    # the half (a cel write, the item-property store), it scores, and it sets the hunger flag
+    # rm32's death demands -- while only the else arm's bare `put: 19 1` destroys it. Wrapping
+    # the whole case walls the designed, REQUIRED move. So a put-anchored wrap descends: for
+    # each anchor site, find its innermost enclosing `(if ...)` inside the case; an arm that
+    # re-gets the token is skipped, an arm that does not is held ALONE. Cases with no such
+    # fork (the cat's and dog's lamb throws) keep the whole-case wrap byte-identically.
+    is_put = "put:" in anchor_pat
+
+    def _if_arms(txt, pos):
+        """The innermost `(if ...)` enclosing pos that has a top-level `else`:
+        (then_start, then_end, else_start, else_end) as body spans, or None."""
+        i = txt.rfind("(if", 0, pos)
+        while i != -1:
+            s0, s1 = _block_span(txt, i)
+            if s1 > pos:
+                depth, j, else_at = 0, i, None
+                while j < s1:
+                    c = txt[j]
+                    if c == "(":
+                        depth += 1
+                    elif c == ")":
+                        depth -= 1
+                    elif depth == 1 and txt[j:j + 4] == "else"                             and not txt[j - 1].isalnum() and not txt[j + 4].isalnum():
+                        else_at = j
+                        break
+                    j += 1
+                if else_at is None:
+                    return None
+                # then-arm body: after the condition form, up to `else`
+                k = i + 3
+                while txt[k] in " \t\n":
+                    k += 1
+                cs, ce = _block_span(txt, k)          # the condition form
+                return (ce, else_at, else_at + 4, s1 - 1)
+            i = txt.rfind("(if", 0, i)
+        return None
+
+    get_pat = re.compile(r"get:\s*%s\b" % re.escape(str(token)))
+    by_case = {}                       # case span -> [(match_pos, arm_span or None)]
+    for m in re.finditer(anchor_pat, text):
+        span = _enclosing_clause_span(text, m.start())
+        if span is None:
+            continue
+        if enclosing_clause_head(text, m.start()) != str(token):
+            continue
+        arm = None
+        if is_put:
+            arms = _if_arms(text[span[0]:span[1]], m.start() - span[0])
+            if arms:
+                ts, te, es, ee = (span[0] + x for x in arms)
+                arm = (ts, te) if ts <= m.start() < te else (es, ee)
+        by_case.setdefault(span, []).append((m.start(), arm))
+    spans, arm_wraps = [], []
+    for span, hits in by_case.items():
+        # the narrowing engages ONLY when some arm re-gets the token (the half-lamb shape);
+        # a case whose fork never re-gets keeps the whole-case wrap byte-identically (the
+        # cat's and dog's race-check `if local0` would otherwise churn shipped emissions).
+        keeps = [a for (_p, a) in hits
+                 if a is not None and get_pat.search(text[a[0]:a[1]])]
+        if keeps:
+            for (_p, a) in hits:
+                if a is not None and not get_pat.search(text[a[0]:a[1]]) \
+                        and a not in arm_wraps:
+                    arm_wraps.append(a)
+        elif span not in spans:
+            spans.append(span)
+    n = 0
+    for (bs, be) in sorted(arm_wraps, reverse=True):
+        wrapped = guarded_wrap(guard_sexpr, text[bs:be], refuse, site=site)
+        text = text[:bs] + "\n\t\t\t\t" + wrapped + "\n\t\t\t" + text[be:]
+        n += 1
+    for (cs, ce) in sorted(spans, reverse=True):
+        body = _clause_body(text, cs, ce)
+        if body is None:
+            continue
+        bs, be = body
+        wrapped = guarded_wrap(guard_sexpr, text[bs:be], refuse, site=site)
+        text = text[:bs] + wrapped + text[be:]
+        n += 1
+    return text, n
 
 
 def _enclosing_clause_body(region, pos):

@@ -134,6 +134,11 @@ def derive(ir):
 
 # ---- the derived table, in the form extraction needs ---------------------
 EGO = "ego"          # destination sentinel: the item is HELD (shared with extract)
+HERE = "room"        # destination sentinel: the item is laid down in THE ROOM THIS SITE IS IN.
+                     # Deliberately the same spelling `_loc_values` uses for the mirror-image
+                     # read (`ownedBy: gCurRoomNum`), because it is the same fact seen from the
+                     # other end; every recording site resolves it against its own room, and it
+                     # must never reach a consumer that expects an owner number.
 
 
 def _literal_items(node):
@@ -457,7 +462,7 @@ class Vocabulary:
         return (f"{self.store_class}.{self.prop}  write via {sorted(self.writes)}  "
                 f"read via {sorted(self.reads)}")
 
-    def transfer(self, recv, sel, params, item_of_receiver):
+    def transfer(self, recv, sel, params, item_of_receiver, curroom=None):
         """A send -> `(item, dest)` if it moves an item, else None. `item` is a TUPLE when the
         game picks the item at runtime from a fixed menu (see `_literal_items`).
 
@@ -476,6 +481,8 @@ class Vocabulary:
             d = params[0]
             if I.is_global(d, 0) or (isinstance(d, dict) and d.get("t") == "Self"):
                 return (it, EGO)
+            if curroom is not None and I.is_global(d, curroom):
+                return (it, HERE)
             v = I.as_int(d)
             return (it, v) if v is not None else None
         # wrapper form -- but only if the RECEIVER is an instance of the wrapper's class.
@@ -510,6 +517,19 @@ class Vocabulary:
         if 0 <= j < len(params):
             if I.is_global(params[j], 0):
                 return (it, EGO)
+            # ⭐ `(gEgo put: X gCurRoomNum)` IS "LAY IT DOWN HERE", NOT "DESTROY IT", and the two
+            # were the same answer because an unreadable destination fell through to -1 -- SCI's
+            # NOWHERE, the strongest claim available. `_loc_values` has had the `"room"` sentinel
+            # for the mirror-image read (`ownedBy: gCurRoomNum`) since LSL2; the transfer side
+            # never learned it. KQ5's rm066 is the specimen: `putCWandScript` does
+            # `(gEgo put: 28 global11)` and `rm066::init` puts the wand prop in the cast under
+            # `(== ((gInv at: 28) owner:) global11)`, so laying the wand down and picking it back
+            # up are one round trip in one room -- and read as limbo it became a permanent
+            # destruction, which is the shape of the false positive the USER ruled on 2026-08-15.
+            # Answering "here" instead needs the room, which only the recording site knows, so
+            # the sentinel travels and `_here` resolves it there.
+            if curroom is not None and I.is_global(params[j], curroom):
+                return (it, HERE)
             v = I.as_int(params[j])
             return (it, v if v is not None else -1)
         return (it, -1)                                # destination omitted -- SCI means NOWHERE
@@ -1040,37 +1060,50 @@ def _single_bit_mask(n):
     return isinstance(m, dict) and m.get("t") == "Mod" and I.as_int((m.get("kids") or [0, 0])[1]) == 16
 
 
-def _flag_word_base(n):
-    """`[globalBASE <wordindex>]` -> BASE, else None. The word of the flag array being addressed."""
+def _flag_word_base(n, script=None):
+    """`[globalBASE <wordindex>]` -> BASE, else None. The word of the flag array being addressed.
+
+    IN SCRIPT 0, A LOCAL *IS* A GLOBAL -- that is the engine's own storage rule, not an
+    inference: script 0's local block is the global block, which is why the decompiler prints
+    `[global129 temp2]` for a node the IR faithfully records as `Local 129`. Requiring the
+    `Global` spelling therefore hid any flag store whose accessor lives in Main. Measured
+    corpus-wide: LSL2 and KQ4 keep no bit-array store at all, KQ6 (script 913) and LB2 address
+    theirs as real globals and are untouched, and KQ5 -- whose whole store is
+    `localproc_0472` in Main -- goes from invisible to lowered."""
     if isinstance(n, dict) and n.get("t") == "ComplexVariable":
         ks = n.get("kids") or []
         if ks and I.is_global(ks[0]):
             return ks[0]["index"]
+        if (ks and script == 0 and isinstance(ks[0], dict)
+                and ks[0].get("t") == "Variable" and ks[0].get("vtype") == "Local"):
+            return ks[0]["index"]
     return None
 
 
-def _flag_write_op(node, base):
+def _flag_write_op(node, base, script=None):
     """This node writes the flag word of `base` in place -> 'set'/'clear'/'toggle', else None."""
     op = _FLAG_WRITE_OPS.get(node.get("t"))
-    if op and any(_flag_word_base(k) == base for k in (node.get("kids") or [])):
+    if op and any(_flag_word_base(k, script) == base for k in (node.get("kids") or [])):
         return op
     return None
 
 
-def _proc_touches_flags(body):
+def _proc_touches_flags(body, script=None):
     """(base, write_ops, reads) if `body` masks a global array word with a single bit, else None."""
     if not any(_single_bit_mask(n) for n in I.walk(body)):
         return None
-    base = next((_flag_word_base(n) for n in I.walk(body) if _flag_word_base(n) is not None), None)
+    base = next((_flag_word_base(n, script) for n in I.walk(body)
+                 if _flag_word_base(n, script) is not None), None)
     if base is None:
         return None
-    wops = {_flag_write_op(n, base) for n in I.walk(body)} - {None}
-    reads = any(n.get("t") == "BinAnd" and any(_flag_word_base(k) == base for k in (n.get("kids") or []))
+    wops = {_flag_write_op(n, base, script) for n in I.walk(body)} - {None}
+    reads = any(n.get("t") == "BinAnd"
+                and any(_flag_word_base(k, script) == base for k in (n.get("kids") or []))
                 for n in I.walk(body))
     return base, wops, reads
 
 
-def _flag_switch_map(body, base):
+def _flag_switch_map(body, base, script=None):
     """A dispatcher's `(switch op ...)` -> {op-value: op-kind}. The op is the switched PARAMETER;
     each case's kind is read from the write it performs on the flag word (a break/read case is a
     test). KQ5's `localproc` dispatches op 0->set, 1->test, 2->clear, 3->toggle exactly this way."""
@@ -1088,8 +1121,8 @@ def _flag_switch_map(body, base):
             ck = c.get("kids") or []
             if len(ck) < 2 or I.as_int(ck[0]) is None:
                 continue
-            m[I.as_int(ck[0])] = next((_flag_write_op(x, base) for x in I.walk(ck[1])
-                                       if _flag_write_op(x, base)), "test")
+            m[I.as_int(ck[0])] = next((_flag_write_op(x, base, script) for x in I.walk(ck[1])
+                                       if _flag_write_op(x, base, script)), "test")
         return m
     return None
 
@@ -1116,25 +1149,25 @@ def derive_flags(ir):
     acc = {}
     for s in ir.scripts.values():
         for name, body in s.procs.items():
-            tr = _proc_touches_flags(body)
+            tr = _proc_touches_flags(body, s.number)
             if tr:
-                acc[name] = (tr, body)
+                acc[name] = (tr, body, s.number)
     if not acc:
         return None
     from collections import Counter
     base = Counter(v[0][0] for v in acc.values()).most_common(1)[0][0]
     procs, dispatchers = {}, {}
-    for name, ((b, wops, reads), body) in acc.items():
+    for name, ((b, wops, reads), body, sn) in acc.items():
         if b != base:
             continue
         if len(wops) > 1:               # applies several ops -> an op-dispatched accessor
-            dispatchers[name] = body
+            dispatchers[name] = (body, sn)
         elif len(wops) == 1:            # a single-op writer: set / clear / toggle
             procs[name] = next(iter(wops))
         elif reads:                     # reads only: a test
             procs[name] = "test"
-    for dname, dbody in dispatchers.items():
-        sm = _flag_switch_map(dbody, base) or {}
+    for dname, (dbody, dsn) in dispatchers.items():
+        sm = _flag_switch_map(dbody, base, dsn) or {}
         doff = _localproc_offset(dname)
         for s in ir.scripts.values():
             for name, body in s.procs.items():

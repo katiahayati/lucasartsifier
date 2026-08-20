@@ -42,6 +42,8 @@
     "Ashes or Sand@81"
   ],
   "joint": [],
+  "market": [],
+  "market_specs": [],
   "ownedby_death_folds": [],
   "placements": [
     "Main/Hair_Rejuvenator: applied=True kind=None",
@@ -88,5 +90,6 @@
     "Airsick_Bag"
   ],
   "start_room": 11,
-  "tolls": []
+  "tolls": [],
+  "window_specs": []
 }

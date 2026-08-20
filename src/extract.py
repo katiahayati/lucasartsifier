@@ -137,6 +137,354 @@ def _oneof_atom(n):
     return GOr(kids) if len(kids) > 1 else kids[0]
 
 
+def _curroom_demand(g):
+    """`{rooms}` if `g` asserts the CURRENT ROOM is one of them, else None.
+
+    Recognises the two spellings the games use: a bare `(== gCurRoom N)` and the disjunction
+    `_oneof_atom` lowers a membership test into. Anything else decides nothing."""
+    if isinstance(g, Pred) and g.kind == "CMP" and g.var == _CURROOM and g.op == "==":
+        try:
+            return {int(g.value)}
+        except (TypeError, ValueError):
+            return None
+    if isinstance(g, GOr):
+        out = set()
+        for k in g.kids:
+            v = _curroom_demand(k)
+            if v is None:
+                return None                # a disjunct we cannot read frees the whole OR
+            out |= v
+        return out
+    if isinstance(g, GAnd):
+        # A conjunction says where you are through whichever kids say anything at all: every
+        # kid must hold, so the answer is their INTERSECTION, and a kid that decides nothing
+        # simply fails to narrow it. Note the asymmetry with the OR above and why it is the
+        # safe direction in both cases -- there, an unreadable disjunct is another way the
+        # guard could be true and so frees it; here, an unreadable conjunct is one more thing
+        # that must ALSO hold, so ignoring it can only leave the answer too WIDE. A room this
+        # returns is therefore never wrongly excluded, which is what `_curroom_impossible`
+        # needs to delete anything.
+        #
+        # An object's presence condition is the shape that wants this: `cast_conditions` emits
+        # one arm per init site, and a site inside a `switch gCurRoom` carries its room as a
+        # conjunct next to the rest of the arming (KQ5 `proc550_16`, which places Mordack's cat
+        # -- `(and <placement junk> (!= global332 7) (== gCurRoom 60))`). Read kid by kid, each
+        # arm names its room; read as an opaque whole, the cat may be anywhere.
+        got = [v for v in (_curroom_demand(k) for k in g.kids) if v is not None]
+        if not got:
+            return None
+        out = set(got[0])
+        for v in got[1:]:
+            out &= v
+        return out
+    return None
+
+
+def _curroom_impossible(pc, room):
+    """Does this path condition require the player to be somewhere OTHER than `room`?
+
+    A script with no room of its own is walked once per room it runs in, and the ones that serve
+    many rooms SAY WHICH ARM BELONGS TO WHICH ROOM -- by testing the current-room global. Walking
+    every arm into every room therefore attributes each arm's effects to rooms whose own guard
+    excludes them, and for a `newRoom:` that fabricates movement outright.
+
+    KQ5's ending montage is the specimen and it cost the game its shape. `cartoonCode`
+    (script 763) is one `cond` whose arms are `(proc999_5 gCurRoom <rooms>)`, one cartoon per
+    place you can be standing; `rm057` calls it while giving Cassima the locket, so all seven
+    arms were attributed to rm57 and their closing `newRoom:`s became exits from Mordack's
+    castle to the village, the elf, the ice queen and the ending. With those, no part of the
+    castle is one-way and the Fishhook -- which you cannot go back for, USER 2026-08-14 --
+    cannot strand.
+
+    Narrow on purpose: only a demand on the AND spine, only when the demanded set is fully
+    readable, and only against the room the walk is already attributing to. `_oneof_atom`
+    supplies the disjunction spelling; games without a membership proc (LSL2/KQ4 derive none)
+    can still be caught by the bare compare, and neither game has one."""
+    for c in (pc or ()):
+        vals = _curroom_demand(c)
+        if vals is not None and room not in vals:
+            return True
+    return False
+
+
+# --- A GLOBAL THAT ONLY EVER HOLDS A ROOM ----------------------------------------------------
+_ROOMVALS = {}      # ir id -> {global index: frozenset(rooms)}; see room_valued_globals
+_ROOMVAL = {}       # ...the one installed for the game being extracted. Keyed by ir like the
+#   other per-game derivations in this module, so `install_vocabulary` can restore it: the
+#   derivation has to run BEFORE `extract()`, and `extract()` re-installs the vocabulary.
+
+
+def install_room_valued(ir, m):
+    """Publish `room_valued_globals`' answer where `_cmp_atom` will read it."""
+    global _ROOMVAL
+    _ROOMVAL = {gi: frozenset(v) for gi, v in (m or {}).items()}
+    _ROOMVALS[id(ir)] = _ROOMVAL
+    return _ROOMVAL
+
+
+def _roomval_atom(gi):
+    """`(== gX gCurRoom)` -> the disjunction over the rooms gX can hold. An EMPTY set is the
+    base of the fixpoint spelled as a guard -- an impossible room -- and is only ever seen
+    while `room_valued_globals` is settling; a global that settles on nothing is dropped."""
+    kids = [Pred("CMP", var=_CURROOM, op="==", value=str(r)) for r in sorted(_ROOMVAL[gi])]
+    if not kids:
+        return Pred("CMP", var=_CURROOM, op="==", value="-1")
+    return kids[0] if len(kids) == 1 else GOr(kids)
+
+
+def _scopes(script):
+    """`(scope, body)` for every method and procedure of a script, where a scope is
+    `("obj", instance, method)` or `("proc", name, None)`. The two differ in how they answer
+    "which rooms does this run in?", which is all of `_ScopeRooms`."""
+    for o in script.objects:
+        for mn, body in o.methods.items():
+            yield ("obj", o.name, mn), body
+    for pn, body in script.procs.items():
+        yield ("proc", pn, None), body
+
+
+def _curroom_compared(ir):
+    """Globals some guard compares `==` against the current-room global. Nothing else is worth
+    deriving a value set for: that comparison is the map's only consumer."""
+    out = set()
+    for s in ir.scripts.values():
+        for _scope, body in _scopes(s):
+            for n in I.walk(body):
+                if n.get("t") != "Eq":
+                    continue
+                ks = n.get("kids") or []
+                if len(ks) < 2:
+                    continue
+                for x, y in ((ks[0], ks[1]), (ks[1], ks[0])):
+                    if I.is_global(x, _CURROOM) and I.is_global(y) and y["index"] != _CURROOM:
+                        out.add(y["index"])
+    return out
+
+
+def _global_write_sites(ir, want):
+    """`gi -> [(script, scope, kind, value, pc)]` for every write to a global in `want`.
+
+    `kind` is "lit" (a literal), "cur" (the current-room global) or "other" -- anything whose
+    value we cannot read, `++`/`--` included. ONE "other" and the global is not enumerable, so
+    this has to see every write: the identity "the value set is the union of the writes" is the
+    whole basis of the lowering, exactly as `local_write_conditions` says of its own values."""
+    out = {}
+
+    def leaf(n, pc, scope, sn):
+        t = n.get("t")
+        if t in ("Increment", "Decrement"):
+            d = (n.get("kids") or [None])[0]
+            if isinstance(d, dict) and I.is_global(d) and d["index"] in want:
+                out.setdefault(d["index"], []).append((sn, scope, "other", None, None))
+            return
+        if t != "Assignment":
+            return
+        dst, src = (n.get("kids") or [None, None])[:2]
+        if not (isinstance(dst, dict) and I.is_global(dst) and dst["index"] in want):
+            return
+        v = I.as_int(src)
+        if v is not None:
+            kind, val = "lit", v
+        elif isinstance(src, dict) and I.is_global(src, _CURROOM):
+            kind, val = "cur", None
+        else:
+            kind, val = "other", None
+        out.setdefault(dst["index"], []).append((sn, scope, kind, val, _conj(pc)))
+
+    for sn, s in ir.scripts.items():
+        for scope, body in _scopes(s):
+            walk_stream(body, [], lambda n, pc, _sc=scope, _sn=sn: leaf(n, pc, _sc, _sn))
+    return out
+
+
+class _ScopeRooms:
+    """`of(script, scope)` -- the rooms a body can run in, or None for "cannot say".
+
+    Every answer is an OVER-approximation, which is what makes the fixpoint below sound: a room
+    this fails to exclude only widens the value set, and a widened value set only weakens the
+    guard the map lowers. "Cannot say" drops the global entirely.
+
+    Three readings, and none of them is new:
+      * a PROCEDURE has no room of its own -- it runs because something called it, so its rooms
+        are its call sites'. That is `MachineBuilder.proc_calls`' rule ("a machine armed inside a
+        procedure has no way in of its own") asked about the room instead of the path condition,
+        and [[a-procedure-is-not-a-handler]] is the same fact from the other side;
+      * a ROOM SCRIPT's own code runs in its room. This is not a new claim: it is the attribution
+        the whole extraction already rests on -- `Extractor._walk` files every edge, acquisition
+        and effect of a room script under that room;
+      * anything else -- an object in a region, in Main, in a shared script -- runs where the
+        OBJECT is, which is its presence condition, and if it is a `changeState`, also where the
+        machine can be ARMED. Both are already computed; both are read through `_curroom_demand`,
+        so a scope that says nothing about where you are says None here too."""
+
+    def __init__(self, ir, cast_of, entries_of):
+        self.ir, self.cast_of, self.entries_of = ir, cast_of, entries_of
+        self.callers = {}
+        for sn, s in ir.scripts.items():
+            for scope, body in _scopes(s):
+                for n in I.walk(body):
+                    if n.get("t") in ("PublicCall", "LocalCall") and n.get("name"):
+                        self.callers.setdefault(I.proc_ref(ir, n, sn), []).append((sn, scope))
+        self._entries = {}
+
+    def reset(self):
+        """Between rounds: the entries were computed under the PREVIOUS map."""
+        self._entries.clear()
+
+    def _entry_guard(self, sn, inst):
+        if sn not in self._entries:
+            s = self.ir.scripts.get(sn)
+            self._entries[sn] = {} if s is None else self.entries_of(s)
+        return self._entries[sn].get(inst)
+
+    def of(self, sn, scope, _seen=()):
+        s = self.ir.scripts.get(sn)
+        if s is None:
+            return None
+        # The procedure test comes FIRST, before the room-script one: a procedure declared in a
+        # room script but called from elsewhere does not run in that room, and resolving it
+        # through its callers gives the same answer when it is called from home.
+        if scope[0] == "proc":
+            key = (sn, scope[1])
+            if key in _seen:
+                return None                    # a call cycle: no claim
+            sites = self.callers.get(key)
+            if not sites:
+                return None                    # nothing we can see calls it
+            out = set()
+            for csn, cscope in sites:
+                r = self.of(csn, cscope, _seen + (key,))
+                if r is None:
+                    return None                # one caller we cannot place frees the union
+                out |= r
+            return out
+        if _room_object(s, self.ir) is not None:
+            return {sn}
+        got = []
+        pres = _curroom_demand(cast_guard(self.cast_of(s), scope[1]))
+        if pres is not None:
+            got.append(pres)
+        if scope[2] == "changeState":
+            eg = _curroom_demand(self._entry_guard(sn, scope[1]))
+            if eg is not None:
+                got.append(eg)
+        if not got:
+            return None
+        out = set(got[0])
+        for r in got[1:]:
+            out &= r                           # both are upper bounds, so is their meet
+        return out
+
+
+def room_valued_globals(ir, cast_of, entries_of, install, rounds=8):
+    """`{global index: frozenset(rooms)}` -- globals that only ever hold a ROOM NUMBER.
+
+    `(== <global> gCurRoom)` is a guard that says WHERE YOU ARE, in the one spelling
+    `_curroom_demand` cannot read: the room is not written down, it is REMEMBERED. Lowering it
+    to the disjunction it means is the same move `_oneof_atom` makes for a membership test, and
+    it needs the same thing first -- knowing what the subject can hold.
+
+    KQ5's Mordack castle is what that costs. `theCat`'s presence disjunction has an arm
+
+        (if (and (== global332 7) (== global338 global11))     ; castle.sc:154
+            (theCat init: ignoreActors: 0 setScript: catInBag))
+
+    -- "the bagged cat is in the room where you bagged it" -- and an unreadable disjunct frees
+    the whole OR, so the cat joins the cast in all 16 castle rooms. Everything its handler
+    offers goes with it: throwing the Cat_Fish and sacking it with the Bag_of_Peas were recorded
+    as acts available in rm683, `cdCassimaToon` -- the cutscene after Cassima takes the locket,
+    which tests no item at all -- and `toll_strandings` then demanded the player carry both into
+    it. Both items are destroyed by the cat puzzle, so that guard is unsatisfiable for exactly
+    the player who solved it as designed.
+
+    THREE PARTS, and the third is why this is not a lookup:
+
+      1. CLASSIFY. Every write must be a literal or the current-room global, or the value set is
+         not enumerable and the compare stays opaque. This gate is what keeps the failure
+         direction "we learn nothing" rather than "we exclude a room the player can be in".
+      2. ATTRIBUTE each `= gX gCurRoom` write to the rooms it can RUN in -- the value it writes
+         IS the room it runs in. See `_ScopeRooms`.
+      3. LEAST FIXPOINT, BASED AT FALSE. KQ5's bagging machine writes the global, and it is
+         armed from the cat's own handler -- whose presence condition contains the very arm
+         being derived. A greatest fixpoint keeps rm683 alive by self-reference; the least one
+         starts from "the compare is never true", settles in one round, and rm683 is out. Sound
+         because each round only over-approximates where a write can run, so the limit
+         over-approximates what the global can hold.
+
+    `!=` IS NOT LOWERED (see `_cmp_atom`): an over-approximation of the value set says nothing
+    about the rooms outside it, so "not the remembered room" remains opaque.
+
+    Measured on the corpus, full snapshot surface with placements. Three games spell the idiom
+    and two of the three were already understood by the rest of the model:
+        KQ5   g338 -> {57,58,59,60,61,63,64}  the bagged cat's room -- the rm683 carry-in goes
+        KQ4   g124 -> {20,26,27,99,333}       which room the unicorn was randomised into
+        LB2   g571 -> {210,240,250,260,280,300,330}
+        LSL2, KQ6                              no candidate at all (their only gCurRoom-compared
+                                               global is the pending-room one, written from
+                                               another variable)
+    LSL2, KQ4, KQ6 and LB2 are BYTE-IDENTICAL on the full surface.
+
+    `cast_of(script)` -> `cast_conditions`; `entries_of(script)` -> `{instance: entry
+    disjunction}`; `install(map)` publishes a round's answer where the next round's guard
+    lowering will read it -- the fixpoint's feedback path -- and is what the caller uses to
+    drop whatever it cached under the previous one."""
+    want = _curroom_compared(ir)
+    if not want:
+        return install(ir, {})
+    writes = _global_write_sites(ir, want)
+    cands = {}
+    for gi in sorted(want):
+        ws = writes.get(gi) or []
+        if ws and not any(k == "other" for _sn, _sc, k, _v, _pc in ws):
+            cands[gi] = ws
+    if not cands:
+        return install(ir, {})
+    scope = _ScopeRooms(ir, cast_of, entries_of)
+    rooms = _room_numbers(ir)
+    while cands:
+        got = _settle_room_valued(ir, scope, install, rooms, cands, rounds)
+        empty = {gi for gi, v in got.items() if not v}
+        if not empty:
+            return install(ir, got)
+        # "the compare is never true" is a claim, and an empty set only ever comes from the BASE
+        # of the fixpoint. Drop it back to opaque and re-settle, so that what the extraction
+        # finally reads is the map the surviving answers were computed under.
+        for gi in empty:
+            cands.pop(gi, None)
+    return install(ir, {})
+
+
+def _settle_room_valued(ir, scope, install, rooms, cands, rounds):
+    cur = {gi: frozenset() for gi in cands}
+    for _round in range(rounds):
+        install(ir, cur)
+        scope.reset()
+        nxt, dropped = {}, set()
+        for gi, ws in cands.items():
+            vals = set()
+            for sn, sc, kind, val, pc in ws:
+                if kind == "lit":
+                    vals.add(val)
+                    continue
+                r = scope.of(sn, sc)
+                here = _curroom_demand(pc)     # the write's own branch may name its room
+                if here is not None:
+                    r = here if r is None else (r & here)
+                if r is None:
+                    dropped.add(gi)            # a write we cannot place: no claim at all
+                    break
+                vals |= r
+            else:
+                nxt[gi] = frozenset(v for v in vals if v in rooms)
+        for gi in dropped:
+            cands.pop(gi, None)
+            cur.pop(gi, None)
+        if nxt == cur:
+            return cur
+        cur = nxt
+    return {}                                  # did not settle: say nothing
+
+
 _OPS = {"Eq": "==", "Ne": "!=", "Gt": ">", "Ge": ">=", "Lt": "<", "Le": "<=",
         "Ugt": ">", "Uge": ">=", "Ult": "<", "Ule": "<="}
 _REV = {"==": "==", "!=": "!=", ">": "<", ">=": "<=", "<": ">", "<=": ">="}
@@ -157,6 +505,16 @@ def _cmp_atom(n, tp):
         return Pred("CMP", var=a["index"], op=op, value=str(I.as_int(b)))
     if I.is_global(b) and I.as_int(a) is not None:
         return Pred("CMP", var=b["index"], op=_REV[op], value=str(I.as_int(a)))
+    # GLOBAL vs the CURRENT-ROOM global -- "you are in the room this one REMEMBERS", the only
+    # room test whose room is not written down. Lowered to the disjunction it means over the
+    # rooms the global can hold, so `_curroom_demand` and every other consumer read it as the
+    # ordinary room test it is; `room_valued_globals` is what earns the value set, and a global
+    # it did not derive falls through to opaque. `==` only: the value set is an
+    # OVER-approximation, so `!=` says nothing about the rooms outside it.
+    if op == "==":
+        for x, y in ((a, b), (b, a)):
+            if I.is_global(x, _CURROOM) and I.is_global(y) and y["index"] in _ROOMVAL:
+                return _roomval_atom(y["index"])
     # `register` vs literal -- which job this Script was armed for. See REG_KEY.
     for x, y in ((a, b), (b, a)):
         if _is_register(x) and I.as_int(y) is not None:
@@ -294,6 +652,7 @@ def _at_item(n):
 # the hand-written version made by eye (Window's same-named `moveTo: x y`) fall out of the
 # receiver and arity of the class's own method. See docs/HOW-IT-WORKS and TODO A0.
 EGO = V.EGO      # destination sentinel: the item is now HELD
+HERE = V.HERE    # destination sentinel: laid down in the room the site is in -- `_here` resolves
 
 _VOCAB = None    # installed by extract(); one game per process
 _IPROPS = {}     # (item, property) -> values written -- the FOURTH store, discovered
@@ -340,7 +699,12 @@ def install_vocabulary(ir):
     from the store wrapper's holder globals and the Game loop respectively, so the extraction reads
     the game's own layout instead of assuming the SCI template's 0/11. Both fall back to the
     template default only when a game has no derivable store or Game loop."""
-    global _VOCAB, _IPROPS, _EGO, _CURROOM, _ITEM_MSG, _ONEOF, _MENUS
+    global _VOCAB, _IPROPS, _EGO, _CURROOM, _ITEM_MSG, _ONEOF, _MENUS, _ROOMVAL
+    # The room-valued globals are derived BEFORE the extraction (they change what a guard means,
+    # so nothing may read one first) and this runs again inside `extract()`. Restore this game's
+    # answer rather than clearing it -- and clear it for a game that has not derived one, so a
+    # process holding two games never lowers one game's compare with the other's rooms.
+    _ROOMVAL = _ROOMVALS.get(id(ir), {})
     _VOCAB = V.Vocabulary.from_ir(ir)
     _IPROPS = (V.item_property_registers(ir, _VOCAB.store_class, _VOCAB.prop, _at_item)
                if _VOCAB else {})
@@ -374,7 +738,15 @@ def item_transfer(recv, sel, params):
     structural fact that is not vocabulary: how an item is REFERRED to, `(<inv> at: N)`."""
     if _VOCAB is None:
         return None
-    return _VOCAB.transfer(recv, sel, params, _at_item)
+    return _VOCAB.transfer(recv, sel, params, _at_item, _CURROOM)
+
+
+def _here(dest, room):
+    """Resolve the `HERE` destination sentinel against the room the transfer was found in.
+
+    Every site that RECORDS a transfer knows its own room and must call this; nothing downstream
+    is prepared for a non-numeric owner. See `vocab.HERE`."""
+    return room if dest == HERE else dest
 
 
 def walk_stream(node, pc, on_leaf, on_loop=None, undecided=None):
@@ -475,6 +847,101 @@ def init_selectors(ir):
 
     _INIT_SELECTORS[key] = {sp: resolve(sp) for sp in classes}
     return _INIT_SELECTORS[key]
+
+
+_FEATURE_ADDERS = {}        # ir id -> selectors whose OBJECT ARGUMENTS join the cast
+
+
+def feature_adders(ir):
+    """Selectors whose OBJECT ARGUMENTS put those objects IN THE CAST.
+
+    The third spelling, and the one in between the two this module already reads: `init:` puts an
+    object on screen, `delegate_slots` hands it a dispatch slot, and this is the room ADDING it to
+    the list the engine walks when a click arrives.
+
+        (method (setFeatures param1 &tmp temp0)          ; KQ5 Game.sc:672
+            (for ((= temp0 0)) (< temp0 argc) ((++ temp0))
+                (global32 add: [param1 temp0])))
+
+    `global32` holds `features`, an instance of `EventHandler of Set`, whose `handleEvent`
+    forwards the event to every element. So an object handed to `setFeatures:` becomes clickable
+    at that moment and one that never is has no click window at all -- which is a presence
+    condition, and the reason this is not cosmetic.
+
+    KQ5's cat scene is what it costs. Three of the seven sites that bank a thrown item with
+    `put: <item> 6` -- the fact rm86's kidnap fork reads hours later -- live on `catStrip`, which
+    joins the cast only through `(global2 setFeatures: catStrip)` inside `catAndMouse` state 0.
+    Read without that, those three carry none of the scene's arming, so the window that closes on
+    flag 83 looks like it has three producers still open behind it and `window_closures` cannot
+    see the closure at all.
+
+    DERIVED in three structural steps off the class table, the same discipline as
+    `init_selectors`:
+      1. DISPATCH CLASSES -- a class that forwards `handleEvent:` to elements pulled OUT of a
+         collection (the receiver is a variable, not an object it knows by name), plus everything
+         that inherits from one;
+      2. HOLDERS -- globals assigned an instance of a dispatch class;
+      3. ADDERS -- any method that sends `add:` to such a holder with one of its OWN PARAMETERS.
+         Its selector is then a cast event for its object arguments.
+
+    Measured corpus-wide: KQ5 and QFG-VGA derive `setFeatures` (89 and 26 call sites naming a
+    declared object); KQ4 derives the selector and has ZERO such sites; LSL2, KQ6 and LB2 derive
+    none at all -- SCI1.1 rooms use `addToPic`, which `init_selectors` already reads. All five
+    frozen surfaces are byte-identical with this in."""
+    key = id(ir)
+    if key in _FEATURE_ADDERS:
+        return _FEATURE_ADDERS[key]
+    classes = {o.species: o for s in ir.scripts.values() for o in s.objects if o.is_class}
+    disp = set()
+    for sp, o in classes.items():
+        for _mn, body in o.methods.items():
+            for n in I.walk(body):
+                if n.get("t") != "Send":
+                    continue
+                recv, msgs = I.send_pairs(n)
+                if (any(sel == "handleEvent" for sel, _p in msgs) and isinstance(recv, dict)
+                        and recv.get("t") in ("Variable", "KernelCall")):
+                    disp.add(sp)
+    grew = True
+    while grew:                                  # ...and every class that inherits from one
+        grew = False
+        for sp, o in classes.items():
+            if sp not in disp and o.super in disp:
+                disp.add(sp)
+                grew = True
+    insts = {o.name for s in ir.scripts.values() for o in s.objects
+             if not o.is_class and o.super in disp}
+    holders = set()
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for _mn, body in o.methods.items():
+                for n in I.walk(body):
+                    if n.get("t") != "Assignment":
+                        continue
+                    d, src = (n.get("kids") or [None, None])[:2]
+                    if (isinstance(src, dict) and src.get("name") in insts
+                            and isinstance(d, dict) and I.is_global(d)):
+                        holders.add(d["index"])
+    out = set()
+    for s in ir.scripts.values():
+        for o in s.objects:
+            for mn, body in o.methods.items():
+                for n in I.walk(body):
+                    if n.get("t") != "Send":
+                        continue
+                    recv, msgs = I.send_pairs(n)
+                    if not (isinstance(recv, dict)
+                            and ((I.is_global(recv) and recv.get("index") in holders)
+                                 or recv.get("name") in insts)):
+                        continue
+                    for sel, params in msgs:
+                        if sel == "add" and any(
+                                any(k.get("vtype") == "Parameter"
+                                    for k in I.walk(p) if isinstance(k, dict))
+                                for p in params if isinstance(p, dict)):
+                            out.add(mn)
+    _FEATURE_ADDERS[key] = frozenset(out)
+    return _FEATURE_ADDERS[key]
 
 
 def delegate_slots(ir):
@@ -647,7 +1114,7 @@ def _object_departures(script):
 
 
 def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None,
-                    delegate_sels=None):
+                    delegate_sels=None, foreign_inits=None, add_sels=None):
     """`objname -> [guard|None]`: the conditions under which this script puts an object IN THE CAST.
 
     An object that is not `init:`ed does not exist for the player -- it cannot be clicked, cued or
@@ -735,8 +1202,9 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None,
                 for p in params:
                     if isinstance(p, dict) and p.get("name") in declared:
                         armed.add((p["name"], key))
-            if delegate_sels and sel in delegate_sels:
-                # assigned as a dispatch delegate -- a cast event for the VALUE object
+            if (delegate_sels and sel in delegate_sels) or (add_sels and sel in add_sels):
+                # assigned as a dispatch delegate, or ADDED to the room's event-dispatch list
+                # (`feature_adders`) -- either way a cast event for the object named as the value
                 for p in params:
                     if isinstance(p, dict) and p.get("name") in declared:
                         pend.append((p["name"], key, _conj(pc)))
@@ -761,6 +1229,51 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None,
             continue                     # a departing init: the object exists but is never
                                          # clickable from this site -- see _object_departures
         out.setdefault(rname, []).append(g)
+    # ...and the init sites in OTHER scripts, which reach this one by export index
+    # (`((ScriptID 550 3) init:)`) and so name no object this walk can see. Supplied by
+    # `MachineBuilder.foreign_inits`, which carries each site's path condition conjoined with
+    # its own room; filtered here against the same `declared` selector map, so an `x:` read of a
+    # foreign object is not mistaken for putting it on screen. Without these, an object declared
+    # in a region and init'ed by its member rooms has NO presence condition -- which reads as
+    # "always", and hands every room the script serves an act the player cannot perform there.
+    for rname, sel, g in (foreign_inits or ()):
+        if sel in declared.get(rname, ()):
+            out.setdefault(rname, []).append(g)
+    return out
+
+
+def arming_conditions(script, target):
+    """`[guard|None]` -- the path conditions under which this script ARMS `target`.
+
+    `cast_conditions`' question asked of a Script INSTANCE, whose cast event is being armed
+    rather than `init:`ed: a `doit` on a machine nobody has armed runs never, so a
+    machine-hosted trigger's liveness is its arming's own guard. Built for KQ5's harpy patrol
+    (rm049: `(if (proc0_12 54) (harpy1 init: setScript: harpyInitScript))` -- the patrol is
+    live exactly on flag-54 return visits), where `cast_conditions` has nothing to say: the
+    host is never in the cast, and the actor that carries it (`harpy1`) is also init'ed
+    unconditionally inside the first-visit capture cutscenes, which reads as always-present.
+
+    A `None` entry means an unconditional arming -- consumers must treat the trigger as
+    always-live, the permissive answer (same contract as `cast_conditions`)."""
+    out = []
+
+    def leaf(n, pc):
+        if n.get("t") != "Send":
+            return
+        try:
+            _recv, msgs = I.send_pairs(n)
+        except Exception:                                  # noqa: BLE001
+            return
+        for sel, params in msgs:
+            if sel == "setScript" and any(
+                    isinstance(p, dict) and p.get("name") == target for p in params):
+                out.append(_conj(pc))
+
+    for o in script.objects:
+        for _mn, body in o.methods.items():
+            walk_stream(body, [], leaf)
+    for _pn, body in script.procs.items():
+        walk_stream(body, [], leaf)
     return out
 
 
@@ -914,6 +1427,10 @@ class Acq:
     item: int
     room: int
     guard: object = None
+    method: str = ""           # the METHOD that emitted it. `init` and `doit` run with no player
+    #   input; a `doVerb`, a `handleEvent` or a `changeState` needs the player to act. That is the
+    #   difference between a handout you cannot decline and a pickup you can walk past, which is
+    #   the whole question `missability._unrefusable_grants` asks.
     via: str = ""              # object whose method emitted it -- the same key `Edge.via` uses.
     #   A `get:` inside a `changeState` body is walked BOTH here (with the body's own path
     #   condition, i.e. nothing) and by the machine lift (which knows what it costs to arm the
@@ -1326,10 +1843,14 @@ class Extractor:
         self.ir = ir
         self.ts = TS()
         self._cur_obj = ""                  # object whose method is being walked
+        self._cur_method = ""               # ...and WHICH method -- see `Acq.method`
         self._armed = {}                    # room -> {object name: [guard, ...]}
         self._pending = pending_room_global(ir)
         self._list_loop = False             # inside a `for` that walks a linked list
         self._nowalk = None                 # rooms with the walk icon off -- see _no_walk_rooms
+        self._mentions = {}                 # script number -> (sites, total); a ScriptID-loaded
+        #   script is scoped once PER ROOM that loads it (KQ6 has 150 such scopes), and the walk
+        #   behind `_mention_sites` does not depend on the room.
         self.procs_by = {}
         for rn, s in ir.scripts.items():
             for name, body in s.procs.items():
@@ -1360,27 +1881,74 @@ class Extractor:
                                     out.setdefault(v, set()).add(rn)
         return out
 
-    def _object_mentions(self, sc):
-        """`object name -> the sibling objects its methods name`, from `{"t": "Object"}` nodes.
+    def _mention_sites(self, sc):
+        """`(sites, total)` for the sibling objects this script's methods name.
+
+        `sites[p][q]` is the list of PATH CONDITIONS under which `p` names `q`, from `walk_stream`;
+        `total[p][q]` is how many times a flat `I.walk` sees the same mention. The two are kept
+        apart for the same reason `_scriptid_scope` keeps `rows` and `present` apart: the streaming
+        walk carries conditions but does not reach every branch, so only where the counts AGREE is
+        the condition list a complete account of how `q` is reached.
 
         This is how one object in a script hands control to another without going through the
         export table: `(= next untieSelfAndStand)`, `(genie setScript: 0)`. Needed because
         `ScriptID` names ONE export but SCI loads the whole script, so the rest of it runs only if
         something inside reaches it."""
+        got = self._mentions.get(sc.number)
+        if got is not None:
+            return got
         names = {o.name for o in sc.objects}
-        out = {}
+        sites = {o.name: collections.defaultdict(list) for o in sc.objects}
+        total = {o.name: collections.Counter() for o in sc.objects}
         for o in sc.objects:
-            hit = set()
             for b in o.methods.values():
+                def leaf(n, pc, _o=o):
+                    if isinstance(n, dict) and n.get("t") == "Object":
+                        nm = n.get("name")
+                        if nm in names and nm != _o.name:
+                            sites[_o.name][nm].append(list(pc))
+                walk_stream(b, [], leaf)
                 for n in I.walk(b):
                     if isinstance(n, dict) and n.get("t") == "Object":
                         nm = n.get("name")
                         if nm in names and nm != o.name:
-                            hit.add(nm)
-            out[o.name] = hit
+                            total[o.name][nm] += 1
+        self._mentions[sc.number] = (sites, total)
+        return self._mentions[sc.number]
+
+    def _object_mentions(self, sc, room):
+        """`object name -> the siblings its methods name`, AS REACHED FROM `room`.
+
+        A mention is a CALL SITE and carries a path condition. Where every site that names `q`
+        says the player must be somewhere ELSE (`_curroom_impossible`), nothing in THIS room can
+        reach `q`, so it is not in this room's scope -- the same reading `_send_effect` already
+        applies to a single effect, applied one level up, to scope membership.
+
+        KQ5's ending montage is the specimen. `cartoonCode` (script 763) is one `cond` whose arms
+        are `(proc999_5 gCurRoom <rooms>)`, one cartoon per place you can be standing, and each
+        arm names its own sibling toon -- whose `doit` closes with a real `newRoom:`. Propagating
+        the SEED's condition unchanged gave every toon to all thirteen rooms that call the montage,
+        so rm57 (Cassima's cell, inside Mordack's castle) acquired exits to the village, the elf,
+        the ice queen and the ending, and no part of the castle was one-way. The Fishhook, which
+        you cannot go back for (USER 2026-08-14), could not strand.
+
+        CONSERVATIVE: the sibling is dropped only when the streaming walk accounted for EVERY
+        mention (`total`) and every one of them excluded this room. A mention the walk did not
+        reach decides nothing and keeps `q` in scope, because tightening this can only DELETE
+        effects -- the direction that lost KQ4's `readBook` when `_scriptid_scope` got it wrong."""
+        sites, total = self._mention_sites(sc)
+        out = {}
+        for p in total:
+            keep = set()
+            for q, n in total[p].items():
+                pcs = sites[p].get(q, [])
+                if len(pcs) == n and pcs and all(_curroom_impossible(pc, room) for pc in pcs):
+                    continue
+                keep.add(q)
+            out[p] = keep
         return out
 
-    def _scriptid_scope(self, sc, rows, present):
+    def _scriptid_scope(self, sc, rows, present, room):
         """`{object name -> guard}` for the objects of a ScriptID-loaded script that can RUN here.
 
         Two oracles, deliberately separate, because they fail in opposite directions:
@@ -1403,9 +1971,11 @@ class Extractor:
             non-literal index, an IR with no export table) falls back to seeding every object --
             the old behaviour, and the permissive direction.
           * SCI loads the script WHOLE, so anything a seeded object mentions can run too, under the
-            same condition; propagate to a fixpoint. A script-level PROCEDURE is not walked here,
-            but what it mentions is seeded with the script-wide disjunction, because we cannot see
-            whether the proc is called.
+            same condition; propagate to a fixpoint. Which siblings are reachable FROM THIS ROOM is
+            `_object_mentions`' question, not this one -- a mention whose every site demands
+            another current room hands nothing over here. A script-level PROCEDURE is not walked
+            here, but what it mentions is seeded with the script-wide disjunction, because we
+            cannot see whether the proc is called.
 
         Conditions from several sites are OR'd -- a script reached two ways runs if EITHER way was
         taken. Keeping one arbitrary site's condition (what `seen` used to do) is not an
@@ -1459,7 +2029,7 @@ class Extractor:
                 add(name, script_cond)
         if not conds:
             return {}
-        mentions = self._object_mentions(sc)
+        mentions = self._object_mentions(sc, room)
         # A procedure's body is not walked in this scope, but naming an object there still means
         # the object can be entered once the script is loaded.
         names = set(mentions)
@@ -1542,7 +2112,8 @@ class Extractor:
         for (tgt, room), rows in sites.items():    # first-touch order, as the old `seen` had
             sc = self.ir.scripts.get(tgt)
             if sc is not None:
-                out.append((tgt, room, self._scriptid_scope(sc, rows, present[(tgt, room)])))
+                out.append((tgt, room,
+                            self._scriptid_scope(sc, rows, present[(tgt, room)], room)))
         return out
 
     def run(self):
@@ -1563,10 +2134,11 @@ class Extractor:
                 for o in rs.objects:
                     self._cur_obj = o.name
                     for mname, meth_ast in o.methods.items():
+                        self._cur_method = mname
                         self._walk(room, meth_ast, [], rgn, set(),
                                    movement=(mname != "changeState"),
                                    verb_param=(_DOVERB_PARAM if mname == "doVerb" else None))
-                self._cur_obj = ""
+                self._cur_obj = self._cur_method = ""
         # SCRIPTS LOADED BY `ScriptID` -- see scriptid_refs. Walked with the referencing site's
         # path condition, in the scope that loaded them.
         for tgt, room, conds in self.scriptid_refs():
@@ -1582,10 +2154,11 @@ class Extractor:
                 g = conds[o.name]
                 self._cur_obj = o.name
                 for mname, meth_ast in o.methods.items():
+                    self._cur_method = mname
                     self._walk(room, meth_ast, [] if g is None else [g], tgt, set(),
                                movement=(mname != "changeState"),
                                verb_param=(_DOVERB_PARAM if mname == "doVerb" else None))
-            self._cur_obj = ""
+            self._cur_obj = self._cur_method = ""
         for n, s in room_scripts.items():
             self._nav_edges(n, s)
             self._newroom_override_edges(n, s)
@@ -1596,9 +2169,10 @@ class Extractor:
                     # duplicate them as free flat edges. Items still captured. Procedures
                     # are FOLLOWED in-context (below), not walked standalone -- a proc
                     # walked context-free would emit its newRoom as a free bypass.
+                    self._cur_method = mname
                     self._walk(n, meth_ast, [], n, set(), movement=(mname != "changeState"),
                                verb_param=(_DOVERB_PARAM if mname == "doVerb" else None))
-            self._cur_obj = ""
+            self._cur_obj = self._cur_method = ""
             self._inherit_arming(n)
         self._nav_hubs()
         # add any newRoom target we saw as a room
@@ -2280,8 +2854,7 @@ class Extractor:
                 self._nav_assignment(room, n, p)
                 self._pending_room_assignment(room, n, p)
             elif tp in ("PublicCall", "LocalCall"):
-                tgt = n.get("script", script)
-                name = n.get("name")
+                tgt, name = I.proc_ref(self.ir, n, script)
                 body = self.procs_by.get((tgt, name))
                 if tgt != 255 and body is not None and name not in seen:
                     # verb_param defaults to None: a followed proc is not a doVerb body, so its own
@@ -2362,6 +2935,11 @@ class Extractor:
                 self._armed.setdefault(room, {}).setdefault(t, []).append(_conj(pc))
 
     def _send_effect(self, room, node, pc, movement=True, script=None):
+        # An arm whose own guard says it belongs to another room does nothing HERE -- see
+        # `_curroom_impossible`. Checked before anything is recorded, because the same false
+        # attribution otherwise lands as an edge, an acquisition and a drop alike.
+        if _curroom_impossible(pc, room):
+            return
         self._record_arming(room, node, pc)
         recv, msgs = I.send_pairs(node)
         for sel, params in msgs:
@@ -2445,10 +3023,12 @@ class Extractor:
                 # ACQUISITION -- the last hardcoded `sel == "get"` here is gone too: whether a
                 # send hands the player an item is a question for the derived vocabulary, not a
                 # selector name we happen to know.
-                for tr in item_transfers(recv, sel, params):
+                for tr0 in item_transfers(recv, sel, params):
+                    tr = (tr0[0], _here(tr0[1], room))   # `put: X gCurRoomNum` places it HERE
                     if tr[1] == EGO:
                         self.ts.items.add(tr[0])
-                        self.ts.acqs.append(Acq(tr[0], room, _conj(pc), self._cur_obj))
+                        self.ts.acqs.append(Acq(tr[0], room, _conj(pc),
+                                                method=self._cur_method, via=self._cur_obj))
                     elif isinstance(tr[1], int) and tr[1] > 0:
                         # a transfer to a ROOM (not the ego, not -1/nowhere): the item is PLACED
                         # there. The owner state's transition to a location -- see TS.placed.
@@ -2489,10 +3069,26 @@ def var_room_values(ir, room, var):
     `(newRoom: local0)` in one state, so the act advance was orphaned from the act-break edge
     and rm26 became a free act-setter. One resolver, both callers.
 
-    The variable may be a GLOBAL or a script LOCAL/TEMP -- same idiom, different storage,
-    so the same scan answers both. Scoping the scan to THIS script is exact for a local
-    (that is all a script local can see) and is the deliberate narrowing we already chose
-    for the global case.
+    The variable may be a GLOBAL or a script LOCAL/TEMP -- same idiom, but NOT the same
+    storage. Scoping the scan to THIS script is exact for a local (that is all a script local
+    can see) and is the deliberate narrowing we already chose for the global case.
+
+    ⛔ A TEMP IS A STACK SLOT, so the script-wide scan is WRONG for one: `temp0` in one method
+    is a different variable from `temp0` in another, and reading them as one lets any method's
+    literal become another's destination. KQ5's rm049 is the specimen and the damage was not
+    subtle -- `sailInScript` assigns `temp0` 650 or 654 as CEDRIC'S VIEW NUMBER
+    (`cedric init: view: temp0`), while `rm049::doit` has its own `temp0` holding an
+    `edgeToRoom` result and does `newRoom: temp0`. The view numbers became room destinations,
+    and since 650/654 are the CD intro's scripts -- which exit into the whole game -- that
+    phantom pair was the only bridge from the game's start region to everything else, enough
+    to move the derived START ANCHOR onto the wrong side of the game.
+
+    So a Temp is scanned only within the method that CONTAINS this destination node, found by
+    identity. If it cannot be located (a copied or synthesised tree), the scan stays
+    script-wide: that is the pre-existing reading, and widening a destination set can only
+    invent movement, never hide a stranding. Measured corpus-wide: only KQ5 has a temp site
+    whose value set changes (rm36, rm49, rm124); LSL2, KQ4, KQ6 and the Dagger have none --
+    LB2's act break, the case this resolver was built for, routes through a script LOCAL.
 
     Returns {room: guard}, where the guard is the PATH CONDITION UNDER WHICH THE
     DESTINATION WAS ASSIGNED -- `None` meaning unconditional. That is what stops a routing
@@ -2533,22 +3129,26 @@ def var_room_values(ir, room, var):
             if v is not None and is_room(v):
                 seen.setdefault(v, []).append(_conj(pc))
 
-    for o in s.objects:
-        for _mn, ast in o.methods.items():
-            # TWO scans, because the two shapes need different walkers and conflating them
-            # cost LSL2 eight softlocks once already. `(switch <dest> ...)` is DATA -- the
-            # case labels ARE the values -- but walk_stream reads a Switch as control flow
-            # and never hands it to on_leaf, so that harvest has to run on the flat walk.
-            # The assignment shape genuinely needs the path condition, so it uses
-            # walk_stream. See test_walkers on Switch-as-data.
-            for n in I.walk(ast):
-                if n["t"] == "Switch" and is_dest(n["kids"][0]):
-                    for c in n["kids"][1:]:
-                        if c["t"] == "Case":
-                            v = I.as_int(c["kids"][0])
-                            if v is not None and is_room(v):
-                                seen.setdefault(v, []).append(None)
-            walk_stream(ast, [], on_leaf)
+    scan = [ast for o in s.objects for _mn, ast in o.methods.items()]
+    if vtype == "Temp":
+        owner = next((ast for ast in scan if any(n is var for n in I.walk(ast))), None)
+        if owner is not None:
+            scan = [owner]                 # stack slot: only this method's own assignments
+    for ast in scan:
+        # TWO scans, because the two shapes need different walkers and conflating them
+        # cost LSL2 eight softlocks once already. `(switch <dest> ...)` is DATA -- the
+        # case labels ARE the values -- but walk_stream reads a Switch as control flow
+        # and never hands it to on_leaf, so that harvest has to run on the flat walk.
+        # The assignment shape genuinely needs the path condition, so it uses
+        # walk_stream. See test_walkers on Switch-as-data.
+        for n in I.walk(ast):
+            if n["t"] == "Switch" and is_dest(n["kids"][0]):
+                for c in n["kids"][1:]:
+                    if c["t"] == "Case":
+                        v = I.as_int(c["kids"][0])
+                        if v is not None and is_room(v):
+                            seen.setdefault(v, []).append(None)
+        walk_stream(ast, [], on_leaf)
     return {v: (gs[0] if len(gs) == 1 else None) for v, gs in seen.items()}
 
 

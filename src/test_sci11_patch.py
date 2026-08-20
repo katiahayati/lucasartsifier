@@ -63,8 +63,27 @@ def _placements(cfg):
 
 
 def test_placement():
-    """🔴 Every spec we did not deliberately refuse must land somewhere in the source."""
+    """Every spec we did not deliberately refuse must land somewhere in the source.
+
+    ✅ RETIRED AS A RED BY RULING, 2026-08-17b -- not by a build. The check had been declared
+    red since phase 4, held open by KQ6's two unplaced specs, and the USER ruled the state it
+    was complaining about is the INTENDED output: *"whatever we have there is working as
+    intended and should not be a red."* The two skips, each with its standing reason:
+
+      * `huntersLamp` (the peddler's lamp trade): deleting the disposal would hand the player
+        both sides of a TRADE and refuse the magic lamp with it -- the sink spec is correctly
+        unplaceable, and the shipped remedy is the mists carry-in (the 2026-08-03 doctrine:
+        the trade must stay, the trip is what gets refused). Trading the lamp away commits
+        you to the short ending; it does not strand you.
+      * `rm420->rm435` (the shared-dispatcher seam): no controllable trigger, and its demand
+        is already carried by the capture guards on the isle's entry frontier.
+
+    So the contract is now a PIN of exactly that skip set: a NEW skip appearing is a
+    regression, and one of these two placing (or vanishing) is a mechanism change to
+    re-examine -- both loud, neither a standing red. LB2 keeps the strict form (it has no
+    deliberate skips)."""
     print("\nPhase 4 -- PLACEMENT: a correct spec that lands nowhere ships nothing")
+    DELIBERATE = {"KQ6": {"rmNone->rmNone/huntersLamp", "rm420->rm435"}}
     for name in ("KQ6", "dagger"):
         cfg = config.by_name(name)
         if cfg is None or not (cfg.ir_path and os.path.exists(cfg.ir_path)):
@@ -79,11 +98,15 @@ def test_placement():
             print(f"      [ok  ] {w}")
         for w, why in skipped:
             print(f"      [SKIP] {w:22s} {why[:78]}")
-        check(f"🔴 KNOWN GAP ({name}): every non-refused spec places", not skipped,
-              f"{len(skipped)} unplaced. The reasons group into the seams in "
-              f"docs/SCI11-PATCHING-PLAN.md §4/§5: an edit re-found by regex instead of by the "
-              f"IR node we analysed; `trigger.py` searching only the FROM room's own file; "
-              f"controllability spelled for SCI0; and `guard_edge_exit` hardcoding `of Rm`.")
+        want = DELIBERATE.get(name, set())
+        got = {w for (w, _why) in skipped}
+        check(f"{name}: the unplaced specs are exactly the deliberate skips "
+              f"({len(want)} declared)", got == want,
+              f"unexpected={sorted(got - want)} missing={sorted(want - got)}. A new skip is a "
+              f"placement regression (the seams live in docs/SCI11-PATCHING-PLAN.md §4/§5); a "
+              f"declared skip placing or vanishing is a mechanism change -- USER-RULED "
+              f"2026-08-17b that the declared set is working as designed, so re-examine "
+              f"against that ruling before touching this list.")
         if name == "KQ6":
             # THE WEDDING HOLD REACHES THE REGION-HOMED WRITER (2026-08-05). The flag-166
             # register-write remedy must land on all THREE spellings of the same store: the two
@@ -318,11 +341,57 @@ def test_hoist_rest_targets():
           "(method (doVerb param1 &tmp temp0 restTgt)" in out3 and out3.count("&tmp") == 1)
 
 
+def test_indexed_compound_assign_restores_the_index():
+    """The scicompile codegen fix for `a[i] op= v` with a NON-LITERAL index (2026-08-18).
+
+    Upstream SCICompanion emits `eq? / toss / pprev` here, on the belief (its own comment)
+    that `toss` moves the saved index into the accumulator. It does not -- `toss` discards a
+    stack slot and `eq?` already consumed the index -- so the indexed store that follows read
+    its index from the eq? BOOLEAN and every such assignment landed on a[0] or a[1]. KQ5's
+    Main flag engine (`[global129 temp2] |= bit`) is the case: every flag write in the game
+    scribbled flags 0-31 (USER-found: the tambourine set flag 47, which landed on flag 15,
+    and rm2's take-off-the-cloak arm looped forever). Literal indexes take the constant-fold
+    path, which is why fan-game code rarely met it.
+
+    The fix emits Sierra's own idiom -- push0 / eq? / ldi 0 / or / pprev -- whose `ldi 0, or`
+    rebuilds the INDEX in acc before the store. Pinned on compiled bytes: KQ5's Main must
+    contain the fixed sequence exactly as many times as Sierra's official Main patch does
+    (three: the &=, |= and ^= arms), and the broken triplet not at all."""
+    print("\nPhase 4c -- indexed compound assignment restores the index before the store")
+    cfg = config.by_name("kq5")
+    if cfg is None or not os.path.exists(cfg.ir_path) or not os.path.isdir(cfg.resource_dir):
+        print("  (skip: no KQ5 IR/resources)")
+        return
+    import shutil
+    import tempfile
+    import patcher as P
+    import missability as M2
+    s = M2.load(cfg=cfg)
+    dest = tempfile.mkdtemp(prefix="sci1flag_")
+    try:
+        P.configure(s.em.ir)
+        P.assemble(dest, cfg)
+        P.compile_project(dest)          # the .sco bootstrap -- `use` resolves from these
+        raw = os.path.join(dest, "main_test.bin")
+        ok, log = P.compile_one(dest, "Main", raw)
+        check("KQ5's Main compiles", ok, log[-300:] if log else "")
+        data = open(raw, "rb").read() if ok else b""
+    finally:
+        shutil.rmtree(dest, ignore_errors=True)
+    FIXED = bytes([0x76, 0x1a, 0x35, 0x00, 0x14, 0x60])   # push0 eq? ldi0 or pprev
+    BROKEN = bytes([0x1a, 0x3a, 0x60])                     # eq? toss pprev
+    check("the fixed index-restore idiom appears exactly as often as in Sierra's own Main (3)",
+          data.count(FIXED) == 3, "count=%d" % data.count(FIXED))
+    check("the broken eq?/toss/pprev triplet is gone",
+          data.count(BROKEN) == 0, "count=%d" % data.count(BROKEN))
+
+
 def run():
     print("=== test_sci11_patch: the road from a correct finding to a playable patch ===")
     test_refusal_primitive_is_derived()
     test_fatal_uses_produces_a_remedy()
     test_hoist_rest_targets()
+    test_indexed_compound_assign_restores_the_index()
     test_placement()
     test_realm_entry_guard_sits_on_the_spell_delivery()
     test_verify_closes_every_kq6_finding()

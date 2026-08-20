@@ -43,6 +43,8 @@
     "Magic_Hen@[690]",
     "Peacock_Feather@[44]"
   ],
+  "market": [],
+  "market_specs": [],
   "ownedby_death_folds": [],
   "placements": [
     "Main/Magic_Fruit: applied=True kind=None",
@@ -69,5 +71,6 @@
     "Magic_Hen"
   ],
   "start_room": 99,
-  "tolls": []
+  "tolls": [],
+  "window_specs": []
 }

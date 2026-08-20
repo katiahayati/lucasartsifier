@@ -47,7 +47,8 @@ def snapshot(cfg, with_placements=False):
                    | {d["item"] for d in s.dangerous_sinks()}
                    | {f["item"] for f in s.fatal_uses()}
                    | {r["item"] for r in s.register_strandings()}
-                   | {r["item"] for r in s.ownedby_death_folds()})
+                   | {r["item"] for r in s.ownedby_death_folds()}
+                   | {r["item"] for r in s.market_squeezes()})
     # REGISTER-VALUE strandings, unconditional like every other detector -- see the note at the
     # bottom of this comment block for what used to be here and why it went.
     #
@@ -78,6 +79,12 @@ def snapshot(cfg, with_placements=False):
         "softlock_items": [s.g.item_name(i) for i in items],
         "groups": sorted(" or ".join(r["item_names"]) + f"@{r['need_room']}"
                          for r in s.group_strandings()),
+        # The market squeezes (2026-08-17b): a payment that leaves some merchant unpayable,
+        # frozen with WHOM it starves -- a row that keeps its rooms but starves someone else is
+        # a different claim and must read as one. Empty on LSL2/KQ4/KQ6/LB2 (measured at birth);
+        # KQ5 carries the town market and the yeti's pie.
+        "market": sorted(f"{r['item_name']}@rm{r['at_room']}/{r['script']}"
+                         f"->starves rm{r['starves']}" for r in s.market_squeezes()),
         "exhaustion": sorted(f"{r['item_name']}@{r.get('at_rooms', r['at_room'])}"
                              f"->{r['still_needed_at']}" for r in s.resource_exhaustion()),
         "joint": sorted(f"{f['item_name']}@{f['stranded_at']}" for f in s.joint_strandings()),
@@ -133,6 +140,23 @@ def snapshot(cfg, with_placements=False):
                                   f"{sp['condition']}"
                                   + (" [REFUSED]" if sp["refused"] else "")
                                   for sp in specs if sp["site"] == "action")
+    # The market refusals (2026-08-17b): one per condemned (site, token) payment, keyed by the
+    # script file and the machine (or the handler act) the wrap holds. Empty everywhere the
+    # market emits no rows -- the same ran-and-found-nothing record as every other key.
+    snap["market_specs"] = sorted(
+        f"{s.g.item_name(sp['item'])}@script{sp['script']}/{sp.get('machine') or 'handler'}"
+        + (" [REFUSED]" if sp["refused"] else "")
+        for sp in specs if sp["site"] == "market")
+    # The one-shot window remedies (2026-08-18, the cat-window build): one per window, carrying
+    # the full bank condition, the durable holds and the per-visit closers -- any of those
+    # moving is a mechanism change. Empty everywhere `window_closures` finds nothing (all four
+    # frozen games today), the same ran-and-found-nothing record as every other key.
+    snap["window_specs"] = sorted(
+        f"rm{sp['need_room']}<-{sorted(sp['items'])}: {sp['condition']}"
+        f" holds={[(h['register'], h['trap']) for h in sp['holds']]}"
+        f" self_resetting={[r for r, _why in sp['self_resetting']]}"
+        + (" [REFUSED]" if sp["refused"] else "")
+        for sp in specs if sp["site"] == "window")
     snap["register_write_specs"] = sorted(
         f"reg{sp.get('register')}={sp.get('trap')}: {sp['condition']}"
         + (" [REFUSED]" if sp["refused"] else "")

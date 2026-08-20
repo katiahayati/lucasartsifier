@@ -50,6 +50,8 @@
       "mint or peppermint@750"
     ],
     "joint": [],
+    "market": [],
+    "market_specs": [],
     "ownedby_death_folds": [],
     "placements": [
       "Main/mint: applied=True kind=None",
@@ -123,7 +125,8 @@
       "sacredWater@one-visit-toll-pocket/rm370->rm380",
       "skeletonKey@one-visit-toll-pocket/rm340->rm155",
       "teaCup@one-visit-pocket-carry-in/rm340->rm155"
-    ]
+    ],
+    "window_specs": []
   },
   "dagger": {
     "action_specs": [],
@@ -151,6 +154,8 @@
     ],
     "groups": [],
     "joint": [],
+    "market": [],
+    "market_specs": [],
     "ownedby_death_folds": [],
     "placements": [
       "rm210: applied=True kind=setscript sites=1",
@@ -197,6 +202,7 @@
       "grapes"
     ],
     "start_room": 110,
-    "tolls": []
+    "tolls": [],
+    "window_specs": []
   }
 }

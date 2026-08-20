@@ -18,8 +18,15 @@ fork -- `rescue` (which still demands the Hammer) vs `yourStuck` (an unpreventab
 Flag 83 closes the cat window ON ARMING, not on success -- the one-shot-window class.
 
 ⛔ KQ5 IS NOT A FINISHED ORACLE, and no run of this file should be reported as though it were.
-Four of the fifteen scorecard rows are still MISSED with a declared red apiece, one is a false
-positive we emit and have not cured, and several verdicts are open on their own terms (the peas
+The MARKET landed 2026-08-17b (`missability.market_squeezes`, §6a/§6b/§6c: the squeeze, the
+Heart and the lamb promoted together -- one matching question, with scarcity read
+consumer-relatively so the eagle past the roc counts every lamb as the last one). The known
+acquisition looseness remains -- the cupboard, the Coin and the Marionette all read restockable
+because their pickups' owner-gating is not modeled -- but it is measured to move NO verdict:
+every consumer it could waive is either town-side (where re-fetching is real) or constrained
+through a token that is scarce anyway. Column F -- false positives we emit -- is EMPTY as of 2026-08-17:
+the Wand's was cured 2026-08-15, the witch amulet's verdict was corrected 2026-08-16b, and the
+tambourine's went with the snake gate below. Several verdicts are open on their own terms (the peas
 consumable waits on the item-property store; the locket window, the mountains' cold death and
 the Hammer's crystal site are unverified against the source). The checks below passing means
 the catches we HAVE are still there and still caught for the stated mechanism -- nothing more.
@@ -27,9 +34,26 @@ the catches we HAVE are still there and still caught for the stated mechanism --
 Two builds landed 2026-08-14. Phase 1, `ownedby_death_folds` (an arrival forks on an owner
 value and the losing arm is a death the player cannot dodge), retired the kidnap-read, lamb-fold
 and pie reds. Phase 2, item-banned fetch walks in `register_strandings`, retired the Hammer red.
-Their rows are mechanism-pinned below. STILL RED: the two window-closure halves (phase 3 -- flag
-83 closes on arming, flag 36's writer needs the fish), the fortune teller's needle slot, the
-region-scope amulet fold, and the tambourine false positive.
+Their rows are mechanism-pinned below. Phase 3 landed 2026-08-16b as `window_closures` (with
+`extract.feature_adders`), retiring the cat-window red. The bees' half of phase 3 turned out NOT
+to be a window at all -- flag 36's writer needs the fish IN HAND, so an item spent elsewhere shuts
+it, which is a SINK -- and closed 2026-08-17 as `dangerous_sinks Fish@rm6 -> [11]` (§16).
+
+⭐ THE POSITIONAL GAP IS OPEN ON KQ5 (2026-08-17). `missability._apply_hazard_gates` reads a
+`doit` branch that bounds the ego's DISTANCE to a stationary object and arms a death nobody
+survives, and bars the screen exits that object's radius seals -- proven over the room's own
+obstacle polygons, which KQ5 spells as named `Polygon` instances (`polygons.instance_polygons`,
+84 sites in 67 rooms that used to read as open floor). One gate in the corpus: rm2's snake.
+
+⭐ THE WITCH AMULET IS NOT A SOFTLOCK (USER-RULED 2026-08-16b) -- you need it, but rm19 is one
+screen into the forest and you can walk back to rm13 for another. Its red demanded the wrong row
+and is rebuilt as two green pins: the DEMAND reaches all seven forest rooms, and no detector
+claims a stranding.
+
+A third build landed 2026-08-15: `missability._unrefusable_grants`, which retired the WAND false
+positive. A room that hands you an item in `init` under nothing but `not (has: X)` is a handout
+you cannot decline, so `_reach_without` stops there -- KQ5's rm1 does exactly that with Crispin's
+wand. The full snapshot surface of LSL2, KQ4, KQ6 and LB2 is byte-identical across it.
 """
 import os
 import sys
@@ -45,11 +69,43 @@ EXPECTED_CAUGHT = {
     # (`put: 7 214`); the bottle and coin are inside the one-visit pocket. Golden since July.
     "Brass_Bottle",
     "Gold_Coin",
-    # The sail: rm49->650/654 is the beach region's one-way frontier. Shell used at rm46 (the
-    # hermit scene branches on `has: 23`); Fishhook used at rm67 (`lookInMseHole` -> the cheese).
-    # First caught 2026-08-14, the day KQ5 was re-measured on the post-KQ6/LB2 engine.
+    # ✅ SHELL RE-ENTERED 2026-08-19b, USER PLAY-RULED. It left 2026-08-15 on the 08-14 ruling
+    # "you can sail from the hermit island to the harpy island again to get the shell" -- and
+    # today's play REFUTED that premise: the USER sailed back after the hermit and was fatally
+    # captured, "which given that i didn't have the harp anymore ... wasn't avoidable". Source
+    # agrees and names the mechanism: rm049's departure cutscene (castOffScript state 13) writes
+    # flag 54 and CLEARS flag 74 (the harp's charm); on any flag-54 return, rm049::init arms
+    # `harpyInitScript` -- a 50% roll, then a positional kill (`harpyScript` -> proc0_26 247) on
+    # control mask $0002, no counter (the harp is spent in the nest on the first visit). So the
+    # island is one-safe-visit and the DEPARTURE is the commitment: everything sourced in the
+    # pocket {49, 50, 90, 91} and used beyond it must be in hand at the boat click.
+    # USER 2026-08-19b, both rulings: "yes go ahead and change ground truth. if we can guard the
+    # depart we should not guard the return" -- the toll goes on rm49->rm48; the residual return
+    # death stays UNGUARDED (Caveat-Player, the temple-entombment class).
     "Shell",
+    # THE FISHHOOK: source rm90 (the harpies' NEST, entered only by the first-visit scripted
+    # capture, walk-reachable from rm50 while still on the island), used at rm67
+    # (`lookInMseHole` -> the Moldy_Cheese) -- USER 2026-08-14, "once you are in mordack's lair
+    # you can't get back out to get the fishhook". First caught 2026-08-14; RE-PINNED 2026-08-15
+    # (docs/KQ5-ORACLE.md §8) with the frontier at the hermit island's crossing to the far
+    # shore -- and THAT frontier was REFUTED 2026-08-19b by the same play finding as the
+    # Shell's: the harpy-island return is fatal, so the real frontier is rm49's own departure,
+    # one island earlier. Red until the flag-54 patrol is modeled as the wall it is.
     "Fishhook",
+    # ✅ PROMOTED 2026-08-15, USER-RULED REAL, all five: the model could not have emitted ANY of
+    # these before, because one poisoned register projection (`global322`, an object-valued
+    # scratch slot) emptied `_reach_without` for every item and `analyze()` returned zero rows for
+    # all of KQ5 -- see `missability._object_valued_globals`. Two frontiers carry them:
+    #   * rm40->rm41 is THE ROC carrying you off, KQ5's real point of no return -- Harp (rm9 ->
+    #     needed rm90), Beeswax (rm24 -> rm44) and Crystal (rm38 -> rm52) must cross it;
+    #   * rm44/45/46->rm113 is the hermit island's crossing to the far shore -- Iron_Bar
+    #     (rm44 -> rm54) shares it with the Fishhook.
+    # The Locket (rm42, the roc's nest -> needed rm57, Cassima's cell) crosses rm42->rm43.
+    "Harp",
+    "Beeswax",
+    "Crystal",
+    "Locket",
+    "Iron_Bar",
     # Rope on the branch at rm30 kills you (the ledge is the survivable target; walkthrough-
     # confirmed "the branch is too weak"). fatal_uses' row names the machine.
     "Rope",
@@ -57,7 +113,8 @@ EXPECTED_CAUGHT = {
     # VALUE with an unpreventable death on the losing arm. Three softlocks flipped together:
     #   * the POOL at the kidnap read -- rm86's `yourStuck` (pure-timer death) arms unless
     #     some throwable's owner is 6, so all four pool items carry the rm86 demand under
-    #     prev == 85 (Shoe and Stick keep their sink rows too; Leg_of_Lamb and Fish join here);
+    #     prev == 85. That row is the catch for ALL FOUR, and for Shoe and Stick it is the ONLY
+    #     one -- see the 2026-08-16b ruling below;
     #   * the roc's-nest lamb fold -- rm42 `hatch` state 6 forks on owner(19) == 34, the
     #     losing arm hidden behind a `(++ state)` skip the transition model now reads;
     #   * the pie at the yeti's door -- rm35 arriving from rm36 with the yeti unfed is the
@@ -72,28 +129,76 @@ EXPECTED_CAUGHT = {
     # obtainable" dissolved and the kidnap corral emits its row: reg12=85, flip room 86,
     # needed at 86 (the cellar door). The row's context is exactly patch B's demand.
     "Hammer",
+    # ✅ PROMOTED 2026-08-15 from the WALKTHROUGHS, at the user's instruction to check them.
+    # gamerwalkthroughs.com/kings-quest-5: "Pick up the Fish and then walk up the stairs" -- on
+    # Mordack's island, BEFORE the castle -- then "Keep going back and forth until you see a cat.
+    # Throw Fish at the cat and then use the Bag on the cat to catch it"; the Fandom and eristic
+    # walkthroughs add "from here on out, if you see the cat, you must throw the fish to him".
+    # Source-confirmed: castle.sc, the REGION live in every castle room, dispatches
+    # `(37 (= global332 2) (setScript: theThrowFishScript))` and `(24 ... theCat setScript: ...)`.
+    # Measured: the source rm51 is NOT in the castle-side set {55..67, 124, 612, 670..673, 683},
+    # and rm54's three exits are one-way, so walking up those stairs fishless is unrecoverable.
+    # The same class as the Fishhook, one room over. Its rm683 carry-in row is NOT this catch --
+    # see the declared red below.
+    "Cat_Fish",
+    # ✅ PROMOTED 2026-08-16b, USER-RULED, out of the old column B. Shoe and Stick are the SAFE
+    # ammunition -- one source each (`rm015` bootInSand, `rm011` getStick), no other consumer --
+    # and they are caught by the rm86 pool demand above and by nothing else, which is now their
+    # whole pinned mechanism.
+    #
+    # ⛔ THE ROWS THAT USED TO SIT BESIDE IT WERE FALSE POSITIVES, and this is the ruling that
+    # says so. `dangerous_sinks` claimed "spending the Shoe at the dog leaves it needed at the
+    # cat". USER 2026-08-16b: *"you can't skip the bear... use your shoe on the dog, that's okay,
+    # finish the bear, get the stick, and use that on the cat."* Source agrees and says why the
+    # pool cannot be starved at all: `rm006.sc:112` inits the cat and the rat only under
+    # `(or (has: 8) (has: 16))`, and flag 83 -- the window -- is set by `rm006::doit` only once
+    # the rat is on screen. Walk into rm6 empty-handed and the scene does not start, so nothing
+    # is spent and nothing closes; come back with the Stick and it is still waiting. The
+    # encounter IS the hold we would otherwise have to patch in. The rows went with commit
+    # f623aa2 (the dog's throw arms `throwStick`, so it was never a "consumption that
+    # accomplishes nothing"), and their going is a CURE, not a coverage loss.
+    "Shoe",
+    "Stick",
+    # ✅ PROMOTED 2026-08-17b, USER-RULED across two sessions, caught by `market_squeezes`. The
+    # town is a five-token MARKET with zero slack -- gypsy {3,11} -> Amulet, tailor {3,9,11} ->
+    # Cloak, toy maker (+12) -> Sled, baker (+4) -> Pie, princess {9 alone} -> Harp -- and the
+    # USER confirmed every product is required (*"the cloak is needed"*, 2026-08-17b; the harp,
+    # sled and pie were already enumerated). So a payment is fatal exactly when the residual
+    # market has no perfect matching:
+    #   * the SQUEEZE (USER 2026-08-17: "you CAN ... waste your gold on the toy maker and the
+    #     cloak"): the needle or the gold coin at the toy maker or the baker;
+    #   * the HEART (USER 2026-08-17: "you need the heart for something else, so that would be
+    #     a sink too"): the heart at ANY shop starves the princess, the Harp's sole source.
+    # ⚠️ With the Cloak required, the needle/coin rows are ONE-payment dead ends -- the old §6
+    # "any single payment survives" claim rested on the heart covering the tailor, which the
+    # heart ruling itself removed. The USER-PLAYED pair (needle->gypsy, coin->tailor) emits
+    # nothing, as it must.
+    "Golden_Needle",
+    "Heart",
 }
-
-# B -- REAL, PARTIALLY CAUGHT: the sink rows name the right sites (spending a pool item at the
-# dog starves the cat scene) but are blind to the disjunction -- fatal only when it empties the
-# pool with the cat window still open. Their PRESENCE is expected; their SHAPE is pinned below;
-# the full window detection is the KNOWN GAP red further down.
-ALLOWED_PARTIAL = {"Shoe", "Stick"}
 
 # C -- OPEN RULING: the peas are a counted consumable spelled as the ITEM'S OWN `cel` property
 # (castle.sc increments `((global9 at: 24) cel:)` per throw) -- the item-property store, which
 # does not exist yet. The 13 exhaustion rows are its coarse shadow; tolerated, not demanded.
 ALLOWED_OPEN = {"Bag_of_Peas"}
 
-# F -- FALSE POSITIVE TO CURE, savior-condemned with a NEW POLARITY: Dink inits only while
-# `own(34)` holds, so hugScript's unsurvivable arming carries the tambourine in its ENTRY guard
-# (the monster's existence condition) rather than a branch -- and giving the tambourine
-# (`giveTamboScript`, `put: 34`, drops the Hairpin) is the escape from that very machine.
-# Holding it there is mandatory for progress, so the row's advice is unfollowable. The dedicated
-# red below owns this; the item sits in ALLOWED so the suspicion check does not double-count it.
-FP_EMITTED = {"Tambourine"}
+# F -- FALSE POSITIVES WE EMIT. ✅ EMPTY SINCE 2026-08-16b: the Tambourine was the last one and
+# it is CURED. Dink inits only while `own(34)` holds, so hugScript's unsurvivable arming carried
+# the tambourine as the monster's EXISTENCE CONDITION rather than as anything the player did --
+# and giving it (`giveTamboScript`, `put: 34`, drops the Hairpin) is the escape from that very
+# machine. `fatal_uses` now blames `entry_site` (what the arming site required) instead of the
+# entry guard the strengthening passes had grown; KQ6's skull, whose own() comes from
+# `theGears doVerb 51` at the site, is untouched. docs/KQ5-ORACLE.md §14.
+#
+# ✅ THE WAND LEFT THIS SET 2026-08-15, CURED -- see the green pin below and docs/KQ5-ORACLE.md
+# §10. It had been emitted since before the oracle existed. The cure is NOT the never-strandable
+# class this file used to propose (a class shaped to protect a known answer, and refuted by the
+# source: rm66's machine tray really does take the wand, it just hands it straight back), but
+# `missability._unrefusable_grants` -- rm1's `init` gives Crispin's wand to anyone who does not
+# have it, so no state past rm1 lacks it, and `_reach_without` no longer walks through it.
+FP_EMITTED = set()
 
-ALLOWED = EXPECTED_CAUGHT | ALLOWED_PARTIAL | ALLOWED_OPEN | FP_EMITTED
+ALLOWED = EXPECTED_CAUGHT | ALLOWED_OPEN | FP_EMITTED     # column B is empty since 2026-08-16b
 
 # --- MECHANISM PINS [[oracle-must-pin-the-mechanism]]: every column-A item pins its FULL row
 # set, so an FP that happens to NAME an oracle item cannot score as the catch.
@@ -107,55 +212,228 @@ MECHANISM_ROWS = {
         "toll_strandings: {'pattern': 'one-visit-toll-pocket', 'toll_item': 7, "
         "'toll_item_name': 'Staff', 'toll_reg': None, 'toll_edge': [214, 18], "
         "'pocket': [18], 'source_rooms': [18]}",
+        # ✅ THE MARKET, added 2026-08-17b: spend the gold coin at the toy maker or the baker
+        # and the gypsy-tailor-princess triangle {3, 9, 11} is down to two tokens for three
+        # required purchases. The toll row above is what makes the coin single-copy at all --
+        # `rm018::init` would restock it, but the temple ate the Staff.
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 5, 'script': 204, "
+        "'inst': 'getSled', 'pays': ['getSled'], 'starves': [5, 9, 13], "
+        "'starved_accepts': [3, 9, 11]}",
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 206, 'script': 206, "
+        "'inst': 'getPie', 'pays': ['getPie'], 'starves': [5, 9, 13], "
+        "'starved_accepts': [3, 9, 11]}",
     },
-    "Shell": {"analyze: need@rm46 sources=[49] frontier=rm49->rm650|rm49->rm654"},
-    "Fishhook": {"analyze: need@rm67 sources=[90] frontier=rm49->rm650|rm49->rm654"},
+    # ✅ ADDED 2026-08-17b with the market. The needle's two rows mirror the gold coin's --
+    # either token at the toy maker or the baker starves the triangle -- and they exist at all
+    # only because the ants' repayment is owner-gated (`searchHay` state 5 demands the needle
+    # still in the hay), so a spent needle is gone for good.
+    "Golden_Needle": {
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 5, 'script': 204, "
+        "'inst': 'getSled', 'pays': ['getSled'], 'starves': [5, 9, 13], "
+        "'starved_accepts': [3, 9, 11]}",
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 206, 'script': 206, "
+        "'inst': 'getPie', 'pays': ['getPie'], 'starves': [5, 9, 13], "
+        "'starved_accepts': [3, 9, 11]}",
+    },
+    # ✅ ADDED 2026-08-17b with the market. The heart at ANY shop starves the princess -- her
+    # slot takes item 9 and nothing else (`rm009.sc:936/990`), she is the Harp's sole source,
+    # and the Harp is required at rm90/92/682 past the roc. Derived by reading (c2): the Harp's
+    # one acquisition guard demands owner(Heart) in {9, 21} -- paid to her, or still at the
+    # witch's house -- so a shop's counter is a value it can never come back from.
+    "Heart": {
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 5, 'script': 203, "
+        "'inst': 'soldCloak', 'pays': ['soldCloak'], 'starves': [9], 'starved_accepts': [9]}",
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 5, 'script': 204, "
+        "'inst': 'getSled', 'pays': ['getSled'], 'starves': [9], 'starved_accepts': [9]}",
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 206, 'script': 206, "
+        "'inst': 'getPie', 'pays': ['getPie'], 'starves': [9], 'starved_accepts': [9]}",
+    },
+    # ✅ RE-PINNED 2026-08-19b, the harpy-departure pair, GREEN the same day the reds were
+    # declared. The red pins guessed the cure would move the ANALYZE frontier; the derivation
+    # said otherwise ([[re-derive-a-reds-premise]] again): analyze is the value-blind
+    # room-graph walk and correctly keeps its far-shore frontier, while the flag-54 story is
+    # register_strandings' -- the (room, register-value) trapped state, the detector built
+    # for exactly this. The chain that produces the rows: the flag-54 return patrol is a
+    # positional CONTROL-ZONE hazard (harpyInitScript::doit kills on onControl & $0002), the
+    # zone plus the room's own walls separate the boat landing from both the east exit and
+    # the shell's pickup spot (proven over the PIC control plane per obstacle layout), so the
+    # rm49->rm50 edge and the (Shell, rm49) acquisition both inherit the patrol's absence
+    # condition -- flag 54 CLEAR, un-earnable after the departure writes it. The flip rows
+    # name the departure crossing itself (flip_rooms 48/49), which is the USER's ruling
+    # verbatim: the commitment is sailing off.
+    "Fishhook": {"analyze: need@rm67 sources=[90] frontier=rm44->rm113|rm45->rm113|"
+                 "rm46->rm113|rm46->rm661|rm660->rm663",
+                 "register_strandings: reg456=1->[67]"},
+    "Shell": {"register_strandings: reg456=1->[46]"},
+    "Harp": {"analyze: need@rm90 sources=[9] frontier=rm32->rm33",
+             "analyze: need@rm92 sources=[9] frontier=rm32->rm33"},
+    "Beeswax": {"analyze: need@rm44 sources=[24] frontier=rm32->rm33"},
+    "Crystal": {"analyze: need@rm52 sources=[38] frontier=rm40->rm41",
+                # ...and the Hammer that pries it must cross the sled (source rm5, town):
+                },
+    "Locket": {
+        "analyze: need@rm57 sources=[42] frontier=rm42->rm43",
+        # ✅ THE DUNGEON-HOLE FOLD, USER-CONFIRMED IN GAME 2026-08-18b ("if you don't give the
+        # locket... cassima doesn't come and you die") -- scorecard row 11's read half. The
+        # henchman capture drops you in rm67; `henchCaught` st8 forks on the GIVEN locket
+        # (owner(25)==57) -- moveStone (Cassima's rescue) vs dieScumScript (30-60s pure timer
+        # into proc0_26). The arms commit by ARMING SIBLINGS, so the delegated-fork matcher
+        # reads the fork out of handoff[(henchCaught, 8)]: complementary-guarded armings, one
+        # unavoidable. The context is the fold's own residue conjunct: flag 96 (register 498)
+        # CLEAR -- with it set, the capture kills regardless of the locket (the second-capture
+        # question, verdict pending).
+        "ownedby_death_folds: {'dest': 57, 'need_room': 67, 'machine': 'henchCaught', "
+        "'state': 8, 'pattern': 'state-fork', 'demand_group': [(25, 57)], "
+        "'context': {498: 0}}",
+    },
+    "Iron_Bar": {"analyze: need@rm54 sources=[44] frontier=rm44->rm113|rm45->rm113|"
+                 "rm46->rm113|rm46->rm661|rm660->rm663"},
+    # ONE row now, and it is the catch: carry the fish up the castle stairs or the cat wins.
+    # ✅ RE-PINNED 2026-08-16 -- the second row, the rm683 carry-in toll, is GONE with the FP it
+    # belonged to (see the promoted red below). It was pinned because it was emitted, not because
+    # it was right. [[oracle-must-pin-the-mechanism]]
+    "Cat_Fish": {
+        "analyze: need@rm57 sources=[51] frontier=rm54->rm55|rm54->rm59|rm54->rm67",
+    },
     "Rope": {"fatal_uses: {'room': 30, 'machine': 'ropeOnBranch', 'states': [0]}"},
     # The three phase-1 catches, pinned to their fold rows. The rm86 row is ONE fact stated
     # for each pool member: the demand is the disjunction (`demand_group`), the context is
     # the kidnap arrival (prev == 85).
     "Leg_of_Lamb": {
+        # RE-PINNED 2026-08-15 with the USER'S OK: both fold rows are unchanged and this row is
+        # ADDITIVE -- the lamb's source is the inn cupboard (rm28, in town) and the nest that
+        # demands it is rm42, so the roc carries you across the boundary between them.
+        # RE-PINNED 2026-08-18b on the USER's sled ruling ("after you use the sled it
+        # breaks, so you can't go back"): rm32->rm33 is the mountains' real point of no
+        # return and every mountain frontier moved there; the roc edge keeps the fold's
+        # own owner spelling (pinned below at the spec level).
+        "analyze: need@rm42 sources=[28] frontier=rm32->rm33",
+        # ...and the EAT's DESTROYING bite (put: 19 1, the second one -- the first is the
+        # net-keep half-lamb) is a dangerous sink once the sled seals rm34 off from town;
+        # its remedy is the retraction (withhold the destruction), kinder than a refusal.
+        "dangerous_sinks: {'room': 0, 'script': 0, 'dest': 1, 'at_room': 33, "
+        "'still_needed_at': [34]}",
         "ownedby_death_folds: {'dest': 34, 'need_room': 42, 'machine': 'hatch', 'state': 6, "
         "'pattern': 'state-fork', 'demand_group': [(19, 34)], 'context': {}}",
         "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
         "'state': None, 'pattern': 'entry-fold', "
         "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
+        # ✅ THE WINDOW, added 2026-08-16b by `window_closures`: the fold row above says the
+        # bank is DEMANDED at the kidnap; this one says the only way to fill it shuts by
+        # itself. Two closers, both real -- flag 83 (reg 485) goes up as the chase ARMS, and
+        # rm6's `local0` (reg 565) when you LOSE the race and the throws answer "too late".
+        "window_closures: {'pattern': 'window-closure', 'dest': 6, 'need_room': 86, "
+        "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'producer_rooms': [6], "
+        "'closes_on': [(485, 1), (565, 1)], 'flip_rooms': [6]}",
+        # ✅ THE MARKET, added 2026-08-17b with consumer-relative scarcity: any spend of the
+        # lamb away from the eagle starves the rm42 fold, whose surviving arm demands
+        # owner(19) == 34 and which sits past the roc where no lamb can be re-fetched
+        # (rm42 is outside `reobtainable_rooms(19)` -- the same fact the analyze row above
+        # rests on). Three spends exist: Main's EAT verb (the second bite destroys it), the
+        # cat (put: 19 6 -- it also BANKS the kidnap rescue, which is why `pays` credits the
+        # rm86 bank while the row still condemns the throw), and the dog (put: 19 12).
+        # The cat/dog rows are oracle §1a's "throw the lamb at the cat or dog -> rm42 death",
+        # a TRUE softlock declared there since 2026-08-14 and caught here for the first time.
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 0, 'script': 0, "
+        "'inst': None, 'pays': [], 'starves': [42], 'starved_accepts': [19]}",
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 6, 'script': 6, "
+        "'inst': None, 'pays': ['6', '6'], 'starves': [42], 'starved_accepts': [19]}",
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 12, 'script': 12, "
+        "'inst': None, 'pays': [], 'starves': [42], 'starved_accepts': [19]}",
     },
     "Fish": {
+        # ✅ THE BEES, added 2026-08-17 (§16). The Fish is the one pool member whose OTHER
+        # consumer takes nothing else -- the bear at rm11 exists only while `has: 5` and its
+        # `bearScript` is flag 36's sole writer, so `put: 5 6` at the cat makes every hive
+        # approach `deathByBees` and the honeycomb -> beeswax -> boat chain unreachable. That
+        # this row exists while Shoe@rm6 and Stick@rm6 do NOT is the whole content of the
+        # consumer-scoped rescue; see the pins on those two items.
+        "dangerous_sinks: {'room': 6, 'script': 6, 'dest': 6, 'at_room': 6, "
+        "'still_needed_at': [11]}",
         "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
         "'state': None, 'pattern': 'entry-fold', "
         "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
+        # ✅ THE WINDOW, added 2026-08-16b by `window_closures`: the fold row above says the
+        # bank is DEMANDED at the kidnap; this one says the only way to fill it shuts by
+        # itself. Two closers, both real -- flag 83 (reg 485) goes up as the chase ARMS, and
+        # rm6's `local0` (reg 565) when you LOSE the race and the throws answer "too late".
+        "window_closures: {'pattern': 'window-closure', 'dest': 6, 'need_room': 86, "
+        "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'producer_rooms': [6], "
+        "'closes_on': [(485, 1), (565, 1)], 'flip_rooms': [6]}",
     },
     "Pie": {
+        # RE-PINNED 2026-08-15 with the USER'S OK: the fold row is unchanged and this one is
+        # ADDITIVE -- Main's `proc0_21` inventory dispatch EATS the pie (`put: 2 1`), a room-0
+        # scope the model widens to wherever you are standing, and the yeti at rm36 still needs
+        # it. Same fact as the confirmed pie ruling, seen from the sink side.
+        #
+        # ⚠️ RE-PINNED AGAIN 2026-08-17, `at_room` 38 -> 1, by the consumer-scoped rescue (§16),
+        # and the move is a STRENGTHENING. The old row started at rm38 because the eagle's group
+        # {Pie, Leg_of_Lamb} excused every earlier room -- "eat the pie, the eagle still takes the
+        # lamb" -- which is true of the EAGLE and says nothing about the YETI, whose counter-item
+        # is the pie and nothing else. Read at the consumer, rm34's rescue applies to rm34 alone
+        # and rm36's need survives from the first room you can eat it in.
+        "dangerous_sinks: {'room': 0, 'script': 0, 'dest': 1, 'at_room': 1, "
+        "'still_needed_at': [36]}",
+        # ...and the same fact at the site the walkthroughs warn about: feeding the pie to the
+        # eagle (`put: 2 34`) is a real trade, so `pure_sinks` never saw it and only the owner
+        # graph can tell that rm34 does not give it back. Scorecard row 14, caught a second way --
+        # the rm35 `killEgo` entry fold below catches the consequence, this catches the act.
+        "dangerous_sinks: {'room': 34, 'script': 34, 'dest': 34, 'at_room': 34, "
+        "'still_needed_at': [36]}",
         "ownedby_death_folds: {'dest': 36, 'need_room': 35, 'machine': 'killEgo', "
         "'state': None, 'pattern': 'entry-fold', 'demand_group': [(2, 36)], "
         "'context': {12: 36}}",
+        # ✅ 2026-08-18b, the sled ruling: the pie must CROSS rm32->rm33 (the yeti is past
+        # the sled, the bakery is not).
+        "analyze: need@rm35 sources=[206] frontier=rm32->rm33",
+        # ✅ THE MARKET, added 2026-08-17b: the rm35 fold IS a consumer (the yeti must be
+        # thrown the pie), so eating the pie or feeding it to the eagle starves him -- the
+        # same two facts the dangerous_sinks rows above state, derived from the matching side.
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 0, 'script': 0, "
+        "'inst': None, 'pays': [], 'starves': [35, 36], 'starved_accepts': [2]}",
+        "market_squeezes: {'pattern': 'market-squeeze', 'at_room': 34, 'script': 34, "
+        "'inst': None, 'pays': [], 'starves': [35, 36], 'starved_accepts': [2]}",
     },
     "Hammer": {
         "register_strandings: reg12=85->[86]",
+        # ✅ 2026-08-18b, the sled ruling: the crystal is pried at rm38, past the sled,
+        # with a hammer sold only in town.
+        "analyze: need@rm38 sources=[5] frontier=rm32->rm33",
     },
-    # The partial catches are pinned too -- if the disjunction-aware cure changes their shape,
-    # that is a mechanism change to confirm, not silent churn. Since phase 1 they also carry
-    # their rm86 fold rows.
+    # ✅ RE-PINNED 2026-08-16b with the USER'S RULING: ONE row each, the rm86 pool demand. The
+    # `dangerous_sinks {'room': 12, ..., 'still_needed_at': [6]}` row that used to sit beside it
+    # was a FALSE POSITIVE and is pinned OUT -- see the EXPECTED_CAUGHT note above. A single row
+    # here is the assertion that it stays out.
     "Shoe": {
-        "dangerous_sinks: {'room': 12, 'script': 12, 'dest': 12, 'at_room': 12, "
-        "'still_needed_at': [6]}",
         "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
         "'state': None, 'pattern': 'entry-fold', "
         "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
+        # ✅ THE WINDOW, added 2026-08-16b by `window_closures`: the fold row above says the
+        # bank is DEMANDED at the kidnap; this one says the only way to fill it shuts by
+        # itself. Two closers, both real -- flag 83 (reg 485) goes up as the chase ARMS, and
+        # rm6's `local0` (reg 565) when you LOSE the race and the throws answer "too late".
+        "window_closures: {'pattern': 'window-closure', 'dest': 6, 'need_room': 86, "
+        "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'producer_rooms': [6], "
+        "'closes_on': [(485, 1), (565, 1)], 'flip_rooms': [6]}",
     },
     "Stick": {
-        "dangerous_sinks: {'room': 12, 'script': 12, 'dest': 12, 'at_room': 12, "
-        "'still_needed_at': [6]}",
         "ownedby_death_folds: {'dest': 6, 'need_room': 86, 'machine': 'yourStuck', "
         "'state': None, 'pattern': 'entry-fold', "
         "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'context': {12: 85}}",
+        # ✅ THE WINDOW, added 2026-08-16b by `window_closures`: the fold row above says the
+        # bank is DEMANDED at the kidnap; this one says the only way to fill it shuts by
+        # itself. Two closers, both real -- flag 83 (reg 485) goes up as the chase ARMS, and
+        # rm6's `local0` (reg 565) when you LOSE the race and the throws answer "too late".
+        "window_closures: {'pattern': 'window-closure', 'dest': 6, 'need_room': 86, "
+        "'demand_group': [(5, 6), (8, 6), (16, 6), (19, 6)], 'producer_rooms': [6], "
+        "'closes_on': [(485, 1), (565, 1)], 'flip_rooms': [6]}",
     },
 }
 
 DETECTORS = ("analyze", "joint_strandings", "resource_exhaustion", "dangerous_sinks",
              "register_flip_strandings", "toll_strandings", "fatal_uses", "register_strandings",
-             "ownedby_death_folds")
+             "ownedby_death_folds", "window_closures", "market_squeezes")
 
 # The throwable pool (rm6's cat handlers and rm86's rescue fork agree on exactly these four).
 POOL = {"Shoe", "Stick", "Leg_of_Lamb", "Fish"}
@@ -232,6 +510,54 @@ def run():
           f"metas={metas!r} -- expected one alternative demanding own(22) and one free under "
           f"prevRoom != 85. If this moved, the handler-latch/machine-exit composition regressed.")
 
+    # --- THE SNAKE IS THE TOWN GATE, and it is a POSITIONAL death (docs/KQ5-ORACLE.md §15) ----
+    # ✅ PROMOTED 2026-08-17. This was the last entry in column F: `analyze` claimed the
+    # Tambourine could be left behind at the roc (`need@rm55 sources=[13] frontier=rm40->rm41`),
+    # and the USER refuted it -- "you can't go outside of the town unless you use the tambourine
+    # on the snake." All four of rm2's exits read FREE because the snake blocks by KILLING YOU
+    # AT A DISTANCE rather than by guarding an edge. `_apply_hazard_gates` closes that, and the
+    # three pins below are the three separate things that have to be true, so a regression says
+    # WHICH one broke rather than only that the FP came back.
+    gates = [g for g in getattr(s, "hazard_gates", ())]
+    # EXTENDED 2026-08-19b with the harpy patrol's two rows, USER-play-confirmed the same day
+    # (the fatal return capture): the control-zone hazard (mask $0002, flag-54-armed) seals
+    # rm49's east walk into the island interior AND the shell's own pickup spot -- the
+    # positional-death-is-a-wall rule in its onControl spelling, over the PIC control plane.
+    check("the snake gates the road out of town (rm2 east -> rm29, on flag 47)",
+          gates == [{"room": 2, "edge": "east", "dst": 29, "hazard": "snake", "at": (298, 64),
+                     "radius": 30, "machine": ["strike"], "req": {449: [1]}},
+                    {"room": 49, "edge": "east", "dst": 50, "hazard": "harpyInitScript",
+                     "mask": 2, "zone_px": 446, "machine": ["harpyScript"],
+                     "req": {456: [0]}},
+                    {"room": 49, "pickup": 23, "at": (120, 100), "hazard": "harpyInitScript",
+                     "mask": 2, "zone_px": 446, "machine": ["harpyScript"],
+                     "req": {456: [0]}}],
+          f"hazard_gates={gates!r} -- expected exactly the snake's disc sealing rm2's east "
+          f"handoff (flag 47 / register 449) plus the harpy patrol's east-edge and "
+          f"shell-pickup seals (flag 54 / register 456). More rows than these is a new claim "
+          f"to check against the game; fewer is an FP coming back.")
+
+    # ...AND THE DEMAND IS THE TAMBOURINE, which is the user's ruling in the model's own terms.
+    # The gate names a FLAG, not an item; that it reduces to the tambourine is `_reg_cost`'s
+    # answer, derived from the only write of flag 47 (`snake handleEvent 4`, item 34, and
+    # crucially NO `put:` -- charming it does not consume it, which is why everyone past the
+    # gate still has one).
+    check("leaving town eastward costs the Tambourine",
+          s._reg_cost(449, {1}) == frozenset({34}),
+          f"_reg_cost(449,{{1}})={s._reg_cost(449, {1})!r} -- expected the tambourine alone. "
+          f"If this widened, the flag has acquired a second writer the oracle has not seen.")
+
+    # ...AND THE GEOMETRY IS READ AT ALL. KQ5 states its obstacle layouts as named `Polygon`
+    # INSTANCES filled from local arrays, a spelling `polygons.py` could not read until this
+    # build -- 84 `addObstacle:` sites in 67 rooms, all invisible, so every KQ5 room looked
+    # like open floor. Pinned because the gate above is silently unprovable without it.
+    import polygons as PG
+    _polys = [p for _pc, ps in PG.room_obstacles(s.em.ir, s.em.ir.scripts[2]) for p in ps]
+    check("rm2's obstacle layout is read (the Polygon-instance spelling)",
+          len(_polys) == 5 and all(t == 2 and len(pts) >= 4 for (t, pts) in _polys),
+          f"rm2 polygons={_polys!r} -- expected the five BARRED polygons rm002 hands the "
+          f"pathfinder. With none of them the east handoff is reachable around the snake.")
+
     # --- THE DELIBERATE REDS: real, missed, and declared -------------------------------------
     # Each is a live assertion that flips green the day its detector lands; tools/run_tests.py
     # KNOWN_RED carries the justification and the promotion contract does the rest.
@@ -272,10 +598,95 @@ def run():
     import guards as G
     front = {e: sorted(rec["items"]) for e, rec in G.register_flip_frontier(s).items()
              if 22 in rec["items"]}
-    check("the Hammer demand rides only the crossing that strands it",
-          all(b == 86 for (_a, b) in front),
+    # ⭐ NON-VACUOUS since 2026-08-18: this check passed for months on an EMPTY front -- a
+    # prev-room register never appears in an edge's own req, so `flip_edges`' req test could
+    # not see the structural exclusion (standing in rm85, prev != 85 by construction) and the
+    # Hammer's demand reached no edge at all (`reg12=85 [REFUSED] ... UNENFORCED`). The prev
+    # branch in flip_edges is the cure; this pin now demands the crossing be PRESENT.
+    check("the Hammer demand rides exactly the kidnap crossing rm85->rm86",
+          front == {(85, 86): [22]},
           f"frontier edges carrying the Hammer: {front} -- an edge that writes prev==85 while "
-          f"arriving somewhere other than the cellar enters no seal.")
+          f"arriving somewhere other than the cellar enters no seal, and an EMPTY front means "
+          f"the demand is enforced nowhere (the pre-2026-08-18 state).")
+
+    # ✅ PATCH B, added 2026-08-18 (`guards.fold_carryins` + the prev branch in
+    # `register_flip_frontier.flip_edges`). The kidnap is MANDATORY (the Rope is sourced inside
+    # rm86), so no gate may live in the cellar -- but the entry-fold's context {12: 85} names
+    # the one crossing that arms the losing fork, and BOTH demands ride it as ONE guard: the
+    # Hammer (the flip frontier's item) and the banked throwable (the fold's owner group, in
+    # rm086's own spelling). A-BEFORE-B is derived, not remembered: the bank's producers sit
+    # behind the window flag 83 closes, so the carry-in requires a PLACEABLE window remedy for
+    # the same group and refuses without one (test: break the window remedy and this spec must
+    # flip to refused, not silently wall the kidnap).
+    all_specs = G.guard_specs(s)
+    kidnap_spec = [sp for sp in all_specs if sp["site"] == "edge"
+                   and sp.get("from_room") == 85 and sp.get("to_room") == 86]
+    want_cond = ("(and (gEgo has: 22) (or (== ((gInv at: 5) owner:) 6) "
+                 "(== ((gInv at: 8) owner:) 6) (== ((gInv at: 16) owner:) 6) "
+                 "(== ((gInv at: 19) owner:) 6)))")
+    check("the kidnap crossing demands Hammer AND a banked throwable in one guard",
+          len(kidnap_spec) == 1 and kidnap_spec[0]["condition"] == want_cond
+          and not kidnap_spec[0]["refused"],
+          f"specs={kidnap_spec!r} -- expected exactly one placeable rm85->rm86 edge spec "
+          f"conjoining (has 22) with the rm086-spelled bank disjunction.")
+
+    # ✅ THE ROC EDGE'S OWNER SPELLING, added 2026-08-18b -- caught in TEST-PLAN PREP, before
+    # play. The lamb's need past rm40->rm41 is rm42's hatch fold (`owner(19) == 34`; the eagle
+    # was fed, at rm34, BEHIND the edge), and the spec spelled it `(gEgo has: 19)` -- demanding
+    # the exact state the fold condemns (carrying it across = nothing left to feed the eagle)
+    # while turning back the winning one (banked, hands empty): the Spinach_Dip shape.
+    # `guards.fold_respell` re-spells past-edge fold needs by their consumer's own reading;
+    # the pool groups (whose one past-edge need room was that same fold) collapse into the
+    # same atom, and possession stays demanded only for the three genuine carries.
+    roc_spec = [sp for sp in all_specs if sp["site"] == "edge"
+                and sp.get("from_room") == 40 and sp.get("to_room") == 41]
+    # RE-PINNED 2026-08-18b (the sled ruling): harp/beeswax carries moved to rm32->rm33;
+    # the crystal (sourced at rm38, PAST the sled) still rides the roc, and the fold's owner
+    # atom stays here because crossing rm40->rm41 is what kills the eagle-feed's producers.
+    want_roc = "(and (gEgo has: 21) (== ((gInv at: 19) owner:) 34))"
+    check("the roc edge demands the three carries AND a FED eagle (never a carried lamb)",
+          len(roc_spec) == 1 and roc_spec[0]["condition"] == want_roc
+          and not roc_spec[0]["refused"],
+          f"specs={roc_spec!r} -- a `(gEgo has: 19)` conjunct here walls the winning line "
+          f"(the eagle is fed BEFORE the roc; no producer of owner(19)=34 exists past the "
+          f"edge), and the pool disjunctions guard nothing rm42 accepts.")
+
+    # ✅ REVERSED 2026-08-18b, USER-prompted ("why are we turning you back in the first
+    # place?"): rm35's killEgo is THE YETI'S CATCH, staged one screen over -- rm036's init
+    # arms `chaseEgo` on exactly the complement of this demand (`owner(Pie) != 36`,
+    # rm036.sc:52), so every crossing the fold condemns is made mid-chase, and the chase
+    # exclusion (a race the player can decline: feed, duck north, don't run) applies across
+    # the seam. The old pin's own justification ("satisfiable at the refusal moment") was
+    # the KGB-beach fact read backwards -- the counter is IN HAND (the sled guard carries
+    # `has 2`), so the death is Sierra's lesson, Caveat-Player class. The spec must emit
+    # REFUSED with the chase reason -- the demand stays a finding, the crossing keeps no
+    # guard, and the pie's real protections are elsewhere (the sled carry, the EAT
+    # retraction, the eagle refusal).
+    yeti_spec = [sp for sp in all_specs if sp["site"] == "edge"
+                 and sp.get("from_room") == 36 and sp.get("to_room") == 35]
+    check("the yeti crossing's guard is DECLINED as a chase catch (finding kept, refused)",
+          len(yeti_spec) == 1 and yeti_spec[0]["condition"] == "(== ((gInv at: 2) owner:) 36)"
+          and any("chase" in r for r in yeti_spec[0]["refused"]),
+          f"specs={yeti_spec!r} -- an unrefused spec here re-guards a declinable race; a "
+          f"missing spec loses the finding.")
+
+    # ✅ THE TEMPLE'S GUARD, added 2026-08-18 (USER: \"we absolutely 100% need to do the temple
+    # pocket\"). The toll rows (rm214->rm18, Staff spent on the door) had been detected since
+    # phase 1 with NO guard emitted: `_carryout_frontier` refused every pocket whose exits name
+    # no register (\"no seal to judge in\"), which is the REGISTER-toll spelling. An ITEM toll is
+    # its own seal -- the spent Staff is exactly the toll-edge deletion `csucc` already
+    # performs -- so the committed walk runs in the prev dimension and the teacup's exit half
+    # finally ships for KQ5: leave the temple only with the loot the door will never again
+    # open onto.
+    temple_spec = [sp for sp in all_specs if sp["site"] == "edge"
+                   and sp.get("from_room") == 18 and sp.get("to_room") == 214]
+    check("the temple pocket's exit demands both treasures (carry-out, item-toll seal)",
+          len(temple_spec) == 1
+          and temple_spec[0]["condition"] == "(and (gEgo has: 6) (gEgo has: 11))"
+          and not temple_spec[0]["refused"],
+          f"specs={temple_spec!r} -- expected exactly one placeable rm18->rm214 edge spec "
+          f"demanding Brass_Bottle(6) AND Gold_Coin(11); an empty list is the pre-2026-08-18 "
+          f"state (detected, unguarded).")
 
     def _rooms_mentioned(r):
         out = {x for x in (r.get("still_needed_at") or ()) if isinstance(x, int)}
@@ -296,44 +707,427 @@ def run():
           "the rm86 fold rows lost a pool member or their kidnap context -- "
           "docs/KQ5-ORACLE.md §1.")
 
-    needle_rows = [n for (n, _d, _r) in raw_rows if n == "Golden_Needle"]
-    check("🔴 KNOWN GAP (KQ5): the fortune teller's needle substitution is caught",
-          bool(needle_rows),
-          "rm13 accepts Gold_Coin(11) OR Golden_Needle(3) in the amulet slot (`put: 3 13`); "
-          "paying with the needle starves the tailor->cloak chain. Exchange-slot class -- "
-          "docs/KQ5-ORACLE.md §6.")
+    # ✅ REWRITTEN 2026-08-17, USER-RULED -- this red, like the witch amulet's, DEMANDED THE WRONG
+    # ROW. It asserted that some detector flags the Golden_Needle, on the tier-3 claim that paying
+    # the gypsy with it makes the game unwinnable "because the needle's real consumer is the
+    # tailor". The source refutes the reason -- `tailorShop.sc:143-151` takes Golden_Needle(3),
+    # Gold_Coin(11) OR Heart(9) -- and the USER refuted the verdict IN THE GAME, in two steps:
+    # the gypsy takes the needle, and the tailor then sells the cloak for the gold coin. So a row
+    # here would be a FALSE POSITIVE, and emitting nothing is the correct answer.
+    #
+    # What KQ5 actually has is a FIVE-TOKEN MARKET over four purchases, and the model reads all of
+    # it: gypsy{3,11} -> Amulet, tailor{3,9,11} -> Cloak, toyMaker{3,9,11,12} -> Sled,
+    # baker{3,4,9,11} -> Pie. Every token is reachable before the amulet is needed (the Gold_Coin's
+    # temple, rm18, is a short walk from town via rm14/15 -> rm212/213 -> rm214), so a perfect
+    # assignment survives ANY single payment.
+    #
+    # ⚠️ The hazard that IS in this family needs TWO wrong payments: spend both 3 and 11 away from
+    # the gypsy and her slot has nothing left to read, because the Heart is two screens into the
+    # forest the amulet opens. That is a Hall deficiency over the market, no single-spend detector
+    # can state it, and it is recorded in docs/KQ5-ORACLE.md §6 as an OPEN MECHANISM rather than as
+    # a missed catch. The pins below are therefore the two facts that ARE true: the model reads the
+    # market as four alternative-sets, and no detector strands a token.
+    MARKET = {13: {3, 11}, 206: {3, 4, 9, 11}}
+    groups = s.disjunctive_groups()
+    at5 = {frozenset(g) for g in groups.get(5, ())}
+    check("the shop slots are read as alternatives, not as shopping lists",
+          all(frozenset(v) in {frozenset(g) for g in groups.get(r, ())}
+              for r, v in MARKET.items())
+          and {frozenset({3, 9, 11}), frozenset({3, 9, 11, 12})} <= at5,
+          "groups at rm5/rm13/rm206 = %r -- expected the gypsy's {3,11}, the tailor's {3,9,11}, "
+          "the toy maker's {3,9,11,12} and the baker's {3,4,9,11}. If one collapsed, either "
+          "`_own_required` or the by-state bucketing in `disjunctive_groups` regressed. "
+          "docs/KQ5-ORACLE.md §6." % (
+              {r: sorted(map(sorted, groups.get(r, ()))) for r in (5, 13, 206)},))
+    # ⛔ SCOPED TO THE TWO TOKENS THE USER ACTUALLY RULED ON, and the scoping is load-bearing.
+    # An earlier draft of this pin covered all five tokens, which would have frozen a REAL
+    # limitation green: the Heart is not interchangeable at all (see the pin below), so a
+    # dangerous_sinks row naming it is a CATCH, not a false positive.
+    TOKENS = ("Golden_Needle", "Gold_Coin")
+    token_sinks = [(n, r.get("at_room")) for (n, d, r) in raw_rows
+                   if n in TOKENS and d == "dangerous_sinks"]
+    check("neither the needle nor the gold coin is condemned by a SINGLE payment", not token_sinks,
+          f"rows={token_sinks} -- USER-RULED 2026-08-17, in the game: the gypsy takes the needle "
+          f"AND the tailor then sells the cloak for the gold coin, so no one payment strands you. "
+          f"A `dangerous_sinks` row on either is the false positive this red used to demand. "
+          f"(The market rows below are a DIFFERENT claim and must not arrive here: they name the "
+          f"SITE -- the toy maker or the baker -- while this pin protects the played pair, which "
+          f"the market correctly leaves silent.)")
 
-    # --- the phase-3 halves, declared red the day phase 1 landed: the fold rows above state
-    # the DEMAND; that each demand's producers sit inside a one-shot window is not yet a row.
-    fish_bees = [n for (n, _d, r) in raw_rows if n == "Fish" and 11 in _rooms_mentioned(r)]
-    check("🔴 KNOWN GAP (KQ5): the bees' flag-36 window closure is caught", bool(fish_bees),
-          "flag 36's only writer is bearScript (exists only while `has: 5`); the hive arms "
-          "deathByBees under not-flag36 -- no row ties the Fish to rm11's honeycomb chain. "
-          "Phase 3 (window closure: a demanded value whose every producer is guarded on a "
-          "flag the producers' own trigger sets). docs/KQ5-ORACLE.md §1a.")
+    # ✅ BOTH REDS PROMOTED 2026-08-17b -- the Heart's and the squeeze's -- by ONE detector,
+    # `missability.market_squeezes`, because they were never two problems. The USER's framing,
+    # verbatim: *"the 3 vendors and the gypsy each accepting some payments that can starve other
+    # merchants, when everything you get from the merchants is required."* Every required
+    # consumer must be assigned a DISTINCT one-copy token it accepts, so a payment is fatal
+    # exactly when the residual market has no perfect matching:
+    #   * the HEART at any shop starves the princess (her slot takes item 9 alone,
+    #     `rm009.sc:936/990`; she is the Harp's sole source) -- the old Heart red;
+    #   * the NEEDLE or the GOLD COIN at the toy maker or the baker leaves {3, 9, 11} two
+    #     tokens for three purchases (gypsy, tailor, princess) -- the old squeeze red,
+    #     SHARPENED: with the Cloak required (USER 2026-08-17b: "the cloak is needed"), these
+    #     are ONE-payment dead ends. The old "needs TWO payments" framing rested on the heart
+    #     covering the tailor, which the Heart ruling itself removed.
+    # The rows are pinned per-item in MECHANISM_ROWS; the checks here are the two game-facing
+    # facts and the silences that keep the detector honest.
+    #
+    # ⛔ The Heart red's declared mechanism -- "needs `destroying_sinks` to walk
+    # `machine_moves`" -- was WRONG, and building it was measured twice and rejected twice
+    # (19 FPs on 2026-08-17; 8 KQ6 rows + 2 LB2 rows with shipped placements on a 2026-08-17b
+    # re-measure -- and KQ6 is GOLDEN). The market states the same three Heart facts with zero
+    # movement on any other game. [[re-derive-a-reds-premise]], applied to a red's cure.
+    squeezes = {(n, r["at_room"], r.get("inst")) for (n, d, r) in raw_rows
+                if d == "market_squeezes"}
+    check("the market squeeze is caught: needle/gold coin at the toy maker or baker",
+          {("Golden_Needle", 5, "getSled"), ("Golden_Needle", 206, "getPie"),
+           ("Gold_Coin", 5, "getSled"), ("Gold_Coin", 206, "getPie")} <= squeezes,
+          f"rows={sorted(squeezes)} -- USER-CONFIRMED 2026-08-17 (\"you CAN ... waste your gold "
+          f"on the toy maker and the cloak\") and sharpened 2026-08-17b by the cloak ruling. "
+          f"docs/KQ5-ORACLE.md §6a.")
+    check("the Heart at any shop is condemned by the princess it starves",
+          {("Heart", 5, "soldCloak"), ("Heart", 5, "getSled"),
+           ("Heart", 206, "getPie")} <= squeezes,
+          f"rows={sorted(squeezes)} -- USER 2026-08-17: *\"you need the heart for something "
+          f"else, so that would be a sink too\"*. The princess is the Harp's sole source. "
+          f"docs/KQ5-ORACLE.md §6b.")
+    # ...and the SILENCES, each one a user ruling the matching must keep honoring: the played
+    # pair (needle->gypsy, coin->tailor), the heart to the princess, and the SHOE AND STICK
+    # anywhere (the 2026-08-16b ruling: the safe ammunition -- each scene accepts the other's,
+    # and the pool's competing consumers never outnumber it). ⛔ Deliberately NOT "no rows at
+    # rm6/rm12": the LAMB thrown there is §1a's true softlock and its rows are pinned above --
+    # the pool-safety ruling names items, not rooms.
+    bad_silence = [t for t in squeezes
+                   if t[1] in (13, 9)                       # paying the gypsy or the princess
+                   or t[0] in ("Shoe", "Stick", "Fish")     # the pool's rescued members
+                   or (t[0], t[2]) in {("Golden_Needle", "soldCloak"),
+                                       ("Gold_Coin", "soldCloak")}]
+    check("every user-ruled safe play stays silent (gypsy, tailor's 3/11, princess, Shoe/Stick)",
+          not bad_silence,
+          f"rows={bad_silence} -- a market row landed on a payment the USER ruled or played "
+          f"safe: needle->gypsy and coin->tailor are THE winning pair (2026-08-17), the "
+          f"heart->princess is the intended move, and the Shoe/Stick keep their rescue "
+          f"(2026-08-16b; the Fish's condemnation belongs to dangerous_sinks, not here). "
+          f"A row here is the false-positive family the distinct-token matching exists to "
+          f"prevent.")
 
+    # ✅ PROMOTED 2026-08-17b, and by REFUTING the red's stated cure rather than building it
+    # ([[re-derive-a-reds-premise]], third time this arc). The red prescribed owner-gating the
+    # cupboard acquisition; the true fact is cheaper and stronger: SCARCITY IS CONSUMER-
+    # RELATIVE. The eagle's fold sits at rm42, past the roc, and `reobtainable_rooms(19)`
+    # excludes rm42 -- so to the one consumer that matters, EVERY lamb is the last lamb,
+    # restockable cupboard or not. `_market` now waives a consumer's pressure only for a token
+    # re-suppliable FROM ITS OWN ROOMS; the cat's bank (rm6/86, in town) keeps its waiver and
+    # the pool stays safe. Three rows landed, pinned in MECHANISM_ROWS: the EAT verb and the
+    # cat and dog throws -- the latter two being §1a's lamb-at-the-cat TRUE softlock, declared
+    # in the oracle since 2026-08-14 and never before caught.
+    lamb_market = {(r["at_room"], tuple(r["starves"])) for (n, d, r) in raw_rows
+                   if n == "Leg_of_Lamb" and d == "market_squeezes"}
+    check("spending the lamb anywhere but the eagle is condemned (eat, cat, dog -> rm42)",
+          lamb_market == {(0, (42,)), (6, (42,)), (12, (42,))},
+          f"rows={sorted(lamb_market)} -- expected the EAT verb (rm0) and the cat (rm6) and "
+          f"dog (rm12) throws, each starving the rm42 fold. USER-ruled 2026-08-17b (\"you need "
+          f"both the pie and the lamb\"); the throws are oracle §1a. If the rm6/rm12 rows "
+          f"vanished, check that the eagle's consumer still constrains -- its waiver must fail "
+          f"because rm42 cannot re-fetch, NOT because the cupboard reads owner-gated.")
+    # ...and the lamb TO the eagle stays silent: the spend that establishes owner(19) == 34 is
+    # the fold's own satisfaction, recognized by DESTINATION (no machine identity needed).
+    check("feeding the lamb to the eagle is not condemned",
+          not [r for (n, d, r) in raw_rows if n == "Leg_of_Lamb"
+               and d == "market_squeezes" and r["at_room"] == 34],
+          "a market row condemns the lamb AT the eagle -- the intended move. The "
+          "satisfaction-by-destination read regressed. docs/KQ5-ORACLE.md §6c.")
+
+    # ✅ PROMOTED 2026-08-17 -- "the bees' flag-36 window closure is caught" is GREEN. The Fish is
+    # the one throwable whose OTHER consumer accepts nothing else: `rm011::init` puts the bear in
+    # the cast only under `has: 5`, the bear takes item 5 alone, `bearScript` state 13 is flag 36's
+    # only writer, and both `rm011::doit` and `getWax` arm `deathByBees` under not-flag36 -- so a
+    # fishless rm11 makes the honeycomb -> beeswax -> boat chain fatal. Three derivations, none of
+    # which moves anything alone (docs/KQ5-ORACLE.md §16): a trade to a ROOM is a destruction when
+    # the item cannot come back (`drop_is_permanent` over the item's owner graph, with `put: X -1`
+    # as its degenerate case); `disjunctive_groups` grouped BY STATE and read with `_own_required`,
+    # which derives the play-tested pool asymmetry; and the disjunctive rescue read at the
+    # CONSUMER, which is what keeps the Shoe and the Stick excused while the Fish is not.
+    fish_bees = [r for (n, _d, r) in raw_rows if n == "Fish" and 11 in _rooms_mentioned(r)]
+    check("the Fish spent at the cat is condemned by the bear that still needs it",
+          any(r.get("at_room") == 6 and r.get("still_needed_at") == [11] for r in fish_bees),
+          "no dangerous_sinks row ties `put: 5 6` to rm11 -- docs/KQ5-ORACLE.md §16.")
+
+    # ...and the other side of the same coin, which is the assertion that stops §16 becoming the
+    # FP the user retired in 2026-08-16b: the Shoe and the Stick are spent in exactly the same
+    # statement shape, and each scene accepts the other's ammunition, so neither may be condemned.
+    check("the Shoe and the Stick keep their disjunctive rescue at both scenes",
+          not [r for (n, _d, r) in raw_rows
+               if n in ("Shoe", "Stick") and _d == "dangerous_sinks"],
+          "a throwable with a live alternative at its consumer was condemned -- the rm12 sink "
+          "rows the USER ruled false positives on 2026-08-16b are back.")
+
+    # ✅ THE FISH'S REMEDY, added 2026-08-18. The §16 row above states the disease; the cure is
+    # a market-case refusal of the fish's OWN dispatch case in rm006's two handlers, because the
+    # retraction is UNSOUND here, not merely unplaceable: `put: 5 6` IS the bank the kidnap fork
+    # reads, so withholding it would advance the scene while unfilling what it claims to fill.
+    # `market_remedies` extends to impure dangerous sinks on the row's own fatality proof (a
+    # winning line never contains a losing move, so the refusal cannot wall -- and the scene
+    # arms only under a non-refused pool member in hand, `rm006.sc:112`). TRADES stay excluded:
+    # a clause that also GETs is the matching's territory (KQ6's lamp peddler, user-ruled
+    # working-as-designed, pins the exclusion through its frozen empty market_specs key).
+    fish_market = [r for r in G.market_remedies(s)
+                   if r["script"] == 6 and r["item"] == 5]
+    check("the fish's spend at the cat is refused in its own dispatch case",
+          len(fish_market) == 1 and fish_market[0]["machine"] is None
+          and fish_market[0]["anchor"] == r"put:\s*5\b" and not fish_market[0]["refused"],
+          f"rows={fish_market!r} -- expected exactly one unrefused market row wrapping the "
+          f"fish's case (anchor `put: 5`) in script 6; the pure-sink retraction cannot hold "
+          f"an impure spend and must not try.")
+
+    # ✅ PROMOTED 2026-08-16b (phase 3, `missability.window_closures`). The fold rows say the bank
+    # is DEMANDED at the kidnap; these say the only way to fill it shuts by itself. A producer is
+    # read through `guard_reqs` against the register being flipped -- rm6 stays walkable forever,
+    # what stops being possible is the THROW -- and a row needs every producer dead at that value.
+    # Both closers are pinned above: flag 83 (reg 485) goes up as the chase ARMS, rm6's `local0`
+    # (reg 565) when you LOSE the race. It took `extract.feature_adders` with it: three of the
+    # seven `put: <item> 6` sites live on `catStrip`, which reaches the cast only through
+    # `(gGame setFeatures: catStrip)`, and without that cast event they carry none of the scene's
+    # arming and three producers look alive at flag 83 = 1.
     window_closed = [r for (n, _d, r) in raw_rows if n in POOL
                      and r.get("pattern") == "window-closure"]
-    check("🔴 KNOWN GAP (KQ5): the cat window's closure on arming is caught",
-          bool(window_closed),
-          "flag 83 is set the moment the chase STARTS (rm006::doit), so every producer of "
-          "`owner == 6` is behind a window that closes on arming, win or lose -- the rm86 "
-          "demand rows exist (green above) but no row states the window. Phase 3; also the "
-          "site patch A holds. docs/KQ5-ORACLE.md §1.")
+    check("the cat window's closure on arming is caught",
+          {n for (n, _d, r) in raw_rows if n in POOL and r.get("pattern") == "window-closure"}
+          == POOL and all(r.get("need_room") == 86 for r in window_closed),
+          f"rows={window_closed!r} -- expected one window-closure row per pool member, all "
+          f"naming the kidnap read at rm86. flag 83 is set the moment the chase STARTS "
+          f"(rm006::doit), so every producer of `owner == 6` sits behind a window that closes "
+          f"on arming, win or lose. docs/KQ5-ORACLE.md §1.")
 
+    # ✅ THE REMEDY, added 2026-08-18 (`guards.window_remedies`, the cat-window patch). The
+    # closure rows above state the disease; this pins the cure byte-exactly, because every
+    # field is a decision someone argued for: V is the CONSUMER'S OWN reading of the bank
+    # (rm086's `(== ((gInv at: X) owner:) 6)` disjunction, all four pool members); flag 83 is
+    # the one DURABLE closer and its raise is held (set proc + test proc are the flag
+    # derivation's own names); rm6's local0 is PER-VISIT (entry reset 0 != closing 1 -- losing
+    # the race only shuts the window until you walk back in); and `refused` is EMPTY -- every
+    # closer accounted for, so the spec ships. The two-clause shape is the USER's
+    # (2026-08-14, clause 2 ruled REQUIRED: ⛔ a patched chase must NEVER replay after
+    # success -- the strengthened read is what enforces it).
+    wr = G.window_remedies(s)
+    want_spec = {
+        "site": "window", "need_room": 86, "items": [5, 8, 16, 19], "banked_at": [6],
+        "producer_rooms": [6],
+        "condition": "(or (== ((gInv at: 5) owner:) 6) (== ((gInv at: 8) owner:) 6) "
+                     "(== ((gInv at: 16) owner:) 6) (== ((gInv at: 19) owner:) 6))",
+        "holds": [{"register": 485, "trap": 1, "flag": 83,
+                   "set_proc": "proc0_9", "test_proc": "proc0_12"}],
+        "self_resetting": [[565, "local0 of script 6 resets to 0 on entry"]],
+    }
+    got_spec = [{k: v for k, v in sp.items() if k in want_spec} for sp in wr]
+    check("the cat window's remedy derives whole: hold flag 83 until banked, "
+          "local0 self-resets, nothing refused",
+          got_spec == [want_spec] and not wr[0]["refused"] if wr else False,
+          f"specs={wr!r} -- expected exactly one placeable window spec. A lost hold replays "
+          f"nothing but leaves losing terminal; a lost self-resetting entry means local0 "
+          f"stopped being per-visit; a REFUSED spec ships no patch at all.")
+
+    # 🔴 DECLARED 2026-08-19d, USER PLAY-FOUND + RULED (docs/KQ5-ORACLE.md §24). THE HENCHMAN
+    # CAPTURE: `henchCaught` st8 forks `(¬flag96 ∧ owner(25)==57) → moveStone else
+    # dieScumScript`, and flags 69+96 are set TOGETHER at the rescue (rm067.sc:342-343), so 96
+    # means "Cassima has already spent her rescue" -- the L3 verdict, play-confirmed ("if he
+    # catches you a second time you die"). Two lethal orderings: capture before the give, and
+    # any capture after the rescue. The fold row for it ALREADY EXISTS; what is missing is
+    # carrying its demand back to the ARMING of the machine that performs the crossing.
+    # `theHenchManScript` st12 carries ('EXIT', 67) in the model, so the adversary CARRIES you
+    # across -- the discriminator against the chase exclusion, whose premise (a race declined
+    # by leaving) the USER play-refuted ("got that without even trying").
+    #
+    # The demand is the fold's own survivability DISJOINED with the escape's price, and the
+    # escape is `theThrowPeasScript` -- which is NOT a slot competitor (it is armed into the
+    # room's slot and disposes the henchman outright), so escapes must include DISPOSERS. Its
+    # price carries the typed item-property atom the model already extracts: `own(24) ∧
+    # ¬IPROP((24,'cel')==4)` -- the empty bag, since Bag_of_Peas declares `cel 3` and the throw
+    # increments it to 4 in the same state that sets flag 63. USER-ruled shape: "if you have
+    # the peas, we should let it happen, otherwise we should block it" -- with disjunct 1
+    # keeping the REQUIRED first capture available (flag 69, Cassima accompanying you, has one
+    # writer: the hole escape).
+    cap = list(getattr(s, "capture_fold_armings", lambda: [])())
+    hench = [r for r in cap if r.get("machine") == "theHenchManScript"]
+
+    def _alt(a):
+        return (tuple(tuple(x) for x in a.get("owners", ())), tuple(a.get("items", ())),
+                tuple(a.get("flags", ())), tuple(a.get("not_flags", ())),
+                tuple(tuple(x) for x in a.get("not_iprops", ())))
+
+    want_alts = sorted([(((25, 57),), (), (), (96,), ()),
+                        ((), (24,), (), (), ((24, "cel", 4),))])
+    check("the henchman's arming demands a survivable capture or the pea answer",
+          len(hench) == 1 and hench[0].get("need_room") == 67
+          and hench[0].get("fold_machine") == "henchCaught"
+          and hench[0].get("escapes") == ["theThrowPeasScript"]
+          and sorted(_alt(a) for a in hench[0].get("demand_alts", ())) == want_alts,
+          f"rows={hench!r} -- expected ONE row for theHenchManScript naming the rm67 fold "
+          f"(henchCaught), the pea disposer as its escape, and the two-alternative demand "
+          f"(¬flag96 ∧ owner(25)==57) ∨ (own 24 ∧ ¬cel==4). Disjunct 1 is load-bearing: the "
+          f"FIRST capture is required progression, so a pea-only demand walls the game. "
+          f"docs/KQ5-ORACLE.md §24.")
+
+    # ✅ THE REMEDY, same session: the capture hold (`guards.capture_fold_remedies`). One
+    # conjunct onto the wrap already living on `theHenchMan::init` -- the object's single
+    # choke point, which the rm54 fish discriminator shares -- so both demands are one no.
+    # Every atom is the GAME'S OWN spelling, including the empty bag (`(cel:) 4`), so nothing
+    # rests on our reading of what the property means.
+    #
+    # ⛔ AND THE TWO ANSWERLESS ROWS ARE REFUSED, which is the assertion that keeps this from
+    # double-patching: rm41's roc cutscene and rm85's kidnap also carry the player into a fold,
+    # but a bare fold demand belongs on the CROSSING, where both already ship and are
+    # play-confirmed -- rm40->rm41 demands `owner(19) == 34` and rm85->rm86 the banked-throwable
+    # disjunction. An arming hold there would be a second patch on one commit.
+    cfr = G.capture_fold_remedies(s)
+    ships = [r for r in cfr if not r["refused"]]
+    check("the capture hold ships once, on the henchman's own arming, and refuses the rest",
+          len(ships) == 1 and ships[0]["script"] == 550
+          and ships[0]["host"] == "theHenchMan" and ships[0]["need_room"] == 67
+          and ships[0]["condition"] == (
+              "(or (and (not (proc0_12 96)) (== ((gInv at: 25) owner:) 57)) "
+              "(and (gEgo has: 24) (not (== ((gInv at: 24) cel:) 4))))")
+          and {r["machine"] for r in cfr if r["refused"]} == {"roomScript", "attack"},
+          f"specs={cfr!r} -- expected exactly one shipping spec (theHenchMan's arming, the "
+          f"ruled disjunction) and the rm41/rm85 rows refused as crossing-owned. A shipping "
+          f"answerless row would double-patch a commit that already carries its demand.")
+
+    # ✅ REWRITTEN 2026-08-16b, USER-RULED -- this red demanded the WRONG ROW. It asserted that
+    # some detector flags the Amulet, on the oracle's old verdict that entering the dark forest
+    # without it is a softlock. USER: *"on rm19 you can get back out. I don't think you can get
+    # more than 1 screen into the forest, but that's fine. so you need the amulet but it's not a
+    # stranding."* Measured agreement: from rm19, 98 of 100 reachable rooms are still reachable,
+    # rm13 (the fortune teller) among them, and rm680 -- the amulet handover -- is entered only
+    # from rm13. A stranding row would be a FALSE POSITIVE.
+    #
+    # So the pin is the pair of facts that ARE true: the demand reaches the forest, and no row
+    # claims a stranding. The first half is what `(+= state 4)` bought (docs/KQ5-ORACLE.md §13):
+    # `zapHim` state 4 survives on `(and (has: 27) flag84)` by skipping the death chain, and with
+    # that bump unread BOTH arms fell into state 8's `proc0_26` -- the fork was not a fork and the
+    # amulet was demanded nowhere.
+    WITCH_ROOMS = {19, 20, 21, 22, 24, 25, 26}
     amulet_rows = [n for (n, _d, _r) in raw_rows if n == "Amulet"]
-    check("🔴 KNOWN GAP (KQ5): the witch-region worn-amulet death fold is caught",
-          bool(amulet_rows),
-          "witchRegion.sc survives the fireball only under `(and (has: 27) flag84)`; the fold "
-          "lives in a REGION script, outside the current death-fold scope -- "
-          "docs/KQ5-ORACLE.md §7.")
+    check("the worn-amulet fireball fork demands the Amulet in every forest room",
+          WITCH_ROOMS <= set(s.required.get(27, ())),
+          f"required[27] = {sorted(s.required.get(27, ()))} -- expected all of "
+          f"{sorted(WITCH_ROOMS)}. If this shrank, check that `(+= state N)` is still read as a "
+          f"relative setstate in BOTH compile._interp and machine._op_leaf: unread, zapHim's "
+          f"surviving arm stops skipping the death chain and the fork stops being a fork.")
+    check("no detector claims the Amulet is STRANDED", not amulet_rows,
+          f"rows={amulet_rows} -- the amulet is REQUIRED in the forest and re-obtainable from "
+          f"it (rm13 is 1 screen away; USER-RULED 2026-08-16b). A row here is a false positive "
+          f"to investigate, not a catch. docs/KQ5-ORACLE.md §7.")
 
+    # ✅ PROMOTED 2026-08-16b (was 🔴 KNOWN FP) -- the sixth savior-condemned correction. The row
+    # was not merely noise: the tool SHIPPED `action_specs: Tambourine@rm55: (not (has: 34))`,
+    # a patch refusing the player the item that gets them out of rm55 alive. `fatal_uses` now
+    # blames what the arming SITE required (`Machine.entry_site`), not what `_chain_entries` and
+    # `_inherit_local_continuations` had grown onto the entry guard -- so an item that reached the
+    # arming as Dink's existence condition is no longer read as a use. The assertion stays live:
+    # this is the family that keeps producing new polarities.
     tambo_fatal = [r for (n, d, r) in raw_rows if n == "Tambourine" and d == "fatal_uses"]
-    check("🔴 KNOWN FP (KQ5): fatal_uses does not condemn the tambourine", not tambo_fatal,
-          "hugScript's arming carries own(34) because Dink EXISTS only while you hold the "
-          "tambourine, and giving it is the escape -- the sixth savior-condemned correction, "
-          "new polarity (the item rides the arming guard, not a branch). Cure the detector; "
-          "do not edit this oracle row.")
+    check("fatal_uses does not condemn the tambourine", not tambo_fatal,
+          f"REGRESSION, and a dangerous one -- rows={tambo_fatal}. Dink EXISTS only while you "
+          f"hold the tambourine and giving it is the escape, so a row here becomes a patch that "
+          f"withholds the item that saves the player. Check that fatal_uses still reads "
+          f"`entry_site` rather than `entries`. docs/KQ5-ORACLE.md §14.")
+
+    # ✅ PROMOTED 2026-08-16 (was 🔴 KNOWN FP), and it took test_toll.py's two KQ5 assertions
+    # green with it, exactly as the red predicted. rm683 is `cdCassimaToon`, a CD cutscene that
+    # tests NO item at all; the own(37)/own(24) demands were attributed there because `castle.sc`
+    # is the region live in all 16 castle rooms and `theCat` had no presence condition to narrow
+    # it -- the cat's bagged arm is `(and (== global332 7) (== global338 gCurRoom))`, and one
+    # disjunct nothing could read freed the whole OR.
+    #
+    # The cure is `extract.room_valued_globals`: a global whose every write is a literal or the
+    # current-room global holds a ROOM, so `(== gX gCurRoom)` lowers to the disjunction over the
+    # rooms it can hold. Deriving those rooms needs a LEAST fixpoint based at false -- the machine
+    # that writes global338 is armed from the cat's own handler, so a greatest fixpoint keeps
+    # rm683 alive by self-reference. Measured g338 -> {57,58,59,60,61,63,64}.
+    #
+    # The assertion stays live: it is the shape of the FP, and a shape change should be loud.
+    toon_carryins = [(n, r) for (n, d, r) in raw_rows
+                     if d == "toll_strandings" and r.get("toll_edge") == [57, 683]]
+    check("no carry-in demand rides the rm57->rm683 cutscene",
+          not toon_carryins,
+          "REGRESSION: a requirement is being broadcast into a cutscene room again. rm683 has no "
+          "item test in it; the demand can only have come from castle.sc, the region live in "
+          f"every castle room. Rows: {toon_carryins}. Check that `room_valued_globals` still "
+          "derives global338, and that theCat's presence condition still reads as seven rooms.")
+
+    # ✅ PROMOTED 2026-08-15 (was 🔴 KNOWN FP). The Wand is unstrandable, and the reason is NOT
+    # the one this test used to give: rm066's machine tray IS a real spend -- `putCWandScript`
+    # (rm066:132) lays Crispin's wand down, the owner becomes the room, and it stays there while
+    # you walk the castle. What makes it safe is that the drop and the re-get are the SAME room
+    # (`cWand` verb 3 -> `getCWandScript`, rm066:903/260, re-armed from the owner check on every
+    # entry), and that every wandless path into rm124 is a DEATH rather than a walking-dead state
+    # (`battle.sc:84` sets flag 55, `mordOneScript` state 13 runs `proc0_26`). USER RE-AFFIRMED
+    # the FP ruling against that mechanism on 2026-08-15; the 15-second grab window in rm066 is
+    # preventable on its own screen and is deliberately NOT promoted. docs/KQ5-ORACLE.md §10.
+    #
+    # ⛔ The two `entry_musts` cures of 2026-08-15 stay dead (both make KQ6's rm230
+    # `removeHoleScr` a second source and break an enforced KQ6 fact). What landed instead is
+    # `missability._unrefusable_grants`: rm001.sc:78 hands the wand over in `init` under nothing
+    # but `not (has: 28)`, so `_reach_without(28)` stops there. Measured corpus-wide -- LSL2,
+    # KQ4, KQ6 and LB2 byte-identical on the FULL snapshot surface, placements included.
+    wand_rows = [r for (n, d, r) in raw_rows if n == "Wand"]
+    check("no detector demands the Wand (unrefusable rm1 grant)", not wand_rows,
+          "REGRESSION: the Wand is back. It is granted at rm099/rm001/cdIntro10 and the one "
+          "site that takes it (rm066's machine tray) hands it back in the same room, so no "
+          "crossing can strand it -- USER-RULED 2026-08-14 and re-affirmed 2026-08-15. Rows: "
+          f"{wand_rows}. Check `_unrefusable_grants` still sees rm1's init grant.")
+
+    # 🔴 DECLARED 2026-08-19c, USER PLAY-FOUND + RULED (docs/KQ5-ORACLE.md §23). THE CASTLE CAT
+    # IS A WHALE: an unanswered encounter -- walking away included (castle::newRoom fuses under
+    # global332 == 1) -- writes a 5-10 game-minute fuse (global352, or global353 = 3 in the
+    # recurring cycle), castle::doit decrements it per game-minute, expiry writes global331 = 3,
+    # and nine rooms' doits then arm theWizardScript positionally -- Mordack materializes on the
+    # ego and every branch ends at `proc0_26 73`. `_room_unavoidable` already classifies
+    # theWizardScript unavoidable in every castle room; what nothing classifies is that the FUSE
+    # WRITE commits to it -- a THREE-HOP adversarial clock where KQ4's day/night was one hop.
+    #
+    # The demand is a FIXPOINT over global332's saving writers, NOT their bare disjunction: the
+    # fish dispatch (own 37) is only half an answer -- its own completion chains catGetFish ->
+    # theCatRunScript, the fuse again, with flag 62 now set and the fish now spent -- so it is
+    # saving iff the next encounter it forces is bag-answerable. That yields
+    #   (own37 ∧ 63 ∧ own24) ∨ (63 ∧ 62 ∧ own24)  ≡  63 ∧ own(24) ∧ (62 ∨ own(37))
+    # which is the USER's ruling verbatim ("you shouldn't encounter the cat before you have
+    # both"). ⛔ The naive "fuse write = death" WITHOUT the fixpoint condemns catGetFish too,
+    # collapses the demand to the bag answer, and -- flag 62's only writer being the fish answer
+    # inside an encounter -- walls the cat's first spawn forever: a guard built from it breaks
+    # the game instead of saving it.
+    fuse_rows = list(getattr(s, "fuse_death_armings", lambda: [])())
+    cat_rows = [r for r in fuse_rows if r.get("machine") == "theCatScript"]
+    check("the castle cat's arming demands the whale kit (remote fuse = death)",
+          {r.get("item") for r in cat_rows} == {24, 37}
+          and all(set(r.get("arm_rooms", ())) == {60, 61, 63} for r in cat_rows)
+          and all("theWizardScript" in r.get("death", ()) for r in cat_rows)
+          and all(352 in r.get("fuse", ()) for r in cat_rows)
+          and all({62, 63} <= set(r.get("flags", ())) for r in cat_rows),
+          f"rows={cat_rows!r} -- expected one row per demand item (Bag_of_Peas 24, Cat_Fish 37)"
+          f" at the cat's arming rooms {{60, 61, 63}} (proc550_16's call sites: rm061::init, "
+          f"rm063::init, rm060 enterLeft/enterNorth), each naming the fuse register 352, flags "
+          f"63 and 62, and theWizardScript as the committed death. docs/KQ5-ORACLE.md §23.")
+
+    # ✅ THE REMEDY, same session: the whale-shape arm hold (`guards.fuse_arming_remedies`).
+    # One wrap on proc550_16 -- the spawn procedure all four call sites share -- carries the
+    # derived demand conjoined into the proc's own arming `(if ...)`; a withheld spawn is the
+    # stock 20% no-spawn roll, so play stays open everywhere (the arm-event soundness premise,
+    # satisfied by the game's own design). The condition is the fixpoint FACTORED: the atoms
+    # every alternative shares (flag 63, the bag) are hoisted out of the OR, so the site reads
+    # exactly what the ruling says -- beast pea'd, bag in hand, and fish in hand or already
+    # thrown. Silent kind: stock mode bypasses via stock_or at application time; no refusal
+    # line exists to warn about, so lite behaves as full.
+    fa = G.fuse_arming_remedies(s)
+    check("the whale guard wraps the cat's one arming procedure",
+          len(fa) == 1 and not fa[0]["refused"]
+          and fa[0]["script"] == 550 and fa[0]["proc"] == "proc550_16"
+          and fa[0]["machine"] == "theCatScript"
+          and fa[0]["items"] == [24, 37] and fa[0]["flags"] == [62, 63]
+          and fa[0]["condition"] == "(and (proc0_12 63) (gEgo has: 24) "
+                                    "(or (proc0_12 62) (gEgo has: 37)))",
+          f"specs={fa!r} -- expected exactly one placeable fuse-arm spec wrapping proc550_16 "
+          f"in script 550 with the ruled demand factored. docs/KQ5-ORACLE.md §23 has the"
+          f"derivation; a REFUSED spec ships no patch and a second spec means the dedupe by "
+          f"(machine, demand) broke.")
 
     print(f"  {len(PASS)} passed, {len(FAIL)} failed")
     return not FAIL

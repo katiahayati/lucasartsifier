@@ -114,10 +114,18 @@ class OpEmitter:
         self.ir = ir
         self.cfg = cfg
         self.is_death = is_death
+        # ORDER MATTERS HERE, and it is the reverse of what it looks like. The room-valued
+        # globals change what `(== gX gCurRoom)` MEANS (see extract.room_valued_globals), so
+        # they have to be settled before any guard is lowered -- including the extraction's own.
+        # The builder is constructed first because the derivation asks it where an object is in
+        # the cast; `prime` comes last because it is the NARROWING pass and must run against the
+        # settled map.
+        self.mb = M.MachineBuilder(ir, is_death)
+        self.mb.derive_room_valued()
         self.ts = extract(ir)
         # `prime` settles the casts/entries mutual recursion before anything reads either, so the
         # machines this emitter lifts are the second-pass ones. See MachineBuilder.prime.
-        self.mb = M.MachineBuilder(ir, is_death).prime()
+        self.mb.prime()
         self.n_opaque = 0
         self._collect()
 
@@ -442,6 +450,21 @@ class OpEmitter:
                 continue
             for room in targets:
                 for o in s.objects:
+                    # THE WALK STARTS AT THE OBJECT'S PRESENCE CONDITION -- the third and last
+                    # site that attributes an object's methods, and the second that was missing
+                    # it (see machine._build's two entry scans). An object that is not `init:`ed
+                    # cannot be clicked, so its handler's effects are gated on whatever gated
+                    # its init; walking the body from an EMPTY path condition asserts instead
+                    # that every object in a script is live in every room the script serves.
+                    #
+                    # KQ5's Mordack-castle region is what this costs. `castle.sc` runs in all
+                    # 16 castle rooms, `theCat`'s handleEvent answers the fish with
+                    # `(gRoom setScript: theThrowFishScript)` and the pea bag with the bagging
+                    # script -- so BOTH items were recorded as used in every one of those rooms,
+                    # rm683 (`cdCassimaToon`, the cutscene after Cassima takes the locket)
+                    # included, and `toll_strandings` demanded the player carry them into it.
+                    # The cat is placed by `proc550_16` in three rooms and is nowhere near.
+                    og = X.cast_guard(self.mb._cast(s), o.name)
                     for mn, body in o.methods.items():
                         # changeState -> machine; init -> forced entry write. EVERY other
                         # method's effects captured here (globals + locals + gets),
@@ -480,7 +503,7 @@ class OpEmitter:
                         # that kills the minotaur as UNGUARDED, so the escape from the catacombs
                         # needs no red scarf and the whole carry-IN class cannot strand.
                         with verb_param_scope(mn):
-                            self._hwalk(room, rn, body, [], set())
+                            self._hwalk(room, rn, body, [] if og is None else [og], set())
                 # ...AND A PROCEDURE IS NOT A HANDLER. The engine dispatches METHODS -- `doit`,
                 # `handleEvent`, `doVerb`, `changeState`; nothing ever dispatches a script-level
                 # procedure, which runs only where something CALLS it. `_hwalk` (and the machine
@@ -557,6 +580,42 @@ class OpEmitter:
                 for (_g, _w, gg, _c, _tr) in paths:
                     for it in gg:
                         self.machine_gets.add((info["room"], info["inst"], it))
+        # EVERY item transfer a machine makes, destination kept:
+        # `(room, script, item, guard, dest, inst)` -- `handler_moves`' shape plus the INSTANCE,
+        # so a reader can concatenate the two without caring which scope moved the item and can
+        # still tell one site from a copy of itself. The instance is what makes a REGION-HOMED
+        # spend nameable: `castle.sc` is live in fourteen rooms and contributes one row per room
+        # for the same statement, which read as fourteen competing consumptions.
+        # A cutscene that hands an item BACK to the world --
+        # KQ4's Cupid parking his bow in limbo 202 until he next flies past -- is invisible in
+        # `machine_gets` (item only, and this one is not a get) and in `handler_moves` (it is not
+        # a handler), so the only reading of "the item went somewhere" was the flat one that
+        # cannot say WHERE. See `drop_is_permanent`.
+        self.machine_moves = []
+        for info in self.machines:
+            for (it, dest, g) in info.get("moves", ()):
+                self.machine_moves.append((info["room"], info["script"], it, g, dest,
+                                           info["inst"]))
+
+        # A PUT THE SAME BRANCH RE-GETS IS NOT A SPEND. KQ5's lamb EAT (USER-corrected
+        # 2026-08-18b) is the case: the first bite does `put: 19 <room>` then `get: 19` in
+        # one arm -- the item's OWNER IS THE EGO when the branch ends (the put/get dance
+        # refreshes the icon after the cel write that turns it into the half leg). Read as a
+        # drop, that branch is spend evidence for every sink and market detector, and it made
+        # a REQUIRED move (the mountain hunger's only lamb-safe answer) read as wasting the
+        # eagle's lamb. The pair cancels: the drop and one matching get, same room, script,
+        # item and GUARD (structural equality -- the clause identity the sink sweep already
+        # keys on), leave the evidence entirely.
+        for i in range(len(self.handler_drops) - 1, -1, -1):
+            room, script, it, g, _dest = self.handler_drops[i]
+            for j, (r2, s2, i2, g2) in enumerate(self.handler_gets):
+                if (r2, s2, i2) == (room, script, it) and repr(g2) == repr(g):
+                    del self.handler_drops[i]
+                    del self.handler_gets[j]
+                    self.handler_moves = [m for m in self.handler_moves
+                                          if not (m[0] == room and m[1] == script
+                                                  and m[2] == it and repr(m[4]) == repr(g))]
+                    break
 
         # Control-map oracle FIRST (reads the PIC control plane + VIEW cels, not declared):
         #  - prop-gate  (rm82): machine EXIT->83 requires causedEruption (the aDoor Prop covers
@@ -597,8 +656,7 @@ class OpEmitter:
                 # prints messages via a proc), NOT "splice the proc's effects here". Inlining it
                 # would erase the cue and PARK the state, so `_interp`'s proc-cue rule never fires.
                 return node
-            tgt = node.get("script", script)
-            name = node.get("name")
+            tgt, name = I.proc_ref(self.ir, node, script)
             body = self.procs_by.get((tgt, name))
             if tgt != 255 and body is not None and name not in seen:
                 return self._inline_calls(body, tgt, seen | {name}, depth + 1)
@@ -649,9 +707,15 @@ class OpEmitter:
                 if K not in dr and (ss & dr):
                     dr.add(K); changed = True
         drops = set()
+        # ...and the same transfers WITH their destination and path condition. `drops` answers
+        # "was this item consumed here"; `moves` answers "where did it GO, and from what owner" --
+        # the two facts an owner-graph needs and the reason `machine_gets` (item only) could not
+        # supply them. Same survivable-path filter, so the two readings cannot disagree about
+        # which steps count.
+        moves = []
         for K, steps in steps_by_state.items():
             for st in steps:
-                if not st.drops:
+                if not (st.drops or st.moves):
                     continue
                 t = st.trans
                 tgt = (K + 1 if t[0] == "ADVANCE" else t[1] if t[0] == "JUMP" else
@@ -659,6 +723,8 @@ class OpEmitter:
                 if t[0] == "DEATH" or (tgt is not None and tgt in dr):
                     continue
                 drops |= set(st.drops)
+                for (it, dest) in st.moves:
+                    moves.append((it, X._here(dest, room), list(st.guard)))
         if not has_effect:
             return None
         # ...and it must be able to RUN. A machine whose `start` is not among its own states and
@@ -681,11 +747,11 @@ class OpEmitter:
                 "entries": m.entries, "init_entries": m.init_entries,
                 "entry_locals": m.entry_locals, "init_entry_locals": m.init_entry_locals,
                 "entry_armers": m.entry_armers, "entry_recv": m.entry_recv,
-                "entry_sources": m.entry_sources,
+                "entry_sources": m.entry_sources, "entry_site": m.entry_site,
                 "local_regs": dict(getattr(m, "local_regs", None) or {}),
                 "restores_control": set(getattr(m, "restores_control", None) or ()),
                 "chase_states": set(getattr(m, "chase_states", None) or ()),
-                "start": m.start, "delivered": delivered, "drops": drops}
+                "start": m.start, "delivered": delivered, "drops": drops, "moves": moves}
 
     def edge_hit_registers(self):
         """Registers that carry the ego's `edgeHit` CODE, discovered from identity copies.
@@ -924,7 +990,8 @@ class OpEmitter:
         elif tp == "Send":
             recv, msgs = I.send_pairs(node)
             for sel, params in msgs:
-                for (it, dest) in item_transfers(recv, sel, params):
+                for (it, dest0) in item_transfers(recv, sel, params):
+                    dest = X._here(dest0, room)      # `put: X gCurRoomNum` = laid down HERE
                     # AN ITEM TRANSFER IS A FACT ABOUT A PLACE, AND THE ICON BAR HAS NO PLACE.
                     # `sources`, `drops` and every sink detector read these rows as "the game
                     # hands X over / invites you to spend X *here*". An inventory `doVerb` is
@@ -953,10 +1020,11 @@ class OpEmitter:
             self._follow_call(room, script, node, pc, seen)
 
     def _follow_call(self, room, script, node, pc, seen):
-        tgt_script = node.get("script", script)   # PublicCall carries its script; Local = same
+        # PublicCall carries its script; Local = same. `proc_ref` resolves a local proc's
+        # REGISTRY key from the call's offset -- see ir.proc_ref.
+        tgt_script, name = I.proc_ref(self.ir, node, script)
         if tgt_script == 255:                      # script 255 = Print/Dialog: text, no effect
             return
-        name = node.get("name")
         body = self.procs_by.get((tgt_script, name))
         if body is None or name in seen:
             return
@@ -1021,8 +1089,7 @@ class OpEmitter:
                 if g is None:                    # unconditional -> also the initial value
                     self.init_writes.setdefault(room, {})[gi] = v
         elif tp in ("PublicCall", "LocalCall"):
-            tgt = node.get("script", script)
-            name = node.get("name")
+            tgt, name = I.proc_ref(self.ir, node, script)
             body = self.procs_by.get((tgt, name))
             if tgt != 255 and body is not None and name not in seen:
                 self._init_walk(room, tgt, body, pc, seen | {name})

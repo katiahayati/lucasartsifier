@@ -84,6 +84,13 @@ class Machine:
     entry_sources: list = field(default_factory=list)   # PARALLEL to entries: the METHOD the
     #   arming was found in ("init", "doit", "cue", a proc, ...). A `cue` is not a way IN -- see
     #   MachineBuilder._drop_continuation_entries.
+    entry_site: list = field(default_factory=list)      # PARALLEL to entries: the guard AS BUILT
+    #   AT THE ARMING SITE, before `_chain_entries` conjoined the armer's preconditions and before
+    #   `_inherit_local_continuations` conjoined the latch writes. `entries[i]` is what must HOLD
+    #   for the machine to run; this is what the player DID here, and the two are not the same
+    #   question. `fatal_uses` needs the second one: an item is a fatal USE only if using it is
+    #   what armed the death -- an item that reaches the arming through inherited context was
+    #   carried, not used. KQ5's tambourine is the case (docs/KQ5-ORACLE.md §14).
     restores_control: set = field(default_factory=set)  # states whose body sends a derived
     #   control-restore selector (SCI1.1's handsOn -- vocab.derive_control_selectors): the player
     #   is free to act while this state waits. What lets fatal_uses treat a wait-on-the-clock
@@ -136,6 +143,17 @@ def _is_cue_send(recv, msgs):
             return True
         # `(otherInstance changeState: K)` starts another script that cues back here
         if sel == "changeState" and recv.get("t") != "Self":
+            return True
+        # ⭐ `(self setScript: X)` is SCI's SUB-SCRIPT HANDOFF and it arms a cue: the sub-script
+        # runs and cues its client back, which is what `Script` exists to do. KQ5's `searchHay`
+        # is the specimen -- state 6 hands off to `singScript`, whose state 1 is literally
+        # `(client cue:) (self dispose:)`, and state 8 is the empty state waiting for it. Read as
+        # arming nothing, state 8 PARKED and the cutscene was truncated there: the six states that
+        # follow, INCLUDING the one that hands over the golden needle, became unreachable in every
+        # walk over the machine. `(x setScript: 0)` is the opposite -- clearing a script, no
+        # handoff, no cue -- so the literal 0 is excluded rather than the receiver.
+        if sel == "setScript" and recv.get("t") == "Self" and params \
+                and I.as_int(params[0]) != 0:
             return True
     return False
 
@@ -312,6 +330,43 @@ class MachineBuilder:
                         tgt = _setscript_target(params[0], ir)
                         if tgt and tgt[0] is not None and tgt[0] != rn:
                             self.arms.setdefault(tgt, []).append((rn, _oname, mn, body))
+        # ...AND AN OBJECT IS OFTEN PUT ON SCREEN BY A SCRIPT THAT DOES NOT DECLARE IT:
+        # `((ScriptID 550 3) init:)`, SCI's dynamic load addressed by EXPORT INDEX.
+        # `cast_conditions` collects only the init sites written in the object's own script, so
+        # such an object has no presence condition at all -- `any_guard` reads "no site found"
+        # as "always", and its methods are then attributed to every room its script serves.
+        #
+        # KQ5's Mordack henchman is the case, and he is the reason the pea bag was demanded in
+        # the wedding cutscene: `theHenchMan` lives in `castle.sc` (the region, live in all 16
+        # castle rooms) but is init'ed only by rm54, 58, 59, 60, 61 and 67, so "throw the peas
+        # at him" read as an act available anywhere in the castle. Mordack (`theWizard`,
+        # 9 rooms), `theAura`, `theMagicDoor` and `theRings` are all the same shape.
+        #
+        # The site's own path condition comes with it, conjoined with the CALLING SCRIPT'S ROOM
+        # -- an unconditional init in rm58 means "present in 58", not "present". A caller that
+        # is not a room (Main, another region) contributes None, i.e. the permissive answer this
+        # already gives everywhere else: a scope with no room cannot say where you are.
+        self.foreign_inits = {}
+        for rn, s in ir.scripts.items():
+            room = X._room_object(s, ir)
+            here = (Pred("CMP", var=X._CURROOM, op="==", value=str(rn))
+                    if room is not None else None)
+            bodies = [b for o in s.objects for b in o.methods.values()] + list(s.procs.values())
+            for body in bodies:
+                def leaf(n, pc, _here=here):
+                    if n.get("t") != "Send":
+                        return
+                    recv, msgs = I.send_pairs(n)
+                    if (not isinstance(recv, dict) or recv.get("t") != "KernelCall"
+                            or recv.get("name") != "ScriptID"):
+                        return
+                    hit = ir.script_id_target(recv)
+                    if not hit or hit[0] is None or hit[1] is None:
+                        return
+                    for sel, _params in msgs:
+                        g = None if _here is None else _conj(list(pc) + [_here])
+                        self.foreign_inits.setdefault(hit[0], []).append((hit[1], sel, g))
+                walk_stream(body, [], leaf)
 
     def machines(self, script):
         out = []
@@ -489,19 +544,30 @@ class MachineBuilder:
         # entries: ANY object's init/handleEvent/doit that does `(<inst> changeState: K)`
         # (guarded) -- the machine is often started/redirected by the ROOM object, not by
         # itself (rm65.init -> rm65Script changeState: survive-or-die on gCurrentStatus).
+        #
+        # ...UNDER THE ARMING OBJECT'S PRESENCE CONDITION, exactly as the `setScript:` scan
+        # below has always done (`owner=`). This path did not, and an object's methods went
+        # through the two paths with DIFFERENT conditions -- which broke the invariant
+        # `_clause_key` rests on ("a clause and the state it arms necessarily share" their
+        # positive item preconditions, missability.py). KQ5 rm12 is the specimen: the dog's
+        # throw handler does `(gRoom setScript: throwStick)`, so the machine entry carried the
+        # dog's cast `(or (has 8) (has 16))` while the handler's own `put: <item> 12` did not,
+        # the two keys diverged, and the throw -- which plainly arms a machine -- was classified
+        # by `pure_sinks` as a consumption that ACCOMPLISHES NOTHING.
+        cast = self._cast(script)
         for other in script.objects:
             is_self = (other.name == m.inst)   # `self` in other's method means `other`,
             #   so a `(self changeState:K)` is an entry to THIS machine ONLY when other IS it.
             #   Cross-object starts must name the instance: `(<m.inst> changeState:K)`.
+            og = X.cast_guard(cast, other.name)
             for mn in ("init", "handleEvent", "doit"):
                 if mn in other.methods:
-                    self._entries(other.methods[mn], [], m, script.number, set(),
-                                  source=mn, is_self_obj=is_self)
+                    self._entries(other.methods[mn], [] if og is None else [og], m,
+                                  script.number, set(), source=mn, is_self_obj=is_self)
         # setScript entries: `(actor setScript: <m or (m new:)>)` in ANY method (incl a
         # changeState body -- hench1Script state1 -> henchScript). These START m at state 0.
         # The extractor dropped them, so setScript-driven machines (the henchmen chasers, the
         # bottle) never ran -- which is WHY the absent-start fall-through hack was needed.
-        cast = self._cast(script)
         for other in script.objects:
             owner = X.cast_guard(cast, other.name)   # in the cast only when...? see cast_conditions
             for mn, body in other.methods.items():
@@ -660,6 +726,7 @@ class MachineBuilder:
         m.entry_armers = [m.entry_armers[i] for i in keep]
         m.entry_sources = [m.entry_sources[i] for i in keep]
         m.entry_recv = [m.entry_recv[i] for i in keep]
+        m.entry_site = [m.entry_site[i] for i in keep]
         # `init_entry_idx` points INTO `entries`, so re-index it here or the arrival copies
         # would later be restated from whatever entry slid into the dropped row's place. A
         # dropped row is always a `cue` arming and an init entry never is, so nothing an init
@@ -700,16 +767,43 @@ class MachineBuilder:
         for _round in range(2):
             eg = {}
             for rn, s in self.ir.scripts.items():
-                for m in self.machines(s):
-                    # Alternatives, and permissive (None) if any of them is unconditional -- the
-                    # same reading `any_guard` gives everywhere else.
-                    eg[(rn, m.inst)] = X.any_guard([g for _k, g in m.entries]) if m.entries else None
+                for inst, g in self.entry_guards(s).items():
+                    eg[(rn, inst)] = g
             if eg == self._entry_guard:
                 break
             self._entry_guard = eg
             self._cast_cache.clear()
             self._local_cache.clear()     # derived from the casts, so it goes stale with them
         return self
+
+    def entry_guards(self, script):
+        """`{instance: the machine's ENTRY disjunction}` for one script.
+
+        Alternatives, and permissive (None) if any of them is unconditional -- the same reading
+        `any_guard` gives everywhere else. Two callers: `prime`, which feeds it back as
+        `machine_guard`, and `extract.room_valued_globals`, which asks it where a machine can be
+        armed. Stated once ([[same-rule-two-places]])."""
+        return {m.inst: X.any_guard([g for _k, g in m.entries]) if m.entries else None
+                for m in self.machines(script)}
+
+    def derive_room_valued(self):
+        """Settle `extract.room_valued_globals` against THIS builder and install it.
+
+        MUST run before anything reads a guard -- the map changes what `(== gX gCurRoom)` MEANS,
+        so an extraction that ran first would carry the opaque reading. `OpEmitter.__init__` is
+        the one caller and does it between constructing this builder and `extract.extract`; a
+        builder that never calls this simply keeps the opaque reading everywhere.
+
+        Unprimed on purpose. The derivation asks this builder where an object is in the cast and
+        where a machine can be armed, and pass 0's answers are the PERMISSIVE ones -- wider
+        scopes, wider value sets, weaker lowering. Priming afterwards is the narrowing pass, and
+        it runs against the settled map."""
+        def install(ir, m):
+            got = X.install_room_valued(ir, m)
+            self._cast_cache.clear()      # both are derived from guards this map now lowers
+            self._local_cache.clear()
+            return got
+        return X.room_valued_globals(self.ir, self._cast, self.entry_guards, install)
 
     def _cast(self, script):
         """`cast_conditions` for a script, computed once -- `_build` runs per machine."""
@@ -719,7 +813,9 @@ class MachineBuilder:
                 script, proc_guard=lambda pn: X.any_guard(self.proc_calls.get(pn)),
                 machine_guard=lambda on: self._entry_guard.get((script.number, on)),
                 init_sels=X.init_selectors(self.ir),
-                delegate_sels=X.delegate_slots(self.ir))
+                delegate_sels=X.delegate_slots(self.ir),
+                add_sels=X.feature_adders(self.ir),
+                foreign_inits=self.foreign_inits.get(script.number))
         return c
 
     def _scan_setscript(self, node, pc, m, source, armer=None, owner=None, selfobj=None):
@@ -806,6 +902,8 @@ class MachineBuilder:
         m.entry_armers.append(armer)
         m.entry_sources.append(source)
         m.entry_recv.append(recv)
+        m.entry_site.append(guard)        # frozen here; the strengthening passes rewrite
+        #   `entries[i]` and deliberately leave this alone. See Machine.entry_site.
         if is_init:
             m.init_entries.append((state, guard))
             m.init_entry_locals.append(dict(locals_))
@@ -853,8 +951,7 @@ class MachineBuilder:
                     if k is not None:
                         self._add_entry(m, k, _conj(pc), {}, source == "init")
         elif tp in ("PublicCall", "LocalCall"):
-            tgt = node.get("script", script)
-            name = node.get("name")
+            tgt, name = I.proc_ref(self.ir, node, script)
             body = self.procs_by.get((tgt, name))
             if tgt != 255 and body is not None and name not in seen:
                 self._entries(body, pc, m, tgt, seen | {name}, source, is_self_obj)
@@ -889,6 +986,17 @@ class MachineBuilder:
                 out.append(Op("SETSTATE", g, state_k + (1 if tp == "Increment" else -1)))
             else:
                 self._counter_op(dst, "inc" if tp == "Increment" else "dec", None, g, out)
+        elif tp in ("AssignmentAdd", "AssignmentSub") and state_k is not None:
+            # ...and the same bump WITH A STRIDE, `(+= state 4)`. Kept in step with
+            # `compile._interp`, which is the authority for what a state body means -- this walk
+            # is the debug view, and the two drifting apart is exactly what the `(++ state)` fix
+            # of 2026-08-14 had to correct ([[same-rule-two-places]]). STATE only here too: the
+            # counter models are the Increment branch's business.
+            dst = node["kids"][0]
+            amt = I.as_int(node["kids"][1]) if len(node["kids"]) > 1 else None
+            if amt is not None and dst.get("t") == "Property" and dst.get("name") == "state":
+                out.append(Op("SETSTATE", g,
+                              state_k + (amt if tp == "AssignmentAdd" else -amt)))
 
     def _send_op(self, node, g, out, room=None):
         recv, msgs = I.send_pairs(node)

@@ -85,7 +85,7 @@ from each game's own code.
 | **King's Quest IV** (1988) | SCI0 | done & tested | the real-time night clock; the whale — random events guarded by arming them only when survivable |
 | **King's Quest VI** (1992) | SCI1.1 | done & tested | the two ending paths massively complicate analysis; guarding the start of the wedding (a timer) until necessary items are in hand |
 | **Laura Bow 2** (1992) | SCI1.1  | done & tested | the act structure: the plot clock is a register, act breaks are one-way, demands ride the act-flip interceptor |
-| **King's Quest V** (1990) | SCI1-middle | *in progress (`kq5` branch)* | the village market: matching payments to merchants so everyone can be paid — detection becomes a matching problem |
+| **King's Quest V** (1990) | SCI1-middle | done & tested | the village market (matching payments to merchants, so detection becomes a matching problem); positional deaths read as walls; and encounters guarded by arming them only when survivable — an unanswered cat lights a death fuse three hops away, and a henchman carries you into a cell whose rescue only happens once |
 
 ## How it works, briefly
 
@@ -225,19 +225,26 @@ from the game's own code (see `src/anchors.py`). A new title needs no config ent
 
 ## Future work
 
-- **Required *actions* are not currently modeled.** Currently we guard a transition that must not
-  be taken while something it needs is still required and no longer obtainable after the crossing.
-  That covers a room edge, a plot flag advancing, and an event the player does not control — a
-  whale that swallows you, nightfall, an act break. But we do not model actions that, if not
-  taken, lead to a death later. For example, in King's Quest V you have to throw a shoe at a cat
-  to save a mouse who will later save you from bandits.
+- **Required *actions* are modeled only in the shapes King's Quest V forced.** The base case is a
+  transition that must not be taken while something it needs is still required and no longer
+  obtainable after the crossing: a room edge, a plot flag advancing, an event the player does not
+  control — a whale that swallows you, nightfall, an act break. KQ5 added the case where the thing
+  you failed to *do* kills you later: the shoe you must throw at a cat to save a mouse who later
+  frees you from a cellar is now caught (the throw is recorded in the item-ownership store, an
+  arrival reads it hours later, and the window closes the moment the chase *starts* rather than
+  when it is lost), as are encounters that must not begin unless you can survive them. What is
+  still missing is a general account — each of those came from reading one game's structure and
+  asking whether the shape generalizes, not from a theory of required actions.
 - **State explosion in Quest For Glory games.** QFG games have SO MUCH going on that the analyzer
   cannot complete. I suspect we can fix that by abstracting away from player stats, combat, and
   health consumables (rations, etc.), but that work has not been done yet.
-- **SCI1.0 / SCI1-middle.** SCI0 and SCI1.1 are modeled. King's Quest V — the weird hybrid in
-  between — is in progress on the `kq5` branch and most of the way there.
-- **Full end-to-end playtesting.** All four games have been extensively tested where patched, but none has been played end to 
-end yet. Doing that might uncover bugs.
+- **SCI1.0 / SCI1-middle.** SCI0, SCI1-middle and SCI1.1 are all modeled now — King's Quest V, the
+  weird hybrid in between, is done. Other SCI1.0 titles will likely still need dialect work.
+- **Full end-to-end playtesting.** No game has had a single continuous start-to-finish run on a
+  patched build yet. King's Quest V comes closest: every row of its test plan has been played on
+  the patched game, the endgame included, and that is where several of its guards were found,
+  corrected, or retired — a reminder that static reading and play disagree more often than is
+  comfortable. The other four are extensively tested where patched.
 - **More games!** There is no game-specific code in the engine, but Sierra shipped a lot of
   game-specific code in each game, so every new title has so far required extending the analysis.
   Hopefully at some point this converges to zero.
