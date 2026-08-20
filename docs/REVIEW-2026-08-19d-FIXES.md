@@ -230,7 +230,10 @@ it replaced, its error direction is deleting findings, and nothing in the corpus
 loss." The loss is now measured, and it is zero — for reasons that have nothing to do with the
 decrement rule.
 
-**The verdict is right.** `fuse_death_armings` returns `[]` on KQ4 and KQ6 and always will.
+**The verdict is right,** and its headline number checks out — measured, not taken from the
+review: `handler_decs` is KQ5 40 (registers `110, 111, 314, 315, 352, 353, 359, 384, 385` — the
+two fuses among them), LSL2 4 (`108`), LB2 3 (`150, 369`), **KQ4 0, KQ6 0**. `fuse_death_armings`
+returns `[]` on KQ4 and KQ6 and always will.
 
 **"The docstring calls this class 'KQ4's day/night, KQ6's wedding fuse'."** It calls them the
 PARENT class and says so in the same sentence: *"the class is the adversarial clock
