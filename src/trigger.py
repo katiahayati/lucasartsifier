@@ -1275,28 +1275,34 @@ def _find_region(text, header_re):
     -- and that message holds the FIRST `(method (doVerb` in the file. With a raw `re.search`
     this returned (9255, 9815): 560 bytes beginning in the middle of a string, every span
     computed inside it arithmetic on text that is not code, and the placement that asked would
-    have rewritten it. Census of the five source trees: 7,747 `(method (` matches, two inside
-    non-code, and both of them this."""
+    have rewritten it. Census of the five source trees, 1,084 `.sc` files: 10,303 `(method (`
+    matches, two inside non-code, and both of them this. (The 7,747 printed here before was a
+    four-tree figure -- 2026-08-20 fourth review, P9.)"""
     m = code_search(text, header_re)
     if not m:
         return None
     return _block_span(text, m.start())
 
 
-def _turnback_emit(guard_sexpr, body, og, tb, refuse, site, region=None, span=None):
+def _turnback_emit(guard_sexpr, body, og, tb, refuse, site, region, span):
     """The turn-back wrap + its Script instance TEMPLATE, shared by every positional-refusal
     kind (arm-clause armings, positional direct exits) so the two cannot drift
     ([[same-rule-two-places]]). `body` is the clause body being held. The returned instance
     text carries two `%s` slots for the caller's derived safe target (xe, ye).
 
     `region`/`span` are the text this wrap replaces `region[span]` in, so the trailing marker
-    can be kept off whatever stock wrote after it on that line (`sexpr.mark_line`, N1)."""
+    can be kept off whatever stock wrote after it on that line (`sexpr.mark_line`, N1).
+
+    ⛔ THEY ARE REQUIRED (2026-08-20 fourth review, P11). They defaulted to None, and the None
+    branch emitted the bare inline marker -- the exact pre-N1 emitter, reachable by omitting an
+    argument. Both live callers pass them, so the default bought nothing and kept a way back to
+    a defect that costs a compile or a silently deleted statement. A repaired emitter should not
+    leave the broken one wired to a default."""
     ego = og.get("ego", "global0")
     room = og.get("room", "global2")
     game = og.get("game", "global1")
-    turned = ("  ; softlock-guard: turned back" if region is None else
-              mark_line(region, span[1], "  ; softlock-guard: turned back",
-                        line_indent(region, span[0])))
+    turned = mark_line(region, span[1], "  ; softlock-guard: turned back",
+                       line_indent(region, span[0]))
     forms = site.forms()
     if forms is None:
         wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{body}\n\t\t\telse\n"

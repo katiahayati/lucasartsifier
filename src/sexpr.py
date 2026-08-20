@@ -223,8 +223,24 @@ def skip_noncode(text, j, end):
         k = text.find("\n", j)
         return end if k < 0 else min(k + 1, end)
     if c == "{":
-        k = text.find("}", j + 1)
-        return end if k < 0 else min(k + 1, end)
+        # ⛔ HONOUR `\}`, AS THE LEXER DOES (2026-08-20 fourth review, P10). A bare
+        # `text.find("}")` stops at an ESCAPED brace, so the message's span ends early and its
+        # tail is handed to every scanner as code -- while `Lexer` two hundred lines up reads
+        # the same construct with `if c == "\\": keep the next char verbatim`, and the `'...'`
+        # branch below already skips escapes. Two readings of one construct in one file.
+        # Measured: 8 messages in the corpus end early, all in KQ6's and LB2's `DialogEditor.sc`
+        # (`{...addTitle:\t{%s\},\0d\n}`), leaking 80 characters that contain 0 parens, 0 `;`
+        # and 0 `{` -- so no span in these five games moves. Fixed because the arithmetic has to
+        # agree with the lexer, not because this corpus punishes it.
+        k = j + 1
+        while k < end:
+            if text[k] == "\\":
+                k += 2
+                continue
+            if text[k] == "}":
+                return min(k + 1, end)
+            k += 1
+        return end
     if c in "'\"":
         nl = text.find("\n", j + 1)
         stop = end if nl < 0 else min(nl, end)
@@ -484,6 +500,19 @@ def depth1_else(text, start, end, spans=None):
 
 
 # The multi-arm forms, and how many leading elements come before the first arm.
+# ⚠️ `switchto` IS DELIBERATELY IN BOTH THIS AND `_BODY_HEADS`, AND THE READING IS UNVERIFIED
+# (2026-08-20 fourth review, P12). For `cond` and `switch` the two tables cannot overlap: their
+# children are LABELLED clauses -- `((> a b) (foo))`, `(57 (foo))` -- which are arms and are not
+# statements, which is exactly why both are in `_CLAUSE_PARENTS` and `statement_span` returns
+# None for a direct child. A `switchto` body carries no label, so under the reading taken here a
+# direct child is an arm AND a form in body position at once, and the two memberships agree
+# rather than contradict.
+#
+# ⛔ Nothing in this corpus tests that: `(switchto` and `(until` occur **0** times across all
+# five trees, 1,084 `.sc` files (measured 2026-08-20; for scale, `(switch` is 4,728 and `(cond`
+# 2,078). So the shape of a `switchto` arm -- one form, or a sequence needing a block -- is a
+# guess, and any hold placed inside one would rest on it. `test_patch_text` carries the tripwire
+# that says so the day a game spells one.
 _FORKS = {"cond": 0, "switch": 1, "switchto": 1}
 
 

@@ -373,11 +373,19 @@ comment quoted was a four-tree figure).
 
 Three shapes, all reproduced before the tests were written:
 
-| fixture | before | after | what it costs |
-|---|---|---|---|
-| `(theCat init:) (theRat init:)` | code parens 4/4 | 5/5 | `(theRat init:)` still greppable in the file, **gone from the program** |
-| `(if T <arm> else B)` on one line | 7/7 | **7/6** | the file does not compile |
-| `(= [local0 0] (theCat init: yourself:))` | 4/4 | **6/5** | two defects at once — see N1b |
+⛔ **The numbers below were RE-MEASURED (2026-08-20 fourth review, P9).** The figures this table
+carried — `4/4 → 5/5`, `7/7 → 7/6`, `4/4 → 6/5` — came from hand repros with a **1-paren** demand
+and matched neither the committed fixtures nor each other, so nobody could reproduce them. These
+are the committed fixtures (`TAIL_SIBLING`, `ONE_LINE_FORK`, `VALUE_POSITION_ARM` in
+`test_patch_text.py`) run through `_place_fuse_arm` with the committed **3-paren** `DEMAND`, with
+`sexpr.mark_line` swapped for the pre-fix emitter that appended the marker inline. Code parens,
+counted the way `_skip_noncode` counts them.
+
+| fixture | before | naive marker | fixed | what the naive marker costs |
+|---|---|---|---|---|
+| `TAIL_SIBLING` — `(theCat init:) (theRat init:)` | 4/4 | 7/7 | 8/8 | balanced, so it still compiles — and `(theRat init:)` is still greppable in the file while being **gone from the program** |
+| `ONE_LINE_FORK` — `(if T <arm> else B)` on one line | 6/6 | **9/8** | 10/10 | unbalanced: the file does not compile |
+| `VALUE_POSITION_ARM` — `(= [local0 0] (theCat init: yourself:))` | 4/4 | 8/8 | 8/8 | **nothing** — the marker is harmless here. This fixture's defect is N1b (the hold lands in the value slot), not the marker, and the old `6/5` implied a paren cost this shape never had |
 
 The population is **not four copies**. Twelve emitters across `patcher` and `trigger` splice
 `<edit><marker>` in front of preserved text: the two arming holds, the register/property flip

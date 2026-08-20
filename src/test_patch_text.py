@@ -609,10 +609,18 @@ def test_market_wrap_spares_the_reget_branch():
           "(if (not (gEgo has: 19))\n" not in out.split("else")[0]
           and out.index("(proc0_27 4)") < out.index("(Refuse)"),
           detail=out)
+    # ...and the same correction here (P11): `out.index("(Refuse)") > out.index("put: 19 1") - 400`
+    # is satisfied by almost any arrangement of the file, including one where the refusal sits
+    # nowhere near the arm it is meant to hold. "Inside the wrap" is a containment question, so
+    # ask it with the wrap's own balanced span.
+    _wrap_at = out.index("(if (not (gEgo has: 19))") if "(if (not (gEgo has: 19))" in out else -1
+    _wrap_end = P._balanced_span(out, _wrap_at) if _wrap_at >= 0 else -1
     check("the destroying put is inside the refusal wrap",
-          out.index("(Refuse)") > out.index("put: 19 1") - 400
-          and "(if (not (gEgo has: 19))" in out,
-          detail=out)
+          _wrap_at >= 0 and _wrap_at < out.index("put: 19 1") < _wrap_end
+          and _wrap_at < out.index("(Refuse)") < _wrap_end,
+          detail="wrap spans [%r, %r); `put: 19 1` at %r and `(Refuse)` at %r must both be "
+                 "inside it.\n%s" % (_wrap_at, _wrap_end, out.index("put: 19 1"),
+                                     out.index("(Refuse)"), out))
     check("the pie case is untouched", "(global0 put: 2 1)" in out
           and out.count("Refuse") == 1, detail=out)
     check("the file still balances", out.count("(") == out.count(")"), detail=out)
@@ -934,8 +942,10 @@ def test_fuse_arm_holds_the_if_that_spawns():
     # THE INLINE MARKER MUST NOT EAT THE REST OF ITS LINE. `; softlock-guard` is a line comment,
     # so conjoining onto a one-line `(if <test> <arming>)` comments out the arming, the closing
     # parens and everything after them -- `applied: True`, and the file no longer compiles.
-    # Measured 2026-08-20: 562 one-line `(if ...)` forms across the corpus's five source trees,
-    # none of them containing an arming TODAY, which is the only reason this has never shipped.
+    # Measured 2026-08-20: **780** one-line `(if ...)` forms across the corpus's five source
+    # trees (the 562 printed here before was a four-tree figure -- P9; 780 is the same number the
+    # `_wrap_statement` note below already carries), none of them containing an arming TODAY,
+    # which is the only reason this has never shipped.
     one_line = "(procedure (proc550_16)\n\t(if (== global5 1) (theCat posn: 91 172 init:))\n)\n"
     out5, n5, why5 = place(one_line, "proc550_16", ["theCat"], DEMAND)
     check("a ONE-LINE arming `if` is not commented out by the marker",
@@ -1160,9 +1170,12 @@ def test_every_spelling_of_the_arming_is_held():
 # `(method (doVerb` in the file, so `_find_region` returns a 560-byte "region" that starts in the
 # middle of a string, and every span computed inside it is arithmetic on text that is not code.
 #
-# Census of the whole family, five trees: `(instance|class` 6,356 matches / 0 in non-code;
-# `(procedure (` 328 / 0; `setScript:` 2,192 / 0; `(if` 11,073 / 0; `(cond` 1,676 / 0;
-# `newRoom:` 763 / 0; `put: <n>` 340 / 0 -- and `(method (` 7,747 / **2**, which are these.
+# Census of the whole family. ⛔ RE-MEASURED over all five trees, 1,084 `.sc` files (2026-08-20
+# fourth review, P9 -- the figures below were themselves four-tree figures, printed under a
+# "five trees" heading, which is N3's own finding surviving inside the paragraph that reports
+# it): `(instance|class` 8,897 matches / 0 in non-code; `(procedure (` 483 / 0; `setScript:`
+# 3,303 / 0; `(if` 14,201 / 0; `(cond` 2,078 / 0; `newRoom:` 1,038 / 0; `put: <n>` 430 / 0 --
+# and `(method (` 10,303 / **2**, which are these.
 # ⛔ FIVE SOURCE TREES, and `kq5` is spelled the way `config.sweep_config` finds it. Both loops
 # below used to name four, so every corpus figure this file printed was a four-tree figure while
 # reading as a five-tree one (2026-08-20 third review, N3).
@@ -1221,11 +1234,19 @@ def test_a_region_never_starts_inside_a_message():
           detail="regions taken from inside a string: %r" % (bad,))
 
     # THE REST OF THE FAMILY, as a census rather than as a claim. Some of these scanners are
-    # still raw (the arm-event / arm-clause `setScript:` searches, the clause-head walk), and
-    # they are safe today for one reason only: nothing they look for is ever written inside a
-    # message in these five games. That is a fact about the corpus, so it is measured here
-    # rather than asserted in a docstring -- the day a new game writes one, this says so BEFORE
-    # the placement built on it ships.
+    # still raw -- SEVEN `setScript:` searches (six in `trigger`, one in `patcher`), including
+    # the arm-clause branch's, plus the clause-head walk -- and they are safe today for one
+    # reason only: nothing they look for is ever written inside a message in these five games.
+    # That is a fact about the corpus, so it is measured here rather than asserted in a
+    # docstring -- the day a new game writes one, this says so BEFORE the placement built on it
+    # ships.
+    #
+    # ⛔ THE ARM-EVENT SEARCH IS NO LONGER ONE OF THEM (2026-08-20 fourth review, P11). This
+    # named "the arm-event / arm-clause `setScript:` searches" after N1b had already given the
+    # arm-event branch `code_finditer`, and the `setscript` branch got it in P2 -- so the
+    # sentence describing which scanners this census is covering for had drifted out of date in
+    # the direction that matters, claiming a gap the code had closed while the ones still open
+    # went unnamed. Re-measured: 7 raw against 2 code-filtered.
     #
     # ⛔ THE TRIPWIRE COULD NOT FIRE FOR THE REASON IT NAMED (2026-08-20 third review, N3). The
     # family omitted `(method (` -- THE ONE PATTERN IN THIS CORPUS WITH HITS, named in the
@@ -1308,6 +1329,35 @@ def test_a_region_never_starts_inside_a_message():
                         raw_readers.append("%s:%d %s"
                                            % (_os.path.basename(srcfile), lineno, line.strip()))
                         break
+    # ⚠️ P12's TRIPWIRE (2026-08-20 fourth review). `sexpr._BODY_HEADS` and `sexpr._FORKS` both
+    # claim `switchto`, and `_BODY_HEADS` also claims `until`. For `cond`/`switch` the tables
+    # cannot overlap -- their children are LABELLED clauses, which is why both are in
+    # `_CLAUSE_PARENTS` -- but a `switchto` body carries no label, so the reading taken there is
+    # that a direct child is an arm and a body-position form at once. NOTHING IN THIS CORPUS
+    # TESTS IT: both constructs occur zero times. The day a game spells one, the shape of a
+    # `switchto` arm stops being a guess that costs nothing and becomes one a hold could rest on,
+    # and this says so first.
+    import sexpr as _sx
+    unexercised = {}
+    for name in CORPUS:
+        cfg = config.by_name(name)
+        if cfg is None or not _os.path.isdir(cfg.src_dir):
+            continue
+        for fn in sorted(_os.listdir(cfg.src_dir)):
+            if not fn.endswith(".sc"):
+                continue
+            txt = open(_os.path.join(cfg.src_dir, fn), errors="replace").read()
+            for head in ("switchto", "until"):
+                k = sum(1 for _ in _sx.code_finditer(txt, r"\(%s\b" % head))
+                if k:
+                    unexercised[head] = unexercised.get(head, 0) + k
+    check("`switchto`/`until` are still unexercised, so their unverified reading costs nothing",
+          not unexercised,
+          detail="this corpus now spells %r. `_FORKS` and `_BODY_HEADS` both claim `switchto` "
+                 "and their agreement rests on a body carrying no label -- a reading with no "
+                 "ground truth behind it. Derive the arm shape from the game that spells it "
+                 "BEFORE any hold is placed inside one." % (unexercised,))
+
     check("no shipping scanner reads a KNOWN-quoted pattern raw (the exemption's obligation)",
           not raw_readers,
           detail="%d raw scanner(s) read a pattern this corpus writes inside a message, so the "
@@ -1396,8 +1446,17 @@ ONE_LINE_FORK = """(procedure (proc550_16)
 # The other half of N1: `_arming_statement_span` returns the INNERMOST balanced form, which is
 # routinely an expression in VALUE position. Wrapping `(theCat init: yourself:)` where the game
 # wrote `(= [local0 0] (theCat init: yourself:))` does not withhold the arming, it changes what
-# is assigned -- and `(if ...)` in an argument slot is not the same program. 76 `init:` sends
-# corpus-wide have text after them on their line; the value-position spelling is KQ6's and LB2's.
+# is assigned -- and `(if ...)` in an argument slot is not the same program. The value-position
+# spelling is KQ6's and LB2's.
+#
+# ⛔ THE COUNT IS DEFINITION-SENSITIVE, so the definition travels with it (2026-08-20 fourth
+# review, P9). "76 `init:` sends corpus-wide have text after them on their line" was not a
+# checkable claim: three readings of it give 79 and one gives 76, and the comment named none of
+# them. Under the definition spelled out here -- a `code_finditer` hit on `init:`, expanded to
+# the innermost balanced form that ENDS after the hit, whose end is followed by non-blank text
+# on the same line -- the count over all five trees (1,084 `.sc` files) is **79**. Any figure
+# quoted without its definition is a number nobody can reproduce, which is the only reason this
+# one needed a second measurement at all.
 VALUE_POSITION_ARM = """(procedure (proc550_16)
 \t(= [local0 0] (theCat init: yourself:))
 )
@@ -1447,13 +1506,27 @@ def test_a_dispatch_region_is_code():
             dest, {"to_room": 550, "condition": "(gEgo has: 24)"}, {}, set())
         out = open(path).read()
         quoted = DISPATCH_SRC[DISPATCH_SRC.index("{"):DISPATCH_SRC.index("}") + 1]
+        # ⛔ NOT A MAGIC BYTE OFFSET (2026-08-20 fourth review, P11). This asked
+        # `is_code(out, out.index("softlock-guard") - 40)`: 40 is not derived from anything, it
+        # is "far enough back to land in the code before the comment", and it silently starts
+        # measuring a different character the moment the emitted indentation changes. The
+        # question is exact -- is the edit inside the QUOTED MESSAGE or outside it -- so ask
+        # that, on the message's own span.
+        msg_s, msg_e = out.index("{"), out.index("}") + 1
+        mark = out.index("softlock-guard")
+        # the demand as the row itself reports it, not a hand-copied spelling (the applier
+        # resolves `gEgo` to the game's own ego global before emitting)
+        guard_txt = ((row or {}).get("placement") or {}).get("guard", "")
+        demand = out.index(guard_txt) if guard_txt and guard_txt in out else -1
         check("the guard lands on the real doVerb arm, not the one quoted in a message",
               row is not None and row.get("applied") and row.get("sites") == 1
               and quoted in out and code_parens(out)[0] == code_parens(out)[1]
               and "softlock-guard" in out
-              and is_code(out, out.index("softlock-guard") - 40),
-              detail="row=%r\nmessage preserved=%r code parens=%r\n%s"
-                     % (row, quoted in out, code_parens(out), out))
+              and demand >= 0 and not (msg_s <= mark < msg_e)
+              and not (msg_s <= demand < msg_e) and is_code(out, demand),
+              detail="row=%r\nmessage preserved=%r code parens=%r message span=%r marker@%d "
+                     "demand@%d\n%s"
+                     % (row, quoted in out, code_parens(out), (msg_s, msg_e), mark, demand, out))
     finally:
         _sh.rmtree(dest, ignore_errors=True)
 
