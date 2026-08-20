@@ -4959,6 +4959,13 @@ class IrSccReach(SccReach):
                     out.append({
                         "pattern": "fuse-death-arming", "item": it,
                         "item_name": self.g.item_name(it), "machine": nm,
+                        # the HOST OBJECTS the arming procedure `init:`s -- the spawn
+                        # statement the guard must sit around. Without them the applier can
+                        # only guess, and its guess was "the procedure's first `(if`", which
+                        # holds no spawn at all in any procedure with an earlier branch
+                        # (review F2).
+                        "hosts": sorted({rc[1] for rc in (i.get("entry_recv") or ())
+                                         if rc and rc[0] == "O"}),
                         "arm_rooms": rooms,
                         "arm_proc": ({"script": host_sn, "name": procs[0]}
                                      if procs else None),

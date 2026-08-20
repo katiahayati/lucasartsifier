@@ -1,0 +1,8 @@
+- can we have a debug flag for the ocean that 1. removes the shark, and 2. ups to probability of the whale to 100%? it's too hard to test otherwise
+- the leaving rm 43 guard is broken in the same way that leaving rm47 in LSL2 guard was broken; you get on the dolphin and reach the edge of the screen, then the game hangs
+- I need scummvm debugger commands to advance the clock to just before night so I can test nightfall not coming/coming
+- the just kidding line for the bow comes in the middle of its animation. it works but it's clunky
+- you don't need the obsidian scarab for the end game, that's weird. also I thought the obsidian scarab was reobtainable at night. can we investigate this? the obsidian
+scarab is what lets you dig in the cemetaries
+- can I get scummvm debugger commands for toggling night pls
+

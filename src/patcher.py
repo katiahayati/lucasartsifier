@@ -2248,17 +2248,51 @@ def _edit_candidates(dest, titles_by_num, sp, rooms):
     return out
 
 
+def _skip_noncode(text, j, end):
+    """If `text[j]` opens a comment or a string, the offset just past it; else None.
+
+    SCI source carries three things that look like code and are not: `;` line comments,
+    `{...}` message text and `"..."` said strings. A single unbalanced paren inside any of
+    them shifts every span this module computes, and every span this module computes is a
+    guard placement."""
+    c = text[j]
+    if c == ";":
+        k = text.find("\n", j)
+        return end if k < 0 else min(k + 1, end)
+    if c == "{":
+        k = text.find("}", j + 1)
+        return end if k < 0 else min(k + 1, end)
+    if c == '"':
+        k = j + 1
+        while k < end and text[k] != '"':
+            k += 2 if text[k] == "\\" else 1
+        return min(k + 1, end)
+    return None
+
+
 def _balanced_span(text, i):
-    """End index (exclusive) of the balanced parenthesis group starting at text[i] == '('."""
+    """End index (exclusive) of the balanced parenthesis group starting at text[i] == '('.
+
+    Comments and message strings are SKIPPED WHOLE (`_skip_noncode`): a paren inside one is not
+    a paren. Measured 2026-08-19e across the corpus's five source trees -- every span this
+    module takes is byte-identical with and without the skip, because none of the forms it
+    spans happens to contain an unbalanced one today. That is a fact about today's games, not
+    a property of the arithmetic, which is why it is a fix rather than a nicety (review F15)."""
     depth = 0
-    for j in range(i, len(text)):
+    j, n = i, len(text)
+    while j < n:
+        nxt = _skip_noncode(text, j, n)
+        if nxt is not None:
+            j = nxt
+            continue
         if text[j] == "(":
             depth += 1
         elif text[j] == ")":
             depth -= 1
             if depth == 0:
                 return j + 1
-    return len(text)
+        j += 1
+    return n
 
 
 def _guard_travel_dispatch(dest, sp, titles_by_num, seen_dispatch):
@@ -2569,25 +2603,14 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                         "why": "no source for script %s" % sp["script"]})
             continue
         text = open(path, errors="replace").read()
-        m = re.search(r"\(procedure\s+\(%s\b" % re.escape(sp["proc"]), text)
-        if not m:
-            out.append({**sp, "applied": False,
-                        "why": "no procedure %s in %s" % (sp["proc"], title)})
+        new_text, n, why = _place_fuse_arm(
+            text, sp["proc"], sp.get("hosts") or [],
+            stock_or(to_source_syntax(sp["condition"])))
+        if why:
+            out.append({**sp, "applied": False, "why": why})
             continue
-        pend = _balanced_span(text, m.start())
-        fm = re.search(r"\(if\s+", text[m.start():pend])
-        ci = m.start() + fm.end() if fm else -1
-        if not fm or ci >= len(text) or text[ci] != "(":
-            out.append({**sp, "applied": False,
-                        "why": "%s has no leading (if <cond> ...) arming to strengthen"
-                               % sp["proc"]})
-            continue
-        cend = _balanced_span(text, ci)
-        demand = stock_or(to_source_syntax(sp["condition"]))
-        new_text = (text[:ci] + "(and %s %s) ; softlock-guard"
-                    % (text[ci:cend], demand) + text[cend:])
         open(path, "w").write(new_text)
-        out.append({**sp, "applied": True, "title": title, "sites": 1,
+        out.append({**sp, "applied": True, "title": title, "sites": n,
                     "placement": {"kind": "fuse-arm", "instance": sp["proc"],
                                   "trigger_method": "proc"}})
     # register-flip guards edit the game class's always-live method (script 0 = Main), not a room.
@@ -3228,47 +3251,160 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
                         "why": "no source for script %s" % sp["script"]})
             continue
         text = open(path, errors="replace").read()
-        hits = [m.start() for m in re.finditer(
-            r"setScript:\s*%s\b" % re.escape(sp["machine"]), text)]
-        if len(hits) != 1:
-            out.append({**sp, "applied": False,
-                        "why": "expected exactly one `setScript: %s` in %s, found %d"
-                               % (sp["machine"], title, len(hits))})
+        new_text, n, why = _place_capture_arm(text, sp["machine"], sp.get("host"),
+                                              to_source_syntax(sp["condition"]))
+        if why:
+            out.append({**sp, "applied": False, "why": why + (" in %s" % title)})
             continue
-        span = _enclosing_if_test(text, hits[0])
-        demand = stock_or(to_source_syntax(sp["condition"]))
-        if span is None:
-            out.append({**sp, "applied": False,
-                        "why": "the arming of %s is not inside an `(if ...)` to strengthen"
-                               % sp["machine"]})
-            continue
-        ts, te = span
-        new_text = (text[:ts] + "(and %s %s) ; softlock-guard" % (text[ts:te], demand)
-                    + text[te:])
         open(path, "w").write(new_text)
-        out.append({**sp, "applied": True, "title": title, "sites": 1,
+        out.append({**sp, "applied": True, "title": title, "sites": n,
                     "placement": {"kind": "capture-arm", "instance": sp.get("host"),
                                   "trigger_method": "init"}})
     return out
 
 
+def _depth1_else(text, start, end):
+    """Offset of the `else` keyword belonging to the `(if` that opens at `start`, or None.
+
+    Depth is counted from that `if`'s own paren, so an `else` inside a nested form is that
+    form's -- KQ5's henchman arms itself under `view: (if (== global11 58) 898 else 884)`, an
+    `else` three levels down that says nothing about where the arming sits."""
+    depth, j = 0, start
+    while j < end:
+        nxt = _skip_noncode(text, j, end)
+        if nxt is not None:
+            j = nxt
+            continue
+        c = text[j]
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+        elif depth == 1 and text.startswith("else", j) \
+                and not (j and (text[j - 1].isalnum() or text[j - 1] in "_-")) \
+                and not text[j + 4:j + 5].isalnum() and text[j + 4:j + 5] not in ("_", "-"):
+            return j
+        j += 1
+    return None
+
+
 def _enclosing_if_test(text, pos):
-    """`(start, end)` of the test of the INNERMOST `(if ...)` whose balanced span contains
-    `pos`, or None. Spans come from `_balanced_span`, never a depth-counting regex -- the same
+    """`(start, end)` of the test of the innermost `(if ...)` whose THEN BRANCH contains `pos`,
+    or None. Spans come from `_balanced_span`, never a depth-counting regex -- the same
     discipline the rest of this module keeps, and the reason a nested arming is found rather
-    than the outermost form that happens to share a prefix."""
+    than the outermost form that happens to share a prefix.
+
+    ⛔ THE ELSE BRANCH IS NOT THE THEN BRANCH (review F1). Conjoining a demand onto the test of
+    an `(if` whose ELSE branch holds the arming does not hold it -- it INVERTS it: the
+    encounter then arms exactly when the player cannot survive it, and the placement row still
+    says `applied: True`. So an `if` whose depth-1 `else` precedes `pos` does not qualify, and
+    the search continues OUTWARD, because an enclosing `if` that holds the whole fork in its
+    then branch is still a sound hold. Neither does an `if` whose TEST contains `pos`: that is
+    not an arming this function can strengthen without duplicating it."""
     best = None
     for m in re.finditer(r"\(if\s+", text):
         if m.start() > pos:
             break
-        if _balanced_span(text, m.start()) <= pos:
+        end = _balanced_span(text, m.start())
+        if end <= pos:
             continue                              # this `if` closes before the arming
         i = m.end()
         if i >= len(text) or text[i] != "(":
             continue                              # a bare-atom test: nothing to conjoin onto
+        tend = _balanced_span(text, i)
+        if pos < tend:
+            continue                              # inside the test itself, not a branch
+        els = _depth1_else(text, m.start(), end)
+        if els is not None and pos >= els:
+            continue                              # the ELSE branch: conjoining here inverts
         if best is None or m.start() > best[0]:
-            best = (m.start(), i, _balanced_span(text, i))
+            best = (m.start(), i, tend)
     return None if best is None else (best[1], best[2])
+
+
+def _init_send_positions(text, obj, lo, hi):
+    """Offsets, within `text[lo:hi]`, of every send to `obj` that carries an `init:` -- the
+    SPAWN statement, in whatever selector cascade the game spells it (KQ5 writes
+    `(theCat posn: 91 172 init:)`). A `setScript: 0 dispose:` send to the same object is not
+    one, which is why the selector and not the receiver name is the test."""
+    out = []
+    for m in re.finditer(r"\(\s*%s\b" % re.escape(obj), text):
+        if not (lo <= m.start() < hi):
+            continue
+        if re.search(r"\binit:", text[m.start():_balanced_span(text, m.start())]):
+            out.append(m.start())
+    return out
+
+
+def _place_fuse_arm(text, proc_name, hosts, demand):
+    """Conjoin `demand` onto the arming `(if` that actually contains the spawn, inside
+    `proc_name`. Returns `(new_text, sites, why)`; `why` is None on success and `sites` counts
+    the distinct arming tests strengthened.
+
+    ⛔ THE `if` AROUND THE SPAWN, NOT THE FIRST ONE IN THE PROCEDURE (review F2). The demand
+    belongs on the arming whose then branch performs the host object's `init:`; taking the
+    procedure's first `(if` instead guards whatever happens to come first -- it holds no spawn,
+    it gates something unrelated on inventory, and it reports `applied: True` either way.
+    `proc550_16` is a single top-level `if`, which is the only reason this was invisible.
+
+    REFUSES WHOLE rather than half-editing: an `init:` site with no arming around it would be
+    left open while the row claims the encounter is held (findings #4 and #8's shape)."""
+    m = re.search(r"\(procedure\s+\(%s\b" % re.escape(proc_name), text)
+    if not m:
+        return text, 0, "no procedure %s in this script" % proc_name
+    ps, pend = m.start(), _balanced_span(text, m.start())
+    sites = sorted({p for h in hosts for p in _init_send_positions(text, h, ps, pend)})
+    if not sites:
+        return text, 0, ("%s inits none of %s -- no spawn statement to hold"
+                         % (proc_name, sorted(hosts)))
+    spans = set()
+    for p in sites:
+        sp = _enclosing_if_test(text, p)
+        if sp is None or sp[0] < ps or sp[1] > pend:
+            return text, 0, ("a spawn in %s sits outside every `(if ...)` arming -- refusing "
+                             "whole rather than holding only the guarded sites" % proc_name)
+        spans.add(sp)
+    for (ts, te) in sorted(spans, reverse=True):
+        text = text[:ts] + "(and %s %s) ; softlock-guard" % (text[ts:te], demand) + text[te:]
+    return text, len(spans), None
+
+
+def _place_capture_arm(text, machine, host, demand):
+    """Hold the arming of `machine` on `demand`. Returns `(new_text, sites, why)`.
+
+    Two shapes, in order. If the arming already sits inside an `(if ...)` -- because the edge
+    pass put one there, or because the game did -- the demand is conjoined onto that test, so
+    both demands live at one site and speak with one no. Otherwise the applier CREATES its own
+    wrap, the ordinary silent arm-event shape (`trigger.wrap_trigger_in_source`, which holds
+    the whole selector cascade and applies `stock_or` itself).
+
+    ⛔ THE FALLBACK IS THE POINT (review F5). On stock KQ5 `theHenchMan::init` has no enclosing
+    `(if` whatever, so this refused, and the capture hold shipped only because the unrelated
+    rm54 fish discriminator had wrapped that send earlier in the same run. A guard whose
+    existence depends on a sibling spec is a guard that disappears the day the sibling is
+    retired -- silently, with the ground-truth test still green, because that test pins the
+    SPEC and not the applied edit."""
+    hits = [m.start() for m in re.finditer(
+        r"setScript:\s*%s\b" % re.escape(machine), text)]
+    if len(hits) != 1:
+        return text, 0, ("expected exactly one `setScript: %s`, found %d"
+                         % (machine, len(hits)))
+    span = _enclosing_if_test(text, hits[0])
+    if span is not None:
+        ts, te = span
+        return (text[:ts] + "(and %s %s) ; softlock-guard" % (text[ts:te], stock_or(demand))
+                + text[te:], 1, None)
+    if not host:
+        return text, 0, ("the arming of %s is not inside an `(if ...)`, and no host object is "
+                         "named to build one around" % machine)
+    import trigger as T
+    new_text, n = T.wrap_trigger_in_source(
+        text, {"kind": "arm-event", "trigger_instance": host, "trigger_method": "init",
+               "target_script": machine}, demand)
+    if not n:
+        return text, 0, ("the arming of %s is not inside an `(if ...)` and no `%s::init` send "
+                         "could be wrapped" % (machine, host))
+    return new_text, n, None
 
 
 def _gate_notify_awards(dest, cond):

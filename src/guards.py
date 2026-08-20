@@ -1783,6 +1783,7 @@ def fuse_arming_remedies(s):
         out.append({"site": "fuse-arm",
                     "script": proc["script"] if proc else None,
                     "proc": proc["name"] if proc else None,
+                    "hosts": r.get("hosts", []),
                     "machine": r["machine"], "arm_rooms": r["arm_rooms"],
                     "items": sorted({i for a in r["demand_alts"] for i in a["items"]}),
                     "flags": sorted({f for a in r["demand_alts"] for f in a["flags"]}),
