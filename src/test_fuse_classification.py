@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import guards as G                                                       # noqa: E402
 import missability as M                                                  # noqa: E402
-from guard_ast import GAnd, GNot, Pred                                   # noqa: E402
+from guard_ast import GAnd, GNot, GOr, Pred                                 # noqa: E402
 
 PASS, FAIL = [], []
 
@@ -246,7 +246,7 @@ def test_entry_rooms_reads_polarity():
     if cur is None:
         check("the current-room register is derivable", False, "no extract._CURROOM")
         return
-    s = _model([], [], (), {cur}, reach=(54, 59, 67))
+    s = _model([], [], (), {cur}, reach=(54, 58, 59, 67))
     info = {"entries": [(0, GAnd([_cmp(cur, "==", 54)])),
                         (0, GAnd([_cmp(cur, "==", 59), GNot(_cmp(cur, "==", 67))]))],
             "init_entries": []}
@@ -255,6 +255,21 @@ def test_entry_rooms_reads_polarity():
           got == [54, 59],
           detail="arm_rooms=%r -- rm67 appears only under a negation, so the machine cannot "
                  "arm there and a guard's effect is not felt there either." % (got,))
+
+    # ...and the shape a REGION machine actually has, which is why the read cannot stop at the
+    # AND spine: one disjunction of per-room arms, each still carrying the cond-ordering
+    # negations of the arms above it. Every room named positively in one of those arms is a
+    # room this machine arms in.
+    region = {"entries": [(0, GAnd([GOr([
+        GAnd([_cmp(cur, "==", 54)]),
+        GAnd([GNot(_cmp(cur, "==", 54)), _cmp(cur, "==", 58)]),
+        GAnd([GNot(_cmp(cur, "==", 54)), GNot(_cmp(cur, "==", 58)),
+              _cmp(cur, "==", 67)])])]))], "init_entries": []}
+    got2 = M.IrSccReach._entry_rooms(s, region)
+    check("a region machine's per-room disjunction reports every arm it has",
+          got2 == [54, 58, 67],
+          detail="arm_rooms=%r -- stopping at the AND spine reports none of them, which is a "
+                 "coverage claim shrinking in silence." % (got2,))
 
 
 # --- F7 / F12 / F13: the remedies' gates --------------------------------------------------------

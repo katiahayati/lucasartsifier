@@ -2377,6 +2377,120 @@ def _walk_guard(g):
             yield n
 
 
+def _bounded_below(g, S, v):
+    """Does this write's own guard prove the register is already BELOW the value written?
+
+    `(if (< global353 120) (= global353 120))` -- rm067, when the henchman throws you in the
+    dungeon during phase 331 == 5. The guard bounds the register below the value, so the write
+    can only RAISE the countdown: it cannot hasten anything, whatever the register held."""
+    for a in (_nn(x) for x in _conj_spine(g)):
+        if not (isinstance(a, Pred) and a.kind == "CMP" and a.var == S):
+            continue
+        try:
+            lim = int(a.value)
+        except (TypeError, ValueError):
+            continue
+        if (a.op == "<" and lim <= v) or (a.op == "<=" and lim < v):
+            return True
+    return False
+
+
+def _positive_rooms(g, cur, pol, out):
+    """Collect the rooms an `== cur` atom names in POSITIVE position, descending through both
+    connectives and flipping polarity at each negation. A room named only under a negation is
+    one the guard rules out, and reporting it as a place the machine arms is exactly backwards."""
+    if isinstance(g, list):
+        for k in g:
+            _positive_rooms(k, cur, pol, out)
+    elif isinstance(g, (GAnd, GOr)):
+        for k in g.kids:
+            _positive_rooms(k, cur, pol, out)
+    elif isinstance(g, GNot):
+        _positive_rooms(g.kid, cur, not pol, out)
+    elif pol and isinstance(g, Pred) and g.kind == "CMP" and g.op == "==" and g.var == cur:
+        try:
+            out.add(int(g.value))
+        except (TypeError, ValueError):
+            pass
+
+
+def _entry_excludes(g, prev, from_room):
+    """Does ONE arming guard rule out an arrival from `from_room`? A `prev != X` conjunct
+    excludes X; a `prev == Y` conjunct excludes everything else. Anything less readable
+    excludes nothing. Whether the MACHINE is disarmed is a question about all of its entries
+    together -- see `_fold_disarmed`."""
+    for a in (_nn(x) for x in _conj_spine(g)):
+        neg = isinstance(a, GNot)
+        k = a.kid if neg else a
+        if not (isinstance(k, Pred) and k.kind == "CMP" and k.var == prev):
+            continue
+        try:
+            v = int(k.value)
+        except (TypeError, ValueError):
+            continue
+        if k.op == "==" and ((v == from_room) if neg else (v != from_room)):
+            return True
+        if k.op == "!=" and ((v != from_room) if neg else (v == from_room)):
+            return True
+    return False
+
+
+def _fuse_machines(infos, fuses):
+    """Machines whose own states LIGHT one of `fuses`. Running one is a COMMITTED death: the
+    expiry is nondeterministic (the KQ4-clock doctrine -- it may fire at any qualifying
+    moment), so a localized defuse downstream cannot un-fire it.
+
+    ⛔ LIGHTING IS NOT TOPPING UP (the 2026-08-19d review's F9). A write whose own guard proves
+    the register is already below the value written can only hand the player MORE time, and
+    condemning it costs something real: a condemned machine is barred from ever being an
+    ESCAPE, so a benign clock touch deletes a way out. Only a write we cannot prove
+    non-hastening reads as a commitment -- KQ5's cat (`353 := 3` while 353 runs) shortens the
+    clock from whatever it held and is one; rm067's `(< 353 120) -> 353 := 120` is not.
+
+    Shared by `fuse_death_armings` and `capture_fold_armings`, which spelled it twice inline
+    ([[same-rule-two-places]])."""
+    out = set()
+    for i in infos:
+        for _K, ps in (i.get("states") or {}).items():
+            for (g, w, _gg, _c, _t) in ps:
+                for (S, v) in (w or ()):
+                    if S in fuses and isinstance(v, int) and v != 0 \
+                            and not _bounded_below(g, S, v):
+                        out.add(i["inst"])
+    return out
+
+
+def _falsifies(g, writes):
+    """Do `writes` -- everything a chain has already committed -- contradict this entry guard?
+
+    Read along the AND spine only (`_must_hold`'s discipline), in both stores the pricing walk
+    reads: a register equality the writes overwrite with something else, and a flag polarity
+    the writes invert. Anything less readable contradicts nothing.
+
+    WHY THE PRICING WALK NEEDS IT (review F10). An escape that re-arms the encounter it
+    answered is priced by conjoining the price of the NEXT encounter's escapes, DISCHARGED of
+    what its own chain wrote. Discharge only ever makes an alternative cheaper. The same
+    writes can make it IMPOSSIBLE -- and an impossible alternative admitted at its discharged
+    price is the cheapest one on offer, so `_minimal` keeps it and the demand collapses to
+    less than the game asks for."""
+    for a in (_nn(x) for x in _conj_spine(g)):
+        neg = isinstance(a, GNot)
+        k = a.kid if neg else a
+        if not (isinstance(k, Pred) and k.kind == "CMP" and k.op in ("==", "!=")):
+            continue
+        try:
+            want = int(k.value)
+        except (TypeError, ValueError):
+            continue
+        for (S, v) in writes:
+            if S != k.var or not isinstance(v, int):
+                continue
+            holds = (v == want) if k.op == "==" else (v != want)
+            if holds == neg:                  # the write makes this conjunct FALSE
+                return True
+    return False
+
+
 def _minimal(alts):
     """Drop every alternative another one is a subset of -- the cheapest way to pay is the
     only way worth reporting."""
@@ -2412,6 +2526,10 @@ class _Escapes:
         ir = getattr(s.em, "ir", None)
         self.fbase = getattr(ir, "flag_synth_base", None) if ir is not None else None
         self.flags = getattr(ir, "flag_indices", None) or frozenset()
+        self._pcache = {}                  # (name, discharged, seen) -> alternatives. `price`
+        #   builds a cross-product per register equality and recurses through both the writer
+        #   and the continuation walks, so the same (machine, discharge) is asked for many
+        #   times over one room; the answer is a pure function of the key.
 
     def is_flag(self, S):
         return self.fbase is not None and S >= self.fbase and (S - self.fbase) in self.flags
@@ -2463,7 +2581,7 @@ class _Escapes:
         return wset
 
     def tokens(self, g, discharged):
-        """(tokens, register equalities) off one entry guard's AND spine.
+        """(tokens, register equalities, unsatisfiable) off one entry guard's AND spine.
 
         PLAYER-SIDE STORES ONLY, in whichever polarity the game wrote them: possession, the
         flag store, and the ITEM-PROPERTY store -- KQ5 spells "the bag is empty" as
@@ -2474,8 +2592,18 @@ class _Escapes:
         encounter's own scene state ("he has not grabbed you yet"), which no player arranges
         in advance. Positive register equalities are priced through their WRITERS instead
         (below), which is how the cat's `332 == 7` arm resolves to the bag answer that
-        establishes it."""
-        toks, eqs = set(), set()
+        establishes it. A negated OWN atom is not a token either -- "not holding X" is not
+        something the demand can ask the player to arrange, since the guard it becomes would
+        forbid an item rather than require one (the Spinach_Dip shape,
+        [[spinach-dip-trap-shipped-patch-breaks-lsl2]]).
+
+        ⛔ DISCHARGE HAS A POLARITY (the 2026-08-19d review's F11). A chain that has already
+        set flag N discharges a POSITIVE demand for N -- it is paid. It does the opposite to a
+        NEGATIVE one: `¬N` can no longer hold at all, so that alternative is UNSATISFIABLE,
+        and dropping the token instead reports it as FREE. A free alternative is the cheapest
+        on offer, so `_minimal` keeps it and discards every real one. The third return value
+        is that verdict; the caller must discard the alternative, not price it."""
+        toks, eqs, bad = set(), set(), False
         for a in (_nn(x) for x in _conj_spine(g)):
             neg = isinstance(a, GNot)
             k = a.kid if neg else a
@@ -2485,16 +2613,19 @@ class _Escapes:
                 toks.add(("own", k.var))
             elif k.kind == "IPROP" and k.op == "==" and isinstance(k.var, tuple):
                 toks.add(("niprop" if neg else "iprop", (k.var[0], k.var[1], k.value)))
-            elif k.kind == "CMP" and self.is_flag(k.var) and _demands_nonzero(k) \
-                    and not any(s2 == k.var and v2 for (s2, v2) in discharged):
-                toks.add(("nflag" if neg else "flag", k.var - self.fbase))
+            elif k.kind == "CMP" and self.is_flag(k.var) and _demands_nonzero(k):
+                written = any(s2 == k.var and v2 for (s2, v2) in discharged)
+                if written and neg:
+                    bad = True                 # `¬N` under a chain that sets N: impossible
+                elif not written:
+                    toks.add(("nflag" if neg else "flag", k.var - self.fbase))
         for (S, V) in _must_equal(g):
             if self.is_flag(S):
                 if V != 0 and not any(s2 == S and v2 for (s2, v2) in discharged):
                     toks.add(("flag", S - self.fbase))
             elif S in self.s.regs:
                 eqs.add((S, V))
-        return toks, eqs
+        return toks, eqs, bad
 
     def price(self, name, discharged=frozenset(), seen=frozenset()):
         """Minimal alternatives (frozensets of tokens) that arm `name` AND survive what its
@@ -2504,7 +2635,17 @@ class _Escapes:
         lethal set is only HALF an answer -- KQ5's fish throw disposes the cat and then
         re-arms the very encounter it answered -- so its price conjoins the price of the
         escapes of the encounter it re-arms, discharged of everything its own chain wrote. It
-        terminates because those writes are monotone; a cycle prices as no answer."""
+        terminates because those writes are monotone; a cycle prices as no answer.
+
+        ⛔ AND WHAT THE CHAIN WRITES CAN DISARM AS WELL AS DISCHARGE (the 2026-08-19d review's
+        F10). An entry the discharged writes CONTRADICT cannot fire in the continuation at all,
+        so it is not an alternative at any price -- admitting it at its discharged price
+        reports a way through the game does not offer, and because the discharge makes it
+        cheap, `_minimal` prefers it to every real one. `_falsifies` is that check, and it is
+        the mechanism docs/KQ5-ORACLE.md §23 described before the code had it."""
+        ckey = (name, discharged, seen)
+        if ckey in self._pcache:
+            return self._pcache[ckey]
         if name in seen:
             return []
         alts, cont = [], None
@@ -2515,12 +2656,17 @@ class _Escapes:
                 if m2 not in seen:
                     cont += self.price(m2, d2, seen | {name})
             if not cont:
+                self._pcache[ckey] = []
                 return []
         for i2 in self.by_name.get(name, ()):
             for (_K, g) in (list(i2.get("entries") or ())
                             + list(i2.get("init_entries") or ())):
-                toks, eqs = self.tokens(g, discharged)
-                base, bad = [frozenset(toks)], False
+                if _falsifies(g, discharged):
+                    continue                   # this way in cannot fire any more
+                toks, eqs, bad = self.tokens(g, discharged)
+                if bad:
+                    continue
+                base = [frozenset(toks)]
                 for (S, V) in sorted(eqs):
                     writers = sorted({i3["inst"] for i3 in self.infos
                                       if i3["inst"] != name and i3["inst"] not in self.lethal
@@ -2539,7 +2685,8 @@ class _Escapes:
                 if cont is not None:
                     base = [a | b for a in base for b in cont]
                 alts += base
-        return _minimal(alts)
+        self._pcache[ckey] = _minimal(alts)
+        return self._pcache[ckey]
 
 
 def _room_unavoidable(infos, sources, reach_rooms):
@@ -4806,8 +4953,22 @@ class IrSccReach(SccReach):
                         if S in self.regs:
                             phases.setdefault((S, V), set()).add(i["inst"])
         # ---- 2. clock expiry writes + 3. the fuse fixpoint --------------------------------
+        #
+        # ⭐ A COUNTDOWN IS A REGISTER THE SAME HANDLER COUNTS DOWN. That is the whole
+        # discriminator, and reading it off the DECREMENT rather than off "some register on
+        # the spine is compared nonzero" is what the 2026-08-19d review's F4 corrected. The
+        # old reading could not tell KQ5's expiry clock (`global353`, decremented every game
+        # minute) from the henchman's MODE register (`global333`, merely compared) -- which is
+        # why the fixpoint below had to carry an exclusion for a write re-arming "its own"
+        # countdown, a clause whose only function was to keep a known answer still
+        # ([[clause-that-protects-a-known-answer]]). With the decrement read, that clause is
+        # unreachable and is gone. The same correction is what stops a game whose region clock
+        # writes a phase under `(== gPrevRoom N)` or `(== gAct 2)` promoting the realm seal, or
+        # the act, to a FUSE: `_demands_nonzero` accepts `== <nonzero>`, and nothing decrements
+        # a previous-room register.
+        decs = getattr(self.em, "handler_decs", None) or frozenset()
         clock, seen_cw = [], set()
-        for (_room, _script, S, V, g) in self.em.handler_writes:
+        for (room, script, S, V, g) in self.em.handler_writes:
             spine = [_nn(a) for a in _conj_spine(g)]
             if not any(isinstance(a, tuple) and a and a[0] == "CTR" for a in spine):
                 continue
@@ -4815,20 +4976,16 @@ class IrSccReach(SccReach):
                     or any(isinstance(a, tuple) and a and a[0] == "POS" for a in spine):
                 continue
             cds = frozenset(a.var for a in spine if isinstance(a, Pred) and a.kind == "CMP"
-                            and a.var in self.regs and _demands_nonzero(a))
+                            and a.var in self.regs and _demands_nonzero(a)
+                            and (room, script, a.var) in decs)
             if cds and (S, V, cds) not in seen_cw:
                 seen_cw.add((S, V, cds))
                 clock.append((S, V, cds))
-        # Chaining excludes a write that re-arms its OWN countdown (KQ5's `global353 := 5`,
-        # gated on 353 running): that is the periodic cycle continuing, not a new fuse being
-        # lit -- and without the exclusion it drags every mode register on its spine (the
-        # henchman's global333) into the fuse set.
         fuses, changed = set(), True
         while changed:
             changed = False
             for (S, V, cds) in clock:
-                if ((S, V) in phases or (S in fuses and V != 0 and S not in cds)) \
-                        and not (cds <= fuses):
+                if ((S, V) in phases or (S in fuses and V != 0)) and not (cds <= fuses):
                     fuses |= cds
                     changed = True
         if not fuses:
@@ -4857,19 +5014,37 @@ class IrSccReach(SccReach):
              nothing (no own() atom: a priced arming is an act, and an act can be declined).
              KQ5: (331, 3) arms theWizardScript in nine castle rooms; (331, 6) arms
              wakeUpScript in rm63.
-          2. THE CLOCK -- a handler write of S := V gated by a tick counter (a CTR atom on the
-             spine: `(!= local5 (GetTime 1))` is the game saying "once per game-minute") and by
-             a RUNNING COUNTDOWN (a positive nonzero comparison on a gating register), with no
-             item and no owner atom anywhere on the spine: the write fires on wall time, not on
-             anything the player does. The countdown register of a phase-writing clock is a
-             FUSE, and the set closes under chaining -- KQ5's global353 is a fuse because its
-             expiry writes global352 := 3, and 352's expiry writes the phase.
-          3. FUSE-ARMING MACHINES -- a machine one of whose states writes any fuse to a
-             nonzero literal (theCatRunScript st3: `global353 := 3`; the `Random 5 10` spelling
-             of the same write is invisible to the write extractor, a bounded gap the 353
-             branch covers). Running one is a COMMITTED death: the expiry is nondeterministic
+          2. THE CLOCK -- a handler write of S := V gated by a LOCAL LATCH (a CTR atom on the
+             spine: `(if local5 ...)`, the boolean a per-real-second `(!= local8 (GetTime 1))`
+             test raises one cycle in sixty) and by a RUNNING COUNTDOWN: a register the SAME
+             HANDLER DECREMENTS and whose nonzero-ness the write demands. No item, no owner
+             and no positional atom anywhere on the spine, so the write fires on wall time and
+             not on anything the player does. The countdown register of a phase-writing clock
+             is a FUSE, and the set closes under chaining -- KQ5's global353 is a fuse because
+             its expiry writes global352 := 3, and 352's expiry writes the phase.
+
+             ⛔ THE DECREMENT IS THE WHOLE DISCRIMINATOR, and until 2026-08-19e this read "any
+             register compared nonzero on the spine" instead. That could not tell a clock from
+             a MODE register the write happens to be scoped by, so the henchman's global333
+             classified as a fuse and an exclusion had to be invented to remove it again --
+             `S not in cds`, a clause in src/ whose only job was to keep a known answer still
+             ([[clause-that-protects-a-known-answer]]). Reading the decrement makes that
+             clause unreachable, and stops a game whose region clock scopes its phase write
+             with `(== gPrevRoom N)` or `(== gAct 2)` from promoting the realm seal, or the
+             act, to a fuse. The decrement is read by a second walk of the handler body
+             (`opmodel._hwalk`) because SCI routinely spells the tick inside the TEST of the
+             very `if` it gates, where no statement walk can see it. Contributed by the
+             2026-08-19d contextless review, F3 and F4.
+          3. FUSE-ARMING MACHINES (`_fuse_machines`) -- a machine one of whose states writes a
+             fuse to a nonzero literal that its own guard does not prove is a top-up
+             (theCatRunScript st3: `global353 := 3` while 353 runs, which SHORTENS whatever
+             the clock held). Running one is a COMMITTED death: the expiry is nondeterministic
              (the KQ4-clock doctrine -- it may fire at any qualifying moment), so a localized
              defuse downstream cannot un-fire it.
+             ⚠️ A BOUNDED GAP, unchanged: the same `if`'s else arm writes
+             `global352 := (Random 5 10)`, and a non-literal right-hand side is invisible to
+             the write extractor. The 353 branch covers KQ5; a game whose only fuse lighting
+             is spelled with a Random has none of this classification.
 
         The row is the demand at the arming of the SYSTEM that can fall into a fuse-arming
         machine: the ROOT is a spawned machine (every `entry_armers` empty -- armed by its
@@ -4921,10 +5096,7 @@ class IrSccReach(SccReach):
         # ---- 4. per room: the lethal set, the root, its escapes, their prices -------------
         out, emitted = [], set()
         for room, (infos, handoff, unavoid) in sorted(per_room.items()):
-            fusem = {i["inst"] for i in infos
-                     for _K, ps in (i.get("states") or {}).items()
-                     for (_g, w, _gg, _c, _t) in ps for (S, v) in (w or ())
-                     if S in fuses and isinstance(v, int) and v != 0}
+            fusem = _fuse_machines(infos, fuses)
             if not fusem:
                 continue
             lethal = unavoid | fusem
@@ -4967,9 +5139,25 @@ class IrSccReach(SccReach):
                         "hosts": sorted({rc[1] for rc in (i.get("entry_recv") or ())
                                          if rc and rc[0] == "O"}),
                         "arm_rooms": rooms,
-                        "arm_proc": ({"script": host_sn, "name": procs[0]}
-                                     if procs else None),
+                        # EVERY spawning procedure, not the first one sorted. A machine spawned
+                        # from two procedures and held at one of them is not held (findings #4
+                        # and #8's shape, review F13) -- and the surface reported
+                        # `applied=True sites=1` either way.
+                        "arm_procs": [{"script": host_sn, "name": p} for p in procs],
+                        # `fuse`/`phases`/`death` are the GAME-WIDE classification -- every
+                        # countdown, every phase value, every machine those phases arm. `lit`
+                        # is this row's own: the fuse registers the lethal machines IN THIS
+                        # ROOM actually write. The distinction is why the red that declared
+                        # this detector could only assert `352 in fuse` (review F15): a
+                        # per-row claim had nowhere to live.
                         "fuse": sorted(fuses), "phases": live_phases,
+                        "lit": sorted({S for m in sorted(fusem) for i2 in infos
+                                       if i2["inst"] == m
+                                       for _K2, ps in (i2.get("states") or {}).items()
+                                       for (g2, w, _gg2, _c2, _t2) in ps
+                                       for (S, v) in (w or ())
+                                       if S in fuses and isinstance(v, int) and v != 0
+                                       and not _bounded_below(g2, S, v)}),
                         "death": deaths, "flags": fl, "escapes": ways,
                         "demand_alts": [{"items": sorted(x for (k, x) in a if k == "own"),
                                          "flags": sorted(x for (k, x) in a if k == "flag")}
@@ -5031,11 +5219,7 @@ class IrSccReach(SccReach):
         fuses, _lp, _d, per_room = self._death_fuses()
         out, emitted = [], set()
         for room, (infos, handoff, unavoid) in sorted(per_room.items()):
-            fusem = {i["inst"] for i in infos
-                     for _K, ps in (i.get("states") or {}).items()
-                     for (_g, w, _gg, _c, _t) in ps for (S, v) in (w or ())
-                     if S in fuses and isinstance(v, int) and v != 0}
-            lethal = unavoid | fusem
+            lethal = unavoid | _fuse_machines(infos, fuses)
             esc = _Escapes(self, infos, handoff, lethal)
             disposers = self._disposers(infos)
             leaves = {i["inst"] for i in infos
@@ -5059,8 +5243,10 @@ class IrSccReach(SccReach):
                     # <henchCaught>))` -- so the maze's own `goHoleScript` carries the player
                     # into rm67 without ever arming the fork, and demanding the locket of it
                     # would be a false positive. The fold machine's own entry guard is the
-                    # authority, read against the room the crossing starts in.
-                    if self._fold_disarmed(R, folds[R][0]["machine"], room):
+                    # authority, read against the room the crossing starts in -- and PER FOLD,
+                    # because a room with two fold machines is two different claims and only
+                    # the first was being tested (review F15).
+                    if all(self._fold_disarmed(R, fr["machine"], room) for fr in folds[R]):
                         continue
                     # ...and only for the machine the player's arming CONTROLS. A machine
                     # gated on a register value another carrier of this same crossing
@@ -5073,6 +5259,8 @@ class IrSccReach(SccReach):
                     if self._continuation_of(i, infos, R, folds):
                         continue
                     for fr in folds[R]:
+                        if self._fold_disarmed(R, fr["machine"], room):
+                            continue
                         key = (nm, R, fr["machine"], tuple(sorted(
                             tuple(x) for x in fr["demand_group"])))
                         if key in emitted:
@@ -5081,9 +5269,19 @@ class IrSccReach(SccReach):
                         # a fold's `demand_group` members are ALTERNATIVES -- any one banked
                         # throwable satisfies the cellar -- so each becomes its own way to
                         # survive, and the context rides all of them.
+                        #
+                        # ...and a context atom that is NOT a flag is not silently dropped
+                        # (review F15): the context is what SCOPES the demand -- rm86's row
+                        # carries `prev == 85`, "the losing arm arms exactly on the kidnap" --
+                        # so a row that renders only the flags ships a scoped demand as an
+                        # unscoped one, which is the wall-shaped failure. It rides the row and
+                        # `guards.capture_fold_remedies` refuses on it.
                         ctx = [(("flag" if v else "nflag"), S - esc.fbase)
                                for (S, v) in sorted((fr.get("context") or {}).items())
                                if esc.is_flag(S)]
+                        unrendered = [[S, v] for (S, v)
+                                      in sorted((fr.get("context") or {}).items())
+                                      if not esc.is_flag(S)]
                         alts = [frozenset([("owner", (it, dst))] + ctx)
                                 for (it, dst) in fr["demand_group"]]
                         for m in answers:
@@ -5097,6 +5295,7 @@ class IrSccReach(SccReach):
                             "arm_rooms": self._entry_rooms(i),
                             "host": sorted(h[1] for h in hosts if h[0] == "O"),
                             "script": i.get("script"),
+                            "context_unrendered": unrendered,
                             "demand_alts": [{
                                 "owners": sorted([list(x) for (k, x) in a if k == "owner"]),
                                 "items": sorted(x for (k, x) in a if k == "own"),
@@ -5109,33 +5308,31 @@ class IrSccReach(SccReach):
         return out
 
     def _fold_disarmed(self, fold_room, fold_machine, from_room):
-        """Does the fold machine's own entry guard EXCLUDE an arrival from `from_room`?
+        """Does the fold machine's own arming EXCLUDE an arrival from `from_room`?
 
         Read off the previous-room register the model already derives, and only along the AND
         spine (`_must_hold`'s discipline): a `prev != X` conjunct excludes X, a `prev == Y`
-        conjunct excludes everything else. Anything less readable excludes nothing."""
+        conjunct excludes everything else. Anything less readable excludes nothing.
+
+        ⛔ ENTRIES ARE ALTERNATIVES (the 2026-08-19d review's F8). The machine arms if ANY of
+        them fires, so it is disarmed for this arrival only when EVERY one of them excludes it
+        -- and this rule DELETES a finding, so reading the disjunction conjunctively suppresses
+        real carry-in demands, which is a softlock shipped rather than a false positive
+        avoided. KQ5 is unaffected either way: `henchCaught`'s two entries are the same
+        `(not (== prev 55))`."""
         prev = prev_room_reg(self.em)
         if prev is None:
             return False
+        seen_entry = False
         for i in _trap_rooms(self.em).get(fold_room, ()):
             if i["inst"] != fold_machine:
                 continue
             for (_K, g) in (list(i.get("init_entries") or ())
                             + list(i.get("entries") or ())):
-                for a in (_nn(x) for x in _conj_spine(g)):
-                    neg = isinstance(a, GNot)
-                    k = a.kid if neg else a
-                    if not (isinstance(k, Pred) and k.kind == "CMP" and k.var == prev):
-                        continue
-                    try:
-                        v = int(k.value)
-                    except (TypeError, ValueError):
-                        continue
-                    if k.op == "==" and ((v == from_room) if neg else (v != from_room)):
-                        return True
-                    if k.op == "!=" and ((v != from_room) if neg else (v == from_room)):
-                        return True
-        return False
+                seen_entry = True
+                if not _entry_excludes(g, prev, from_room):
+                    return False               # this way in admits the arrival
+        return seen_entry
 
     def _continuation_of(self, info, infos, fold_room, folds):
         """Is this machine a STAGED CONTINUATION of another carrier of the same crossing?
@@ -5200,18 +5397,19 @@ class IrSccReach(SccReach):
     def _entry_rooms(self, info):
         """The rooms this machine's own entry disjunction names -- a region machine says
         where it can arm by testing the current-room global, and that is where a guard's
-        effect will be felt."""
+        effect will be felt.
+
+        POSITIVELY names (review F15). `_walk_guard` is polarity-blind by design, so a
+        `(not (== gCurRoom 67))` -- "everywhere but there" -- reported rm67 as an arming room,
+        which is the one room that conjunct provably rules out. A region machine's arming is
+        usually a DISJUNCTION of per-room arms with the cond-ordering negations still on them
+        (`(and (not (== cur 57)) (not (== cur 58)) (== cur 59))`), so the read has to descend
+        through both connectives keeping polarity rather than stop at the AND spine."""
         import extract as X
         cur = getattr(X, "_CURROOM", None)
         rooms = set()
         for (_K, g) in list(info.get("entries") or ()) + list(info.get("init_entries") or ()):
-            for n in _walk_guard(g):
-                if isinstance(n, Pred) and n.kind == "CMP" and n.op == "==" \
-                        and n.var == cur:
-                    try:
-                        rooms.add(int(n.value))
-                    except (TypeError, ValueError):
-                        pass
+            _positive_rooms(g, cur, True, rooms)
         return sorted(rooms & set(self.reach_rooms))
 
     def _arming_call_rooms(self, host_sn, entry_recv):

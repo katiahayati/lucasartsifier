@@ -1100,12 +1100,19 @@ def run():
           {r.get("item") for r in cat_rows} == {24, 37}
           and all(set(r.get("arm_rooms", ())) == {60, 61, 63} for r in cat_rows)
           and all("theWizardScript" in r.get("death", ()) for r in cat_rows)
-          and all(352 in r.get("fuse", ()) for r in cat_rows)
+          and all(set(r.get("fuse", ())) == {352, 353} for r in cat_rows)
+          # ...and the row's OWN fuse, added 2026-08-19e (review F15): the countdown the
+          # lethal machines in THIS room actually write is 353 -- theCatRunScript st3's
+          # `353 := 3` while 353 runs, which shortens whatever the clock held. Its
+          # `352 := (Random 5 10)` twin is a non-literal write and invisible to the extractor,
+          # so `lit` is the honest per-row claim and `fuse` is the game-wide classification.
+          and all(r.get("lit") == [353] for r in cat_rows)
           and all({62, 63} <= set(r.get("flags", ())) for r in cat_rows),
           f"rows={cat_rows!r} -- expected one row per demand item (Bag_of_Peas 24, Cat_Fish 37)"
           f" at the cat's arming rooms {{60, 61, 63}} (proc550_16's call sites: rm061::init, "
-          f"rm063::init, rm060 enterLeft/enterNorth), each naming the fuse register 352, flags "
-          f"63 and 62, and theWizardScript as the committed death. docs/KQ5-ORACLE.md §23.")
+          f"rm063::init, rm060 enterLeft/enterNorth), each naming the game's fuse registers "
+          f"{{352, 353}}, its own lit fuse [353], flags 63 and 62, and theWizardScript as the "
+          f"committed death. docs/KQ5-ORACLE.md §23.")
 
     # ✅ THE REMEDY, same session: the whale-shape arm hold (`guards.fuse_arming_remedies`).
     # One wrap on proc550_16 -- the spawn procedure all four call sites share -- carries the

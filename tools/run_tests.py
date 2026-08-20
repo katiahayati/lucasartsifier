@@ -38,6 +38,24 @@ SRC = os.path.join(_ROOT, "src")
 # is reported as a promotion, not quietly accepted. Keep the reason short and name the gap, so
 # the next reader can tell a known limitation from a broken test without opening the file.
 KNOWN_RED = {
+    "test_patch_text.py": {
+        "🔴 KNOWN GAP: the hold covers `(super init:)`, or refuses by disposing the host":
+            # The 2026-08-19d review's F6. Every arming hold placed inside a host's OWN `init`
+            # -- the rm54 fish discriminator and the capture hold both -- sits AFTER
+            # `(super init:)`, so a refused arming leaves the actor in the cast with
+            # `script == 0`. rm054.sc:447-449 then reads
+            # `(>= (((ScriptID 550 3) script:) state:) 1)`, a send to 0, behind a
+            # `(global5 contains: ...)` test that a scriptless cast member satisfies.
+            #
+            # DECLARED RATHER THAN CURED because both cures -- wrapping the `init:` CALL SITES
+            # the way `fuse-arm` does, or adding `else (self dispose:)` -- change emitted bytes
+            # in a patch the USER has already play-tested end to end (v17, tag v3.0-kq5). The
+            # right order is the USER's call plus a play test, not a silent rewrite of a
+            # verified emission. Unverified at runtime: nobody has watched ScummVM meet
+            # `(0 state:)`, and rm54's ambush may be unreachable for an equipped player.
+            "a refused arming leaves its host cast-resident with script 0; both cures move a "
+            "play-confirmed emission, so this waits on the USER + a play test",
+    },
     "test_toll.py": {
         # ✅ PROMOTED 2026-08-16 -- "KQ5 temple strands Brass_Bottle + Gold_Coin" and "KQ5 toll
         # item is the Staff via rm214->rm18" are GREEN and no longer listed. Both demanded that

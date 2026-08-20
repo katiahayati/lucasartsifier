@@ -1744,11 +1744,21 @@ def fuse_arming_remedies(s):
     37)))` -- the USER's ruling spelled in the game's own flag test -- rather than the
     expanded DNF. Same truth table; the site stays readable.
 
+    ⛔ THE ANTI-WALL GATE (the 2026-08-19d review's F7). A hold is only a guard while the
+    player can MEET it; otherwise it is a wall, and a wall is worse than the softlock. Its
+    sibling `fold_carryins` has asked that question since it was written ("demanding it here
+    would wall the crossing") and this one shipped without it. `_payable` is the weakest test
+    that is still a proof -- every demanded item must have a source in a reachable room, the
+    same reading `_Escapes.armable` uses -- and if NO alternative survives it, the spec
+    refuses rather than shipping a demand nothing can satisfy.
+
     Refused, never half-shipped: no proc to wrap (the spawn is not proc-shaped), a flag
-    demand with no derivable flag-test spelling, or an empty demand."""
+    demand with no derivable flag-test spelling, an empty demand, an unpayable one, or two
+    different demands arriving at one site."""
     ir = s.em.ir
     testp = getattr(ir, "flag_test_proc", None)
-    out, seen = [], set()
+    out, seen, at_site = [], set(), {}
+    rows = []
     for r in s.fuse_death_armings():
         alts = [frozenset([("flag", f) for f in a["flags"]]
                           + [("own", i) for i in a["items"]])
@@ -1757,19 +1767,34 @@ def fuse_arming_remedies(s):
         if key in seen or not alts:
             continue
         seen.add(key)
+        for proc in (r.get("arm_procs") or [None]):
+            rows.append((r, alts, proc))
+            if proc:
+                at_site.setdefault((proc["script"], proc["name"]), set()).add(key[1])
+    for (r, alts, proc) in rows:
         refused = []
-        proc = r.get("arm_proc")
         if not proc:
             refused.append("the spawn is not proc-shaped -- no single arming site to wrap")
+        elif len(at_site[(proc["script"], proc["name"])]) > 1:
+            # Two demands derived in different rooms, conjoined onto one `(if`, make a demand
+            # neither row derived -- strictly stronger than either, which is a wall risk at an
+            # arming. Refuse both and say so rather than silently AND them (review F13).
+            refused.append("two different demands reach %s -- conjoining them would ship a "
+                           "hold neither row derived" % proc["name"])
         if any(k == "flag" for a in alts for (k, _v) in a) and not testp:
             refused.append("a flag demand with no derivable flag-test spelling")
+        payable = [a for a in alts if _payable(s, a)]
+        if not payable:
+            refused.append("no alternative is payable -- every way to meet this demand names "
+                           "something with no reachable source, so the hold would be a wall")
 
         def _tok(t):
             k, v = t
             return "(%s %d)" % (testp, v) if k == "flag" else "(gEgo has: %d)" % v
 
-        common = frozenset.intersection(*alts)
-        rests = [sorted(a - common) for a in alts]
+        use = payable or alts
+        common = frozenset.intersection(*use)
+        rests = [sorted(a - common) for a in use]
         parts = [_tok(t) for t in sorted(common)]
         if all(rests):
             ors = ["(and %s)" % " ".join(_tok(t) for t in rr) if len(rr) > 1 else _tok(rr[0])
@@ -1793,6 +1818,28 @@ def fuse_arming_remedies(s):
                            % (r["fuse"], r["phases"], r["death"]),
                     "refused": refused})
     return out
+
+
+def _payable(s, alt):
+    """Can the player meet this alternative at all? The ANTI-WALL question, asked the weakest
+    way that is still a proof: every ITEM it names must have a source in a reachable room --
+    `_Escapes.armable`'s own reading, and the same one `_room_unavoidable` uses to decide
+    whether a competitor buys an escape.
+
+    ⚠️ WHAT IT DOES NOT PROVE, said plainly because an arming hold is where a wall would hurt
+    most: nothing here checks that a flag has a reachable writer, that an owner value has a
+    reachable producer, or that the state is RE-producible after the hold takes effect. Those
+    need the same closure `window_closures` builds and are not derived here; an unpayable flag
+    demand still ships. The item half is what a game gets wrong first."""
+    src, reach = getattr(s, "sources", {}) or {}, set(getattr(s, "reach_rooms", ()) or ())
+    for (kind, v) in alt:
+        if kind == "own" and not (src.get(v, set()) & reach):
+            return False
+        if kind == "owner":
+            it = v[0] if isinstance(v, (tuple, list)) else v
+            if not (src.get(it, set()) & reach):
+                return False
+    return True
 
 
 def capture_fold_remedies(s):
@@ -1821,6 +1868,22 @@ def capture_fold_remedies(s):
                 "belongs on the crossing (fold_carryins/frontier), not on an arming")
         if not r.get("host") or r.get("script") is None:
             refused.append("no host object to hold the arming on")
+        # THE ANTI-WALL GATE, the same one `fuse_arming_remedies` and `fold_carryins` carry:
+        # an alternative naming an item with no reachable source cannot be met, and a hold
+        # nothing can meet seals the encounter for good (review F7).
+        if not any(_payable(s, frozenset(
+                [("owner", tuple(x)) for x in a.get("owners", ())]
+                + [("own", i) for i in a.get("items", ())]))
+                for a in r.get("demand_alts", ())):
+            refused.append("no alternative is payable -- every way to survive this arming "
+                           "names something with no reachable source, so the hold is a wall")
+        # ...and the fold's CONTEXT is what scopes the demand. An atom the condition cannot
+        # spell (rm86's `prev == 85`, "the losing arm arms exactly on the kidnap") would widen
+        # the hold from one crossing to every arming, so it refuses rather than ships wide.
+        if r.get("context_unrendered"):
+            refused.append("the fold's context carries %r, which this condition cannot spell "
+                           "-- shipping without it would widen the hold past the crossing the "
+                           "fold actually arms on" % (r["context_unrendered"],))
         alts = []
         for a in r.get("demand_alts", ()):
             parts = ["(not (%s %d))" % (testp, f) for f in a.get("not_flags", ())] \
@@ -1835,7 +1898,11 @@ def capture_fold_remedies(s):
             if not parts:
                 continue
             alts.append(parts[0] if len(parts) == 1 else "(and %s)" % " ".join(parts))
-        if (a for a in r.get("demand_alts", ())) and not alts:
+        if not alts:
+            # (was `if (a for a in ...) and not alts:` -- a generator object is always truthy,
+            # so the guard was unconditional. Behaviour was accidentally correct, since a row
+            # with no `demand_alts` renders no alts either; pinned in test_fuse_classification
+            # so the correction cannot move it. Review F12.)
             refused.append("empty demand -- nothing to hold the arming on")
         if any(f for a in r.get("demand_alts", ()) for f in
                list(a.get("flags", ())) + list(a.get("not_flags", ()))) and not testp:

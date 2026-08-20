@@ -40,19 +40,42 @@ included), and KQ5's two shipped conditions must not move — they are play-conf
 |---|---------|-------|------|--------|
 | F1 | `_enclosing_if_test` ignores the `else` branch — an arming in the else INVERTS the guard | `patcher.py` | `test_patch_text` | ✅ |
 | F2 | `fuse-arm` wraps the FIRST `(if` in the procedure, not the one containing the spawn | `patcher.py` | `test_patch_text` | ✅ |
-| F3 | the "clock" docstring is FALSE about what the code tests (`local8`, not `local5`; `GetTime` never reaches the spine) | `missability.py` | (with F4) | ⬜ |
-| F4 | `cds` is "every register compared nonzero", NOT the countdown — root cause of the self-re-arm overfit clause | `missability.py` | `test_fuse_classification` | ⬜ |
+| F3 | the "clock" docstring is FALSE about what the code tests (`local8`, not `local5`; `GetTime` never reaches the spine) | `missability.py` | (with F4) | ✅ |
+| F4 | `cds` is "every register compared nonzero", NOT the countdown — root cause of the self-re-arm overfit clause | `missability.py` | `test_fuse_classification` | ✅ |
 | F5 | `capture-arm` only lands because an UNRELATED spec edited the site first | `patcher.py` | `test_patch_text` | ✅ |
 | F6 | the wrap sits inside `init` after `(super init:)` — a refused arming leaves the object cast-resident with `script == 0` | `patcher.py` | `test_patch_text` | 🔴 declared |
-| F7 | neither new remedy has an ANTI-WALL gate, unlike its sibling `fold_carryins` | `guards.py` | `test_fuse_classification` | ⬜ |
-| F8 | `_fold_disarmed` reads the entry DISJUNCTION conjunctively; and only tests `folds[R][0]` | `missability.py` | `test_deletion_soundness` | ⬜ |
-| F9 | cannot tell LIGHTING a fuse from TOPPING ONE UP | `missability.py` | `test_fuse_classification` | ⬜ |
-| F10 | the fixpoint is right for a reason the game does not implement; `price()` never checks whether a chain write FALSIFIES the continuation's arming | `missability.py` + §23 | `test_fuse_classification` | ⬜ |
-| F11 | discharging is applied to NEGATIVE flag demands too — an unsatisfiable alternative reads as free | `missability.py` | `test_deletion_soundness` | ⬜ |
-| F12 | `if (a for a in ...) and not alts:` — a generator is always truthy | `guards.py` | `test_fuse_classification` | ⬜ |
-| F13 | `procs[0]` under-guards a second spawning procedure; `emitted` key is cross-room while `demand_alts` is per-room | `missability.py` | `test_fuse_classification` | ⬜ |
+| F7 | neither new remedy has an ANTI-WALL gate, unlike its sibling `fold_carryins` | `guards.py` | `test_fuse_classification` | ✅ |
+| F8 | `_fold_disarmed` reads the entry DISJUNCTION conjunctively; and only tests `folds[R][0]` | `missability.py` | `test_deletion_soundness` | ✅ |
+| F9 | cannot tell LIGHTING a fuse from TOPPING ONE UP | `missability.py` | `test_fuse_classification` | ✅ |
+| F10 | the fixpoint is right for a reason the game does not implement; `price()` never checks whether a chain write FALSIFIES the continuation's arming | `missability.py` + §23 | `test_fuse_classification` | ✅ |
+| F11 | discharging is applied to NEGATIVE flag demands too — an unsatisfiable alternative reads as free | `missability.py` | `test_deletion_soundness` | ✅ |
+| F12 | `if (a for a in ...) and not alts:` — a generator is always truthy | `guards.py` | `test_fuse_classification` | ✅ |
+| F13 | `procs[0]` under-guards a second spawning procedure; `emitted` key is cross-room while `demand_alts` is per-room | `missability.py` | `test_fuse_classification` | ✅ |
 | F14 | neither applier nor `_enclosing_if_test` has ANY test | `test_patch_text` | — | ✅ |
-| F15 | dropped non-flag `context`; polarity-blind `_entry_rooms`; `_balanced_span` has no string handling; no memoisation; game-wide `fuse`/`death` | both | mixed | ⬜ |
+| F15 | dropped non-flag `context`; polarity-blind `_entry_rooms`; `_balanced_span` has no string handling; no memoisation; game-wide `fuse`/`death` | both | mixed | ✅ |
+
+## Where a finding's VERDICT was right and its stated REASON was not
+
+[[re-derive-a-reds-premise]], applied to the review rather than to a red of my own.
+
+**F15's `_entry_rooms`.** The function *was* polarity-blind and now is not (a room named only
+under a negation is the one room that conjunct rules out). But that is **not** why KQ5's
+henchman row lists rm67: measured before and after, `arm_rooms` is `[54, 58, 59, 60, 61, 67]`
+either way, because the region machine's arming disjunction names rm67 POSITIVELY in one of
+its per-room arms. A first cut that read only the AND spine dropped rm54, rm58 and rm61 — a
+coverage claim shrinking in silence — so the fix descends through both connectives keeping
+polarity. Both shapes are pinned in `test_fuse_classification`.
+
+**F9's `zzzScript`.** The review lumps `zzzScript` with `henchCaught` as a top-up. Only
+`henchCaught` is provable: its guard bounds the register below the value written
+(`(< 353 120) → 353 := 120`), so it can only raise the clock. `zzzScript` writes `353 := 180`
+unconditionally, which we cannot prove is not a shortening, so it stays a commitment. The rule
+excludes what it can prove and nothing else.
+
+**F9's effect on the cat.** Worth stating because it is the opposite of what a first reading
+suggests: KQ5's cat row rides `theCatRunScript st3`'s `353 := 3` *while 353 is running*, which
+SHORTENS the clock — a genuine hastening, so it is correctly a commitment. The row does not
+depend on the invisible `352 := (Random 5 10)` twin, which remains a stated bounded gap.
 
 ## What the review ENDORSED (do not undo)
 

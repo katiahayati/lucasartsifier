@@ -316,6 +316,11 @@ class OpEmitter:
         # Hoisted above the init/machine pass: `_init_writes` records room-LOCAL
         # seeds too, and it runs first.
         self.handler_writes = []       # (room, script, gi, val, guard)  -- script for CTR-local resolve
+        self.handler_decs = set()      # (room, script, gi) -- registers this handler counts DOWN.
+        #   `(-- globalN)` is how SCI spells a clock tick, and it is the only thing that tells a
+        #   COUNTDOWN from a register a write happens to be scoped by. See `_hwalk` for why the
+        #   statement walk cannot see it, and `missability._death_fuses` for what reads it.
+        self._dec_cache = {}
         self.handler_gets = []         # (room, script, item, guard)
         self.handler_drops = []        # (room, script, item, guard, dest) -- `gEgo put: N <dest>`
         #   handler. Consuming an item requires owning it; the Pamphlet handed to the bore on
@@ -964,8 +969,28 @@ class OpEmitter:
 
         Control flow comes from `extract.walk_stream` / `ir.control_shape` -- this used to
         re-implement If and Cond itself, in code identical to extract's and machine's, and
-        handled neither Switch nor Loop, so both were silently dropped here."""
+        handled neither Switch nor Loop, so both were silently dropped here.
+
+        THE COUNTDOWNS THIS HANDLER RUNS are collected by a SECOND, polarity-free pass over the
+        whole body. `walk_stream` visits statements and their operands, but a branch's TEST is
+        turned into an atom and never walked -- and a clock tick is routinely written inside
+        the test of the very `if` it gates: castle::doit spells the whole expiry
+        `(if (and global353 (not (-- global353))) ...)`. Nothing in the statement stream can
+        see that decrement, and without it a countdown is indistinguishable from a mode
+        register the write happens to be scoped by (docs/REVIEW-2026-08-19d-FIXES.md F4).
+        Cached per (script, body) because `_walk_game_newroom` walks Main's newRoom once per
+        room."""
         from extract import walk_stream
+        key = (script, id(node))
+        decs = self._dec_cache.get(key)
+        if decs is None:
+            decs = self._dec_cache[key] = frozenset(
+                d["index"] for n in I.walk(node)
+                if isinstance(n, dict) and n.get("t") == "Decrement"
+                for d in ((n.get("kids") or [None])[0],)
+                if isinstance(d, dict) and I.is_global(d))
+        for gi in decs:
+            self.handler_decs.add((room, script, gi))
         walk_stream(node, pc, lambda n, p: self._heffect(room, script, n, p, seen))
 
     def _heffect(self, room, script, node, pc, seen):

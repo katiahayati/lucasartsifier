@@ -1246,7 +1246,7 @@ UNANSWERABLE: the fish is gone, the bag is flavor, and each encounter re-arms th
 global332's saving writers at the encounter are {2: the fish dispatch, needs own(37)} and
 {5: the bag dispatch, needs 63 ∧ 62 ∧ own(24)}. But writer 2 is only HALF an answer: its own
 completion chains `catGetFish → theCatRunScript` — the fuse again — with flag 62 now set and
-item 37 now spent, so the fish answer is saving iff the NEXT encounter it forces is
+item 37 now spent, so the fish answer is saving iff the encounter it leaves behind is
 bag-answerable: `own(37) ∧ 63 ∧ own(24)`. The fixpoint terminates because each escape's
 writes are monotone (62 rises, 37 leaves). Demand at the ARMING:
 
@@ -1279,23 +1279,50 @@ the fish; then fish→cat, then bag→cat.
 **Detection** (`missability.fuse_death_armings`) — three classifications, each structural:
   1. **Death phases**: (S,V) pinned by an `_room_unavoidable` machine's entry off an unpriced
      spine — (331,3)→theWizardScript in nine rooms, (331,6)→wakeUpScript in rm63.
-  2. **The clock**: a CTR-gated handler write with a running-countdown atom and no item/owner/
-     positional atom on the spine. Fuses close under chaining (353's expiry writes 352:=3) but
-     NOT under self-re-arm — `353:=5` gated on 353 running is the cycle continuing, and without
-     that exclusion the henchman's global333 (positive on the same spine) classified as a fuse.
-  3. **Fuse-arming machines**: a state writing any fuse to a nonzero literal — theCatRunScript
-     st3's `353:=3` (its `352 := Random 5 10` twin is invisible to the write extractor: a
-     non-literal write, a bounded gap the 353 branch covers).
+  2. **The clock**: a handler write gated by a LOCAL LATCH (a CTR atom — `(if local5 ...)`,
+     the boolean the per-real-second `(!= local8 (GetTime 1))` test raises one cycle in sixty)
+     and by a RUNNING COUNTDOWN — a register **the same handler DECREMENTS** and whose
+     nonzero-ness the write demands — with no item, owner or positional atom on the spine.
+     Fuses close under chaining: 353's expiry writes 352 := 3.
+  3. **Fuse-arming machines** (`_fuse_machines`): a state writing a fuse to a nonzero literal
+     its own guard does not prove is a TOP-UP. theCatRunScript st3's `353 := 3` while 353 runs
+     SHORTENS whatever the clock held and is a commitment; rm067's `(< 353 120) → 353 := 120`
+     can only raise it and is not. ⚠️ Bounded gap: the `352 := Random 5 10` twin is invisible
+     to the write extractor (a non-literal right-hand side), so the 353 branch is what carries
+     KQ5.
 
 The demand is the saving-writer FIXPOINT over the root's slot escapes, exactly as derived
 above: catInBag prices `own(24) ∧ 63 ∧ 62` off its chain-composed entry; catGetFish prices
-`own(37)` conjoined with the re-armed encounter's price DISCHARGED of flag 62 (its armer
+`own(37)` conjoined with the leftover encounter's price DISCHARGED of flag 62 (its armer
 theThrowFishScript writes it); catInBag's second entry (the `332==7` init arm) prices as its
 writer theBagCatScript and merges away. Rows once per (root, item) at proc550_16's real call
 sites {60, 61, 63} (a caller walk — the proc's position switch names seven rooms, its callers
 three). Corpus: LSL2/KQ4/KQ6/LB2 all emit [] — KQ6's wedding fuse writes a flag no unavoidable
 machine's entry pins, so it has no death phase and stays `register_strandings`' item seal.
 NOT a snapshot key (bless-gated).
+
+#### ⚠️ CORRECTED 2026-08-19e — the right demand, told with the wrong mechanism (review F10)
+
+The account above used to say the fish answer must be *"bag-answerable NEXT time"*, i.e. that
+`catGetFish` forces a further encounter which the bag must then answer. **That is not what the
+game does.** The bag works DURING `catGetFish` — flag 62 is already set by the time the fish
+dispatch completes — so no next encounter is needed, and the next encounter could not happen
+anyway: `theCatScript`'s arming demands `¬352 ∧ ¬353`, which the fuse `catGetFish` lights has
+just falsified. The demand is right (the USER ruled it); the story attached to it was not.
+
+What is true, and what the code now implements, is the weaker and correct statement: an escape
+whose own run leaves the encounter re-armed is only half an answer, so its price conjoins the
+price of what is left — DISCHARGED of what its chain already wrote, and now also **stripped of
+any alternative those same writes DISARM** (`missability._falsifies`). Discharge alone can only
+make an alternative cheaper; the same writes can make it impossible, and an impossible
+alternative admitted at its discharged price is the cheapest on offer, so `_minimal` keeps it
+and the demand collapses below what the game asks. That is an UNDER-demand in any game where
+the continuation genuinely matters. KQ5's answer is unchanged either way — measured, the
+condition still ships as `63 ∧ own(24) ∧ (62 ∨ own(37))`.
+
+Still not modelled here, and stated so it is not mistaken for done: `price()` reads no
+CALL-SITE guards, so a continuation reachable only from a room the chain has left is priced as
+if it were reachable.
 
 **Guard** (`guards.fuse_arming_remedies` → patcher `fuse-arm` site): the derived demand,
 FACTORED (common atoms hoisted out of the OR), conjoined into proc550_16's own arming `(if`:
