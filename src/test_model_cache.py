@@ -18,7 +18,9 @@ guarded world it verifies against, so every caller must get its own copy.
 """
 
 import os
+import shutil
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -106,21 +108,41 @@ def run():
     # the hash covered. The claim is that a source change MISSES the cache, so make one: a new
     # non-test module in this directory must move the key, and taking it away must put the key
     # back (which also proves the hash is content-derived and not, say, a directory mtime).
-    probe = os.path.join(os.path.dirname(os.path.abspath(M.__file__)), "_cache_probe_tmp.py")
+    # ⛔ AND IT IS MEASURED ON A COPY (2026-08-20 fourth review, P7). Proving it by writing
+    # `_cache_probe_tmp.py` into the LIVE `src/` changes every game's cache key for as long as
+    # the file is there -- any model loaded in that window is keyed to a source tree that is
+    # about to stop existing -- and a process killed between the write and the cleanup leaves a
+    # stray module behind that silently invalidates every cached model from then on. The test
+    # may not edit the tree it is testing. `_model_cache_key` takes `here` so the same question
+    # can be asked of a copy.
+    src_here = os.path.dirname(os.path.abspath(M.__file__))
+    before = sorted(os.listdir(src_here))
+    tmp = tempfile.mkdtemp(prefix="cache_key_probe_")
     try:
-        with open(probe, "w") as f:
+        for fn in os.listdir(src_here):
+            if fn.endswith(".py"):
+                shutil.copy(os.path.join(src_here, fn), os.path.join(tmp, fn))
+        k_copy = M._model_cache_key(config.LSL2, config.LSL2.ir_path, here=tmp)
+        with open(os.path.join(tmp, "_cache_probe_tmp.py"), "w") as f:
             f.write("# a source file this directory did not have a moment ago\n")
-        k3 = M._model_cache_key(config.LSL2, config.LSL2.ir_path)
+        k3 = M._model_cache_key(config.LSL2, config.LSL2.ir_path, here=tmp)
+        os.remove(os.path.join(tmp, "_cache_probe_tmp.py"))
+        k4 = M._model_cache_key(config.LSL2, config.LSL2.ir_path, here=tmp)
     finally:
-        if os.path.exists(probe):
-            os.remove(probe)
-    k4 = M._model_cache_key(config.LSL2, config.LSL2.ir_path)
+        shutil.rmtree(tmp, ignore_errors=True)
     check("the key covers this directory's source (edit -> miss -> rebuild)",
           k1 is not None and k3 != k1 and k4 == k1,
-          "adding a non-test .py to src/ must change the key (%r -> %r) and removing it must "
-          "restore it (%r). A cached model is only sound while every module that builds or "
-          "queries it is byte-identical to the one that produced the pickle."
-          % (k1, k3, k4))
+          "adding a non-test .py must change the key (%r -> %r) and removing it must restore "
+          "it (%r). A cached model is only sound while every module that builds or queries it "
+          "is byte-identical to the one that produced the pickle." % (k1, k3, k4))
+    check("...and the hash is CONTENT-derived, so a byte-identical copy keys the same",
+          k_copy == k1,
+          "a copy of src/ elsewhere on disk gave %r against the live tree's %r. If these differ "
+          "the hash has picked up a path or an mtime, and the check above would be measuring "
+          "the copy rather than the rule." % (k_copy, k1))
+    check("...and the live src/ was not touched to find that out",
+          sorted(os.listdir(src_here)) == before,
+          "src/ gained or lost %r" % (set(os.listdir(src_here)) ^ set(before),))
     return not FAIL
 
 

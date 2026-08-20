@@ -7318,7 +7318,7 @@ def _flag_set_inside(R, pocket, inroom):
 _MODEL_MEMO = {}                       # in-process: key -> built model
 
 
-def _model_cache_key(cfg, ir_path):
+def _model_cache_key(cfg, ir_path, here=None):
     """Identity of a BUILT MODEL: the config that shapes it, the IR it is built from, and the
     code that builds it.
 
@@ -7328,9 +7328,15 @@ def _model_cache_key(cfg, ir_path):
     by the previous version, and the suite would gate on a stale analysis. So every non-test
     source file in this directory goes into the hash: touching any of them misses the cache and
     rebuilds. (Test files are excluded on purpose -- editing a test must not throw away the
-    models it is about to read.)"""
+    models it is about to read.)
+
+    `here` names the directory to hash, and exists so the "a source change misses the cache"
+    property can be MEASURED without mutating the live one (2026-08-20 fourth review, P7). The
+    test that proves it used to write a `.py` into this package's own directory, which changes
+    every game's cache key for as long as it is there, and leaves a stray module behind if the
+    process dies between the write and the cleanup. Callers leave it None."""
     import hashlib
-    here = os.path.dirname(os.path.abspath(__file__))
+    here = here or os.path.dirname(os.path.abspath(__file__))
     h = hashlib.sha1()
     h.update(repr((cfg.name, cfg.src_dir, cfg.ir_path, cfg.resource_dir, cfg.start_room,
                    sorted(cfg.goal_rooms), tuple(cfg.death_signal),
