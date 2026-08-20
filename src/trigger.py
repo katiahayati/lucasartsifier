@@ -1490,34 +1490,57 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
         tpat = placement.get("target_pattern") or (re.escape(target) + r"\b")
         # THE ARMING STATEMENT IS THE SEND THAT CARRIES THE SELECTOR, not a flat regex span --
         # the same lesson the arm-event branch already carries (KQ5's henchman): locate the
-        # selector, then expand to the INNERMOST BALANCED FORM enclosing it. The old
-        # one-level-of-nesting pattern (`((ScriptID 344 2) setScript: (ScriptID 344 3))`) is
-        # subsumed; what it could not see was a DEEPER argument -- KQ5's boat departure,
+        # selector, then expand to the enclosing STATEMENT. The old one-level-of-nesting pattern
+        # (`((ScriptID 344 2) setScript: (ScriptID 344 3))`) is subsumed; what it could not see
+        # was a DEEPER argument -- KQ5's boat departure,
         # `(global2 setScript: castOffScript 0 (== (global0 view:) 661))`, two levels down,
         # which left the boat click an unwrapped second door beside the walked-edge guard.
-        ssm = re.search(r"setScript:\s*%s" % tpat, region)
-        if not ssm:
+        #
+        # ⛔ N1b's RULE HERE TOO, AND EVERY SITE (2026-08-20 fourth review, P2). This branch --
+        # the arming a PLAYER triggers -- kept the two rules the arm-event branch beside it gave
+        # up, and each one has its own failure:
+        #
+        #   * a bare `re.search` reads text that is not code, so a commented-out arming earlier
+        #     in the method becomes "the site". The wrap is then spliced INSIDE the comment --
+        #     the `(if` stays commented while `(Refuse)`, the `else` and a surplus `)` spill out
+        #     as live code -- and the real arming ships untouched, `applied: True`;
+        #   * the INNERMOST BALANCED FORM is not the statement. `(= local0 (obj setScript: X))`
+        #     is N1's shape: the hold lands in the value slot and STORES the refusal's return
+        #     value instead of withholding the arming;
+        #   * `re.search` takes the FIRST match, and `patcher`'s fan-out skips any extra arming
+        #     whose instance AND method match this placement's (it is the same site, as far as
+        #     that loop can tell). So a handler arming one machine under two verbs was guarded
+        #     on one verb and open on the other. EVERY arming site or none, exactly as the
+        #     arm-event branch and `_place_fuse_arm` say it -- a machine with N ways in needs N
+        #     wraps, which is the play-found KQ6 rm220 lesson (`find_all_armings`).
+        #
+        # Censused before changing anything, five stock trees, 10,301 methods / 2,713 in-method
+        # `setScript:` sites: 0 resolve to a non-statement and 0 raw-only hits sit in comments or
+        # strings, so the first two are shape closures. 160 methods carry 2+ sites for one
+        # target, so the third is the one that can move bytes.
+        spans = []
+        for ssm in code_finditer(region, r"setScript:\s*%s" % tpat):
+            b = statement_span(region, ssm.start())
+            if b and b[1] <= ssm.end():
+                b = None                       # a statement that ends before the send is not it
+            if b is None:
+                return text, 0                 # unholdable arming -> refuse the WHOLE site
+            # The hold is the whole cond-clause where there is one, so score/sound siblings
+            # cannot fire before the refusal (the changeState case's care) -- but the clause is
+            # taken from the STATEMENT's start, not a raw paren walk's.
+            b = _enclosing_clause_body(region, b[0]) or b
+            if b not in spans:
+                spans.append(b)
+        if not spans:
             return text, 0
-        s0 = region.rfind("(", 0, ssm.start())
-        span = None
-        while s0 != -1:
-            b0, b1 = _block_span(region, s0)
-            if b1 > ssm.end():
-                span = (b0, b1)
-                break
-            s0 = region.rfind("(", 0, s0)
-        if span is None:
-            return text, 0
-        clause = _enclosing_clause_body(region, span[0])
-        if clause:
-            bs, be = clause
+        spans.sort()
+        for (a, b) in zip(spans, spans[1:]):
+            if b[0] < a[1]:
+                return text, 0                 # overlapping holds -> refuse over a nested edit
+        for (bs, be) in reversed(spans):
             wrapped = guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
-            new_meth = region[:bs] + wrapped + region[be:]
-        else:
-            bs, be = span
-            wrapped = guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
-            new_meth = region[:bs] + wrapped + region[be:]
-        return text[:m0] + new_meth + text[m1:], 1
+            region = region[:bs] + wrapped + region[be:]
+        return text[:m0] + region + text[m1:], len(spans)
     if placement["kind"] == "proc-arm":
         # The helper file's OWN arming of the crossing -- a bare procedure the room calls at a
         # refusal-safe moment. KQ6's Realm entry: `(nightMare setScript: catchNiteMare)` inside
