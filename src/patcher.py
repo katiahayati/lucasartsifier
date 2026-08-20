@@ -3470,7 +3470,27 @@ def _place_capture_arm(text, machine, host, demand):
     rm54 fish discriminator had wrapped that send earlier in the same run. A guard whose
     existence depends on a sibling spec is a guard that disappears the day the sibling is
     retired -- silently, with the ground-truth test still green, because that test pins the
-    SPEC and not the applied edit."""
+    SPEC and not the applied edit.
+
+    ⚠️ AN OPEN SHAPE, DELIBERATELY UNGUARDED -- READ THIS BEFORE PLACING A HOLD IN A NEW GAME
+    (F6, declared 2026-08-19e, RETIRED as a red 2026-08-20d [USER: "i'm just not sure we're ever
+    going to hit that"]). This hold, and the rm54 fish wrap, sit INSIDE `theHenchMan::init` and
+    AFTER `(super init:)`. So a REFUSED arming still leaves the host in the cast with
+    `script == 0`, and rm054.sc:447-449 then reads `(>= (((ScriptID 550 3) script:) state:) 1)`
+    -- a send to 0 -- behind a `(global5 contains: ...)` test that a scriptless cast member
+    satisfies.
+
+    THE INVARIANT, if a game ever asks: a wrap placed inside a host's own `init` must either
+    cover `(super init:)`, so a refusal keeps the host out of the cast, or dispose the host on
+    the refusal. `fuse-arm` sidesteps it entirely by wrapping the `init:` CALL SITES instead,
+    which is the shape to prefer in a new game.
+
+    ⛔ NOT A KQ5 HAZARD and not worth curing speculatively: KQ5's refusal is unreachable
+    (play-confirmed -- prop the grate, tug it, nothing happens; the ambush needs an unequipped
+    arrival at rm54, and the boat guard demands Iron_Bar (30) + Fishhook (31) at all three of
+    `boatRegion`'s `leave` armings), and both cures move a play-confirmed emission. It takes
+    THREE things at once to bite -- the hold inside the host's own `init`, a reachable refusal,
+    and a later read of the orphan's `script:` -- and no game has yet produced two of them."""
     hits = [m.start() for m in _code_finditer(
         text, r"setScript:\s*%s\b" % re.escape(machine))]
     if len(hits) != 1:

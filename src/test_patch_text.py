@@ -1371,53 +1371,18 @@ def test_a_region_never_starts_inside_a_message():
                  % scanned_calls)
 
 
-def test_a_refused_arming_does_not_orphan_its_host():
-    """🔴 F6, DECLARED RED 2026-08-19e -- the cure moves a PLAY-CONFIRMED emission.
-
-    Both the fish wrap and the capture hold sit INSIDE `theHenchMan::init`, AFTER
-    `(super init:)`. A refused arming therefore leaves the actor in the cast with `script == 0`,
-    and rm054's verb-3 handler reads `(>= (((ScriptID 550 3) script:) state:) 1)` -- a send to
-    0 -- guarded only by `(global5 contains: (ScriptID 550 3))`, which a cast-resident
-    scriptless actor satisfies.
-
-    THE INVARIANT: a wrap placed inside a host's OWN `init` must either cover `(super init:)`
-    (so a refusal keeps the host out of the cast) or dispose the host on the refusal. Neither
-    is what ships, on KQ5 or in the applier. Both cures change emitted bytes for a patch the
-    USER has already play-tested, so this is DECLARED rather than made silently.
-
-    ⛔ AND IT IS NOT A KQ5 SHIPPING HAZARD [USER, play, 2026-08-20]. Play-confirmed: prop the
-    grate with the iron bar, tug it, nothing happens and nothing crashes -- the ambush needs an
-    UNEQUIPPED arrival at rm54, and our own boat guard demands the Iron_Bar (30) and the
-    Fishhook (31) at all three of `boatRegion`'s `leave` armings, so `theHenchMan::init` never
-    runs there. This red is about the APPLIER, for the next game whose refusal IS reachable;
-    the declaration used to read as though a shipped patch could crash, which it cannot.
-
-    ⚠️ AND WHETHER IT EVER APPLIES IS ITSELF OPEN [USER, 2026-08-20d]: *"i'm not really sure this
-    would apply"*. Nothing here derives that a next game MUST spell the shape -- it takes a hold
-    placed inside the host's own `init` (rather than at the `init:` CALL SITES, which is what
-    `fuse-arm` already does) AND a reachable refusal AND a later read of the orphan's `script:`.
-    KQ5 is the only game that has ever produced the first, and its refusal turned out
-    unreachable. So this stays red as a STANDING QUESTION about the applier, not as a predicted
-    bug: the next game either spells it, and the invariant above is what to build, or it does
-    not, and this retires. ⛔ Do not spend a session curing it speculatively -- both cures move a
-    play-confirmed emission, which is the whole reason it was declared instead of fixed."""
-    print("\n-- 🔴 a refused arming must not leave its host cast-resident (F6) --")
-    place = getattr(P, "_place_capture_arm", None)
-    if place is None:
-        check("🔴 KNOWN GAP: the hold covers `(super init:)`, or refuses by disposing the host",
-              False, detail="no `_place_capture_arm` to exercise (F14)")
-        return
-    out, _n, why = place(STOCK_HENCH, "theHenchManScript", "theHenchMan", CAP_DEMAND)
-    i_super = out.index("(super init:)")
-    i_if = out.index("(if ") if "(if " in out else len(out)
-    check("🔴 KNOWN GAP: the hold covers `(super init:)`, or refuses by disposing the host",
-          why is None and (i_if < i_super or "dispose:" in out),
-          detail="the wrap starts at %d and `(super init:)` runs at %d, so a refused arming "
-                 "adds theHenchMan to the cast with no script; rm054.sc:447-449 then sends "
-                 "`state:` to 0. Cure: wrap the `init:` CALL SITES (what `fuse-arm` does), or "
-                 "add `else (self dispose:)`. Both move a play-confirmed emission, so this is "
-                 "declared, not slipped in." % (i_if, i_super))
-
+# ⛔ F6 IS RETIRED, NOT CURED [USER, 2026-08-20d]: "yeah remove the red please. i'm just not
+# sure we're ever going to hit that". The check that stood here asserted that a hold placed
+# inside a host's OWN `init` covers `(super init:)` or disposes the host on refusal -- true as an
+# invariant, and never once asked by a real game. It needed three things at once: the hold inside
+# the host's own `init` rather than at the `init:` CALL SITES (which is what `fuse-arm` already
+# uses), a REACHABLE refusal, and a later read of the orphaned host's `script:`. KQ5 produced the
+# first and its refusal is unreachable (play-confirmed).
+#
+# ⛔ THE CHECK WAS DELETED, NOT WEAKENED. Making it pass would have pinned a limitation green,
+# which is the one thing that may never happen to a red. The invariant itself now lives at
+# `patcher._place_capture_arm`, beside the applier it constrains, so a next game that DOES spell
+# the shape finds it where the code is rather than in a retired test.
 
 def is_code(text, idx):
     """True when offset `idx` in `text` is CODE -- not inside a comment or a quoted form.
@@ -1750,7 +1715,6 @@ def run():
     test_a_hold_never_diverts_into_an_else_branch()
     test_every_spelling_of_the_arming_is_held()
     test_a_region_never_starts_inside_a_message()
-    test_a_refused_arming_does_not_orphan_its_host()
     test_form_chain_is_the_nesting_and_nothing_else()
     test_statement_span_climbs_out_of_value_positions_only()
     test_mark_line_asks_whether_code_is_at_risk()

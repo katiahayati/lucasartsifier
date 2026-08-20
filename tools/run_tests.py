@@ -62,40 +62,13 @@ SRC = os.path.join(_ROOT, "src")
 # matters for a patcher edit: the snapshot surface freezes whether a guard landed, never its
 # text. R6 is not here because it never had a test -- it needs a design decision from the USER.
 KNOWN_RED = {
-    "test_patch_text.py": {
-        "🔴 KNOWN GAP: the hold covers `(super init:)`, or refuses by disposing the host":
-            # The 2026-08-19d review's F6. Every arming hold placed inside a host's OWN `init`
-            # -- the rm54 fish discriminator and the capture hold both -- sits AFTER
-            # `(super init:)`, so a refused arming leaves the actor in the cast with
-            # `script == 0`. rm054.sc:447-449 then reads
-            # `(>= (((ScriptID 550 3) script:) state:) 1)`, a send to 0, behind a
-            # `(global5 contains: ...)` test that a scriptless cast member satisfies.
-            #
-            # DECLARED RATHER THAN CURED because both cures -- wrapping the `init:` CALL SITES
-            # the way `fuse-arm` does, or adding `else (self dispose:)` -- change emitted bytes
-            # in a patch the USER has already play-tested end to end (v17, tag v3.0-kq5). The
-            # right order is the USER's call plus a play test, not a silent rewrite of a
-            # verified emission.
-            #
-            # ⛔ NOT A KQ5 SHIPPING HAZARD -- KQ5 HAS NO PATH TO IT [USER, play, 2026-08-20].
-            # Play-confirmed: prop the grate, tug it, nothing happens and nothing crashes. The
-            # structure agrees -- the ambush needs an unequipped arrival at rm54, and our own
-            # boat guard demands the Iron_Bar (30) and the Fishhook (31) at all three of
-            # `boatRegion`'s `leave` armings, so `theHenchMan::init` never runs there. What
-            # stays red is the APPLIER, for the next game: a hold placed inside a host's own
-            # `init` after `(super init:)` is the wrong shape wherever the refusal is reachable.
-            #
-            # ⚠️ AND WHETHER A NEXT GAME EVER ASKS IS OPEN [USER, 2026-08-20d]: "i'm not really
-            # sure this would apply". It needs three things at once -- a hold inside the host's
-            # own `init` rather than at the `init:` CALL SITES, a REACHABLE refusal, and a later
-            # read of the orphan's `script:`. KQ5 is the only game that has produced the first
-            # and its refusal is unreachable. A STANDING QUESTION, not a predicted bug: do not
-            # cure it speculatively, since both cures move a play-confirmed emission.
-            "the applier places a hold inside its host's `init` AFTER `(super init:)`, so a "
-            "refused arming leaves the host cast-resident with script 0 -- unreachable on KQ5 "
-            "(play-confirmed); OPEN AS A QUESTION for a next game, which may never spell the "
-            "shape [USER 2026-08-20d]. Both cures move a play-confirmed emission, so it waits",
-    },
+    # ⛔ F6 RETIRED 2026-08-20d [USER: "yeah remove the red please. i'm just not sure we're ever
+    # going to hit that"]. `test_patch_text.py` held this file's only declared red -- a hold
+    # placed inside a host's OWN `init` after `(super init:)` leaves a refused host cast-resident
+    # with script 0. It was never a KQ5 hazard (play-confirmed unreachable) and it needs three
+    # things at once to bite, of which no game has produced two. The check was DELETED rather
+    # than made to pass -- a limitation may not be pinned green -- and the invariant moved to
+    # `patcher._place_capture_arm`, beside the applier it constrains.
     "test_toll.py": {
         # ✅ PROMOTED 2026-08-16 -- "KQ5 temple strands Brass_Bottle + Gold_Coin" and "KQ5 toll
         # item is the Staff via rm214->rm18" are GREEN and no longer listed. Both demanded that
