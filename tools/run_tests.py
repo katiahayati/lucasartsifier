@@ -84,10 +84,17 @@ KNOWN_RED = {
             # `boatRegion`'s `leave` armings, so `theHenchMan::init` never runs there. What
             # stays red is the APPLIER, for the next game: a hold placed inside a host's own
             # `init` after `(super init:)` is the wrong shape wherever the refusal is reachable.
+            #
+            # ⚠️ AND WHETHER A NEXT GAME EVER ASKS IS OPEN [USER, 2026-08-20d]: "i'm not really
+            # sure this would apply". It needs three things at once -- a hold inside the host's
+            # own `init` rather than at the `init:` CALL SITES, a REACHABLE refusal, and a later
+            # read of the orphan's `script:`. KQ5 is the only game that has produced the first
+            # and its refusal is unreachable. A STANDING QUESTION, not a predicted bug: do not
+            # cure it speculatively, since both cures move a play-confirmed emission.
             "the applier places a hold inside its host's `init` AFTER `(super init:)`, so a "
             "refused arming leaves the host cast-resident with script 0 -- unreachable on KQ5 "
-            "(play-confirmed), open for the next game; both cures move a play-confirmed "
-            "emission, so this waits on the USER",
+            "(play-confirmed); OPEN AS A QUESTION for a next game, which may never spell the "
+            "shape [USER 2026-08-20d]. Both cures move a play-confirmed emission, so it waits",
     },
     "test_toll.py": {
         # ✅ PROMOTED 2026-08-16 -- "KQ5 temple strands Brass_Bottle + Gold_Coin" and "KQ5 toll

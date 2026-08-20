@@ -1390,7 +1390,17 @@ def test_a_refused_arming_does_not_orphan_its_host():
     UNEQUIPPED arrival at rm54, and our own boat guard demands the Iron_Bar (30) and the
     Fishhook (31) at all three of `boatRegion`'s `leave` armings, so `theHenchMan::init` never
     runs there. This red is about the APPLIER, for the next game whose refusal IS reachable;
-    the declaration used to read as though a shipped patch could crash, which it cannot."""
+    the declaration used to read as though a shipped patch could crash, which it cannot.
+
+    ⚠️ AND WHETHER IT EVER APPLIES IS ITSELF OPEN [USER, 2026-08-20d]: *"i'm not really sure this
+    would apply"*. Nothing here derives that a next game MUST spell the shape -- it takes a hold
+    placed inside the host's own `init` (rather than at the `init:` CALL SITES, which is what
+    `fuse-arm` already does) AND a reachable refusal AND a later read of the orphan's `script:`.
+    KQ5 is the only game that has ever produced the first, and its refusal turned out
+    unreachable. So this stays red as a STANDING QUESTION about the applier, not as a predicted
+    bug: the next game either spells it, and the invariant above is what to build, or it does
+    not, and this retires. ⛔ Do not spend a session curing it speculatively -- both cures move a
+    play-confirmed emission, which is the whole reason it was declared instead of fixed."""
     print("\n-- 🔴 a refused arming must not leave its host cast-resident (F6) --")
     place = getattr(P, "_place_capture_arm", None)
     if place is None:
