@@ -54,6 +54,23 @@ included), and KQ5's two shipped conditions must not move — they are play-conf
 | F14 | neither applier nor `_enclosing_if_test` has ANY test | `test_patch_text` | — | ✅ |
 | F15 | dropped non-flag `context`; polarity-blind `_entry_rooms`; `_balanced_span` has no string handling; no memoisation; game-wide `fuse`/`death` | both | mixed | ✅ |
 
+## What was measured
+
+Run after every commit below, and the last one is the strongest check this project has for a
+patcher change — the snapshot surface freezes *whether* a guard landed, never the bytes it
+emitted, and F1/F2/F5/F15 all rewrite the text arithmetic:
+
+| Check | Result |
+|---|---|
+| LSL2 + KQ4 goldens (full surface, placements included) | byte-identical |
+| KQ6 + LB2 watched surfaces | byte-identical |
+| KQ5 `snapshot.py` surface | byte-identical |
+| All five games' **emitted patch source trees**, re-run from `e34516f` in a worktree and diffed | **byte-identical** |
+| Suite | 638 passed, 1 known-red (F6), 0 unexpected (from 596/0/0) |
+
+KQ5's classification is unmoved: `fuses {352, 353}`, `phases [(331,3), (331,6)]`,
+`deaths [theWizardScript, wakeUpScript]`, and both play-confirmed conditions ship verbatim.
+
 ## Where a finding's VERDICT was right and its stated REASON was not
 
 [[re-derive-a-reds-premise]], applied to the review rather than to a red of my own.
