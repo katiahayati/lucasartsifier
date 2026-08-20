@@ -1577,14 +1577,33 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
         # slot and change what is stored rather than withhold the arming. Measured: no emitted
         # byte in the five source trees moves -- every arming site in this corpus is already a
         # statement -- so this closes the shape rather than changing an emission.
+        #
+        # ⛔ AND EVERY ARMING SITE OR NONE (2026-08-20 fourth review, P1). The N1b port above
+        # took `statement_span`'s rule but not the refusal `_place_fuse_arm` states it with
+        # (`patcher.py`: "The invariant is EVERY arming site or none"), so a site the rule
+        # cannot resolve was SKIPPED and `n` counted only the rest. One door guarded, one door
+        # open, and a row reporting `sites: 1  applied: True` -- findings #4 and #8 a fourth
+        # time, except silent this time instead of a broken build. There is no partial answer
+        # here: half a hold on a two-arming event is the softlock with extra steps.
         gs = stock_or(guard_sexpr)     # silent kind: stock bypasses, lite behaves as full
         spans = []
         for am in code_finditer(region, r"setScript:\s*%s\b" % re.escape(target)):
             b = statement_span(region, am.start())
             if b and b[1] <= am.end():
                 b = None                       # a statement that ends before the send is not it
-            if b and b not in spans:
+            if b is None:
+                return text, 0                 # unholdable arming -> refuse the WHOLE site
+            if b not in spans:
                 spans.append(b)
+        # ...and the sibling's other refusal, for the same reason. The splice below runs in
+        # reverse document order, which is safe only for DISJOINT spans: wrapping an inner
+        # hold first makes an enclosing one's end offset stale, and the splice then cuts
+        # mid-identifier. That emission is still paren-balanced, so a paren count does not
+        # catch it -- refuse instead of emitting a nested edit.
+        spans.sort()
+        for (a, b) in zip(spans, spans[1:]):
+            if b[0] < a[1]:
+                return text, 0
         n = 0
         for (b0, b1) in sorted(spans, reverse=True):
             wrapped = (f"(if {gs}\n\t\t\t\t{region[b0:b1]}\n\t\t\t)"
