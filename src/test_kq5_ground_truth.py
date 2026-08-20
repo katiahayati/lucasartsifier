@@ -925,6 +925,47 @@ def run():
           f"nothing but leaves losing terminal; a lost self-resetting entry means local0 "
           f"stopped being per-visit; a REFUSED spec ships no patch at all.")
 
+    # 🔴 DECLARED 2026-08-19d, USER PLAY-FOUND + RULED (docs/KQ5-ORACLE.md §24). THE HENCHMAN
+    # CAPTURE: `henchCaught` st8 forks `(¬flag96 ∧ owner(25)==57) → moveStone else
+    # dieScumScript`, and flags 69+96 are set TOGETHER at the rescue (rm067.sc:342-343), so 96
+    # means "Cassima has already spent her rescue" -- the L3 verdict, play-confirmed ("if he
+    # catches you a second time you die"). Two lethal orderings: capture before the give, and
+    # any capture after the rescue. The fold row for it ALREADY EXISTS; what is missing is
+    # carrying its demand back to the ARMING of the machine that performs the crossing.
+    # `theHenchManScript` st12 carries ('EXIT', 67) in the model, so the adversary CARRIES you
+    # across -- the discriminator against the chase exclusion, whose premise (a race declined
+    # by leaving) the USER play-refuted ("got that without even trying").
+    #
+    # The demand is the fold's own survivability DISJOINED with the escape's price, and the
+    # escape is `theThrowPeasScript` -- which is NOT a slot competitor (it is armed into the
+    # room's slot and disposes the henchman outright), so escapes must include DISPOSERS. Its
+    # price carries the typed item-property atom the model already extracts: `own(24) ∧
+    # ¬IPROP((24,'cel')==4)` -- the empty bag, since Bag_of_Peas declares `cel 3` and the throw
+    # increments it to 4 in the same state that sets flag 63. USER-ruled shape: "if you have
+    # the peas, we should let it happen, otherwise we should block it" -- with disjunct 1
+    # keeping the REQUIRED first capture available (flag 69, Cassima accompanying you, has one
+    # writer: the hole escape).
+    cap = list(getattr(s, "capture_fold_armings", lambda: [])())
+    hench = [r for r in cap if r.get("machine") == "theHenchManScript"]
+
+    def _alt(a):
+        return (tuple(tuple(x) for x in a.get("owners", ())), tuple(a.get("items", ())),
+                tuple(a.get("flags", ())), tuple(a.get("not_flags", ())),
+                tuple(tuple(x) for x in a.get("not_iprops", ())))
+
+    want_alts = sorted([(((25, 57),), (), (), (96,), ()),
+                        ((), (24,), (), (), ((24, "cel", 4),))])
+    check("the henchman's arming demands a survivable capture or the pea answer",
+          len(hench) == 1 and hench[0].get("need_room") == 67
+          and hench[0].get("fold_machine") == "henchCaught"
+          and hench[0].get("escapes") == ["theThrowPeasScript"]
+          and sorted(_alt(a) for a in hench[0].get("demand_alts", ())) == want_alts,
+          f"rows={hench!r} -- expected ONE row for theHenchManScript naming the rm67 fold "
+          f"(henchCaught), the pea disposer as its escape, and the two-alternative demand "
+          f"(¬flag96 ∧ owner(25)==57) ∨ (own 24 ∧ ¬cel==4). Disjunct 1 is load-bearing: the "
+          f"FIRST capture is required progression, so a pea-only demand walls the game. "
+          f"docs/KQ5-ORACLE.md §24.")
+
     # ✅ REWRITTEN 2026-08-16b, USER-RULED -- this red demanded the WRONG ROW. It asserted that
     # some detector flags the Amulet, on the oracle's old verdict that entering the dark forest
     # without it is a softlock. USER: *"on rm19 you can get back out. I don't think you can get

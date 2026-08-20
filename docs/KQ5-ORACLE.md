@@ -1315,3 +1315,87 @@ holds only the ENCOUNTER's spawn.
 with the red PROMOTED and the guard pinned (`test_kq5_ground_truth`: 52 checks). Play-retest
 owed: M4 in docs/KQ5-TESTPLAN.md — the USER holds castle testing until they can run the whole
 M-block against this guard.
+
+## §24. The henchman capture — a rescue you get once, and an answer you get once (2026-08-19d, USER play-found + ruled; RED, not yet built)
+
+**The play findings, two sessions.** (1) *"if you don't give the locket to [Cassima] cassima
+doesn't come and you die"* — the capture is survivable only if the locket was already given.
+(2) 2026-08-19d, the L3 verdict, **play-confirmed without trying**: *"if he catches you a
+second time you die."* And the USER's ruling for the remedy: *"we can't really prevent that…
+because we need him to come at us again so we can pea him… if you have the peas, we should
+let it happen, otherwise we should block it."*
+
+**The mechanism, source-read.** `henchCaught` (rm067, armed by rm067::init on every arrival
+whose `prevRoom != 55`, i.e. every arrival that is not the maze) forks at state 8:
+
+    (if (and (not (proc0_12 96)) (== ((gInv at: 25) owner:) 57))
+        (stone setScript: moveStone)          ; Cassima comes -- rm067.sc:1094
+    else
+        (stone setScript: dieScumScript))     ; a 30-60s pure timer into proc0_26
+
+⭐ **Flags 69 and 96 are set TOGETHER at the rescue** (rm067.sc:342-343), so flag 96 does not
+mean "you were captured before" — it means **"Cassima has already spent her rescue"**. Her
+trick works once, and the game says so in one line. That is the L3 verdict, derived.
+
+**The two lethal orderings** the fold's own condition names:
+  * **capture before the give** (`owner(25) != 57`) — you have never met Cassima, so nobody
+    comes. Reachable from the very first capture;
+  * **any capture after the rescue** (`flag 96`) — the locket is irrelevant, she is spent.
+
+**The answer, and why it is also one-shot.** The encounter is declined by pea-ing the beast:
+`theThrowPeasScript` state 2 disposes the chaser outright (`theHenchMan setScript: 0`) and
+freezes him (state 6, `global333 := 7`, or 8 in rm59). Its arming is the bag's own dispatch
+case in `castle.sc`, whose refusal arm is an ITEM-PROPERTY test — and the model already types
+it: the entry guard carries `own(24) ∧ ¬IPROP((24,'cel') == 4)`. ⭐ That atom is exactly the
+"empty bag": `Bag_of_Peas` DECLARES `cel 3` (KQInv.sc), state 2 increments it to 4 **in the
+same state that sets flag 63**, and the throw is refused once it reads 4. So the pea answer is
+available exactly once, and the guard can demand the game's own spelling — no flag alias
+needed. (`¬(cel == 4)` ⟺ `¬flag63` by that atomic co-write, the P1/P2 finding; flag 63 is
+never cleared, whereas `global333` — the "frozen" state — **is** clobbered by `theCat::init`
+(castle.sc:762), so the cel/flag pair is the robust reading and `¬(333 ∈ {7,8})` is not.)
+
+**THE COMPOSED DEMAND (USER-ruled shape, whale class), at the encounter's ARMING:**
+
+    (¬flag96 ∧ owner(25) == 57)  ∨  (own(24) ∧ ¬IPROP((24,'cel') == 4))
+     ^ the capture is survivable        ^ ...or you can decline it
+
+Walk the order it forces: enter the castle → **no ambush until Cassima has the locket** (this
+closes the capture-before-give death for free) → capture → rescue (69+96) → maze → rm56 takes
+the peas → the second disjunct opens, he comes again → pea him → both disjuncts shut, he never
+re-arms. That is Sierra's intended order with both lethal orderings fenced off. ⛔ The demand
+CANNOT be the pea disjunct alone (the USER's words scoped to the second capture): the first
+capture is REQUIRED progression — flag 69 (Cassima accompanying you) has one writer, the hole
+escape at rm067.sc:342 — so blocking it pre-peas would wall the game.
+
+**⭐ A STOCK DEATH THIS ALSO CLOSES (found while deriving, source-verified).** rm058's and
+rm060's spawns test only the fuse (`¬352 ∧ ¬353`) — **not** the frozen-beast state — so
+entering them after pea-ing him re-inits the henchman, `theHenchManScript` state 3 writes
+`global333 := 3`, and he chases a player whose bag now reads cel 4 and cannot answer (message
+47). Post-rescue that is flag 96 up: an unanswerable capture. The `¬(cel == 4)` conjunct
+retires it. (rm059 is safe by its own `global333 == 8` display arm; rm061 needs `global332 == 0`.)
+
+**THE rm54 CORNER, reported rather than assumed.** `theHenchMan` is region-wide, so the beach
+also spawns him — but rm054.sc:63 arms that one only under
+`(owner(30) != 54) ∧ ¬has(30)`: the Iron_Bar neither carried nor already used on the grate
+(`liftGrate`, `put: 30 54`). A player at rm54 without the bar is ALREADY stranded (Iron_Bar is
+in EXPECTED_CAUGHT, sources [44], guarded at rm44/45/46→rm113), so in the patched game the
+beach ambush is unreachable by construction, the region-wide demand is inert there, and the
+grate is the entry. ⚠️ CONSEQUENCE FOR THE TESTPLAN: M3's "let the henchman grab you" entry
+may be UNRUNNABLE in the patched game, and M2's "the beach henchman never arms" ✅ does not
+discriminate our gate from the stock condition. Stated so nobody reads either row as evidence.
+
+**THE CURE, named (the red's promotion contract).** (1) `ownedby_death_folds` already emits
+the fold (`Locket@rm67/henchCaught st8, demand owner(25)==57, context {498: 0}`); what is
+missing is carrying it back to the ARMING of the machine that performs the crossing —
+`theHenchManScript`'s state 12 already carries `('EXIT', 67)` in the model, so the crossing is
+the adversary's own transition, not a walk the player chooses. That is the discriminator
+against the chase exclusion, which presumes a race declined by leaving: here the machine
+CARRIES you across, and the USER play-refuted the decline ("got that without even trying").
+(2) The escapes of an encounter include machines that DISPOSE its host (`setScript: 0`), not
+only slot competitors — `theThrowPeasScript` is armed into the room's slot, not the
+henchman's. (3) Prices then compose exactly as the cat's did, with item-property atoms carried
+through to the rendered condition. Guard = the same whale-shape hold, conjoined onto the wrap
+already living on `theHenchMan::init` (the rm54 fish discriminator), which is the object's one
+choke point; the set-dressing callers (rm059's frozen display, rm067's capture cutscene)
+override the script slot themselves, and every state in which `henchCaught` is SURVIVED
+satisfies disjunct 1 by construction, so nothing they draw is withheld.

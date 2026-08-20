@@ -214,6 +214,25 @@ KNOWN_RED = {
     # the check is a permanent green pin. docs/LB2-ORACLE.md §7ag.
 
     "test_kq5_ground_truth.py": {
+        # 🔴 DECLARED 2026-08-19d, USER PLAY-FOUND + RULED (docs/KQ5-ORACLE.md §24). The
+        # henchman capture: `henchCaught` st8 forks on `¬flag96 ∧ owner(25)==57`, and flags
+        # 69+96 are set TOGETHER at the rescue -- 96 means "Cassima has spent her rescue", so a
+        # second capture kills whatever you carry (L3, play-confirmed "without even trying").
+        # The FOLD row exists already; nothing carries its demand back to the ARMING of the
+        # machine that performs the crossing. THE CURE, named: (1) a fold demand rides the
+        # arming of any machine whose own transition EXITs into the fold's room (the adversary
+        # CARRIES you across -- the discriminator against the chase exclusion, whose
+        # decline-by-leaving premise the USER play-refuted); (2) an encounter's escapes include
+        # machines that DISPOSE its host (`setScript: 0`), not only slot competitors -- the pea
+        # throw is armed into the room's slot; (3) prices compose as the cat's did, carrying the
+        # typed item-property atom `¬IPROP((24,'cel')==4)` (the empty bag) into the rendered
+        # condition. Demand = `(¬96 ∧ owner(25)==57) ∨ (own(24) ∧ ¬cel==4)`; disjunct 1 is
+        # load-bearing because the FIRST capture is required progression. Corpus-safe by
+        # construction: LSL2/KQ4/KQ6/LB2 all have ZERO fold rows (measured 2026-08-19d).
+        "the henchman's arming demands a survivable capture or the pea answer":
+            "no detector carries a fold's demand back to the arming of the machine that "
+            "carries the player into the fold's room, so both lethal capture orderings "
+            "(before the give, and after the rescue) are unguarded",
         # ✅ PROMOTED 2026-08-19c, SAME SESSION AS DECLARED -- "the castle cat's arming demands
         # the whale kit (remote fuse = death)" is GREEN. `missability.fuse_death_armings`
         # landed with the three classifications the red named: DEATH PHASES ((331,3) arms
