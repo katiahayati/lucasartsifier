@@ -1008,6 +1008,41 @@ def test_a_region_never_starts_inside_a_message():
           not bad,
           detail="regions taken from inside a string: %r" % (bad,))
 
+    # THE REST OF THE FAMILY, as a census rather than as a claim. These scanners are still raw
+    # (`wrap_forbidden_case`'s `rfind("(if")`, the arm-event / arm-clause `setScript:` searches,
+    # the clause-head walk), and they are safe today for one reason only: nothing they look for
+    # is ever written inside a message in these five games. That is a fact about the corpus, so
+    # it is measured here rather than asserted in a docstring -- the day a new game writes one,
+    # this says so BEFORE the placement built on it ships, which is exactly what nobody could
+    # say about `(method (` until it was looked for.
+    import bisect as _bi
+    fam = {"setScript:": r"setScript:\s*\w+", "(if": r"\(if", "(cond": r"\(cond\b",
+           "newRoom:": r"newRoom:", "put: <n>": r"put:\s*\d+",
+           "(instance|class": r"\((?:instance|class)\s+\w+"}
+    counts = {k: [0, 0] for k in fam}
+    for name in ("LSL2", "KQ4", "KQ6", "dagger"):
+        cfg = config.by_name(name)
+        if cfg is None or not _os.path.isdir(cfg.src_dir):
+            continue
+        for fn in sorted(_os.listdir(cfg.src_dir)):
+            if not fn.endswith(".sc"):
+                continue
+            text = open(_os.path.join(cfg.src_dir, fn), errors="replace").read()
+            spans = _P._noncode_spans(text)
+            starts = [s for (s, _e) in spans]
+            for k, pat in fam.items():
+                for m in _re.finditer(pat, text):
+                    i = _bi.bisect_right(starts, m.start()) - 1
+                    counts[k][1] += 1
+                    if i >= 0 and m.start() < spans[i][1]:
+                        counts[k][0] += 1
+    hot = {k: v for k, v in counts.items() if v[0]}
+    check("the still-raw scanners have nothing to trip over in this corpus",
+          not hot,
+          detail="matches inside non-code: %r (of %r). One of these scanners now reads text "
+                 "that is not code; give it `sexpr.code_finditer` the way `_find_region` got "
+                 "`code_search`." % (hot, {k: v[1] for k, v in counts.items()}))
+
 
 def test_a_refused_arming_does_not_orphan_its_host():
     """🔴 F6, DECLARED RED 2026-08-19e -- the cure moves a PLAY-CONFIRMED emission.

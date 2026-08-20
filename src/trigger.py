@@ -26,7 +26,8 @@ import sys
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(__file__))
-from sexpr import read_file, Sym, Str, Said  # noqa: E402
+from sexpr import (code_finditer, code_search, read_file, skip_noncode,  # noqa: E402
+                   Sym, Str, Said)
 
 CONTROLLABLE_METHODS = {"handleEvent", "doVerb"}
 
@@ -1237,22 +1238,22 @@ def find_trigger(forms, target_room, ego=None):
 # region-scoped source wrapping
 # --------------------------------------------------------------------------
 def _block_span(text, start_idx):
-    """Given index of a '(', return (start, end) covering the balanced form,
-    skipping {..} strings and '..' Said specs."""
+    """Given index of a '(', return (start, end) covering the balanced form, skipping comments,
+    `{..}` message text and `'..'` Said specs -- `sexpr.skip_noncode`'s taxonomy, which is where
+    that rule now lives ([[same-rule-two-places]]).
+
+    It used to be spelled inline here, and the inline copy could HANG: an unterminated `{` or
+    `'` made `find` return -1, so `i` became 0 and the walk restarted from the top of the file
+    forever. The shared rule bounds both quoted forms to their own LINE and treats an
+    unterminated one as an ordinary character. Every `'...'` in the corpus is on one line
+    (measured: no line carries a stray quote), so no span moves."""
     depth, i, n = 0, start_idx, len(text)
     while i < n:
+        nxt = skip_noncode(text, i, n)
+        if nxt is not None:
+            i = max(nxt, i + 1)
+            continue
         c = text[i]
-        if c == "{":
-            i = text.find("}", i) + 1
-            continue
-        if c == "'":
-            i = text.find("'", i + 1) + 1
-            continue
-        if c == ";":
-            i = text.find("\n", i)
-            if i < 0:
-                break
-            continue
         if c == "(":
             depth += 1
         elif c == ")":
@@ -1264,7 +1265,18 @@ def _block_span(text, start_idx):
 
 
 def _find_region(text, header_re):
-    m = re.search(header_re, text)
+    """The balanced form headed by the first CODE match of `header_re`, or None.
+
+    ⛔ A HEADER QUOTED IN A MESSAGE IS NOT A HEADER, and this one is not latent (2026-08-20
+    review's hand-off list, item 2: R1 is a property of "scan raw text for a candidate, then span
+    from it"). KQ6's and LB2's `WriteFeature.sc` is a source-code GENERATOR whose message strings
+    are themselves SCI source -- `{ \\t(method (doVerb theVerb)\\0d\\n\\t\\t(switch theVerb\\0d\\n}`
+    -- and that message holds the FIRST `(method (doVerb` in the file. With a raw `re.search`
+    this returned (9255, 9815): 560 bytes beginning in the middle of a string, every span
+    computed inside it arithmetic on text that is not code, and the placement that asked would
+    have rewritten it. Census of the five source trees: 7,747 `(method (` matches, two inside
+    non-code, and both of them this."""
+    m = code_search(text, header_re)
     if not m:
         return None
     return _block_span(text, m.start())

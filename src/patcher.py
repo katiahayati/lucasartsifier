@@ -35,7 +35,7 @@ import config
 import guards as G
 import ir as I
 import missability as M
-from sexpr import read_file
+from sexpr import code_finditer, noncode_spans, read_file, skip_noncode
 import trigger as T
 from trigger import (analyze_room, _var_assigned_rooms,
                      find_trigger, find_arming, find_all_armings, find_cue_chain_armings,
@@ -2249,78 +2249,13 @@ def _edit_candidates(dest, titles_by_num, sp, rooms):
     return out
 
 
-def _skip_noncode(text, j, end):
-    """If `text[j]` opens a comment or a string, the offset just past it; else None.
-
-    SCI source carries four things that look like code and are not, and the taxonomy matters
-    because only one of them actually carries parens in this corpus. Measured 2026-08-20 across
-    the five source trees:
-
-      * `;` LINE COMMENTS -- everywhere, and they eat to end of line;
-      * `{...}` MESSAGE TEXT -- everywhere, may span lines, and free to contain a lone paren;
-      * `'...'` SAID AND MENU SPECS -- 3,100 of them in code position on LSL2 and KQ4, and the
-        ONLY non-code form here that legitimately carries parens (`'(get,take)/lamp'` is a
-        grouped alternation). All 3,100 balance today, none contains a `;` or a `{`, and no
-        line carries a stray quote -- so handling them changes not one span in the corpus. It
-        is here because "balanced today" is a fact about these five games, not a property of
-        the arithmetic (2026-08-20 review, minor list);
-      * `"..."` -- DEAD. Every double quote in the corpus is inside a `{...}` message, which is
-        consumed above it. Kept, line-bounded, for a decompiler that emits one.
-
-    A single unbalanced paren inside any of them shifts every span this module computes, and
-    every span this module computes is a guard placement. The quoted forms are bounded to their
-    own LINE: an unterminated quote is then an ordinary character rather than a skip that
-    swallows the rest of the file."""
-    c = text[j]
-    if c == ";":
-        k = text.find("\n", j)
-        return end if k < 0 else min(k + 1, end)
-    if c == "{":
-        k = text.find("}", j + 1)
-        return end if k < 0 else min(k + 1, end)
-    if c in "'\"":
-        nl = text.find("\n", j + 1)
-        stop = end if nl < 0 else min(nl, end)
-        k = j + 1
-        while k < stop and text[k] != c:
-            k += 2 if text[k] == "\\" else 1
-        return min(k + 1, end) if k < stop else None
-    return None
-
-
-def _noncode_spans(text):
-    """Every `(start, end)` in `text` that `_skip_noncode` consumes whole, in order.
-
-    One linear pass, so a scanner can ask "is this match really code?" by bisection instead of
-    re-deriving the answer per candidate."""
-    out, j, n = [], 0, len(text)
-    while j < n:
-        nxt = _skip_noncode(text, j, n)
-        if nxt is not None:
-            out.append((j, nxt))
-            j = max(nxt, j + 1)
-            continue
-        j += 1
-    return out
-
-
-def _code_finditer(text, pattern, spans=None):
-    """`re.finditer`, minus every match that STARTS inside a comment or a quoted form.
-
-    ⛔ THE SCAN AND THE SPAN WALK MUST AGREE (2026-08-20 review, R1). `_balanced_span` learned
-    to skip non-code in 2026-08-19e; the scans that FEED it did not, so `_enclosing_if_test`
-    still enumerated its candidates with a raw `finditer` over the whole file. An `(if` written
-    inside a `{...}` message was picked as the arming, the demand was written into the message,
-    the arming was not held, the file stopped balancing -- and the placement row reported
-    `applied: True`. Filtering one half of a two-half arithmetic is not a fix."""
-    if spans is None:
-        spans = _noncode_spans(text)
-    starts = [s for (s, _e) in spans]
-    for m in re.finditer(pattern, text):
-        i = bisect.bisect_right(starts, m.start()) - 1
-        if i >= 0 and m.start() < spans[i][1]:
-            continue
-        yield m
+# THE NON-CODE TAXONOMY LIVES IN `sexpr` -- one rule, two importers ([[same-rule-two-places]]).
+# This module and `trigger` both walk raw source text to compute guard placements, and both grew
+# their own answer to "is this offset really code?"; the 2026-08-20 review found what that cost.
+# These names are kept because every span walk below reads better with them.
+_skip_noncode = skip_noncode
+_noncode_spans = noncode_spans
+_code_finditer = code_finditer
 
 
 def _balanced_span(text, i):
@@ -3424,8 +3359,7 @@ def _conjoin_marked(text, ts, te, demand):
     rest = text[te:]
     nl = rest.find("\n")
     tail = rest[:nl if nl >= 0 else len(rest)]
-    head = text[text.rfind("\n", 0, ts) + 1:ts]
-    ind = head if not head.strip() else ""
+    ind = re.match(r"[ \t]*", text[text.rfind("\n", 0, ts) + 1:]).group(0)
     mark = " ; softlock-guard" + ("" if not tail.strip() else "\n" + ind + "\t")
     return text[:ts] + "(and %s %s)%s" % (text[ts:te], demand, mark) + text[te:]
 

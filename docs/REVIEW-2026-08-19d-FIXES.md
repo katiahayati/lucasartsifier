@@ -113,21 +113,201 @@ before its test was written; ten reds are committed at `58aedb0` and declared in
 
 | # | Finding | Where | Cure | Status |
 |---|---------|-------|------|--------|
-| R1 | the candidate scan is raw `finditer`: an `(if` inside a `{…}` message is picked as the arming, the demand lands in the message, the file stops balancing, row says `applied: True` | `patcher.py` `_enclosing_if_test` | filter the scan through `_skip_noncode` too | 🔴 open |
-| R2 | conjoining onto `(if T … else B)` DIVERTS control into `B` — on the fixture the else arms the death itself. F1 asked about the else *branch*, never whether the `if` HAS one | `patcher.py` both appliers | disqualify any `(if` with a depth-1 `else`, fall back to wrapping the arming STATEMENT; ⚠️ `NESTED_ELSE_ARM` blesses the bad shape and must be re-derived | 🔴 open |
-| R3 | `_place_fuse_arm` enumerates armings as `init:` sends; the arming of a machine is `setScript: <machine>` (`init:` is right on KQ5 only because `theCat::init` does the setScript). One site held, one open, `sites=1` | `patcher.py` | enumerate both spellings — the spec already carries `machine` | 🔴 open |
-| R4 | `_falsifies` reads `chain_writes` (an unordered union over every state + the armer) as a register STATE. 26 firings on KQ5, all on a register the chain writes 3 values to. Deletes escapes | `missability.py` | falsify only when NO write of that register satisfies the conjunct; open question: does the pricing walk want an ORDERED last-write? | 🔴 open |
-| R5 | `emitted` is outside the room loop, keyed `(machine, item)`, while `demand_alts` is per room — a second room's STRONGER demand never emits | `missability.py` | put the room's demand in the key | 🔴 open |
-| R6 | `handler_decs` is 0 on KQ4 and KQ6, so the class this docstring calls "KQ4's day/night, KQ6's wedding fuse" can never classify there. KQ4's clock is a `GetTime` DEADLINE, not a countdown; `(= gN (- gN 1))`, `seconds`/`cycles` and deadlines are all invisible; and `I.walk` does not follow calls while `_hwalk` does | `opmodel.py`, `missability.py` §2 | ⚠️ **needs a design decision, not a patch** — the cure is strictly narrower than what it replaced and its error direction is deleting findings | 🔴 open, USER's call |
+| R1 | the candidate scan is raw `finditer`: an `(if` inside a `{…}` message is picked as the arming, the demand lands in the message, the file stops balancing, row says `applied: True` | `patcher.py` `_enclosing_if_test` | filter the scan through `_skip_noncode` too | ✅ `a9bad5f` |
+| R2 | conjoining onto `(if T … else B)` DIVERTS control into `B` — on the fixture the else arms the death itself. F1 asked about the else *branch*, never whether the `if` HAS one | `patcher.py` both appliers | disqualify any `(if` with a depth-1 `else`, fall back to wrapping the arming STATEMENT; ⚠️ `NESTED_ELSE_ARM` blesses the bad shape and must be re-derived | ✅ `a9bad5f` |
+| R3 | `_place_fuse_arm` enumerates armings as `init:` sends; the arming of a machine is `setScript: <machine>` (`init:` is right on KQ5 only because `theCat::init` does the setScript). One site held, one open, `sites=1` | `patcher.py` | enumerate both spellings — the spec already carries `machine` | ✅ `a9bad5f` |
+| R4 | `_falsifies` reads `chain_writes` (an unordered union over every state + the armer) as a register STATE. 26 firings on KQ5, all on a register the chain writes 3 values to. Deletes escapes | `missability.py` | falsify only when NO write of that register satisfies the conjunct; open question: does the pricing walk want an ORDERED last-write? | ✅ `de90dd4` |
+| R5 | `emitted` is outside the room loop, keyed `(machine, item)`, while `demand_alts` is per room — a second room's STRONGER demand never emits | `missability.py` | put the room's demand in the key | ✅ `de90dd4` |
+| R6 | `handler_decs` is 0 on KQ4 and KQ6, so the class this docstring calls "KQ4's day/night, KQ6's wedding fuse" can never classify there. KQ4's clock is a `GetTime` DEADLINE, not a countdown; `(= gN (- gN 1))`, `seconds`/`cycles` and deadlines are all invisible; and `I.walk` does not follow calls while `_hwalk` does | `opmodel.py`, `missability.py` §2 | ⚠️ **needs a design decision, not a patch** — the cure is strictly narrower than what it replaced and its error direction is deleting findings | 🔴 **RE-DERIVED below** — verdict right, every stated reason wrong; USER's call is narrower than it looked |
 
-## Minor, also open
-`_skip_noncode`'s taxonomy names the wrong constructs (the `"` branch is dead on all five trees;
-SCI's said specs are `'…'`, unhandled, and are the only non-code construct in this corpus that
-actually carries parens — balanced today); the inline `; softlock-guard` comments out the rest
-of its line (562 one-line `(if …)` forms across the corpus, 0 containing an arming today);
-`_payable` never asks whether the item is obtainable BEFORE the held arming, which is the exact
-wall its own prose warns about; and for an owner demand it checks the item has a source, never
-that the owner VALUE is establishable.
+---
+
+# THE 2026-08-20 CURES (this round)
+
+Nine of the ten declared reds are green. What is written below each is the part the review did not
+say — because on four of the six, the VERDICT was right and the stated REASON was not
+([[re-derive-a-reds-premise]], applied to the reviewer rather than to a red of my own).
+
+## What was measured
+
+| Check | Result |
+|---|---|
+| All five games' **emitted patch source trees**, against a worktree at `cc3b897`, recursive diff | **byte-identical** |
+| …re-run after the `trigger.py` change, which feeds every placement | **byte-identical** |
+| Suite | **655 passed, 1 known-red (F6), 0 unexpected, 0 crashed** (925s), from 638/1 at `c3ea337` |
+| KQ5's classification | unmoved: `fuses {352,353}`, `phases [(331,3),(331,6)]`, `deaths [theWizardScript, wakeUpScript]`, both play-confirmed conditions verbatim |
+
+The emitted-bytes harness is now `tools/measure_emitted_bytes.py` rather than a scratchpad
+script — the second review named it as the one claim it could not independently confirm.
+
+## R2 — and the outward climb, which the review did not name
+
+Disqualifying any `(if` with a depth-1 `else` is R2's stated cure and it is right. What the
+statement missed is the *other* half: when the innermost arming `if` is disqualified, the first
+cut CLIMBED OUTWARD to an enclosing `if` and held there. That withholds the arming, which is why
+it looked sound — and it is the wrong site, for a reason `trigger.py`'s `proc-arm` branch has
+carried in prose since it was written: *"wrap ONLY the arming form, never its enclosing clause:
+the `else` sibling is the game's own other outcome and must stay free."* Climbing outward
+suppresses that sibling, which no row derived and no spec scoped — the wall-shaped failure
+`test_stage_match_is_structural` already refuses elsewhere.
+
+So `_enclosing_if_test` now returns the innermost arming test **or None**, never a wider scope,
+and both appliers fall back to wrapping the arming STATEMENT. `NESTED_ELSE_ARM` was re-derived
+(it asserted the climb), and `BARE_SPAWNER` with it: it asserted a whole REFUSAL, and full
+coverage beats a refusal at the same claim.
+
+## R1 — the red's own assertion was unsatisfiable
+
+The finding is real and reproduced (both appliers wrote the demand inside the message; code
+parens 8/8 → 9/10). The test written for it could not have passed on any code: it asked for
+`out.count("(") == out.count(")")` on a fixture whose message carries unmatched parens **by
+design** — 10/8 before any edit and 10/8 after a perfect one — and for the marker to land after
+the last `}`, when the arming `(if` sits *before* the message. Re-derived to the three things the
+fix must actually deliver: the message comes through byte-identical, the CODE balances, and the
+demand lands on the real arming test. The fuse fixture was rebuilt too; the red had produced it
+with two `.replace` calls that dropped a `(method` line and left its closing parens behind, so it
+did not balance either.
+
+## R4 — right verdict, wrong measurement
+
+"26 firings on KQ5, all on a register the chain writes 3 values to. **Deletes escapes**."
+Instrumented: all 26 firings are the same conjunct, `global332 == 7`, against the write set
+`{2, 3, 4}`. None of the three satisfies it, so the old rule and the new one agree on **every**
+firing and nothing on KQ5 moves. R4 is latent exactly as F1 and F2 were.
+
+The reviewer's open question — ordered last-write vs. a set — is answered in the docstring as a
+stated gap rather than silently: a write reached on only some paths is in the union all the same,
+so a register the chain might leave untouched is treated as certainly written. Fixing that needs
+a path-sensitive write model `chain_writes` is not.
+
+## R5 — and the test that tested a string
+
+Real, and latent here: 13 castle rooms reach `(theCatScript, 24)` and all 13 derive the same
+demand. The red as committed read the SOURCE of `fuse_death_armings` and grepped its key line for
+the word `"room"` — a test that would pass on a comment. Rebuilt as a two-room fuse world driven
+through the detector: room 1 pays with item 24, room 2's only way out needs 24 **and** 37, and
+item 24 must get both demands. Verified red against the committed code first.
+
+## ⭐ R1's OTHER HALF WAS LIVE — the finding this round added
+
+The review's hand-off list said a next reviewer should take *"the other raw-text scanners… R1 is
+a property of 'scan raw text for a candidate, then span from it'"*. Measured across the five
+source trees, one of them is not latent at all.
+
+`trigger._find_region` takes its region from `re.search(header_re, text)` — first match wins —
+and KQ6's and LB2's `WriteFeature.sc` is a **source-code generator**: its message strings are
+themselves SCI source, `{ \t(method (doVerb theVerb)\0d\n\t\t(switch theVerb\0d\n}`. That message
+holds the first `(method (doVerb` in the file, so the region returned was `(9255, 9815)` — 560
+bytes beginning in the middle of a string, every span inside it arithmetic on text that is not
+code, and the placement that asked would have rewritten it.
+
+Census of the family, five trees, *matches / matches inside non-code*:
+
+| pattern | | pattern | | pattern | |
+|---|---|---|---|---|---|
+| `(instance\|class` | 6,356 / 0 | `setScript:` | 2,192 / 0 | `newRoom:` | 763 / 0 |
+| `(procedure (` | 328 / 0 | `(if` | 11,073 / 0 | `put: <n>` | 340 / 0 |
+| `(cond` | 1,676 / 0 | **`(method (`** | **7,747 / 2** | | |
+
+Both of the two are this. `_find_region` uses `sexpr.code_search` now, and the whole non-code
+taxonomy moved to **`sexpr.py`** — one rule, two importers, because `patcher` and `trigger` had
+each grown their own and that is precisely what R1 cost ([[same-rule-two-places]]). `trigger`'s
+inline copy carried two hazards the shared one does not: it tested `'` **before** `;`, so an
+apostrophe in an English comment (`; don't`) opened a said spec and skipped to the next quote
+anywhere in the file (zero such comments today), and an unterminated `{` or `'` made `find`
+return −1, so the walk restarted from the top of the file forever.
+
+The scanners still raw (`wrap_forbidden_case`'s `rfind("(if")`, the arm-event/arm-clause
+`setScript:` searches) are safe for one reason only: nothing they look for is written inside a
+message in these five games. That is a fact about the corpus, so it is now a **census check in the
+suite** rather than a claim in a docstring — the day a new game writes one, the run says so before
+the placement built on it ships.
+
+## ⭐ R6, RE-DERIVED — the verdict holds and not one of its reasons does
+
+R6 was declared as needing a design decision because "the F4 cure is strictly NARROWER than what
+it replaced, its error direction is deleting findings, and nothing in the corpus can measure the
+loss." The loss is now measured, and it is zero — for reasons that have nothing to do with the
+decrement rule.
+
+**The verdict is right.** `fuse_death_armings` returns `[]` on KQ4 and KQ6 and always will.
+
+**"The docstring calls this class 'KQ4's day/night, KQ6's wedding fuse'."** It calls them the
+PARENT class and says so in the same sentence: *"the class is the adversarial clock
+([[softlock-mechanism-taxonomy]] class 5, KQ4's day/night, KQ6's wedding fuse) **grown a third
+hop**: the clock does not seal an item, it arms a DEATH, and the countdown is not free-running,
+it is ARMED by the encounter the player failed to answer."* A free-running clock is excluded by
+definition, decrement rule or no. The docstring's last paragraph already states the measurement
+and the reason: *"LSL2, KQ4, KQ6 and LB2 all return [] — KQ6's wedding fuse writes a flag no
+unavoidable machine's entry pins, so it has no death phase and stays `register_strandings`'
+item-seal."*
+
+**"KQ4's clock is a `GetTime` DEADLINE, not a countdown."** It is not a deadline either. It is a
+**count-UP wall clock**, `Main.sc:863-877`, in `KQ4::doit`:
+
+```
+(if (!= (= global156 (GetTime 1)) global157)     ; the per-real-second tick latch
+    (= global157 global156)
+    (if (>= (+= global158 4) 60)                 ; seconds accumulator      -- INCREMENT
+        (++ global159)                           ; minutes                  -- INCREMENT
+        (-= global158 60)                        ; the modulo CARRY         -- not a tick
+        ...
+        (if (== global159 60) (++ global160) (= global159 0))))   ; hours   -- INCREMENT
+```
+
+**"`(= gN (- gN 1))`, `seconds`/`cycles` and deadlines are all invisible."** Censused across the
+five IRs: `Assignment(g = g − k)` on a global occurs **zero** times. `g −= k` on a global occurs
+**once** — and it is `(-= global158 60)` above, the carry. Teaching `handler_decs` that spelling
+would promote KQ4's seconds accumulator to a countdown: a **false positive**, not a recovered
+finding. The narrowing the review worried about is, on the one instance the corpus actually has,
+the thing keeping a wrong answer out.
+
+**"KQ6's wedding fuse."** It *is* a countdown, of exactly KQ5's shape — `rgCastle.sc:270`, in `rgCastle::doit`, latched
+on `(!= lastSeconds (GetTime 1))`, with **four** of them:
+
+```
+(if (and (> weddingRemind 0) (== (-- weddingRemind) 0)) …)   ; and loiterTimer, guardTimer, guard2Timer
+```
+
+`weddingRemind` is an **object property**, not a global, and its expiry writes `(|= rFlag1 $0002)`
+— a property MASK. `handler_decs` records `I.is_global` only. So the blocker on KQ6 is the
+**object-property store**, [[modeling-gap-census]] #3, already declared — not the decrement
+reading and not this class's taxonomy.
+
+**"`I.walk` does not follow calls while `_hwalk` does."** True only ACROSS SCRIPTS. `_heffect`
+routes `PublicCall`/`LocalCall` to `_follow_call`, which re-enters `_hwalk`, which runs the
+decrement scan on the callee body. A **LocalCall** files the tick under the same script as the
+caller's write, so it matches. Only a cross-script `PublicCall` files `(room, callee, var)`
+against a write recorded as `(room, caller, var)`.
+
+### What is actually left for the USER
+
+Two things, and both are narrower than "is the F4 cure too narrow":
+
+1. **Should `handler_decs` learn the object-property store?** That is what would make KQ6's
+   wedding fuse reachable by this class. ⚠️ KQ6 is GOLDEN, and its wedding fuse is already
+   carried — by `register_strandings` as the letter seal (flag 166 / reg338, `guard_prop_flag_
+   owner_write`, shipped in v22). Promoting it here risks a second row for a mechanism that
+   already has a guard.
+2. **The cross-script tick/write script-key mismatch.** No instance in the corpus; a one-line
+   widening (record the tick against the caller's key as well) with no way to measure it here.
+
+## Minor list — two done, two still open
+
+✅ **`_skip_noncode`'s taxonomy** — corrected, and the whole rule moved to `sexpr.py`. Said and
+menu specs `'…'` are handled (3,100 in code position on LSL2+KQ4, all balanced, none carrying a
+`;` or a `{` — measured, so the addition moves nothing); the `"` branch is documented as dead on
+all five trees and kept line-bounded.
+
+✅ **The inline `; softlock-guard` comments out the rest of its line** — 562 one-line `(if …)`
+forms corpus-wide, 0 with an arming today. The marker now pushes the remainder onto its own line
+when the line is not already blank; when it is (every site today, KQ5's two included) the bytes
+are unchanged.
+
+🔴 **`_payable` never asks whether the item is obtainable BEFORE the held arming**, which is the
+exact wall its own prose warns about — and for an owner demand it checks the item has a source,
+never that the owner VALUE is establishable. Both need the closure `window_closures` builds;
+still open, and still stated in the docstring rather than papered over.
 
 ## What the second review confirmed
 Both appliers emit byte-identical output to the code they replaced on real stock KQ5 source, and
