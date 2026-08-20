@@ -336,3 +336,158 @@ is empty before and after, as that test's own comment concedes.
 3. `chain_writes` read as a state ANYWHERE else — R4 is one consumer.
 4. `ownedby_death_folds`, `_continuation_of`, `_room_unavoidable` / `entry_musts`: not in the
    diff, but they decide what the two new detectors ever see, and this review took them on trust.
+
+---
+
+# THE THIRD REVIEW (2026-08-20) — the cures reviewed again, and two of three are MINE
+
+Same mandate, run over the nine cures above. Three findings, **two introduced by the round that
+was fixing the round before it** — which is the argument for reviewing the fix, made twice now
+([[review-the-fix-not-only-the-feature]]). Every one reproduced by hand before its test was
+written; the reds are committed at `51d43b6`.
+
+| # | Finding | Where | Status |
+|---|---------|-------|--------|
+| N1 | `; softlock-guard` IS A LINE COMMENT — the fix went into `_conjoin_marked` alone, twenty lines from `_wrap_statement`, **which the same commit made the common path** | `patcher.py` + 11 more emitters | ✅ |
+| N1b | `_arming_statement_span` returns the innermost balanced form, which is routinely an expression in VALUE position | `patcher.py` → `sexpr.py` | ✅ |
+| N2 | R2's anti-wall doctrine is enforced for the `else` SPELLING only — a `cond`/`switch` fork between the arming and the `if` is invisible | `patcher._depth1_else` | ✅ |
+| N3 | the census tripwire cannot fail for the reason it names: the family omits `(method (`, the one pattern with hits, and both loops omit KQ5 | `test_patch_text.py` | ✅ |
+| N4 | R4's cure has a SECOND error direction, undeclared: a value written on a branch NOT TAKEN can now *satisfy* a conjunct and keep an escape the run never offers | `missability._falsifies` | ⚠️ **declared + instrumented — the choice is the USER's** |
+
+## What was measured
+
+| Check | Result |
+|---|---|
+| All five games' **emitted patch source trees** vs a worktree at `6aa0a1d`, recursive diff | **byte-identical, 1,084 files** |
+| …first run, before the `mark_line` refinement below | **1 file moved** — LB2's `rm520.sc`, and it is what taught the rule its boundary |
+| Suite | see the commit message |
+
+## N1 — and the eleven other emitters that splice a marker in front of live text
+
+`_conjoin_marked` got the fix on 2026-08-20 and `_wrap_statement` did not, twenty lines away in
+the same commit. That is worse than a coincidence: **R2, in that same commit, made
+`_wrap_statement` the common path.** Any `(if` carrying a depth-1 `else` is now disqualified
+from the conjoin and handed to the statement wrap, and 774 of the corpus's 780 one-line
+`(if ...)` forms carry one (re-measured over all five trees, 1,084 files — the "562" the old
+comment quoted was a four-tree figure).
+
+Three shapes, all reproduced before the tests were written:
+
+| fixture | before | after | what it costs |
+|---|---|---|---|
+| `(theCat init:) (theRat init:)` | code parens 4/4 | 5/5 | `(theRat init:)` still greppable in the file, **gone from the program** |
+| `(if T <arm> else B)` on one line | 7/7 | **7/6** | the file does not compile |
+| `(= [local0 0] (theCat init: yourself:))` | 4/4 | **6/5** | two defects at once — see N1b |
+
+The population is **not four copies**. Twelve emitters across `patcher` and `trigger` splice
+`<edit><marker>` in front of preserved text: the two arming holds, the register/property flip
+holds, the flag closer, the prop-flag write, LB2's act flip, the notify-award gate, both
+turn-back emitters and both positional gates. All twelve now call **`sexpr.mark_line`**.
+
+⭐ **And LB2 taught the rule its boundary.** The first measured run moved exactly one emitted
+file: `dagger/src/rm520.sc`, where TWO act-flip rows conjoin onto the same head, so the second
+row's marker is spliced in front of the first row's — and a `strip()`-shaped test called that
+"content" and pushed a **comment** onto a line of its own, moving the bytes of a play-confirmed
+patch to protect nothing. What a `;` can destroy is CODE. Whitespace and an existing comment are
+not at risk; a `{...}` message or a `'...'` Said on the next line is. With that reading the
+five-game diff is clean and the rule is stronger, not weaker.
+
+## N1b — a statement is not merely a balanced form
+
+`_arming_statement_span` returned the innermost balanced form containing the arming, which is
+routinely an expression in **value position**: `(= [local0 0] (theCat init: yourself:))`,
+`(not (self init: param1))`. Wrapping that in `(if <demand> ...)` does not withhold the arming —
+it changes what the assignment stores. `sexpr.statement_span` climbs out through value positions
+to the enclosing statement (which is what the game's own no-arm path also skips) and returns
+None when there is none — an arming performed inside a TEST, which `_enclosing_if_test` already
+refuses for the same reason. Body slots are read positionally per head, with the grandparent
+distinguishing a `cond` clause `((> a b) (foo))` from a computed-receiver send
+`((gInv at: 25) owner:)`, which are identical from inside.
+
+## N2 — a fork is a fork, whatever it is spelled
+
+R2's doctrine is *"the game's own other outcome must stay free"*. `_depth1_else` looks for four
+letters, so a `cond` or `switch` standing between the arming and the `if` was invisible and the
+search widened straight past the fork it should have stopped at. Reproduced: a `cond` whose arms
+init `theCat` and `theRat` puts the demand on the outer `if`, so a player who cannot pay gets
+**neither** — the wall R2's own docstring forbids, reached by a different spelling.
+
+⚠️ **The cure is not "any fork disqualifies".** KQ5's shipped `proc550_16` has a `switch global11`
+between the `if` and the spawn, and that emission is play-confirmed. The distinguishing question
+is the one R2's `else` already answers — **can stock run this arm WITHOUT the arming?** A fork
+every arm of which is itself an arming this hold covers answers no, and withholding it is
+exactly what the game's own no-arm path does (KQ5: the same cat, positioned per room). A fork
+with an arm the hold does not cover answers yes, and that arm is an outcome no row derived. Both
+directions are pinned; KQ5's condition and its emitted bytes do not move.
+
+## N3 — the tripwire that could not fire for the reason it names
+
+`test_patch_text.py`'s census asserted "the still-raw scanners have nothing to trip over in this
+corpus" over a family that **omitted `(method (`** — the one pattern with hits, named in the
+comment three lines above it — and over **four** source trees, not five: both loops listed
+`LSL2, KQ4, KQ6, dagger`. So every "five source trees" figure this file has printed was a
+four-tree figure.
+
+Fixed, and the assertion split, because a pattern that HAS non-code matches is not a failure by
+itself — it is a requirement that every scanner reading it be code-filtered:
+
+* the still-raw patterns must have zero non-code matches (unchanged, and now over five trees);
+* the KNOWN-quoted ones must still be found, so the census cannot go quiet the way it just did;
+* all five trees must actually have been read.
+
+⭐ **And the remaining raw reader of `(method (` was a second live instance of R1's shape.**
+`patcher._guard_travel_dispatch` — the applier that guards KQ6's magic map — picks its `doVerb`
+with a raw first-match-wins `re.search`. Driven against a file carrying a `WriteFeature`-style
+source generator it reports `applied: True sites=1`, **destroys the message**, and leaves code
+parens 15/16. Latent on this corpus only because `WriteFeature.sc` has no `newRoom:` at all.
+Now `code_search`, with a behavioural test verified red against the committed code.
+
+Three more copies of the shared taxonomy went with it: `patcher._enclosing_form` (a third
+inline copy, carrying the `'`-before-`;` hazard `trigger`'s had), `_recycle_counter_break`'s raw
+`(if` scan and inline else-walk, and `wrap_forbidden_case._if_arms`'s raw `rfind("(if")` and
+*fourth* else-walk. `depth1_else` now lives in `sexpr.py` with the rest.
+
+## N4 — R4's cure has two error directions, and only one was declared
+
+The two readings of `chain_writes` differ on **exactly one case**, and it is the case R4's own
+example is: the register is written, some write satisfies the conjunct and some contradicts it.
+
+| reading | what it does | what it costs |
+|---|---|---|
+| keep it (**what ships**, R4's cure) | admits an escape that may exist only on the path not taken, at its DISCHARGED price, so `_minimal` prefers it | **the hold ships weaker than the game needs** — F10's failure, in the function written to prevent F10 |
+| drop it (before R4) | deletes an escape the game really offers on some path | the demand rises into a wall, or the row vanishes and the softlock ships unguarded |
+
+Neither is a deduction, and **the corpus cannot choose between them**: all 26 KQ5 firings are
+`global332 == 7` against the write set `{2, 3, 4}`, where every write contradicts — not
+divergent, so both readings agree on all 26 and the shipped demand does not move either way.
+R4 is latent here exactly as F1 and F2 were, and so is its reversal.
+
+So the divergence is now **recorded** (`missability._DIVERGENT`) rather than guessed at in
+silence, the docstring states both directions, and `test_kq5_ground_truth` pins the measured
+fact that KQ5 never asks the question — a game that does asks it out loud, before its hold
+ships. ⭐ **Which way it should read is a design decision like R6's, and it is the USER's.**
+
+## Minor list — the four that were open
+
+✅ **`measure_emitted_bytes.py`'s own recipe could not work.** `build/` is gitignored, so the
+control worktree has none — and `config` derives every `src_dir` and `ir_path` from the tree it
+is imported out of. The control run therefore found no IR for any game, SKIPped all five, and
+emitted an empty directory that `diff -r` compared against the real one without complaint: **a
+vacuous PASS reading as "byte-identical"**. The recipe now carries the `ln -s "$PWD/build"` line
+and a skip is a NONZERO EXIT — this tool may not report success on a measurement it did not make.
+
+✅ **Four assertions that constrain a STRING, not a behaviour.** `"row_site = _ModeSite()" in
+open(patcher.py).read()` and a regex over a `def` line (both pass on a comment, fail on a
+rename, and cannot tell a threaded site from a variable of that name assigned and never used) →
+asserted on the site objects and the signature. `"edits + gedits + uedits" in pipeline.py` → the
+mode-UI ROW SHAPE, which is what "unions titles only" has to rest on. And
+`test_model_cache.py`'s *"the key covers this directory's source (edit → miss → rebuild)"*,
+which asserted `len(src) > 0 and k1 is not None` — **true of any key from any inputs** — now
+adds a source file, requires the key to move, removes it, and requires the key to come back.
+
+✅ **The stale `fuse_death_armings` docstring** — it still said rows are emitted once per
+`(machine, item)`, which R5 changed, and described the arming as an `init:` send, which R3
+changed.
+
+🔴 **`_payable` never asks whether the item is obtainable BEFORE the held arming** — unchanged,
+still open, still stated in the docstring rather than papered over.

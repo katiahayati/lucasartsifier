@@ -2444,6 +2444,12 @@ def _fuse_machines(infos, fuses):
     return out
 
 
+# Every DIVERGENT falsification question this process has been asked: `(var, op, want, neg,
+# values)`. Empty on all five games -- and the day it is not, the suite says so, because which
+# way to read one is undecided (see `_falsifies`, N4).
+_DIVERGENT = []
+
+
 def _falsifies(g, writes):
     """Do `writes` -- everything a chain has already committed -- contradict this entry guard?
 
@@ -2470,14 +2476,32 @@ def _falsifies(g, writes):
     The negated form falls out of the same reading: `¬(S == v)` is impossible only when `v` is
     the one thing S can hold.
 
-    ⚠️ STILL AN OVER-APPROXIMATION, in the same direction, and stated because the reviewer
-    raised it as an open question. A write reached on only SOME paths through the chain is in
+    ⚠️ STILL AN OVER-APPROXIMATION. A write reached on only SOME paths through the chain is in
     the union all the same, so a register the chain MIGHT leave untouched is treated as though
     it were certainly written -- and answering that needs an ORDERED, path-sensitive write
-    model, which `chain_writes` is not. Measured on KQ5 the day this landed: 26 firings, every
-    one of them the conjunct `global332 == 7` against a chain that writes 332 the values
-    {2, 3, 4}. None of the three satisfies it, so both readings agree on all 26 and the shipped
-    demand does not move -- R4 is latent here exactly as F1 and F2 were."""
+    model, which `chain_writes` is not.
+
+    ⛔⛔ AND IT HAS TWO ERROR DIRECTIONS, NOT ONE (2026-08-20 THIRD review, N4 -- the half R4's
+    cure did not declare). The two readings differ on EXACTLY ONE case, and it is the case R4's
+    own example is: the register is written, some write satisfies the conjunct and some
+    contradicts it -- DIVERGENT. There, `chain_writes` says the run can leave the register
+    either way and nothing here can say which.
+
+        keep it (what ships)  -- an escape that exists only on the path not taken is admitted,
+                                 at its DISCHARGED price, so `_minimal` prefers it to every
+                                 real one and the hold ships WEAKER than the game needs. That
+                                 is F10's failure, in the function written to prevent F10.
+        drop it (before R4)   -- an escape the game really offers on some path is deleted, so
+                                 the demand rises into a wall, or the row vanishes and the
+                                 softlock ships unguarded. That is what R4 objected to.
+
+    Neither is a deduction, and the corpus cannot choose between them: measured on KQ5 the day
+    R4 landed, `_falsifies` fires 26 times and every firing is the conjunct `global332 == 7`
+    against the write set {2, 3, 4} -- NOT divergent, so both readings agree on all 26 and the
+    shipped demand does not move either way. R4 is latent here exactly as F1 and F2 were, and
+    so is its reversal. `_DIVERGENT` below records the case so the choice stops being invisible:
+    a game that produces one says so in the suite BEFORE the hold built on it ships.
+    ⭐ THE CHOICE IS THE USER'S, and it is a design decision like R6's, not a patch."""
     for a in (_nn(x) for x in _conj_spine(g)):
         neg = isinstance(a, GNot)
         k = a.kid if neg else a
@@ -2490,8 +2514,14 @@ def _falsifies(g, writes):
         vals = [v for (S, v) in writes if S == k.var and isinstance(v, int)]
         if not vals:
             continue                          # this register is not the chain's business
-        if not any(((v == want) if k.op == "==" else (v != want)) != neg for v in vals):
+        holds = [((v == want) if k.op == "==" else (v != want)) != neg for v in vals]
+        if not any(holds):
             return True                       # nothing the chain can leave makes it hold
+        if not all(holds):
+            # DIVERGENT: the chain can leave this register either way, so "the escape exists"
+            # and "the escape does not" are both consistent with what we know (N4). Recorded,
+            # never guessed at silently -- the reading that ships is the permissive one.
+            _DIVERGENT.append((k.var, k.op, want, neg, tuple(sorted(set(vals)))))
     return False
 
 
@@ -5074,10 +5104,15 @@ class IrSccReach(SccReach):
         naive "fuse write = death" reading produces (which would wall the cat's first spawn
         forever, flag 62's only writer being the fish answer inside an encounter).
 
-        Rows are emitted once per (root machine, demanded item), not per region room; the
-        arming rooms are the CALL SITES of the host-script procedure that inits the root's
-        host object (the [[a-procedure-is-not-a-handler]] attribution, walked directly), which
-        is also where a guard goes: one wrap on that procedure holds every spawn site at once.
+        Rows are emitted once per (root machine, demanded item, DEMAND) -- the demand is part
+        of the row's identity, because `keep` is derived per room off the escapes that room
+        offers and a second room deriving a STRONGER one used to be dropped in silence (review
+        R5). The arming rooms are the CALL SITES of the host-script procedure that inits the
+        root's host object (the [[a-procedure-is-not-a-handler]] attribution, walked directly),
+        which is also where a guard goes: one wrap on that procedure holds every spawn site at
+        once -- around the `setScript:` that arms the machine or the `init:` that proxies for
+        it, whichever the game spells (review R3), and never by conjoining onto an `(if` whose
+        `else`, `cond` arm or `switch` case the game runs in the arming's place (R2, N2).
 
         NOT a snapshot key (that is a bless); consumed by the KQ5 oracle test and by
         `guards.fuse_arming_remedies`. Measured corpus-wide the day it landed: LSL2, KQ4, KQ6

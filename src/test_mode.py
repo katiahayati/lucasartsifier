@@ -246,11 +246,12 @@ def test_mode_stays_out_of_the_surface():
     import missability as M_mod
     check("missability.py never touches the mode machinery",
           "stock_or" not in open(M_mod.__file__).read())
-    # the apply_* return rows carry no mode keys (they are the frozen placement surface)
-    apply_src = open(P.__file__).read()
-    check("install_mode_ui rows are separate from apply_* rows (pipeline unions titles only)",
-          "edits + gedits + uedits" in open(os.path.join(
-              os.path.dirname(P.__file__), "pipeline.py")).read())
+    # ...and the mode-UI rows stay out of the frozen placement surface. Asserted on the ROWS
+    # (2026-08-20 third review): this read `"edits + gedits + uedits" in pipeline.py`, a check
+    # that constrains the spelling of one expression and would pass on a comment, fail on a
+    # rename, and say nothing about what the rows carry. What has to be true is that a mode-UI
+    # row is UNION-ABLE BY TITLE and carries none of the keys `snapshot.py` freezes -- which is
+    # exercised on the synthetic project in `test_synthetic_project_end_to_end`.
 
 
 def test_synthetic_project_end_to_end():
@@ -284,6 +285,13 @@ def test_synthetic_project_end_to_end():
     rows = P.install_mode_ui(scratch, {})
     check("no UI shape -> honest SKIP row",
           rows and not rows[0]["applied"] and "no menu bar" in rows[0]["why"], repr(rows))
+    # ...and those rows never join the frozen placement surface: the pipeline unions them by
+    # `title` alone, which is only safe while they carry none of the keys the snapshot reads.
+    surface_keys = {"placement", "kind", "item", "item_name", "condition", "sites"}
+    check("a mode-UI row is union-able by title and carries no placement-surface key",
+          all(set(r) & surface_keys == set() for r in rows)
+          and all("title" in r or not r["applied"] for r in rows),
+          repr(rows))
     shutil.rmtree(scratch, ignore_errors=True)
     P._MODE_DEST = None
     T.MODE = None
@@ -309,11 +317,19 @@ def test_review_defects():
     sig = inspect.signature(T.wrap_trigger_in_source).parameters
     sig2 = inspect.signature(T.wrap_all_armings_in_source).parameters
     check("D2: both wrappers accept the caller's site", "site" in sig and "site" in sig2)
-    psrc = open(P.__file__).read()
-    check("D2: apply_guards mints one site per SPEC ROW and threads it",
-          "row_site = _ModeSite()" in psrc and psrc.count("site=row_site") >= 3, "")
-    check("D2: the entry frontier shares the row's site",
-          re.search(r"def _guard_arrival_entries\([^)]*site=None", psrc, re.S) is not None)
+    # ⛔ ON THE OBJECTS, NOT THE FILE TEXT (2026-08-20 third review). These read
+    # `"row_site = _ModeSite()" in open(patcher.py).read()` and a regex over a `def` line: they
+    # pass on a comment, fail on a rename, and neither can tell a threaded site from a
+    # variable of that name assigned and never used. What carries the property is that the
+    # site object is SHARED -- one warned bit for a row wrapped at several places, a different
+    # one for the next row -- so that is asserted directly, on the thing the wrappers consume.
+    check("D2: a fresh site is a DIFFERENT warned bit (so one per row means one bit per row)",
+          masks(T.guarded_wrap("(g)", "(b)", "(r)", site=T._ModeSite())) != masks(a))
+    ep = inspect.signature(P._guard_arrival_entries).parameters
+    check("D2: the entry frontier accepts the row's site, defaulted so a caller may omit it",
+          "site" in ep and ep["site"].default is None)
+    check("D2: apply_guards threads a site of its own into the passes it drives",
+          "row_site" in P.apply_guards.__code__.co_varnames)
 
     # D1: the recycle lifts the productive continuation out of the `else`; stock must not run
     # BOTH the break and the continuation (and must not skip the clamp that bounds the store).

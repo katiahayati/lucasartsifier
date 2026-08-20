@@ -26,7 +26,8 @@ import sys
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(__file__))
-from sexpr import (code_finditer, code_search, read_file, skip_noncode,  # noqa: E402
+from sexpr import (code_finditer, code_search, depth1_else,  # noqa: E402
+                   form_chain, head_of, line_indent, mark_line, read_file, skip_noncode,
                    Sym, Str, Said)
 
 CONTROLLABLE_METHODS = {"handleEvent", "doVerb"}
@@ -1282,20 +1283,26 @@ def _find_region(text, header_re):
     return _block_span(text, m.start())
 
 
-def _turnback_emit(guard_sexpr, body, og, tb, refuse, site):
+def _turnback_emit(guard_sexpr, body, og, tb, refuse, site, region=None, span=None):
     """The turn-back wrap + its Script instance TEMPLATE, shared by every positional-refusal
     kind (arm-clause armings, positional direct exits) so the two cannot drift
     ([[same-rule-two-places]]). `body` is the clause body being held. The returned instance
-    text carries two `%s` slots for the caller's derived safe target (xe, ye)."""
+    text carries two `%s` slots for the caller's derived safe target (xe, ye).
+
+    `region`/`span` are the text this wrap replaces `region[span]` in, so the trailing marker
+    can be kept off whatever stock wrote after it on that line (`sexpr.mark_line`, N1)."""
     ego = og.get("ego", "global0")
     room = og.get("room", "global2")
     game = og.get("game", "global1")
+    turned = ("  ; softlock-guard: turned back" if region is None else
+              mark_line(region, span[1], "  ; softlock-guard: turned back",
+                        line_indent(region, span[0])))
     forms = site.forms()
     if forms is None:
         wrapped = (f"(if {guard_sexpr}\n\t\t\t\t{body}\n\t\t\telse\n"
                    f"\t\t\t\t(if (not ({room} script:))\n"
                    f"\t\t\t\t\t({room} setScript: {tb})\n"
-                   f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
+                   f"\t\t\t\t)\n\t\t\t)" + turned)
     else:
         # The turn-back IS this kind's refusal; the mark rides its once-per-approach
         # arming gate (doit re-fires every cycle -- the gate is what keeps the
@@ -1311,7 +1318,7 @@ def _turnback_emit(guard_sexpr, body, og, tb, refuse, site):
                    f"\t\t\t\t\t\t({room} setScript: {tb})\n"
                    f"\t\t\t\t\t\t{mark}\n"
                    f"\t\t\t\t\t)\n"
-                   f"\t\t\t\t)\n\t\t\t)  ; softlock-guard: turned back")
+                   f"\t\t\t\t)\n\t\t\t)" + turned)
     # THE INPUT LOCK IS SPOKEN IN THE GAME'S OWN TONGUE, or not at all. The template
     # said `(gGame handsOff:)` unconditionally, and KQ5 -- the first game outside the
     # LSL2/KQ4 dialect to receive a turn-back -- never sends that selector anywhere in
@@ -1436,11 +1443,13 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
             tb = "sgTurnBack"
             if refuse and tgt and tb not in text:
                 wrapped, instance_tpl = _turnback_emit(guard_sexpr, region[bs:be], og, tb,
-                                                       refuse, site)
+                                                       refuse, site, region, (bs, be))
                 new_text = text[:i0] + region[:bs] + wrapped + region[be:] + text[i1:]
                 return new_text + (instance_tpl % tgt), 1
             wrapped = (f"(if {stock_or(guard_sexpr)}\n\t\t\t\t{region[bs:be]}\n\t\t\t)"
-                       f"  ; softlock-guard: positional gate, silent by design")
+                       + mark_line(region, be,
+                                   "  ; softlock-guard: positional gate, silent by design",
+                                   line_indent(region, bs)))
             return text[:i0] + region[:bs] + wrapped + region[be:] + text[i1:], 1
         wrapped = guarded_wrap(guard_sexpr, region[bs:be], refuse, site=site)
         return text[:i0] + region[:bs] + wrapped + region[be:] + text[i1:], 1
@@ -1576,7 +1585,9 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
         n = 0
         for (b0, b1) in sorted(spans, reverse=True):
             wrapped = (f"(if {gs}\n\t\t\t\t{region[b0:b1]}\n\t\t\t)"
-                       f"  ; softlock-guard: arm only when survivable")
+                       + mark_line(region, b1,
+                                   "  ; softlock-guard: arm only when survivable",
+                                   line_indent(region, b0)))
             region = region[:b0] + wrapped + region[b1:]
             n += 1
         return text[:m0] + region + text[m1:], n
@@ -1646,11 +1657,13 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
                     xe = f"({'+' if tx < 160 else '-'} ({ego} x:) 35)"
                     ye = f"({ego} y:)"
             wrapped, instance_tpl = _turnback_emit(guard_sexpr, region[bs:be], og, tb,
-                                                   refuse, site)
+                                                   refuse, site, region, (bs, be))
             new_text = text[:m0] + region[:bs] + wrapped + region[be:] + text[m1:]
             return new_text + (instance_tpl % (xe, ye)), 1
         wrapped = (f"(if {stock_or(guard_sexpr)}\n\t\t\t\t{region[bs:be]}\n\t\t\t)"
-                   f"  ; softlock-guard: positional gate, silent by design")
+                   + mark_line(region, be,
+                               "  ; softlock-guard: positional gate, silent by design",
+                               line_indent(region, bs)))
         return text[:m0] + region[:bs] + wrapped + region[be:] + text[m1:], 1
     if placement["kind"] == "nav-assign":
         # Re-decide a ROUTE, do not refuse an action: `(self north: 340)` becomes
@@ -1834,31 +1847,22 @@ def wrap_forbidden_case(text, anchor_pat, token, guard_sexpr, refuse, site=None)
 
     def _if_arms(txt, pos):
         """The innermost `(if ...)` enclosing pos that has a top-level `else`:
-        (then_start, then_end, else_start, else_end) as body spans, or None."""
-        i = txt.rfind("(if", 0, pos)
-        while i != -1:
-            s0, s1 = _block_span(txt, i)
-            if s1 > pos:
-                depth, j, else_at = 0, i, None
-                while j < s1:
-                    c = txt[j]
-                    if c == "(":
-                        depth += 1
-                    elif c == ")":
-                        depth -= 1
-                    elif depth == 1 and txt[j:j + 4] == "else"                             and not txt[j - 1].isalnum() and not txt[j + 4].isalnum():
-                        else_at = j
-                        break
-                    j += 1
-                if else_at is None:
-                    return None
-                # then-arm body: after the condition form, up to `else`
-                k = i + 3
-                while txt[k] in " \t\n":
-                    k += 1
-                cs, ce = _block_span(txt, k)          # the condition form
-                return (ce, else_at, else_at + 4, s1 - 1)
-            i = txt.rfind("(if", 0, i)
+        (then_start, then_end, else_start, else_end) as body spans, or None.
+
+        The enclosing form comes from `sexpr.form_chain` and the `else` from
+        `sexpr.depth1_else` -- this was a raw `rfind("(if")` plus a fourth private copy of the
+        else-walk, and neither skipped a comment or a message (2026-08-20 third review)."""
+        for (s0, s1) in form_chain(txt, pos):
+            if head_of(txt, s0) != "if":
+                continue
+            else_at = depth1_else(txt, s0, s1)
+            if else_at is None:
+                return None
+            k = s0 + 3                               # then-arm body: after the condition form
+            while txt[k] in " \t\n":
+                k += 1
+            _cs, ce = _block_span(txt, k)            # the condition form
+            return (ce, else_at, else_at + 4, s1 - 1)
         return None
 
     get_pat = re.compile(r"get:\s*%s\b" % re.escape(str(token)))

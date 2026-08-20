@@ -101,9 +101,26 @@ def run():
     check("a different config is a different key", k1 != k2)
     check("the key is stable for the same inputs",
           k1 == M._model_cache_key(config.LSL2, config.LSL2.ir_path))
-    src = open(M.__file__, "rb").read()
+    # ⛔ THIS ASSERTED NOTHING (2026-08-20 third review). It read the module's bytes and then
+    # checked `len(src) > 0 and k1 is not None` -- true of any key, from any inputs, whatever
+    # the hash covered. The claim is that a source change MISSES the cache, so make one: a new
+    # non-test module in this directory must move the key, and taking it away must put the key
+    # back (which also proves the hash is content-derived and not, say, a directory mtime).
+    probe = os.path.join(os.path.dirname(os.path.abspath(M.__file__)), "_cache_probe_tmp.py")
+    try:
+        with open(probe, "w") as f:
+            f.write("# a source file this directory did not have a moment ago\n")
+        k3 = M._model_cache_key(config.LSL2, config.LSL2.ir_path)
+    finally:
+        if os.path.exists(probe):
+            os.remove(probe)
+    k4 = M._model_cache_key(config.LSL2, config.LSL2.ir_path)
     check("the key covers this directory's source (edit -> miss -> rebuild)",
-          len(src) > 0 and k1 is not None)
+          k1 is not None and k3 != k1 and k4 == k1,
+          "adding a non-test .py to src/ must change the key (%r -> %r) and removing it must "
+          "restore it (%r). A cached model is only sound while every module that builds or "
+          "queries it is byte-identical to the one that produced the pickle."
+          % (k1, k3, k4))
     return not FAIL
 
 

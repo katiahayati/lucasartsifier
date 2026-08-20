@@ -957,6 +957,12 @@ def test_every_spelling_of_the_arming_is_held():
 # Census of the whole family, five trees: `(instance|class` 6,356 matches / 0 in non-code;
 # `(procedure (` 328 / 0; `setScript:` 2,192 / 0; `(if` 11,073 / 0; `(cond` 1,676 / 0;
 # `newRoom:` 763 / 0; `put: <n>` 340 / 0 -- and `(method (` 7,747 / **2**, which are these.
+# ⛔ FIVE SOURCE TREES, and `kq5` is spelled the way `config.sweep_config` finds it. Both loops
+# below used to name four, so every corpus figure this file printed was a four-tree figure while
+# reading as a five-tree one (2026-08-20 third review, N3).
+CORPUS = ("LSL2", "KQ4", "KQ6", "dagger", "kq5")
+
+
 WRITEFEATURE = """(instance WriteFeature of Code
 \t(method (doit param1)
 \t\t(Format
@@ -989,7 +995,7 @@ def test_a_region_never_starts_inside_a_message():
     import config
     import patcher as _P
     bad = []
-    for name in ("LSL2", "KQ4", "KQ6", "dagger"):
+    for name in CORPUS:
         cfg = config.by_name(name)
         if cfg is None or not _os.path.isdir(cfg.src_dir):
             continue
@@ -1008,22 +1014,35 @@ def test_a_region_never_starts_inside_a_message():
           not bad,
           detail="regions taken from inside a string: %r" % (bad,))
 
-    # THE REST OF THE FAMILY, as a census rather than as a claim. These scanners are still raw
-    # (`wrap_forbidden_case`'s `rfind("(if")`, the arm-event / arm-clause `setScript:` searches,
-    # the clause-head walk), and they are safe today for one reason only: nothing they look for
-    # is ever written inside a message in these five games. That is a fact about the corpus, so
-    # it is measured here rather than asserted in a docstring -- the day a new game writes one,
-    # this says so BEFORE the placement built on it ships, which is exactly what nobody could
-    # say about `(method (` until it was looked for.
+    # THE REST OF THE FAMILY, as a census rather than as a claim. Some of these scanners are
+    # still raw (the arm-event / arm-clause `setScript:` searches, the clause-head walk), and
+    # they are safe today for one reason only: nothing they look for is ever written inside a
+    # message in these five games. That is a fact about the corpus, so it is measured here
+    # rather than asserted in a docstring -- the day a new game writes one, this says so BEFORE
+    # the placement built on it ships.
+    #
+    # ⛔ THE TRIPWIRE COULD NOT FIRE FOR THE REASON IT NAMED (2026-08-20 third review, N3). The
+    # family omitted `(method (` -- THE ONE PATTERN IN THIS CORPUS WITH HITS, named in the
+    # comment three lines above it -- and both loops here omitted KQ5, so every "five source
+    # trees" figure this file has ever printed was a four-tree figure. Both fixed; the family
+    # is now split, because a pattern that HAS non-code matches is not a failure by itself --
+    # it is a requirement that every scanner reading it be code-filtered, which is what the
+    # `WriteFeature` checks above and `test_a_dispatch_region_is_code` below assert.
     import bisect as _bi
     fam = {"setScript:": r"setScript:\s*\w+", "(if": r"\(if", "(cond": r"\(cond\b",
            "newRoom:": r"newRoom:", "put: <n>": r"put:\s*\d+",
+           "(method (": r"\(method\s+\(", "(procedure (": r"\(procedure\s+\(",
            "(instance|class": r"\((?:instance|class)\s+\w+"}
+    # Patterns KNOWN to be written inside a message in this corpus, with the reader that proves
+    # it. Every scanner reading one of these goes through `sexpr.code_finditer`/`code_search`.
+    QUOTED = {"(method (": "KQ6 + LB2 WriteFeature.sc, which GENERATES SCI source"}
     counts = {k: [0, 0] for k in fam}
-    for name in ("LSL2", "KQ4", "KQ6", "dagger"):
+    seen_trees = set()
+    for name in CORPUS:
         cfg = config.by_name(name)
         if cfg is None or not _os.path.isdir(cfg.src_dir):
             continue
+        seen_trees.add(name)
         for fn in sorted(_os.listdir(cfg.src_dir)):
             if not fn.endswith(".sc"):
                 continue
@@ -1036,12 +1055,21 @@ def test_a_region_never_starts_inside_a_message():
                     counts[k][1] += 1
                     if i >= 0 and m.start() < spans[i][1]:
                         counts[k][0] += 1
-    hot = {k: v for k, v in counts.items() if v[0]}
+    hot = {k: v for k, v in counts.items() if v[0] and k not in QUOTED}
     check("the still-raw scanners have nothing to trip over in this corpus",
           not hot,
           detail="matches inside non-code: %r (of %r). One of these scanners now reads text "
                  "that is not code; give it `sexpr.code_finditer` the way `_find_region` got "
                  "`code_search`." % (hot, {k: v[1] for k, v in counts.items()}))
+    check("...and the corpus still writes the patterns we already know it quotes",
+          all(counts[k][0] for k in QUOTED),
+          detail="counted %r. A KNOWN-quoted pattern with zero hits means this census stopped "
+                 "reading the files it thinks it reads -- which is exactly how `(method (` and "
+                 "KQ5 went missing from it. %r" % ({k: counts[k] for k in QUOTED}, QUOTED))
+    check("...over all five source trees, not four",
+          len(seen_trees) == len(CORPUS),
+          detail="read %r of %r. Every 'five source trees' figure this file prints is a "
+                 "%d-tree figure." % (sorted(seen_trees), list(CORPUS), len(seen_trees)))
 
 
 def test_a_refused_arming_does_not_orphan_its_host():
@@ -1118,6 +1146,83 @@ VALUE_POSITION_ARM = """(procedure (proc550_16)
 \t(= [local0 0] (theCat init: yourself:))
 )
 """
+
+
+# The travel-dispatch applier's own copy of R1's shape: it picks the doVerb method with a raw
+# first-match-wins `re.search`, and `(method (` is THE pattern this corpus writes inside a
+# message. The fixture is KQ6's magic map with a `WriteFeature`-style source generator standing
+# before it -- one whose quoted text carries a whole cond arm, so the raw scan does not merely
+# miss the real method, it computes an edit span inside the string.
+DISPATCH_SRC = """(instance mistIsle of Feature
+\t(properties
+\t\ttpRoom 550
+\t)
+)
+
+(instance sourceWriter of Code
+\t(method (doit)
+\t\t(Format @temp0 {\\t(method (doVerb theVerb)\\0d\\n\\t\\t(cond\\0d\\n\\t\\t\\t((== theVerb 5)\\0d\\n})
+\t)
+)
+
+(instance pullOutMapScr of Script
+\t(method (doVerb param1)
+\t\t(cond
+\t\t\t((== param1 5)
+\t\t\t\t(global2 newRoom: (local8 tpRoom:))
+\t\t\t)
+\t\t)
+\t)
+)
+"""
+
+
+def test_a_dispatch_region_is_code():
+    """N3's other half: `(method (` is read RAW by a second applier, not just `_find_region`."""
+    print("\n-- patcher._guard_travel_dispatch: the doVerb it guards is code --")
+    import shutil as _sh
+    import tempfile as _tf
+    dest = _tf.mkdtemp(prefix="sgdispatch")
+    try:
+        os.makedirs(os.path.join(dest, "src"))
+        path = os.path.join(dest, "src", "pullOutMapScr.sc")
+        open(path, "w").write(DISPATCH_SRC)
+        row = P._guard_travel_dispatch(
+            dest, {"to_room": 550, "condition": "(gEgo has: 24)"}, {}, set())
+        out = open(path).read()
+        quoted = DISPATCH_SRC[DISPATCH_SRC.index("{"):DISPATCH_SRC.index("}") + 1]
+        check("the guard lands on the real doVerb arm, not the one quoted in a message",
+              row is not None and row.get("applied") and row.get("sites") == 1
+              and quoted in out and code_parens(out)[0] == code_parens(out)[1]
+              and "softlock-guard" in out
+              and is_code(out, out.index("softlock-guard") - 40),
+              detail="row=%r\nmessage preserved=%r code parens=%r\n%s"
+                     % (row, quoted in out, code_parens(out), out))
+    finally:
+        _sh.rmtree(dest, ignore_errors=True)
+
+
+def test_mark_line_asks_whether_code_is_at_risk():
+    print("\n-- sexpr.mark_line: what a `;` can destroy is CODE, not bytes --")
+    import sexpr as S
+    push = "  ; M\n\t"
+    for tail, want, why in (
+            ("", "  ; M", "nothing follows"),
+            ("   ", "  ; M", "whitespace only"),
+            ("  ; already a comment", "  ; M", "a comment cannot be destroyed by a comment"),
+            (" (theRat init:)", push, "a statement"),
+            (" {a message}", push, "a message argument"),
+            (" 'said/spec'", push, "a Said spec")):
+        got = S.mark_line("(a)%s\n" % tail, 3, "  ; M")
+        check("mark_line: %s" % why, got == want, detail="tail=%r -> %r, want %r"
+                                                         % (tail, got, want))
+    # LB2's rm520, the corpus's one live instance: two act-flip rows conjoin onto the SAME
+    # head, so the second row's marker is spliced in front of the first row's. Pushing there
+    # would move the bytes of a play-confirmed patch to protect a comment.
+    check("mark_line: a second marker rides the first one's line, as LB2 ships it",
+          S.mark_line("((and X Y))  ; softlock-guard: hold the act flip\n", 11,
+                      "  ; softlock-guard: hold the act flip") ==
+          "  ; softlock-guard: hold the act flip")
 
 
 def test_the_marker_never_eats_the_line():
@@ -1230,6 +1335,8 @@ def run():
     test_every_spelling_of_the_arming_is_held()
     test_a_region_never_starts_inside_a_message()
     test_a_refused_arming_does_not_orphan_its_host()
+    test_mark_line_asks_whether_code_is_at_risk()
+    test_a_dispatch_region_is_code()
     test_the_marker_never_eats_the_line()
     test_a_fork_between_the_if_and_the_arming_is_not_climbed_past()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed"

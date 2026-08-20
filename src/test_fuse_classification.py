@@ -402,6 +402,19 @@ def test_falsifies_reads_a_set_of_writes_not_a_state():
                  "what the register HOLDS at the end.")
     check("...and the same is true whichever order the pair is read in",
           not fal(GAnd([_cmp(901, "==", 7)]), frozenset({(901, 5), (901, 7)})))
+
+    # ⭐ N4 (2026-08-20 THIRD review). Those two checks are the ONLY case the R4 cure moved,
+    # and they pin a GUESS. When some write satisfies the conjunct and some contradicts it,
+    # `chain_writes` says the run can leave the register either way; keeping the entry admits
+    # an escape that may exist only on the path not taken, at its discharged price, which is
+    # F10's own failure in the function written to prevent F10. Dropping it is what R4 called
+    # deleting a real escape. Neither is a deduction, so the divergence is RECORDED -- the
+    # choice is the USER's, and it may not be invisible while it waits.
+    div = getattr(M, "_DIVERGENT", None)
+    check("a divergent write set is RECORDED, not silently guessed at",
+          div is not None and any(d[0] == 901 and d[4] == (5, 7) for d in div),
+          detail="`_falsifies` answered a question `chain_writes` cannot answer and left no "
+                 "trace: %r" % (div,))
     check("a NEGATED conjunct is falsified only when EVERY write contradicts it",
           fal(GAnd([GNot(_cmp(901, "==", 5))]), frozenset({(901, 5)}))
           and not fal(GAnd([GNot(_cmp(901, "==", 5))]), frozenset({(901, 5), (901, 7)})),

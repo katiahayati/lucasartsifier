@@ -11,9 +11,17 @@ HOW TO USE IT -- two runs and a recursive diff. The control is a git worktree at
 before the change:
 
     git worktree add /tmp/pre <pre-change-commit>
+    ln -s "$PWD/build" /tmp/pre/build          # ⛔ NOT OPTIONAL -- see below
     python3 tools/measure_emitted_bytes.py /tmp/pre/src  /tmp/emit_pre
     python3 tools/measure_emitted_bytes.py "$PWD/src"    /tmp/emit_now
     diff -r /tmp/emit_pre /tmp/emit_now && echo "BYTE-IDENTICAL"
+
+⛔ `build/` IS GITIGNORED, so a bare worktree has none -- and `config` derives every `src_dir`
+and `ir_path` from the tree it is imported out of. Without that symlink the control run finds no
+IR for any game, SKIPs all five, and emits an empty directory that `diff -r` compares against
+the real one without complaint: a vacuous PASS reading as "byte-identical" (2026-08-20 third
+review). Hence the symlink, and hence a skip is now a NONZERO EXIT with the reason printed --
+this tool may not report success on a measurement it did not make.
 
 Both runs read the same build trees and the same IR, so any difference in the output is a
 difference the change made. `--games` narrows the set; with no flag it does all five.
@@ -42,7 +50,8 @@ def emit(src_dir, out_dir, games):
         cfg = config.by_name(name)
         if cfg is None or not os.path.exists(cfg.ir_path):
             skipped.append(name)
-            print("SKIP %s -- no IR" % name)
+            print("SKIP %s -- no IR at %s"
+                  % (name, cfg.ir_path if cfg else "<no config>"))
             continue
         s = M.load(cfg=cfg)
         dest = os.path.join(out_dir, name)
@@ -73,7 +82,12 @@ def emit(src_dir, out_dir, games):
     print("emitted %d game(s): %s%s"
           % (len(done), ", ".join(done),
              ("  (skipped %s)" % ", ".join(skipped)) if skipped else ""))
-    return 0 if done else 1
+    if skipped:
+        print("\n⛔ %d of %d games emitted NOTHING. A diff against this output measures "
+              "nothing.\n   `build/` is gitignored -- in a worktree, symlink it in:\n"
+              "       ln -s <repo>/build %s/build"
+              % (len(skipped), len(games), os.path.dirname(src_dir)))
+    return 0 if done and not skipped else 1
 
 
 def main():

@@ -1136,6 +1136,24 @@ def run():
           f"derivation; a REFUSED spec ships no patch and a second spec means the dedupe by "
           f"(machine, demand) broke.")
 
+    # ⭐ N4's TRIPWIRE (2026-08-20 third review). `_falsifies` decides whether an escape the
+    # chain's writes touch is still on offer, and the reading that ships was chosen for the
+    # DIVERGENT case -- some write satisfies the conjunct, some contradicts it -- where nothing
+    # in `chain_writes` can say which the run leaves behind. Keeping such an entry admits an
+    # escape that may exist only on the path not taken (F10's failure); dropping it deletes one
+    # the game really offers (R4's complaint). KQ5 has never asked the question: all 26 firings
+    # are `global332 == 7` against the write set {2, 3, 4}, where every write contradicts. That
+    # is what makes the choice unmeasurable HERE, and it is a fact about this game, not a
+    # property of the rule -- so it is measured, and a game that does ask says so before its
+    # hold ships.
+    div = [d for d in getattr(M, "_DIVERGENT", ())]
+    check("KQ5 never asks the falsification question nobody can answer",
+          not div,
+          f"divergent falsification questions: {div!r}. The demand this game ships now rests "
+          f"on a reading of `chain_writes` that was chosen, not derived -- see "
+          f"`missability._falsifies`, N4. The USER decides which way it reads before this "
+          f"game's hold is trusted.")
+
     print(f"  {len(PASS)} passed, {len(FAIL)} failed")
     return not FAIL
 

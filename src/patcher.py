@@ -35,7 +35,9 @@ import config
 import guards as G
 import ir as I
 import missability as M
-from sexpr import code_finditer, noncode_spans, read_file, skip_noncode
+from sexpr import (code_finditer, code_search, depth1_else, fork_arms, form_chain, head_of,
+                   line_indent, mark_line, noncode_spans, read_file, skip_noncode,
+                   statement_span)
 import trigger as T
 from trigger import (analyze_room, _var_assigned_rooms,
                      find_trigger, find_arming, find_all_armings, find_cue_chain_armings,
@@ -758,31 +760,14 @@ def _enclosing_form(text, pos):
 
     `trigger._enclosing_clause_body` only understands `cond`, and SCI1.1's item verbs are a
     `switch` -- KQ6's lamp trade is `(5 (put: 19) ... (get: 25))`, a switch case -- so asking it
-    about them silently answered "no clause", which is how a trade got read as a pure sink."""
-    stack = []
-    i, n = 0, len(text)
-    while i < n:
-        c = text[i]
-        if c == "{":
-            j = text.find("}", i)
-            i = n if j < 0 else j + 1
-            continue
-        if c == "'":
-            j = text.find("'", i + 1)
-            i = n if j < 0 else j + 1
-            continue
-        if c == ";":
-            j = text.find("\n", i)
-            i = n if j < 0 else j + 1
-            continue
-        if i == pos:
-            return _block_span(text, stack[-1]) if stack else None
-        if c == "(":
-            stack.append(i)
-        elif c == ")" and stack:
-            stack.pop()
-        i += 1
-    return None
+    about them silently answered "no clause", which is how a trade got read as a pure sink.
+
+    ⛔ Strictly containing: a form OPENING at `pos` is not what this answers. The walk was a
+    THIRD inline copy of the non-code taxonomy (2026-08-20 third review), and it carried the
+    hazard `trigger`'s copy had -- it tested `'` before `;`, so an apostrophe in an English
+    comment opened a Said spec and skipped to the next quote anywhere in the file."""
+    outer = [(s, e) for (s, e) in form_chain(text, pos) if s < pos]
+    return outer[0] if outer else None
 
 
 def _clause_end_line(lines, i):
@@ -985,24 +970,13 @@ def _recycle_counter_break(text, write_start, msg, forms=None):
     Returns (new_text, True) on success; (text, False) if the write is not in this shape (e.g. the
     bow's standalone increment, which the caller then simply deletes)."""
     best = None
-    for m in re.finditer(r"\(if\b", text):
+    for m in _code_finditer(text, r"\(if\b"):        # an `(if` in a message is not a break
         if m.start() > write_start:
             break
         s, e = _block_span(text, m.start())
         if not (s <= write_start < e):
             continue
-        depth, elp, i = 0, None, s
-        while i < e:                                  # first `else` at the if's own top level
-            ch = text[i]
-            if ch == "(":
-                depth += 1
-            elif ch == ")":
-                depth -= 1
-            elif (depth == 1 and text.startswith("else", i)
-                  and not (text[i - 1].isalnum() or text[i - 1] in "_-")):
-                elp = i
-                break
-            i += 1
+        elp = _depth1_else(text, s, e)                # the shared walk, not a fourth copy
         if elp is not None and s < write_start < elp and (best is None or s > best[0]):
             best = (s, e, elp)                        # innermost if whose THEN holds the write
     if best is None:
@@ -1856,8 +1830,10 @@ def guard_register_write(text, register, trap, cond):
 
             named = [e for e in encls if _cond_names_reg(e[0])]
             es, ee = named[0] if named else min(encls, key=lambda e: e[0])
-            wrapped = ("(if %s\n\t\t\t%s\n\t\t)  ; softlock-guard: hold the flip until survivable"
-                       % (stock_or(cond), region[es:ee]))
+            wrapped = ("(if %s\n\t\t\t%s\n\t\t)" % (stock_or(cond), region[es:ee])
+                       + mark_line(region, ee,
+                                   "  ; softlock-guard: hold the flip until survivable",
+                                   line_indent(region, es)))
             return text[:bs] + region[:es] + wrapped + region[ee:] + text[be:], 1
     return text, 0
 
@@ -1908,8 +1884,10 @@ def guard_flag_proc_write(text, set_proc, flag, cond):
         if flag not in args:
             continue
         rest = [a for a in args if a != flag]
-        guarded = ("(if %s (%s %d))  ; softlock-guard: hold the closer until banked"
-                   % (stock_or(cond), set_proc, flag))
+        guarded = ("(if %s (%s %d))" % (stock_or(cond), set_proc, flag)
+                   + mark_line(text, m.end(),
+                               "  ; softlock-guard: hold the closer until banked",
+                               line_indent(text, m.start())))
         if rest:
             indent = re.search(r"[ \t]*$", text[:m.start()]).group(0)
             guarded = "(%s %s)\n%s%s" % (set_proc, " ".join(str(a) for a in rest),
@@ -1953,8 +1931,7 @@ def guard_prop_flag_write(text, sel, word, bit, recv_src, cond):
     `text` are edited -- every writer waits."""
     mask = 1 << bit
     want_recv = re.sub(r"\s+", " ", recv_src.strip("() ")).strip()
-    guarded = "(if %s (%s %s: %d %d))  ; softlock-guard: hold the flip until obtainable" % (
-        stock_or(cond), recv_src, sel, word, mask)
+    guarded = "(if %s (%s %s: %d %d))" % (stock_or(cond), recv_src, sel, word, mask)
     edits = []                      # (send_start, send_end, replacement)
     for m in re.finditer(r"%s:\s+%d\s+%d\b" % (re.escape(sel), word, mask), text):
         # the innermost balanced form containing the message IS the send (its args are literals)
@@ -1977,7 +1954,10 @@ def guard_prop_flag_write(text, sel, word, bit, recv_src, cond):
         # a send whose ONLY message was the flag write leaves no selector behind -- drop the husk
         keep = remainder if re.search(r"\w+:", remainder) else ""
         sepa = ("\n" + indent) if keep else ""
-        edits.append((bs, be, keep + sepa + guarded))
+        edits.append((bs, be, keep + sepa + guarded
+                      + mark_line(text, be,
+                                  "  ; softlock-guard: hold the flip until obtainable",
+                                  line_indent(text, bs))))
     for bs, be, rep in sorted(edits, reverse=True):
         text = text[:bs] + rep + text[be:]
     return text, len(edits)
@@ -2051,8 +2031,10 @@ def guard_prop_flag_owner_write(text, prop_name, mask, cond):
 
             named = [e for e in encls if _cond_names_prop(e[0])]
             es, ee = named[0] if named else min(encls, key=lambda e: e[0])
-            wrapped = ("(if %s\n\t\t\t%s\n\t\t)  ; softlock-guard: hold the flip until obtainable"
-                       % (stock_or(cond), region[es:ee]))
+            wrapped = ("(if %s\n\t\t\t%s\n\t\t)" % (stock_or(cond), region[es:ee])
+                       + mark_line(region, ee,
+                                   "  ; softlock-guard: hold the flip until obtainable",
+                                   line_indent(region, es)))
             return text[:bs] + region[:es] + wrapped + region[ee:] + text[be:], 1
     return text, 0
 
@@ -2210,9 +2192,11 @@ def guard_flip_interceptor(text, pocket, stage_src, cond):
                         hs, he = _block_span(region, j)
                         head = region[hs:he]
                         if _pins_stage(head) and route.search(region[he:ae]):
-                            new_head = ("(and %s %s)  ; softlock-guard: hold the act flip "
-                                        "until its carries are obtainable"
-                                        % (head, stock_or(cond)))
+                            new_head = ("(and %s %s)" % (head, stock_or(cond))
+                                        + mark_line(region, he,
+                                                    "  ; softlock-guard: hold the act flip "
+                                                    "until its carries are obtainable",
+                                                    line_indent(region, hs) + "\t"))
                             edits.append((ms + hs, ms + he, new_head))
                             n += 1
                     i = ae
@@ -2313,12 +2297,12 @@ def _guard_travel_dispatch(dest, sp, titles_by_num, seen_dispatch):
             continue
         path = os.path.join(src_dir, fn)
         text = open(path, errors="replace").read()
-        m = re.search(r"newRoom:\s*\(\s*\w+\s+(\w+):\s*\)", text)
+        m = code_search(text, r"newRoom:\s*\(\s*\w+\s+(\w+):\s*\)")
         if not m:
             continue
         prop = m.group(1)
-        if not re.search(r"\(properties[^()]*\b%s\s+%d\b" % (re.escape(prop), sp["to_room"]),
-                         text):
+        if not code_search(text, r"\(properties[^()]*\b%s\s+%d\b"
+                           % (re.escape(prop), sp["to_room"])):
             continue
         key = (fn, sp["to_room"], sp["condition"])
         if key in seen_dispatch:
@@ -2326,7 +2310,11 @@ def _guard_travel_dispatch(dest, sp, titles_by_num, seen_dispatch):
                     "placement": {"kind": "travel-dispatch", "instance": fn[:-3],
                                   "property": prop}}
         # the commit arm: a doVerb cond clause whose test is exactly `(== param1 <lit>)`
-        dv = re.search(r"\(method\s+\(doVerb\s+(\w+)[^)]*\)", text)
+        # ⛔ `(method (` IS the one pattern in this corpus written inside a message: KQ6's and
+        # LB2's `WriteFeature.sc` GENERATES SCI source, and its message holds the first
+        # `(method (doVerb` in the file. First-raw-match-wins would take the region from the
+        # middle of a string (2026-08-20, R1's other half -- same defect, second scanner).
+        dv = code_search(text, r"\(method\s+\(doVerb\s+(\w+)[^)]*\)")
         if not dv:
             continue
         pname = dv.group(1)
@@ -3251,34 +3239,16 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
     return out
 
 
-def _depth1_else(text, start, end):
-    """Offset of the `else` keyword belonging to the `(if` that opens at `start`, or None.
-
-    Depth is counted from that `if`'s own paren, so an `else` inside a nested form is that
-    form's -- KQ5's henchman arms itself under `view: (if (== global11 58) 898 else 884)`, an
-    `else` three levels down that says nothing about where the arming sits."""
-    depth, j = 0, start
-    while j < end:
-        nxt = _skip_noncode(text, j, end)
-        if nxt is not None:
-            j = nxt
-            continue
-        c = text[j]
-        if c == "(":
-            depth += 1
-        elif c == ")":
-            depth -= 1
-        elif depth == 1 and text.startswith("else", j) \
-                and not (j and (text[j - 1].isalnum() or text[j - 1] in "_-")) \
-                and not text[j + 4:j + 5].isalnum() and text[j + 4:j + 5] not in ("_", "-"):
-            return j
-        j += 1
-    return None
+_depth1_else = depth1_else                     # the walk itself lives in `sexpr`: THREE
+#                                                emitters had grown a copy, two of them raw
 
 
-def _enclosing_if_test(text, pos):
+def _enclosing_if_test(text, pos, armings=None):
     """`(start, end)` of the test of the innermost `(if ...)` whose BRANCH contains `pos`, or
     None when that `if` cannot be strengthened without changing which branch runs.
+
+    `armings` is every arming offset this hold covers (default: `pos` alone) -- the fork rule
+    below needs to know what the demand is allowed to withhold.
 
     Spans come from `_balanced_span`, never a depth-counting regex, and the candidate scan is
     `_code_finditer` rather than a raw one (R1) -- the same discipline the rest of this module
@@ -3301,6 +3271,19 @@ def _enclosing_if_test(text, pos):
     the only test this function may touch; when it cannot be touched, the caller wraps the
     arming STATEMENT, which is what `arm-event` and `proc-arm` have always shipped.
 
+    ⛔ AND AN `else` IS ONLY ONE SPELLING OF A FORK (2026-08-20 third review, N2). `_depth1_
+    else` looks for four letters, so a `cond` or a `switch` standing between the arming and
+    this `if` was invisible and the search widened straight past it: the demand landed on the
+    `if` that holds the WHOLE fork, and a player who could not pay got NEITHER arm -- the wall
+    R2's own docstring forbids, reached by a different spelling.
+
+    The distinguishing question is the one R2's `else` already answers: CAN STOCK RUN THIS ARM
+    WITHOUT THE ARMING? A fork whose every arm is itself an arming this hold covers answers no,
+    and withholding it is exactly what the game's own no-arm path does -- KQ5's shipped
+    `proc550_16` is that shape, a `switch global11` whose cases spawn the same cat positioned
+    per room. A fork with an arm this hold does not cover answers yes, and that arm is the
+    game's own other outcome, which no row derived and no spec scoped.
+
     Also None, for the same reason, when that `if`'s test is a bare atom (nothing to conjoin
     onto textually) or when `pos` lies inside the test itself (an arming performed while the
     test is evaluated cannot be gated by that test without duplicating it)."""
@@ -3321,28 +3304,33 @@ def _enclosing_if_test(text, pos):
         return None                               # no arming `if`, or a bare-atom test
     if _depth1_else(text, best[0], best[3]) is not None:
         return None                               # conjoining here DIVERTS into the else
+    held = tuple(armings) if armings is not None else (pos,)
+    for (fs, fe) in form_chain(text, pos):
+        if fs <= best[0]:
+            break                                 # innermost-first: we reached the `if` itself
+        arms = fork_arms(text, fs, fe)
+        if arms is None:
+            continue
+        if any(not any(a <= q < b for q in held) for (a, b) in arms):
+            return None                           # an arm stock runs WITHOUT the arming
     return (best[1], best[2])
 
 
 def _arming_statement_span(text, pos, spans=None):
-    """`(start, end)` of the innermost balanced form containing `pos` -- THE ARMING STATEMENT.
+    """`(start, end)` of the innermost STATEMENT containing `pos` -- THE ARMING STATEMENT.
 
     The fallback hold, and the shape the rest of the project ships: `trigger.wrap_trigger_in_
     source` locates an arm-event's `setScript:` and expands to exactly this span. Openers inside
     a comment or a quoted form are skipped, so a `(` in a message before the site cannot become
-    the statement."""
-    if spans is None:
-        spans = _noncode_spans(text)
-    starts = [s for (s, _e) in spans]
-    s = text.rfind("(", 0, pos + 1)
-    while s != -1:
-        i = bisect.bisect_right(starts, s) - 1
-        if not (i >= 0 and s < spans[i][1]):
-            e = _balanced_span(text, s)
-            if e > pos:
-                return (s, e)
-        s = text.rfind("(", 0, s)
-    return None
+    the statement.
+
+    ⛔ THE INNERMOST BALANCED FORM IS NOT THE STATEMENT (2026-08-20 third review, N1). It is
+    routinely an expression in VALUE position -- `(= [local0 0] (theCat init: yourself:))`,
+    `(not (self init: param1))` -- and wrapping that in `(if <demand> ...)` does not withhold
+    the arming, it changes what the assignment stores. `sexpr.statement_span` climbs out of
+    value positions to the enclosing statement, which is the form the game's own no-arm path
+    also skips, and returns None when there is no such form (an arming inside a TEST)."""
+    return statement_span(text, pos, spans)
 
 
 def _conjoin_marked(text, ts, te, demand):
@@ -3351,28 +3339,31 @@ def _conjoin_marked(text, ts, te, demand):
     ⛔ `; softlock-guard` IS A LINE COMMENT (2026-08-20 review, minor list). Appended inline to
     a one-line `(if <test> <arming>)` it comments out the arming, the closing parens and
     everything after them on that line -- `applied: True`, and the file no longer compiles.
-    Measured 2026-08-20: 562 one-line `(if ...)` forms across the five source trees, none of
-    them carrying an arming, which is the only reason this has never shipped. When the rest of
-    the line is already blank -- every site in the corpus today, KQ5's two included -- the
-    marker is appended exactly as before and the emission is byte-identical; otherwise the
-    remainder is pushed onto its own line, at the arming's own indent."""
-    rest = text[te:]
-    nl = rest.find("\n")
-    tail = rest[:nl if nl >= 0 else len(rest)]
-    ind = re.match(r"[ \t]*", text[text.rfind("\n", 0, ts) + 1:]).group(0)
-    mark = " ; softlock-guard" + ("" if not tail.strip() else "\n" + ind + "\t")
-    return text[:ts] + "(and %s %s)%s" % (text[ts:te], demand, mark) + text[te:]
+    Measured 2026-08-20: 780 one-line `(if ...)` forms across the five source trees, none of
+    them carrying an arming, which is the only reason this has never shipped. The rule is
+    `sexpr.mark_line`'s, shared with every other emitter that signs an inline edit."""
+    return (text[:ts] + "(and %s %s)" % (text[ts:te], demand)
+            + mark_line(text, te, " ; softlock-guard", line_indent(text, ts) + "\t")
+            + text[te:])
 
 
 def _wrap_statement(text, bs, be, demand):
     """`text` with the statement at `[bs, be)` held under `demand` -- the arming-statement hold.
 
     No `else`: a withheld arming is the silent kind, indistinguishable from the game's own
-    no-spawn path, which is the prevention itself (the arm-event doctrine)."""
+    no-spawn path, which is the prevention itself (the arm-event doctrine).
+
+    ⛔ AND THE MARKER DOES NOT EAT THE LINE (2026-08-20 third review, N1). This is the emitter
+    R2 made the common path -- 774 of the corpus's 780 one-line `(if ...)` forms carry a
+    depth-1 `else` and every one of them is disqualified from the conjoin and handed here --
+    and it was the one that still appended `; softlock-guard` in front of whatever stock wrote
+    after the statement. `sexpr.mark_line`, same rule as `_conjoin_marked`'s."""
     head = text[text.rfind("\n", 0, bs) + 1:bs]
     ind = head if not head.strip() else ""
-    return (text[:bs] + "(if %s\n%s\t%s\n%s)  ; softlock-guard: arm only when survivable"
-            % (demand, ind, text[bs:be], ind) + text[be:])
+    return (text[:bs] + "(if %s\n%s\t%s\n%s)" % (demand, ind, text[bs:be], ind)
+            + mark_line(text, be, "  ; softlock-guard: arm only when survivable",
+                        line_indent(text, bs) + "\t")
+            + text[be:])
 
 
 def _init_send_positions(text, obj, lo, hi, spans=None):
@@ -3443,7 +3434,7 @@ def _place_fuse_arm(text, proc_name, hosts, demand, machine=None):
         if stmt is None or stmt[0] < ps or stmt[1] > pend:
             return text, 0, ("an arming in %s is not inside a balanced form of its own"
                              % proc_name)
-        sp = _enclosing_if_test(text, p)
+        sp = _enclosing_if_test(text, p, sites)
         if sp is not None and ps <= sp[0] and sp[1] <= pend:
             holds[sp] = _conjoin_marked
         else:
@@ -3532,8 +3523,10 @@ def _gate_notify_awards(dest, cond):
             for am in list(award_pat.finditer(region))[::-1]:
                 a0, a1 = bs + am.start(), bs + am.end()
                 wrapped = ("(if %s\n\t\t\t\t\t%s\n\t\t\t\t)"
-                           "  ; softlock-guard: the award belongs to the ride"
-                           % (stock_or(cond), text[a0:a1]))
+                           % (stock_or(cond), text[a0:a1])
+                           + mark_line(text, a1,
+                                       "  ; softlock-guard: the award belongs to the ride",
+                                       line_indent(text, a0)))
                 text = text[:a0] + wrapped + text[a1:]
                 n += 1
         if n:

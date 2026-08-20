@@ -274,3 +274,250 @@ def code_search(text, pattern, spans=None):
     """The first match of `pattern` that is really code, or None -- `re.search`'s replacement
     wherever a raw first-match-wins scan chooses a region to rewrite."""
     return next(code_finditer(text, pattern, spans), None)
+
+
+# --- WRITING code, the other direction ------------------------------------------------------
+
+def line_indent(text, pos):
+    """The leading whitespace of the line `pos` sits on."""
+    ls = text.rfind("\n", 0, pos) + 1
+    return re.match(r"[ \t]*", text[ls:]).group(0)
+
+
+def mark_line(text, at, marker, cont_indent=None):
+    """`marker`, extended with a line break when it would otherwise EAT `text[at:]`'s line.
+
+    ⛔ `;` OPENS A LINE COMMENT. Every emitter in this project signs its edit with one, and the
+    edit is spliced as `text[:s] + <new form> + marker + text[e:]` -- so whatever stock wrote
+    after `e` on that line is inside the comment. The failure mode is not a broken build, which
+    would be the lucky case: when the eaten text happens to balance, the file still compiles
+    and a statement has been silently DELETED with the placement row reporting `applied: True`.
+
+    This is the rule's THIRD outing. It was found on `_conjoin_marked` (2026-08-20, review
+    minor list), fixed there alone -- and the same commit made `_wrap_statement`, twenty lines
+    away, the common path for exactly the shape that trips it. It lives here now because
+    twelve emitters across `patcher` and `trigger` splice a marker in front of preserved text
+    ([[same-rule-two-places]]).
+
+    ⛔ WHAT IS AT RISK IS CODE, NOT BYTES. The rest of the line is safe when it holds nothing a
+    comment can destroy -- whitespace, or a comment already. LB2's `rm520` is the corpus's one
+    live instance: two act-flip rows conjoin onto the SAME head, so the second one's marker
+    lands in front of the first one's, and a `strip()`-shaped test would push a comment onto a
+    line of its own and move the bytes of a play-confirmed patch to protect nothing. A `{...}`
+    message or a `'...'` Said IS at risk -- an argument on the next line is not whitespace --
+    so those count as content.
+
+    Byte-identical at every site in the five source trees, LB2's double marker included -- so
+    this changes no emission, it removes a class of them. `cont_indent` is what the pushed-down
+    remainder is indented with; None means the indent of the line `at` sits on, plus a tab."""
+    nl = text.find("\n", at)
+    end = nl if nl >= 0 else len(text)
+    j = at
+    while j < end:
+        nxt = skip_noncode(text, j, end)
+        if nxt is not None:
+            if text[j] == ";":
+                break                              # a comment: the line is already spent
+            return marker + "\n" + (line_indent(text, at) + "\t" if cont_indent is None
+                                    else cont_indent)
+        if text[j] not in _WS:
+            return marker + "\n" + (line_indent(text, at) + "\t" if cont_indent is None
+                                    else cont_indent)
+        j += 1
+    return marker
+
+
+# Heads whose form has a BODY, and how many leading elements come before it: the test, the
+# signature, the value dispatched on. `(procedure (name p1) body...)` -- element 0 is the head,
+# element 1 the signature, so a body statement is at index >= 2. Anything not named here is a
+# send, an operator or a call, and its arguments are in VALUE position.
+_BODY_HEADS = {"if": 1, "while": 1, "until": 1, "switchto": 1,
+               "method": 1, "procedure": 1, "for": 3, "repeat": 0, "else": 0}
+# ...and the two whose children are CLAUSES rather than statements. A `cond` clause and a
+# `switch` case are the game's own alternatives; neither is a form anything may be wrapped
+# around, and it is the GRANDPARENT that tells a clause `((> a b) (foo))` from a
+# computed-receiver send `((gInv at: 25) owner:)`, which look identical from inside.
+_CLAUSE_PARENTS = ("cond", "switch")
+
+
+def _elements(text, form_start, form_end, spans):
+    """Offsets of the top-level elements of the form at `[form_start, form_end)`, in order.
+
+    An element is a parenthesised form, a `[...]` index, or a bare token. Comments and quoted
+    forms are skipped whole, so a `;` between two statements does not become one."""
+    import bisect
+    starts = [s for (s, _e) in spans]
+    out, j = [], form_start + 1
+    while j < form_end - 1:
+        i = bisect.bisect_right(starts, j) - 1
+        if i >= 0 and j < spans[i][1]:
+            j = spans[i][1]
+            continue
+        c = text[j]
+        if c in _WS:
+            j += 1
+            continue
+        out.append(j)
+        if c == "(":
+            j = _forward_span(text, j, form_end, spans)
+        elif c == "[":
+            k = text.find("]", j)
+            j = form_end if k < 0 else k + 1
+        else:
+            while j < form_end - 1 and text[j] not in _WS and text[j] not in "()":
+                j += 1
+        if j <= out[-1]:                           # never stall on an unreadable element
+            j = out[-1] + 1
+    return out
+
+
+def _forward_span(text, start, limit, spans):
+    """End offset of the balanced form opening at `start`, bounded by `limit`."""
+    import bisect
+    starts = [s for (s, _e) in spans]
+    depth, j = 0, start
+    while j < limit:
+        i = bisect.bisect_right(starts, j) - 1
+        if i >= 0 and j < spans[i][1]:
+            j = spans[i][1]
+            continue
+        if text[j] == "(":
+            depth += 1
+        elif text[j] == ")":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return limit
+
+
+def form_chain(text, pos, spans=None):
+    """Every balanced form containing `pos`, INNERMOST FIRST, as `(start, end)` pairs.
+
+    The one walk that answers "what encloses this, and what encloses that": which fork an
+    arming sits in, and whether the form around it is a statement or an argument. A form
+    OPENING at `pos` is the innermost one, which is what every caller here means by "the form
+    at this offset".
+
+    ONE FORWARD PASS with a stack, not a backward `rfind` loop: the chain runs to the top of
+    the file, so measuring each candidate by scanning forward from it is quadratic on a
+    100KB source. Only the chain's own members -- a dozen, never thousands -- get spanned."""
+    if spans is None:
+        spans = noncode_spans(text)
+    import bisect
+    starts = [s for (s, _e) in spans]
+    stack, j = [], 0
+    while j < pos:
+        i = bisect.bisect_right(starts, j) - 1
+        if i >= 0 and j < spans[i][1]:
+            j = max(spans[i][1], j + 1)
+            continue
+        if text[j] == "(":
+            stack.append(j)
+        elif text[j] == ")" and stack:
+            stack.pop()
+        j += 1
+    if pos < len(text) and text[pos] == "(":
+        i = bisect.bisect_right(starts, pos) - 1
+        if not (i >= 0 and pos < spans[i][1]):
+            stack.append(pos)
+    return [(s, _forward_span(text, s, len(text), spans)) for s in reversed(stack)]
+
+
+def head_of(text, form_start):
+    """The head token of the form at `form_start`, or None when its head is itself a form."""
+    m = re.match(r"\(\s*([^\s()\[\]]+)", text[form_start:])
+    return m.group(1) if m else None
+
+
+def depth1_else(text, start, end, spans=None):
+    """Offset of the `else` keyword belonging to the `(if` that opens at `start`, or None.
+
+    Depth is counted from that `if`'s own paren, so an `else` inside a nested form is that
+    form's -- KQ5's henchman arms itself under `view: (if (== global11 58) 898 else 884)`, an
+    `else` three levels down that says nothing about where the arming sits. The word must
+    stand alone: `elsewhere` is not an else, and neither is one written in a message.
+
+    Three emitters had grown their own copy of this walk, two of which skipped no non-code at
+    all ([[same-rule-two-places]])."""
+    if spans is None:
+        spans = noncode_spans(text)
+    import bisect
+    starts = [s for (s, _e) in spans]
+    depth, j = 0, start
+    while j < end:
+        i = bisect.bisect_right(starts, j) - 1
+        if i >= 0 and j < spans[i][1]:
+            j = max(spans[i][1], j + 1)
+            continue
+        c = text[j]
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+        elif depth == 1 and text.startswith("else", j) \
+                and not (j and (text[j - 1].isalnum() or text[j - 1] in "_-")) \
+                and not text[j + 4:j + 5].isalnum() and text[j + 4:j + 5] not in ("_", "-"):
+            return j
+        j += 1
+    return None
+
+
+# The multi-arm forms, and how many leading elements come before the first arm.
+_FORKS = {"cond": 0, "switch": 1, "switchto": 1}
+
+
+def fork_arms(text, start, end, spans=None):
+    """`[(s, e), ...]`, one per ALTERNATIVE of the fork at `[start, end)`, or None -- not a fork.
+
+    A `cond`'s clauses, a `switch`'s cases, a `switchto`'s positional bodies. An `(if ...)` is
+    deliberately NOT one: a demand conjoined onto an `if`'s test does not withhold the else, it
+    RUNS it, which is a different failure with a different answer (`patcher._depth1_else`)."""
+    if spans is None:
+        spans = noncode_spans(text)
+    head = head_of(text, start)
+    if head not in _FORKS:
+        return None
+    els = _elements(text, start, end, spans)[1 + _FORKS[head]:]
+    return [(s, _forward_span(text, s, end, spans)) for s in els if text[s] == "("]
+
+
+def statement_span(text, pos, spans=None):
+    """`(start, end)` of the innermost form containing `pos` that is a STATEMENT, or None.
+
+    ⛔ A STATEMENT IS NOT MERELY A BALANCED FORM (2026-08-20 third review, N1). The innermost
+    form around an arming is routinely an expression in VALUE position -- KQ6 and LB2 spell a
+    spawn `(= [local0 0] (theCat init: yourself:))`, and LSL2 spells one as a send argument.
+    Wrapping THAT in `(if <demand> ...)` does not withhold the arming; it changes what the
+    assignment stores, or what the send is passed. The arming statement is the enclosing
+    ASSIGNMENT, which is also what the game's own no-arm path skips.
+
+    So the climb is outward through value positions until a form sits in a body slot: after an
+    `if`'s test, after a `method`'s signature, inside a `cond` clause or a `switch` case. None
+    when no enclosing form is ever a statement -- an arming performed inside a TEST is the
+    shape that reaches that, and it cannot be held without duplicating the test, which is the
+    same answer `_enclosing_if_test` gives it."""
+    if spans is None:
+        spans = noncode_spans(text)
+    chain = form_chain(text, pos, spans)
+    for depth, (s, e) in enumerate(chain):
+        if depth + 1 >= len(chain):
+            return None                            # a top-level form has no body to sit in
+        ps, pe = chain[depth + 1]
+        head = head_of(text, ps)
+        if head in _CLAUSE_PARENTS:
+            continue                               # a clause is the game's alternative, not a
+            #                                        statement, and neither is a switch value
+        if head is None or re.match(r"[-$0-9]", head):
+            gp = chain[depth + 2] if depth + 2 < len(chain) else None
+            if gp is None or head_of(text, gp[0]) not in _CLAUSE_PARENTS:
+                continue                           # a computed-receiver send: value position
+            lead = 0                               # inside a cond clause / switch case
+        elif head in _BODY_HEADS:
+            lead = _BODY_HEADS[head]
+        else:
+            continue                               # a send, an operator, a call: an argument
+        els = _elements(text, ps, pe, spans)
+        if s in els and els.index(s) > lead:
+            return (s, e)
+    return None
