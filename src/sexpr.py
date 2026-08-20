@@ -417,11 +417,31 @@ def form_chain(text, pos, spans=None):
         elif text[j] == ")" and stack:
             stack.pop()
         j += 1
+    opened_here = False
     if pos < len(text) and text[pos] == "(":
         i = bisect.bisect_right(starts, pos) - 1
         if not (i >= 0 and pos < spans[i][1]):
             stack.append(pos)
-    return [(s, _forward_span(text, s, len(text), spans)) for s in reversed(stack)]
+            opened_here = True
+    # ...and ONE more pass forward to close them, innermost first. Spanning each member
+    # separately would re-scan to the end of the file once per level.
+    ends, depth, n = {}, len(stack), len(text)
+    top = depth                                    # the shallowest chain level still open
+    j = pos + 1 if opened_here else pos
+    while j < n and depth:
+        i = bisect.bisect_right(starts, j) - 1
+        if i >= 0 and j < spans[i][1]:
+            j = max(spans[i][1], j + 1)
+            continue
+        if text[j] == "(":
+            depth += 1
+        elif text[j] == ")":
+            depth -= 1
+            if depth < top:                        # ...and only the FIRST close of a level is
+                ends[stack[depth]] = j + 1         # its end: a SIBLING that opens and closes
+                top = depth                        # after it returns to the same depth
+        j += 1
+    return [(s, ends.get(s, n)) for s in reversed(stack)]
 
 
 def head_of(text, form_start):
@@ -505,19 +525,37 @@ def statement_span(text, pos, spans=None):
             return None                            # a top-level form has no body to sit in
         ps, pe = chain[depth + 1]
         head = head_of(text, ps)
-        if head in _CLAUSE_PARENTS:
-            continue                               # a clause is the game's alternative, not a
-            #                                        statement, and neither is a switch value
-        if head is None or re.match(r"[-$0-9]", head):
-            gp = chain[depth + 2] if depth + 2 < len(chain) else None
-            if gp is None or head_of(text, gp[0]) not in _CLAUSE_PARENTS:
-                continue                           # a computed-receiver send: value position
-            lead = 0                               # inside a cond clause / switch case
+        # ⛔ THE GRANDPARENT DECIDES FIRST, whatever the parent's head looks like. A `cond`
+        # clause is `(<test> <body>...)` and its test can be ANYTHING -- a form
+        # `((> a b) ...)`, a literal `(57 ...)`, or a bare variable, which is KQ5's own
+        # spelling: `(local2 (= local2 0) (proc0_10 71) (self setScript: bringCedric))`. Read
+        # by the parent's head alone, that last one is indistinguishable from a send, so the
+        # walk climbed out of the clause, past the `cond`, and returned the WHOLE fork as the
+        # arming statement -- measured on rm046, the one emitted file that moved.
+        gp = chain[depth + 2] if depth + 2 < len(chain) else None
+        gph = head_of(text, gp[0]) if gp else None
+        if gph in _CLAUSE_PARENTS:
+            gels = _elements(text, gp[0], gp[1], spans)
+            if ps not in gels or gels.index(ps) <= _FORKS[gph]:
+                return None                        # the `switch` VALUE: evaluating it CHOOSES
+            lead = 0                               # a clause body starts after its test
+        elif head in _CLAUSE_PARENTS:
+            return None                            # a direct child of the fork itself: `pos`
+            #                                        is in a clause TEST or a switch VALUE, and
+            #                                        both CHOOSE rather than run
+        elif head is None or re.match(r"[-$0-9]", head):
+            continue                               # a computed-receiver send: value position
         elif head in _BODY_HEADS:
             lead = _BODY_HEADS[head]
         else:
             continue                               # a send, an operator, a call: an argument
+        # The first BODY-BEARING parent decides, and it can say no. A form in that parent's
+        # LEADING slot -- an `if`'s test, a `while`'s test, a `switch`'s dispatch value, a
+        # method's signature -- is not a statement and neither is anything above it for this
+        # purpose: holding it would change WHICH BRANCH RUNS, not whether the arming fires,
+        # which is the same refusal `patcher._enclosing_if_test` gives an arming in a test.
         els = _elements(text, ps, pe, spans)
-        if s in els and els.index(s) > lead:
-            return (s, e)
+        if s not in els or els.index(s) <= lead:
+            return None
+        return (s, e)
     return None

@@ -3287,8 +3287,9 @@ def _enclosing_if_test(text, pos, armings=None):
     Also None, for the same reason, when that `if`'s test is a bare atom (nothing to conjoin
     onto textually) or when `pos` lies inside the test itself (an arming performed while the
     test is evaluated cannot be gated by that test without duplicating it)."""
+    spans = _noncode_spans(text)
     best = None
-    for m in _code_finditer(text, r"\(if\s+"):
+    for m in _code_finditer(text, r"\(if\s+", spans):
         if m.start() > pos:
             break
         end = _balanced_span(text, m.start())
@@ -3305,10 +3306,10 @@ def _enclosing_if_test(text, pos, armings=None):
     if _depth1_else(text, best[0], best[3]) is not None:
         return None                               # conjoining here DIVERTS into the else
     held = tuple(armings) if armings is not None else (pos,)
-    for (fs, fe) in form_chain(text, pos):
+    for (fs, fe) in form_chain(text, pos, spans):
         if fs <= best[0]:
             break                                 # innermost-first: we reached the `if` itself
-        arms = fork_arms(text, fs, fe)
+        arms = fork_arms(text, fs, fe, spans)
         if arms is None:
             continue
         if any(not any(a <= q < b for q in held) for (a, b) in arms):
@@ -3432,8 +3433,8 @@ def _place_fuse_arm(text, proc_name, hosts, demand, machine=None):
     for p in sites:
         stmt = _arming_statement_span(text, p, spans)
         if stmt is None or stmt[0] < ps or stmt[1] > pend:
-            return text, 0, ("an arming in %s is not inside a balanced form of its own"
-                             % proc_name)
+            return text, 0, ("an arming in %s is not a statement of its own -- it is an "
+                             "expression in value position, or inside a test" % proc_name)
         sp = _enclosing_if_test(text, p, sites)
         if sp is not None and ps <= sp[0] and sp[1] <= pend:
             holds[sp] = _conjoin_marked

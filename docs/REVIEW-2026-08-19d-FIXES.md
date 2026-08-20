@@ -360,7 +360,7 @@ written; the reds are committed at `51d43b6`.
 |---|---|
 | All five games' **emitted patch source trees** vs a worktree at `6aa0a1d`, recursive diff | **byte-identical, 1,084 files** |
 | …first run, before the `mark_line` refinement below | **1 file moved** — LB2's `rm520.sc`, and it is what taught the rule its boundary |
-| Suite | see the commit message |
+| Suite | **691 passed, 1 known-red (F6), 0 unexpected, 0 crashed** (939s), from 655/1/0 |
 
 ## N1 — and the eleven other emitters that splice a marker in front of live text
 
@@ -491,3 +491,41 @@ changed.
 
 🔴 **`_payable` never asks whether the item is obtainable BEFORE the held arming** — unchanged,
 still open, still stated in the docstring rather than papered over.
+
+## ⭐ AND THE CURES HAD THREE DEFECTS OF THEIR OWN — all three caught by measuring, not by reading
+
+Third round, same lesson ([[review-the-fix-not-only-the-feature]]). Two of these shipped green
+in the first GREEN commit and were found only when the *next* change made them visible.
+
+**1. `form_chain` closed a form at a SIBLING's parenthesis.** The single-pass version recorded a
+chain level's end at the first `)` that returned the scan to that depth — but a sibling opening
+and closing *after* the level closed returns to the same depth, so the end was overwritten with
+the sibling's. `(a (b (c) (d)) (e))` reported `(b (c) (d)) (e)` as the form at offset 3. The two
+appliers then computed overlapping holds and **refused whole**. Caught by the existing
+`test_fuse_arm_holds_the_if_that_spawns`, which is what it is for.
+
+**2. `statement_span` read a `cond` clause by its parent's HEAD** — which is right for
+`((> a b) …)` and `(57 …)` and wrong for KQ5's own spelling, `(local2 (= local2 0) (proc0_10 71)
+(self setScript: bringCedric))`, where a bare variable test is indistinguishable from a send. So
+the walk climbed out of the clause, past the `cond`, and returned **the whole fork** as the
+arming statement. Measured: `kq5/src/rm046.sc`, the one emitted file that moved, with the guard
+wrapping seventy lines instead of one send. ⚠️ **This one was already in the first GREEN commit**
+— invisible there only because KQ5's fuse-arm site takes the conjoin path, not the statement
+wrap. The grandparent decides now, whatever the parent's head looks like.
+
+**3. An arming inside a TEST got the enclosing `if` as its "statement."** The docstring claimed
+None for that shape and the code returned `(if …)`. Holding *that* changes which branch runs,
+which is the very thing `_enclosing_if_test` refuses — so the first BODY-BEARING parent now
+decides and may say no: a form in a leading slot (an `if`'s or `while`'s test, a `switch`'s
+dispatch value, a `cond` clause's test, a method's signature) has no statement of its own.
+Caught by a fixture written for the previous fix.
+
+All three now have regression guards: `test_form_chain_is_the_nesting_and_nothing_else` and
+`test_statement_span_climbs_out_of_value_positions_only`.
+
+**And the same rule reached `trigger.wrap_trigger_in_source`** — the arm-event wrap, the
+workhorse placement — whose own expansion was still "the innermost balanced form", the exact
+shape N1b is about, with a raw `setScript:` scan feeding it. Both closed, and re-measured:
+**byte-identical on all five games**, so every arming site in this corpus was already a
+statement. The `_arming_statement_span` docstring's claim that the two use the same rule is now
+true.

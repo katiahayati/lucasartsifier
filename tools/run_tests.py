@@ -75,10 +75,19 @@ KNOWN_RED = {
             # the way `fuse-arm` does, or adding `else (self dispose:)` -- change emitted bytes
             # in a patch the USER has already play-tested end to end (v17, tag v3.0-kq5). The
             # right order is the USER's call plus a play test, not a silent rewrite of a
-            # verified emission. Unverified at runtime: nobody has watched ScummVM meet
-            # `(0 state:)`, and rm54's ambush may be unreachable for an equipped player.
-            "a refused arming leaves its host cast-resident with script 0; both cures move a "
-            "play-confirmed emission, so this waits on the USER + a play test",
+            # verified emission.
+            #
+            # ⛔ NOT A KQ5 SHIPPING HAZARD -- KQ5 HAS NO PATH TO IT [USER, play, 2026-08-20].
+            # Play-confirmed: prop the grate, tug it, nothing happens and nothing crashes. The
+            # structure agrees -- the ambush needs an unequipped arrival at rm54, and our own
+            # boat guard demands the Iron_Bar (30) and the Fishhook (31) at all three of
+            # `boatRegion`'s `leave` armings, so `theHenchMan::init` never runs there. What
+            # stays red is the APPLIER, for the next game: a hold placed inside a host's own
+            # `init` after `(super init:)` is the wrong shape wherever the refusal is reachable.
+            "the applier places a hold inside its host's `init` AFTER `(super init:)`, so a "
+            "refused arming leaves the host cast-resident with script 0 -- unreachable on KQ5 "
+            "(play-confirmed), open for the next game; both cures move a play-confirmed "
+            "emission, so this waits on the USER",
     },
     "test_toll.py": {
         # ✅ PROMOTED 2026-08-16 -- "KQ5 temple strands Brass_Bottle + Gold_Coin" and "KQ5 toll

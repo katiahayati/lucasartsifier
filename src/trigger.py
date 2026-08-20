@@ -28,7 +28,7 @@ from collections import defaultdict
 sys.path.insert(0, os.path.dirname(__file__))
 from sexpr import (code_finditer, code_search, depth1_else,  # noqa: E402
                    form_chain, head_of, line_indent, mark_line, read_file, skip_noncode,
-                   Sym, Str, Said)
+                   statement_span, Sym, Str, Said)
 
 CONTROLLABLE_METHODS = {"handleEvent", "doVerb"}
 
@@ -1566,20 +1566,23 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
         # THE ARMING STATEMENT IS THE SEND THAT CARRIES THE SELECTOR, not a flat regex span:
         # KQ5's henchman arms itself inside a multi-selector cascade with a nested argument --
         # `(self view: (if ...) setCycle: Walk ... setScript: theHenchManScript)` -- which no
-        # `[^()]*` pattern can see. Locate the selector, then expand to the INNERMOST BALANCED
-        # FORM enclosing it; for the flat single-selector send every prior game spells, that is
-        # exactly the span the old pattern matched.
+        # `[^()]*` pattern can see. Locate the selector, then expand to the enclosing
+        # STATEMENT; for the flat single-selector send every prior game spells, that is exactly
+        # the span the old pattern matched.
+        #
+        # ⛔ `sexpr.statement_span`, THE SAME RULE `patcher._arming_statement_span` USES, and
+        # the scan is code-filtered like every other (2026-08-20 third review, N1b). The
+        # innermost balanced form is not always a statement: where a game writes
+        # `(= [local0 0] (obj setScript: X))` the hold would land in the assignment's VALUE
+        # slot and change what is stored rather than withhold the arming. Measured: no emitted
+        # byte in the five source trees moves -- every arming site in this corpus is already a
+        # statement -- so this closes the shape rather than changing an emission.
         gs = stock_or(guard_sexpr)     # silent kind: stock bypasses, lite behaves as full
         spans = []
-        for am in re.finditer(r"setScript:\s*%s\b" % re.escape(target), region):
-            s0 = region.rfind("(", 0, am.start())
-            b = None
-            while s0 != -1:
-                b0, b1 = _block_span(region, s0)
-                if b1 > am.end():
-                    b = (b0, b1)
-                    break
-                s0 = region.rfind("(", 0, s0)
+        for am in code_finditer(region, r"setScript:\s*%s\b" % re.escape(target)):
+            b = statement_span(region, am.start())
+            if b and b[1] <= am.end():
+                b = None                       # a statement that ends before the send is not it
             if b and b not in spans:
                 spans.append(b)
         n = 0

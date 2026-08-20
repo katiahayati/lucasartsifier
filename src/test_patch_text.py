@@ -1084,7 +1084,14 @@ def test_a_refused_arming_does_not_orphan_its_host():
     THE INVARIANT: a wrap placed inside a host's OWN `init` must either cover `(super init:)`
     (so a refusal keeps the host out of the cast) or dispose the host on the refusal. Neither
     is what ships, on KQ5 or in the applier. Both cures change emitted bytes for a patch the
-    USER has already play-tested, so this is DECLARED rather than made silently."""
+    USER has already play-tested, so this is DECLARED rather than made silently.
+
+    ⛔ AND IT IS NOT A KQ5 SHIPPING HAZARD [USER, play, 2026-08-20]. Play-confirmed: prop the
+    grate with the iron bar, tug it, nothing happens and nothing crashes -- the ambush needs an
+    UNEQUIPPED arrival at rm54, and our own boat guard demands the Iron_Bar (30) and the
+    Fishhook (31) at all three of `boatRegion`'s `leave` armings, so `theHenchMan::init` never
+    runs there. This red is about the APPLIER, for the next game whose refusal IS reachable;
+    the declaration used to read as though a shipped patch could crash, which it cannot."""
     print("\n-- 🔴 a refused arming must not leave its host cast-resident (F6) --")
     place = getattr(P, "_place_capture_arm", None)
     if place is None:
@@ -1200,6 +1207,80 @@ def test_a_dispatch_region_is_code():
                      % (row, quoted in out, code_parens(out), out))
     finally:
         _sh.rmtree(dest, ignore_errors=True)
+
+
+def test_form_chain_is_the_nesting_and_nothing_else():
+    """The walk `statement_span`, `fork_arms` and `_enclosing_form` all rest on.
+
+    ⛔ REGRESSION GUARD, and it earned it immediately. The first cut closed each chain level at
+    the first `)` that returned the scan to that DEPTH -- but a SIBLING that opens and closes
+    after a level has already closed returns to the same depth, so the level's end was
+    overwritten with the sibling's. `(a (b (c) (d)) (e))` reported `(b (c) (d)) (e)` as the form
+    at offset 3, and the two appliers then computed overlapping holds and refused whole."""
+    print("\n-- sexpr.form_chain: innermost first, and each form ends where IT ends --")
+    import sexpr as S
+    t = "(a (b (c) (d)) (e))"
+    for pos, want in ((0, ["(a (b (c) (d)) (e))"]),
+                      (3, ["(b (c) (d))", "(a (b (c) (d)) (e))"]),
+                      (6, ["(c)", "(b (c) (d))", "(a (b (c) (d)) (e))"]),
+                      (10, ["(d)", "(b (c) (d))", "(a (b (c) (d)) (e))"]),
+                      (15, ["(e)", "(a (b (c) (d)) (e))"])):
+        got = [t[a:b] for (a, b) in S.form_chain(t, pos)]
+        check("form_chain at %d is the nesting, innermost first" % pos, got == want,
+              detail="got %r, want %r -- a sibling after the close must not extend the form"
+                     % (got, want))
+    # ...and a `(` inside a message opens nothing
+    m = "(a {a ( message} (b))"
+    got = [m[x:y] for (x, y) in S.form_chain(m, m.index("(b)"))]
+    check("form_chain: a paren inside a message is not a form",
+          got == ["(b)", m], detail="got %r" % (got,))
+
+
+def test_statement_span_climbs_out_of_value_positions_only():
+    """N1b's walk, on the spellings a `cond` clause test actually takes.
+
+    ⛔ REGRESSION GUARD. The first cut decided "am I a clause?" from the PARENT's head, which
+    reads `((> a b) ...)` and `(57 ...)` correctly and KQ5's own `(local2 (= local2 0) (self
+    setScript: bringCedric))` as a SEND -- so the walk climbed out of the clause, past the
+    `cond`, and returned the whole fork. Measured: `kq5/src/rm046.sc`, the one emitted file
+    that moved, with the guard wrapping 70 lines instead of one send."""
+    print("\n-- sexpr.statement_span: a clause test can be anything, and often is --")
+    import sexpr as S
+    T = """(method (doit)
+\t(cond
+\t\t(local2
+\t\t\t(= local2 0)
+\t\t\t(self setScript: bringCedric)
+\t\t)
+\t\t((> a b) (theRat init:))
+\t\t(else (foo))
+\t)
+)"""
+    for probe, want in (("(self setScript:", "(self setScript: bringCedric)"),
+                        ("(theRat init:)", "(theRat init:)"),
+                        ("(foo)", "(foo)")):
+        span = S.statement_span(T, T.index(probe))
+        got = T[span[0]:span[1]] if span else None
+        check("statement_span: a clause body is a statement (%s)" % probe.strip("("),
+              got == want, detail="got %r, want %r" % (got, want))
+    SW = "(method (doit) (switch (self kind:) (5 (theCat init:)) (6 (bar))))"
+    span = S.statement_span(SW, SW.index("(theCat"))
+    check("statement_span: a switch CASE body is a statement",
+          span and SW[span[0]:span[1]] == "(theCat init:)",
+          detail="got %r" % (span and SW[span[0]:span[1]],))
+    check("statement_span: the switch VALUE is not -- evaluating it CHOOSES the branch",
+          S.statement_span(SW, SW.index("(self kind:)")) is None,
+          detail="got %r" % (S.statement_span(SW, SW.index("(self kind:)")),))
+    V = "(procedure (p)\n\t(= [local0 0] (theCat init: yourself:))\n)"
+    span = S.statement_span(V, V.index("(theCat"))
+    check("statement_span: an argument climbs to the assignment that stores it",
+          span and V[span[0]:span[1]] == "(= [local0 0] (theCat init: yourself:))",
+          detail="got %r" % (span and V[span[0]:span[1]],))
+    TEST = "(procedure (p)\n\t(if (not (self init: param1)) (foo))\n)"
+    check("statement_span: an arming inside a TEST has no statement of its own",
+          S.statement_span(TEST, TEST.index("(self init:")) is None,
+          detail="got %r -- holding it would duplicate the test"
+                 % (S.statement_span(TEST, TEST.index("(self init:")),))
 
 
 def test_mark_line_asks_whether_code_is_at_risk():
@@ -1335,6 +1416,8 @@ def run():
     test_every_spelling_of_the_arming_is_held()
     test_a_region_never_starts_inside_a_message()
     test_a_refused_arming_does_not_orphan_its_host()
+    test_form_chain_is_the_nesting_and_nothing_else()
+    test_statement_span_climbs_out_of_value_positions_only()
     test_mark_line_asks_whether_code_is_at_risk()
     test_a_dispatch_region_is_code()
     test_the_marker_never_eats_the_line()
