@@ -16,9 +16,13 @@ and Laura Bow 2 (SCI1.1, 1992) — same engine, no game-specific analysis code.
 
 ## Demo
 
-King's Quest IV, patched — the whale, the night clock and seven stranded items, all guarded:
+King's Quest IV, patched: the post-whale island.
 
 [![Demo: King's Quest IV, patched](https://img.youtube.com/vi/FvspDYQZj34/hqdefault.jpg)](https://youtu.be/FvspDYQZj34)
+
+The tool detects that once you leave the island, you can't come back, and that you need the Golden Bridle later for the unicorn.
+It injects a "Not yet!" stock refusal if the player attempts to ride the dolphin without the Bridle. Once Rosella gets the Bridle the exit is
+allowed to happen.
 
 ## The thirty-second version
 
@@ -79,13 +83,13 @@ As Al Lowe says, "Save Early, Save Often!"
 declared per title** — start room, victory room, death signal and debug flags are all derived
 from each game's own code.
 
-| game | engine | status |notes |
+| game | engine | status |notable features |
 |---|---|---|---|
 | **Leisure Suit Larry 2** (1988) | SCI0 | done & tested |  the Spinach Dip: fatal to *carry*, so the guard is a negative literal, placed while you can still ditch it |
 | **King's Quest IV** (1988) | SCI0 | done & tested | the real-time night clock; the whale — random events guarded by arming them only when survivable |
 | **King's Quest VI** (1992) | SCI1.1 | done & tested | the two ending paths massively complicate analysis; guarding the start of the wedding (a timer) until necessary items are in hand |
 | **Laura Bow 2** (1992) | SCI1.1  | done & tested | the act structure: the plot clock is a register, act breaks are one-way, demands ride the act-flip interceptor |
-| **King's Quest V** (1990) | SCI1-middle | done & tested | the village market (matching payments to merchants, so detection becomes a matching problem); positional deaths read as walls; and encounters guarded by arming them only when survivable — an unanswered cat lights a death fuse three hops away, and a henchman carries you into a cell whose rescue only happens once |
+| **King's Quest V** (1990) | SCI1-middle | done & tested | the village market (matching payments to merchants, so detection becomes a matching problem); dangerous encounters guarded by allowing them to occur only when survivable; the cat&mouse interception replays until the player gets it right  |
 
 ## How it works, briefly
 
@@ -225,21 +229,9 @@ from the game's own code (see `src/anchors.py`). A new title needs no config ent
 
 ## Future work
 
-- **Required *actions* are modeled only in the shapes King's Quest V forced.** The base case is a
-  transition that must not be taken while something it needs is still required and no longer
-  obtainable after the crossing: a room edge, a plot flag advancing, an event the player does not
-  control — a whale that swallows you, nightfall, an act break. KQ5 added the case where the thing
-  you failed to *do* kills you later: the shoe you must throw at a cat to save a mouse who later
-  frees you from a cellar is now caught (the throw is recorded in the item-ownership store, an
-  arrival reads it hours later, and the window closes the moment the chase *starts* rather than
-  when it is lost), as are encounters that must not begin unless you can survive them. What is
-  still missing is a general account — each of those came from reading one game's structure and
-  asking whether the shape generalizes, not from a theory of required actions.
 - **State explosion in Quest For Glory games.** QFG games have SO MUCH going on that the analyzer
   cannot complete. I suspect we can fix that by abstracting away from player stats, combat, and
   health consumables (rations, etc.), but that work has not been done yet.
-- **SCI1.0 / SCI1-middle.** SCI0, SCI1-middle and SCI1.1 are all modeled now — King's Quest V, the
-  weird hybrid in between, is done. Other SCI1.0 titles will likely still need dialect work.
 - **Full end-to-end playtesting.** No game has had a single continuous start-to-finish run on a
   patched build yet. King's Quest V comes closest: every row of its test plan has been played on
   the patched game, the endgame included, and that is where several of its guards were found,
