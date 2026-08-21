@@ -3488,9 +3488,21 @@ def _place_capture_arm(text, machine, host, demand):
     ⛔ NOT A KQ5 HAZARD and not worth curing speculatively: KQ5's refusal is unreachable
     (play-confirmed -- prop the grate, tug it, nothing happens; the ambush needs an unequipped
     arrival at rm54, and the boat guard demands Iron_Bar (30) + Fishhook (31) at all three of
-    `boatRegion`'s `leave` armings), and both cures move a play-confirmed emission. It takes
-    THREE things at once to bite -- the hold inside the host's own `init`, a reachable refusal,
-    and a later read of the orphan's `script:` -- and no game has yet produced two of them."""
+    `boatRegion`'s `leave` armings, under flag 105).
+
+    ⚠️ AND THE MARGIN IS ONE CONDITION, NOT TWO -- correcting what this docstring said when F6
+    was retired (2026-08-20d fifth review). It takes THREE things at once to bite, and KQ5 has
+    TWO of them, both verifiable in the artifacts:
+
+      1. the hold inside the host's own `init` after `(super init:)`, with no disposing `else`
+         -- IN THE SHIPPED EMISSION, `kq5/src/castle.sc`, `theHenchMan::init`;
+      3. a later read of the orphan's `script:` -- `build/sweep/kq5/src/rm054.sc:448-449`,
+         `(and (global5 contains: (ScriptID 550 3)) (>= (((ScriptID 550 3) script:) state:) 1))`.
+
+    Only 2, the REACHABLE REFUSAL, is missing, and it rests on a single play test rather than on
+    a structural impossibility. The retirement is still the USER's call and stands; the claim
+    that "no game has produced two of them" was simply wrong, and a future session reading it
+    would think this shape further away than it is."""
     hits = [m.start() for m in _code_finditer(
         text, r"setScript:\s*%s\b" % re.escape(machine))]
     if len(hits) != 1:

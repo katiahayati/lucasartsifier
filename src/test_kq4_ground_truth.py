@@ -106,6 +106,7 @@ def run():
     # is parked rather than derived -- so a game that actually asks the question has to say so
     # before the hold built on it ships. The assertion lived in KQ5's ground truth and nowhere
     # else, which made it a claim about one game instead of about the rule.
+    _N4_LABEL, _N4_EXPECT_FIRED = "KQ4 (and the LSL2 cross-check)", 0
     _div, _fired, _shapes = M.n4_tripwire()
     print(f"  [n4] falsification questions asked: {_fired}, divergent: {len(_div)}")
     check("KQ4 (and the LSL2 cross-check) asks no divergent falsification question", not _div,
@@ -113,6 +114,18 @@ def run():
           f"on a reading of `chain_writes` that was CHOSEN, not derived -- see "
           f"`missability._falsifies`, N4. The USER decides which way it reads before this "
           f"game's hold is trusted.")
+    # ⛔ AND THE COUNT IS PINNED, because `not _div` alone CANNOT FAIL here (2026-08-20d fifth
+    # review). This game asks `_falsifies` nothing at all, so the check above would pass
+    # identically if the rule were deleted -- the `[n4]` line is a print, not a gate. Pinning the
+    # measured count turns that into a statement the suite enforces: the day this game starts
+    # reaching the rule, the number moves and THAT is the coverage change worth hearing about
+    # ([[report-coverage-changes-loudly]]), not a silent upgrade from vacuous to real.
+    check("%s: the tripwire's reach is what was measured, not assumed" % _N4_LABEL,
+          _fired == _N4_EXPECT_FIRED,
+          f"asked {_fired} falsification questions, expected {_N4_EXPECT_FIRED}. A CHANGE HERE "
+          f"IS NOT A FAILURE -- it means this game now reaches `_falsifies`, so the "
+          f"no-divergence check above has stopped being vacuous. Re-derive, then update the "
+          f"expectation with the new number.")
 
     print(f"\n  caught now: {sorted(caught)}")
     print(f"  still-missed ground truth: {sorted(KNOWN_GAPS - caught)}")

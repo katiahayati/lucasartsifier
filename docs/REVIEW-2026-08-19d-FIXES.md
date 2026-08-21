@@ -613,7 +613,7 @@ run agreed. **Never diff a tree that is still being written.**
 2. **P2's third half.** `find_all_armings` fans out per (instance, method), but `patcher.py:3138`
    skips any extra arming matching the primary's instance AND method, and the branch itself took
    `re.search`'s first match — so one handler arming one machine under two verbs shipped guarded
-   on one verb and open on the other. 160 methods in the corpus carry 2+ sites for one target.
+   on one verb and open on the other. ⛔ The "160" printed here was DEFINITIONLESS and does not reproduce -- P9's own sin, in the paragraph reporting P9's cure. Definition: `(method (` forms (code-filtered, spanned with `_block_span`) holding two or more code-filtered `setScript: <name>` sites naming the SAME target, any receiver. Under it, five trees: **161** (requiring the same RECEIVER too gives 146).
 3. **A second magic offset** beside P11's, `out.index("(Refuse)") > out.index("put: 19 1") - 400`,
    satisfied by almost any arrangement of the file.
 

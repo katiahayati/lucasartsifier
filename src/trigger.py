@@ -284,16 +284,36 @@ def find_all_armings(forms, target):
     Play-found (KQ6 rm220, 2026-08-03): `wearClothingScr` is armed from egoDoVerbCode::doVerb
     AND from guardHut::doVerb -- using the clothes on the HUT walked straight through the short
     door's guard, because find_trigger returns the first controllable arming and the placement
-    wrapped only that one. Wrapping one door of an N-door commitment is a bypass, not a guard."""
+    wrapped only that one. Wrapping one door of an N-door commitment is a bypass, not a guard.
+
+    ⛔ ONE PLACEMENT PER (INSTANCE, METHOD), NOT PER SITE (2026-08-20d fifth review). A placement
+    names a HANDLER, and the wrapper it feeds covers every arming inside that handler -- so a
+    method arming the target twice used to yield the SAME dict twice, and the caller
+    (`patcher.apply_guards`' setscript fan-out) skips only extras matching the PRIMARY's
+    instance+method. Every other duplicate was therefore applied again, re-reading the file each
+    time and re-wrapping what the previous pass had already wrapped; the row's `sites` counted
+    every pass. Measured across the five trees: **86** (instance, method) pairs came back more
+    than once, the worst of them ten times.
+
+    Harmless while each call wrapped only its first match; multiplicative once the wrappers began
+    covering every site (P2), which is how it surfaced. No emitted byte in this corpus moves
+    either way -- no shipping row names a target armed from a duplicated pair -- so this closes
+    an amplifier rather than a live bug, and stops `sites` overcounting doors that do not exist."""
     _nr, _cs, ss, _pc = analyze_room(forms)
     def norm(t):
         return t if isinstance(t, str) else "ScriptID %d %d" % t[1:]
-    return [{"kind": "setscript", "trigger_instance": i, "trigger_method": m,
-             "target_script": norm(t),
-             "target_pattern": (re.escape(t) if isinstance(t, str)
-                                else r"\(ScriptID\s+%d\s+%d\s*\)" % (t[1], t[2]))}
-            for (i, m, t, _r, _pos) in ss
-            if norm(t) == norm(target) and i is not None and m in CONTROLLABLE_METHODS]
+    out, seen = [], set()
+    for (i, m, t, _r, _pos) in ss:
+        if norm(t) != norm(target) or i is None or m not in CONTROLLABLE_METHODS:
+            continue
+        if (i, m) in seen:
+            continue                       # same handler, another site: one placement covers it
+        seen.add((i, m))
+        out.append({"kind": "setscript", "trigger_instance": i, "trigger_method": m,
+                    "target_script": norm(t),
+                    "target_pattern": (re.escape(t) if isinstance(t, str)
+                                       else r"\(ScriptID\s+%d\s+%d\s*\)" % (t[1], t[2]))})
+    return out
 
 
 def find_proc_calls(forms, names, methods=("init",)):
@@ -759,10 +779,29 @@ def arming_contexts(text, target_script, ego=None):
 
 def wrap_all_armings_in_source(text, placement, guard_sexpr, refuse, site=None):
     """Wrap EVERY `setScript: <target>` clause in the placement's method -- the multi-site twin
-    of `wrap_trigger_in_source`'s setscript branch, which wraps only the first match. KQ6's
-    rock-stepping arms `takeStep` from FOUR geometric clauses of one handler; wrapping one is a
-    bypass wearing a guard's face. Clause spans are collected up front and wrapped back-to-front
-    so earlier offsets stay valid, and two armings inside one clause wrap once."""
+    of `wrap_trigger_in_source`'s setscript branch. KQ6's rock-stepping arms `takeStep` from FOUR
+    geometric clauses of one handler; wrapping one is a bypass wearing a guard's face. Clause
+    spans are collected up front and wrapped back-to-front so earlier offsets stay valid, and two
+    armings inside one clause wrap once.
+
+    ⛔ THE THIRD COPY OF THE RULE, cured last (2026-08-20d fifth review, H3). N1b gave the
+    arm-event branch `code_finditer` + `statement_span`, P1 gave it the refusal, and P2 gave both
+    to the `setscript` branch -- and this function, which is what emitted KQ6's shipped `rCliffs`
+    guards, was found by none of those rounds. It kept all three defects:
+
+      * it SKIPPED a site whose hold would overlap another and counted `n` from the rest, which
+        is P1 exactly. The damage depended on the ORDER the armings appear in: sites are
+        collected in document order, so when an INNER clause's arming came first its span was
+        recorded and the OUTER clause -- carrying an arming of its own -- was the one dropped,
+        shipping that arming unguarded behind `sites: 1`;
+      * a raw `re.finditer` made a commented-out arming a site, and here it wrapped the comment
+        AND the real one, `n=2`, emitting source that does not compile;
+      * the flat `(?:[^()]|\\([^()]*\\))*` span held `(= local0 (obj setScript: X))` in the
+        assignment's VALUE slot, storing the refusal's return value instead of withholding the
+        arming (N1).
+
+    Now: code-filtered scan, `statement_span`, clause expansion from the STATEMENT's start, and
+    refuse whole rather than skip -- the same four sentences the other two copies read."""
     inst, meth = placement["trigger_instance"], placement["trigger_method"]
     inst_span = _find_region(text, r"\((?:instance|class)\s+%s\b" % re.escape(inst))
     if not inst_span:
@@ -773,15 +812,24 @@ def wrap_all_armings_in_source(text, placement, guard_sexpr, refuse, site=None):
         return text, 0
     m0, m1 = i0 + meth_rel[0], i0 + meth_rel[1]
     region = text[m0:m1]
-    _ANY = r"(?:[^()]|\([^()]*\))*"
-    tpat = placement.get("target_pattern") or re.escape(placement["target_script"])
+    tpat = placement.get("target_pattern") or (re.escape(placement["target_script"]) + r"\b")
     spans = []
-    for ssm in re.finditer(r"\(%ssetScript:\s*%s\b%s\)" % (_ANY, tpat, _ANY), region):
-        clause = _enclosing_clause_body(region, ssm.start())
-        span = clause if clause else (ssm.start(), ssm.end())
-        # overlap = the same or a nested clause; wrapping both would corrupt the outer one
-        if not any(bs < span[1] and span[0] < be for (bs, be) in spans):
-            spans.append(span)
+    for ssm in code_finditer(region, r"setScript:\s*%s" % tpat):
+        b = statement_span(region, ssm.start())
+        if b and b[1] <= ssm.end():
+            b = None                       # a statement that ends before the send is not it
+        if b is None:
+            return text, 0                 # unholdable arming -> refuse the WHOLE site
+        # the hold is the whole cond-clause where there is one, taken from the STATEMENT's start
+        b = _enclosing_clause_body(region, b[0]) or b
+        if b not in spans:
+            spans.append(b)
+    if not spans:
+        return text, 0
+    spans.sort()
+    for (a, b) in zip(spans, spans[1:]):
+        if b[0] < a[1]:
+            return text, 0                 # overlapping holds -> refuse over a silent skip
     n = 0
     # ONE warned bit for all clauses -- and for every other call the caller makes for the same
     # guard, when it threads its own site in (a spec row is wrapped at several armings, cue-chain
@@ -1522,8 +1570,13 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
         #
         # Censused before changing anything, five stock trees, 10,301 methods / 2,713 in-method
         # `setScript:` sites: 0 resolve to a non-statement and 0 raw-only hits sit in comments or
-        # strings, so the first two are shape closures. 160 methods carry 2+ sites for one
-        # target, so the third is the one that can move bytes.
+        # strings, so the first two are shape closures. The third is the one that can move
+        # bytes, and the count of methods it could bite is DEFINITION-SENSITIVE, so the
+        # definition travels with it (2026-08-20d fifth review -- "160" was printed here with
+        # none, which is the very sin P9 was about): `(method (` forms, code-filtered and spanned
+        # with `_block_span`, holding two or more code-filtered `setScript: <name>` sites naming
+        # the SAME target, any receiver. Five trees: **161**. Requiring the same RECEIVER as well
+        # gives 146.
         spans = []
         for ssm in code_finditer(region, r"setScript:\s*%s" % tpat):
             b = statement_span(region, ssm.start())

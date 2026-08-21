@@ -65,10 +65,15 @@ KNOWN_RED = {
     # ⛔ F6 RETIRED 2026-08-20d [USER: "yeah remove the red please. i'm just not sure we're ever
     # going to hit that"]. `test_patch_text.py` held this file's only declared red -- a hold
     # placed inside a host's OWN `init` after `(super init:)` leaves a refused host cast-resident
-    # with script 0. It was never a KQ5 hazard (play-confirmed unreachable) and it needs three
-    # things at once to bite, of which no game has produced two. The check was DELETED rather
-    # than made to pass -- a limitation may not be pinned green -- and the invariant moved to
-    # `patcher._place_capture_arm`, beside the applier it constrains.
+    # with script 0. It was never a KQ5 hazard (play-confirmed unreachable). The check was DELETED
+    # rather than made to pass -- a limitation may not be pinned green -- and the invariant moved
+    # to `patcher._place_capture_arm`, beside the applier it constrains.
+    #
+    # ⚠️ CORRECTION (2026-08-20d fifth review): this entry claimed the shape "needs three things
+    # at once, of which no game has produced two". KQ5 has produced TWO -- the hold inside the
+    # host's own `init` is in the SHIPPED emission (`castle.sc`) and the orphan's `script:` is
+    # read at `rm054.sc:448-449`. Only the REACHABLE REFUSAL is missing, on the strength of one
+    # play test. The retirement stands; the margin was overstated by exactly one condition.
     "test_toll.py": {
         # ✅ PROMOTED 2026-08-16 -- "KQ5 temple strands Brass_Bottle + Gold_Coin" and "KQ5 toll
         # item is the Staff via rm214->rm18" are GREEN and no longer listed. Both demanded that

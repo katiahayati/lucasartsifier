@@ -1310,19 +1310,28 @@ def test_a_region_never_starts_inside_a_message():
           detail="regions taken from inside a string: %r" % (bad,))
 
     # THE REST OF THE FAMILY, as a census rather than as a claim. Some of these scanners are
-    # still raw -- SEVEN `setScript:` searches (six in `trigger`, one in `patcher`), including
-    # the arm-clause branch's, plus the clause-head walk -- and they are safe today for one
-    # reason only: nothing they look for is ever written inside a message in these five games.
-    # That is a fact about the corpus, so it is measured here rather than asserted in a
-    # docstring -- the day a new game writes one, this says so BEFORE the placement built on it
-    # ships.
+    # still raw -- including the arm-clause branch's `setScript:` search and the clause-head walk
+    # -- and they are safe today for one reason only: nothing they look for is ever written
+    # inside a message in these five games. That is a fact about the corpus, so it is measured
+    # here rather than asserted in a docstring -- the day a new game writes one, this says so
+    # BEFORE the placement built on it ships.
     #
     # ⛔ THE ARM-EVENT SEARCH IS NO LONGER ONE OF THEM (2026-08-20 fourth review, P11). This
     # named "the arm-event / arm-clause `setScript:` searches" after N1b had already given the
     # arm-event branch `code_finditer`, and the `setscript` branch got it in P2 -- so the
     # sentence describing which scanners this census is covering for had drifted out of date in
     # the direction that matters, claiming a gap the code had closed while the ones still open
-    # went unnamed. Re-measured: 7 raw against 2 code-filtered.
+    # went unnamed.
+    #
+    # ⛔ AND THE RE-MEASUREMENT WAS ITSELF WRONG (2026-08-20d fifth review). "7 raw against 2
+    # code-filtered" undercounted the filtered side by half, because it came from a single-LINE
+    # grep and two of the calls are wrapped across lines (`patcher.py`'s two `_code_finditer(\n
+    # text, r"setScript:...`) -- the same sin P11 was filed for, in the sentence P11 rewrote.
+    # Definition, so this one is checkable: calls to `re.search`/`re.finditer`/`re.compile` (raw)
+    # or `code_search`/`code_finditer`/`_code_finditer` (filtered) in `trigger.py` + `patcher.py`
+    # whose PATTERN LITERAL contains `setScript:`. Under it, at this commit: **6 raw** (trigger
+    # 546/585/663/1616/1718, patcher 467) against **5 code-filtered** (trigger 817/1576/1667,
+    # patcher 3401/3506). It was 7/4 before H3 converted `wrap_all_armings_in_source`.
     #
     # ⛔ THE TRIPWIRE COULD NOT FIRE FOR THE REASON IT NAMED (2026-08-20 third review, N3). The
     # family omitted `(method (` -- THE ONE PATTERN IN THIS CORPUS WITH HITS, named in the
@@ -1450,10 +1459,15 @@ def test_a_region_never_starts_inside_a_message():
 # ⛔ F6 IS RETIRED, NOT CURED [USER, 2026-08-20d]: "yeah remove the red please. i'm just not
 # sure we're ever going to hit that". The check that stood here asserted that a hold placed
 # inside a host's OWN `init` covers `(super init:)` or disposes the host on refusal -- true as an
-# invariant, and never once asked by a real game. It needed three things at once: the hold inside
+# invariant, and never once asked by a real game. It needs three things at once: the hold inside
 # the host's own `init` rather than at the `init:` CALL SITES (which is what `fuse-arm` already
-# uses), a REACHABLE refusal, and a later read of the orphaned host's `script:`. KQ5 produced the
-# first and its refusal is unreachable (play-confirmed).
+# uses), a REACHABLE refusal, and a later read of the orphaned host's `script:`.
+#
+# ⚠️ KQ5 HAS TWO OF THE THREE, not one -- correcting what this note said when it was written
+# (2026-08-20d fifth review). The hold shape is in the SHIPPED emission (`castle.sc`,
+# `theHenchMan::init` after `(super init:)`, no disposing `else`) and the `script:` read exists
+# (`rm054.sc:448-449`). Only the REACHABLE REFUSAL is missing, and that rests on a play test, not
+# on a structural impossibility. The retirement stands; the margin was overstated.
 #
 # ⛔ THE CHECK WAS DELETED, NOT WEAKENED. Making it pass would have pinned a limitation green,
 # which is the one thing that may never happen to a red. The invariant itself now lives at
