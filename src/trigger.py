@@ -1561,6 +1561,14 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
         #   * the INNERMOST BALANCED FORM is not the statement. `(= local0 (obj setScript: X))`
         #     is N1's shape: the hold lands in the value slot and STORES the refusal's return
         #     value instead of withholding the arming;
+        # ⛔ AND EVERY SITE STANDS, RULED [USER, 2026-08-20d]. A fifth review objected that inside
+        # a VERB/ITEM DISPATCH the sites are alternative PAYMENTS rather than alternative doors --
+        # KQ6's `nightMare::doVerb` would go from 1 site to 10, one per offered item -- which is
+        # the false positive `wrap_forbidden_case` exists for, and this branch cannot tell the two
+        # apart. Raised and DECLINED: every-site stands. Nothing in the corpus exercises it (all
+        # five emitted trees byte-identical), so what would reopen it is a game where a real
+        # placement lands on such a handler, not another reading of this one.
+        #
         #   * `re.search` takes the FIRST match, and `patcher`'s fan-out skips any extra arming
         #     whose instance AND method match this placement's (it is the same site, as far as
         #     that loop can tell). So a handler arming one machine under two verbs was guarded
