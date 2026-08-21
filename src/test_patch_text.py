@@ -484,6 +484,82 @@ def test_setscript_uses_the_statement_rule_and_reads_only_code():
                  "\n%s" % (n3, out3))
 
 
+# ⭐ THE THIRD COPY (2026-08-20d fifth review, H3). `wrap_all_armings_in_source` is the multi-site
+# twin of the `setscript` branch -- it is what emitted KQ6's shipped `rCliffs` guards -- and it
+# received NONE of N1b's or P1/P2's cures. It still scanned with a raw `re.finditer`, still took
+# the flat `(?:[^()]|\([^()]*\))*` span instead of `statement_span`, and still SKIPPED a site
+# whose hold would overlap another while counting `n` from the rest. [[same-rule-two-places]],
+# except there were three.
+#
+# The skip is the dangerous one, and its damage depends on the ORDER the armings appear in. Sites
+# are collected in document order, so when the INNER clause's arming comes first, its span is
+# recorded and the OUTER clause -- which contains a second arming of its own -- is the one
+# dropped. Measured before the cure: `sites: 1`, one hold emitted, and
+# `(global0 setScript: digScript)` shipped WHOLLY UNGUARDED behind a truthful-looking row.
+ALL_ARMINGS_NESTED = """(instance rm300 of Rm
+\t(method (doVerb theVerb)
+\t\t(cond
+\t\t\t((== theVerb 4)
+\t\t\t\t(cond
+\t\t\t\t\t((foo)
+\t\t\t\t\t\t(global1 setScript: digScript)
+\t\t\t\t\t)
+\t\t\t\t)
+\t\t\t\t(global0 setScript: digScript)
+\t\t\t)
+\t\t)
+\t)
+)
+"""
+
+ALL_ARMINGS_COMMENTED = """(instance rm300 of Rm
+\t(method (doVerb theVerb)
+\t\t; (global0 setScript: digScript)   kept for reference
+\t\t(cond
+\t\t\t((== theVerb 4)
+\t\t\t\t(global0 setScript: digScript)
+\t\t\t)
+\t\t)
+\t)
+)
+"""
+
+ALL_ARMINGS_VALUE_POS = """(instance rm300 of Rm
+\t(method (doVerb theVerb)
+\t\t(= local0 (global0 setScript: digScript))
+\t)
+)
+"""
+
+
+def test_wrap_all_armings_obeys_the_same_rule_as_its_twin():
+    print("\n-- H3: the multi-site twin gets N1b's rule and the refusal too --")
+    import trigger as T
+    place = {"kind": "setscript", "trigger_instance": "rm300", "trigger_method": "doVerb",
+             "target_script": "digScript"}
+
+    out, n = T.wrap_all_armings_in_source(ALL_ARMINGS_NESTED, place, "(gEgo has: 4)", "(Refuse)")
+    check("an arming whose hold would OVERLAP another refuses whole, never skips silently",
+          n == 0 and out == ALL_ARMINGS_NESTED,
+          detail="n=%r -- the skipped site is the OUTER clause here, so its own arming ships "
+                 "unguarded while the row reports a number. That is findings #4/#8.\n%s"
+                 % (n, out))
+
+    out2, n2 = T.wrap_all_armings_in_source(ALL_ARMINGS_COMMENTED, place, "(gEgo has: 4)",
+                                            "(Refuse)")
+    check("a commented-out arming is not a site (the scan reads CODE)",
+          n2 == 1 and "; (global0 setScript: digScript)   kept for reference" in out2,
+          detail="n=%r -- a raw scan wraps the COMMENT as well as the real site, which both "
+                 "breaks the build and inflates the count.\n%s" % (n2, out2))
+
+    out3, n3 = T.wrap_all_armings_in_source(ALL_ARMINGS_VALUE_POS, place, "(gEgo has: 4)",
+                                            "(Refuse)")
+    check("an arming in VALUE position is held at its statement, not inside the value slot",
+          n3 == 1 and "(= local0 (if " not in out3,
+          detail="n=%r -- wrapping the send alone stores the refusal's return value in local0 "
+                 "instead of withholding the arming (N1's shape).\n%s" % (n3, out3))
+
+
 # KQ5's computed edge exit, verbatim shape from rm036.sc: `doit` reads `(gEgo edgeHit:)`,
 # resolves the destination through `edgeToRoom:` into a temp, and `newRoom:`s the temp. Three
 # derivations in one site: edgeHit is a positional fact (the ego WALKED there), an
@@ -1704,6 +1780,7 @@ def run():
     test_arm_event_wraps_the_whole_cascade()
     test_arm_event_refuses_whole_when_one_arming_cannot_be_held()
     test_setscript_uses_the_statement_rule_and_reads_only_code()
+    test_wrap_all_armings_obeys_the_same_rule_as_its_twin()
     test_computed_edge_exit_is_a_positional_direct()
     test_market_wrap_spares_the_reget_branch()
     test_enclosing_if_test_respects_the_else_branch()
