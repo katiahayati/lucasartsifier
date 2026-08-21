@@ -65,7 +65,8 @@ emit anything if the guards fail verification, or if a script it edited will not
 A patched game plays normally — the patch mechanism is how Sierra shipped its own bug fixes, and
 the originals are never modified (delete the patch files to revert). You can set the guard
 behavior in-game: **Full** prevents every dangerous action; **Lite** prevents it once, then
-allows it with a warning; **Off** turns the guards off.
+allows it with a warning; **Off** turns the guards off (currently that picker is not showing in Laura Bow 2
+or King's Quest 5, so the guards default to Full).
 
 ## What counts as a softlock? (or: Caveat Player)
 
