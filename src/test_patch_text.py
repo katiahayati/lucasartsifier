@@ -532,6 +532,79 @@ ALL_ARMINGS_VALUE_POS = """(instance rm300 of Rm
 """
 
 
+# ⭐ THE TARGET NAME IS A WHOLE NAME (2026-08-20d sixth review). Both multi-site scans build
+# `setScript:\s*<tpat>` where `tpat` is the placement's `target_pattern` -- and the `\b` that
+# bounded it was left on the FALLBACK only, so every production placement (all of which supply a
+# `target_pattern`) matched a PREFIX. `setScript: leave` then also matches
+# `setScript: leaveSouth`, and the demand is wrapped around a different machine's arming: an
+# unrelated exit withheld behind an item the player has no reason to be carrying, which is the
+# stranding class this project exists to remove rather than create.
+#
+# Verbatim shape from `kq5/src/rm051.sc::doit`, which is one of 13 real prefix collisions in the
+# corpus (`shortJump`/`shortJump3`, `goBack`, `enterScreen`, `lockUp`, `cartoon`, ...).
+#
+# ⛔ AND `\b` IS THE WRONG BOUNDARY, which is why this fixture carries a ScriptID target too. A
+# `target_pattern` for a ScriptID machine is `\(ScriptID\s+344\s+3\s*\)` and ENDS IN `)`, so a
+# trailing `\b` demands a word character after it and the whole placement silently stops matching
+# -- trading an over-match for a total miss. The boundary has to be "not followed by a name
+# character", which is what a negative lookahead says and `\b` only says after a word character.
+PREFIX_COLLISION = """(instance rm051 of Rm
+\t(method (doit)
+\t\t(cond
+\t\t\t((== global5 1)
+\t\t\t\t(global2 setScript: leaveSouth)
+\t\t\t)
+\t\t\t((== global5 2)
+\t\t\t\t(self setScript: leave)
+\t\t\t)
+\t\t)
+\t)
+)
+"""
+
+SCRIPTID_TARGET = """(instance rm340 of Rm
+\t(method (doVerb theVerb)
+\t\t(cond
+\t\t\t((== theVerb 4)
+\t\t\t\t((ScriptID 344 2) setScript: (ScriptID 344 3))
+\t\t\t)
+\t\t)
+\t)
+)
+"""
+
+
+def test_a_target_name_is_a_whole_name():
+    print("\n-- the arming target is a WHOLE name, and the boundary is not `\\b` --")
+    import trigger as T
+    import re as _re
+    place = {"kind": "setscript", "trigger_instance": "rm051", "trigger_method": "doit",
+             "target_script": "leave", "target_pattern": _re.escape("leave"),
+             "target_room": 52}
+    for fn, label in ((T.wrap_all_armings_in_source, "wrap_all_armings_in_source"),
+                      (T.wrap_trigger_in_source, "wrap_trigger_in_source/setscript")):
+        out, n = fn(PREFIX_COLLISION, place, "(gEgo has: 9)", "(NotNow)")
+        held_south = "leaveSouth" in "".join(
+            out[m.start():m.start() + 200] for m in _re.finditer(r"\(if \(gEgo has: 9\)", out))
+        check("%s: `leave` does not match `leaveSouth`" % label,
+              n == 1 and not held_south,
+              detail="n=%r, leaveSouth inside a hold: %r -- the demand is wrapped around a "
+                     "DIFFERENT machine's arming, withholding an unrelated exit behind an item "
+                     "demand.\n%s" % (n, held_south, out))
+
+    sid = {"kind": "setscript", "trigger_instance": "rm340", "trigger_method": "doVerb",
+           "target_script": "ScriptID 344 3",
+           "target_pattern": r"\(ScriptID\s+344\s+3\s*\)", "target_room": 155}
+    for fn, label in ((T.wrap_all_armings_in_source, "wrap_all_armings_in_source"),
+                      (T.wrap_trigger_in_source, "wrap_trigger_in_source/setscript")):
+        out2, n2 = fn(SCRIPTID_TARGET, sid, "(gEgo has: 9)", "(NotNow)")
+        check("%s: a ScriptID target still matches (the `\\b` trap)" % label,
+              n2 == 1 and "(gEgo has: 9)" in out2,
+              detail="n=%r -- a `target_pattern` ending in `)` has no word character for `\\b` to "
+                     "sit against, so bounding it that way drops the placement entirely.\n%s"
+                     % (n2, out2))
+
+
 def test_wrap_all_armings_obeys_the_same_rule_as_its_twin():
     print("\n-- H3: the multi-site twin gets N1b's rule and the refusal too --")
     import trigger as T
@@ -1794,6 +1867,7 @@ def run():
     test_arm_event_wraps_the_whole_cascade()
     test_arm_event_refuses_whole_when_one_arming_cannot_be_held()
     test_setscript_uses_the_statement_rule_and_reads_only_code()
+    test_a_target_name_is_a_whole_name()
     test_wrap_all_armings_obeys_the_same_rule_as_its_twin()
     test_computed_edge_exit_is_a_positional_direct()
     test_market_wrap_spares_the_reget_branch()
