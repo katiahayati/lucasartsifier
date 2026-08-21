@@ -431,7 +431,8 @@ SETSCRIPT_COMMENTED = """(instance rm300 of Rm
 )
 """
 
-# (3) TWO SITES IN ONE HANDLER. `find_all_armings` fans out per (instance, method) -- the
+# (3) TWO SITES IN ONE HANDLER. `find_all_armings` fans out per handler (it returned one dict
+# per SITE until the sixth review's cure, which is a different bug -- see its docstring) -- the
 # play-found KQ6 rm220 lesson, a machine with N ways in needs N wraps -- but `patcher.py:3138`
 # skips any extra arming whose instance AND method match the primary's, so a handler that arms
 # the same machine under two verbs collapses to ONE wrap. The first verb is guarded, the second
@@ -627,10 +628,17 @@ def test_wrap_all_armings_obeys_the_same_rule_as_its_twin():
 
     out3, n3 = T.wrap_all_armings_in_source(ALL_ARMINGS_VALUE_POS, place, "(gEgo has: 4)",
                                             "(Refuse)")
+    # POSITIVELY, not just "the bad shape is absent" (2026-08-20d sixth review): asserting only
+    # `"(= local0 (if " not in out3` would also pass if the wrap had vanished entirely while `n`
+    # still said 1. The hold must OPEN BEFORE the assignment and the file must still balance.
     check("an arming in VALUE position is held at its statement, not inside the value slot",
-          n3 == 1 and "(= local0 (if " not in out3,
-          detail="n=%r -- wrapping the send alone stores the refusal's return value in local0 "
-                 "instead of withholding the arming (N1's shape).\n%s" % (n3, out3))
+          n3 == 1 and "(= local0 (if " not in out3
+          and "(gEgo has: 4)" in out3
+          and out3.index("(gEgo has: 4)") < out3.index("(= local0")
+          and code_parens(out3)[0] == code_parens(out3)[1],
+          detail="n=%r -- the hold must open BEFORE `(= local0`, so the whole assignment is "
+                 "withheld; wrapping the send alone stores the refusal's return value in local0 "
+                 "instead (N1's shape). parens=%r\n%s" % (n3, code_parens(out3), out3))
 
 
 # KQ5's computed edge exit, verbatim shape from rm036.sc: `doit` reads `(gEgo edgeHit:)`,
@@ -1400,11 +1408,23 @@ def test_a_region_never_starts_inside_a_message():
     # code-filtered" undercounted the filtered side by half, because it came from a single-LINE
     # grep and two of the calls are wrapped across lines (`patcher.py`'s two `_code_finditer(\n
     # text, r"setScript:...`) -- the same sin P11 was filed for, in the sentence P11 rewrote.
-    # Definition, so this one is checkable: calls to `re.search`/`re.finditer`/`re.compile` (raw)
-    # or `code_search`/`code_finditer`/`_code_finditer` (filtered) in `trigger.py` + `patcher.py`
-    # whose PATTERN LITERAL contains `setScript:`. Under it, at this commit: **6 raw** (trigger
-    # 546/585/663/1616/1718, patcher 467) against **5 code-filtered** (trigger 817/1576/1667,
-    # patcher 3401/3506). It was 7/4 before H3 converted `wrap_all_armings_in_source`.
+    # Definition, so this one is checkable: an AST walk of `trigger.py` + `patcher.py` for calls
+    # to `re.search`/`finditer`/`compile`/`match`/`fullmatch` (raw) or
+    # `code_search`/`code_finditer`/`_code_finditer` (filtered) whose PATTERN ARGUMENT's string
+    # constants contain `setScript:`. Under it, at this commit: **6 raw** against **5
+    # code-filtered**. It was 7/4 before H3 converted `wrap_all_armings_in_source`.
+    #
+    #   raw       `trigger.arming_contexts`, `trigger.find_cue_chain_armings` (x2),
+    #             `trigger.wrap_trigger_in_source` (the arm-clause and proc-arm branches),
+    #             `patcher._init_armed_ego_chase`
+    #   filtered  `trigger.wrap_all_armings_in_source`, `trigger.wrap_trigger_in_source` (the
+    #             setscript and arm-event branches), `patcher._machine_arm_positions`,
+    #             `patcher._place_capture_arm`
+    #
+    # ⛔ BY FUNCTION, NOT BY LINE NUMBER (2026-08-20d sixth review). The first version of this
+    # sentence cited line numbers and FIVE OF THEM WERE ALREADY WRONG when it was typed -- in the
+    # sentence that calls itself checkable. A line number rots on the next edit above it; a
+    # function name is what the reader can actually go and look at.
     #
     # ⛔ THE TRIPWIRE COULD NOT FIRE FOR THE REASON IT NAMED (2026-08-20 third review, N3). The
     # family omitted `(method (` -- THE ONE PATTERN IN THIS CORPUS WITH HITS, named in the

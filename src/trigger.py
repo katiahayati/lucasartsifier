@@ -32,6 +32,19 @@ from sexpr import (code_finditer, code_search, depth1_else,  # noqa: E402
 
 CONTROLLABLE_METHODS = {"handleEvent", "doVerb"}
 
+# ⛔ THE END OF A TARGET NAME, and NOT `\b` (2026-08-20d sixth review). Every `setScript: <tpat>`
+# scan needs the match to stop at a whole name, or `leave` also matches `leaveSouth` and the
+# demand is wrapped around a different machine's arming -- an unrelated exit withheld behind an
+# item demand, which is the stranding class this project removes rather than creates. 13
+# (instance, method, target) triples in the corpus collide by prefix.
+#
+# `\b` is the wrong boundary here because a `target_pattern` is not always a bare name: a
+# ScriptID machine's is `\(ScriptID\s+344\s+3\s*\)`, which ENDS IN `)`. `\b` after a
+# non-word character demands a word character next, so bounding that pattern with `\b` makes it
+# stop matching altogether -- an over-match traded for a total miss. Measured on
+# `(self setScript: (ScriptID 344 3))`: bare matches, `\b` does not, this does.
+_NAME_END = r"(?![A-Za-z0-9_])"
+
 # ---------------------------------------------------------------------------
 # Runtime guard mode (full / lite / stock), configured by `patcher._init_mode`.
 #
@@ -298,7 +311,13 @@ def find_all_armings(forms, target):
     Harmless while each call wrapped only its first match; multiplicative once the wrappers began
     covering every site (P2), which is how it surfaced. No emitted byte in this corpus moves
     either way -- no shipping row names a target armed from a duplicated pair -- so this closes
-    an amplifier rather than a live bug, and stops `sites` overcounting doors that do not exist."""
+    an amplifier rather than a live bug, and stops `sites` overcounting doors that do not exist.
+
+    The definition behind those figures, since a number without one is this round's recurring
+    defect: for every `.sc` in the five trees and every distinct `setScript:` target named in it,
+    call this function and count `(trigger_instance, trigger_method)` pairs returned more than
+    once. Before: **86** duplicated pairs, worst multiplicity **10** (KQ6 `nightMare.sc`, target
+    `offerItem`). After: **0**, out of 734 placements."""
     _nr, _cs, ss, _pc = analyze_room(forms)
     def norm(t):
         return t if isinstance(t, str) else "ScriptID %d %d" % t[1:]
@@ -812,9 +831,9 @@ def wrap_all_armings_in_source(text, placement, guard_sexpr, refuse, site=None):
         return text, 0
     m0, m1 = i0 + meth_rel[0], i0 + meth_rel[1]
     region = text[m0:m1]
-    tpat = placement.get("target_pattern") or (re.escape(placement["target_script"]) + r"\b")
+    tpat = placement.get("target_pattern") or re.escape(placement["target_script"])
     spans = []
-    for ssm in code_finditer(region, r"setScript:\s*%s" % tpat):
+    for ssm in code_finditer(region, r"setScript:\s*%s%s" % (tpat, _NAME_END)):
         b = statement_span(region, ssm.start())
         if b and b[1] <= ssm.end():
             b = None                       # a statement that ends before the send is not it
@@ -1541,7 +1560,7 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
             return text, 0
         m0, m1 = i0 + meth_rel[0], i0 + meth_rel[1]
         region = text[m0:m1]
-        tpat = placement.get("target_pattern") or (re.escape(target) + r"\b")
+        tpat = placement.get("target_pattern") or re.escape(target)
         # THE ARMING STATEMENT IS THE SEND THAT CARRIES THE SELECTOR, not a flat regex span --
         # the same lesson the arm-event branch already carries (KQ5's henchman): locate the
         # selector, then expand to the enclosing STATEMENT. The old one-level-of-nesting pattern
@@ -1583,10 +1602,17 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
         # definition travels with it (2026-08-20d fifth review -- "160" was printed here with
         # none, which is the very sin P9 was about): `(method (` forms, code-filtered and spanned
         # with `_block_span`, holding two or more code-filtered `setScript: <name>` sites naming
-        # the SAME target, any receiver. Five trees: **161**. Requiring the same RECEIVER as well
-        # gives 146.
+        # the SAME target, any receiver. Five trees: **161**.
+        #
+        # ⛔ THE "146 if the receiver must match too" THIS CARRIED IS WITHDRAWN (2026-08-20d sixth
+        # review): it was a second definitionless number, in the sentence written to cure the
+        # first. A reviewer got 136, 138, 149 and 154 under four readings of "receiver" and none
+        # of them 146. A receiver is not a thing this scan can name cheaply -- the token before
+        # `setScript:` can be a variable, a `(ScriptID n m)` form or a computed send -- so the
+        # figure is dropped rather than re-derived under a fifth reading nobody asked for. 161,
+        # with the definition above, is the number this rule needs.
         spans = []
-        for ssm in code_finditer(region, r"setScript:\s*%s" % tpat):
+        for ssm in code_finditer(region, r"setScript:\s*%s%s" % (tpat, _NAME_END)):
             b = statement_span(region, ssm.start())
             if b and b[1] <= ssm.end():
                 b = None                       # a statement that ends before the send is not it
@@ -1726,9 +1752,9 @@ def wrap_trigger_in_source(text, placement, guard_sexpr, refuse="(NotNow)", site
             return text, 0
         m0, m1 = i0 + meth_rel[0], i0 + meth_rel[1]
         region = text[m0:m1]
-        tpat = placement.get("target_pattern") or (re.escape(target) + r"\b")
+        tpat = placement.get("target_pattern") or re.escape(target)
         _ANY = r"(?:[^()]|\([^()]*\))*"
-        ssm = re.search(r"\(%ssetScript:\s*%s%s\)" % (_ANY, tpat, _ANY), region)
+        ssm = re.search(r"\(%ssetScript:\s*%s%s%s\)" % (_ANY, tpat, _NAME_END, _ANY), region)
         if not ssm:
             return text, 0
         clause = _enclosing_clause_body(region, ssm.start())

@@ -610,10 +610,10 @@ run agreed. **Never diff a tree that is still being written.**
    inner wrap and the splice cuts mid-identifier (`setScript: wh` / `aleActions)`). It reports
    `n=2, applied: True`, and it passes a raw paren count, which is why the count is not the test.
    `_place_fuse_arm` refuses this too; the same port dropped both refusals.
-2. **P2's third half.** `find_all_armings` fans out per (instance, method), but `patcher.py:3138`
+2. **P2's third half.** `find_all_armings` fans out per handler (it returned one dict per *site* until the sixth review's cure), but `patcher.py:3138`
    skips any extra arming matching the primary's instance AND method, and the branch itself took
    `re.search`'s first match — so one handler arming one machine under two verbs shipped guarded
-   on one verb and open on the other. ⛔ The "160" printed here was DEFINITIONLESS and does not reproduce -- P9's own sin, in the paragraph reporting P9's cure. Definition: `(method (` forms (code-filtered, spanned with `_block_span`) holding two or more code-filtered `setScript: <name>` sites naming the SAME target, any receiver. Under it, five trees: **161** (requiring the same RECEIVER too gives 146).
+   on one verb and open on the other. ⛔ The "160" printed here was DEFINITIONLESS and does not reproduce -- P9's own sin, in the paragraph reporting P9's cure. Definition: `(method (` forms (code-filtered, spanned with `_block_span`) holding two or more code-filtered `setScript: <name>` sites naming the SAME target, any receiver. Under it, five trees: **161**. ⛔ The "146 if the receiver must match too" this carried is WITHDRAWN (sixth review) — a second definitionless number in the sentence written to cure the first; four readings of "receiver" give 136/138/149/154 and none gives 146.
 3. **A second magic offset** beside P11's, `out.index("(Refuse)") > out.index("put: 19 1") - 400`,
    satisfied by almost any arrangement of the file.
 
