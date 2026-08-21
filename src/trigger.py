@@ -43,7 +43,26 @@ CONTROLLABLE_METHODS = {"handleEvent", "doVerb"}
 # non-word character demands a word character next, so bounding that pattern with `\b` makes it
 # stop matching altogether -- an over-match traded for a total miss. Measured on
 # `(self setScript: (ScriptID 344 3))`: bare matches, `\b` does not, this does.
-_NAME_END = r"(?![A-Za-z0-9_])"
+#
+# ⭐ AND THAT MISS WAS LIVE, not hypothetical (2026-08-20d seventh review). The pre-cure scan in
+# `wrap_all_armings_in_source` carried `\b` INSIDE its format string, so it had never matched a
+# ScriptID target at all -- measured, **330 ScriptID sites** across the five trees that this
+# spelling finds and the old one silently did not. The commit that dropped the boundary and
+# introduced the prefix over-match therefore also cured, by accident, a fourth defect nobody had
+# filed; "just restore the `\b`" would have put that silent miss straight back.
+#
+# ⚠️ ONE SCAN CANNOT BE BOUNDED THIS WAY AND IS BLIND INSTEAD. The `arm-event` branch escapes
+# `target_script` literally (`re.escape("ScriptID 344 3") + \b`), which no source text spells --
+# SCI writes `(ScriptID 344 3)`, with parens -- so that branch finds ZERO sites for a ScriptID
+# target. `find_cue_chain_armings` and `arming_contexts` share it. It fails SAFE (no sites, so no
+# wrap, rather than a wrap on the wrong action) and predates all of this, so it is recorded here
+# rather than changed under a boundary fix.
+_NAME_END = r"(?![A-Za-z0-9_])"     # ASCII by construction: every `setScript:` target token in
+#                                     the five trees is `[A-Za-z_][A-Za-z0-9_]*` (1,694 distinct,
+#                                     measured), and `analyze_room` records a target ONLY for a
+#                                     bare Sym or a ScriptID form, so nothing else reaches
+#                                     `target_pattern`. `\b` was Unicode-aware; this is not, and
+#                                     no corpus identifier notices.
 
 # ---------------------------------------------------------------------------
 # Runtime guard mode (full / lite / stock), configured by `patcher._init_mode`.

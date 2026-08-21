@@ -432,7 +432,7 @@ SETSCRIPT_COMMENTED = """(instance rm300 of Rm
 """
 
 # (3) TWO SITES IN ONE HANDLER. `find_all_armings` fans out per handler (it returned one dict
-# per SITE until the sixth review's cure, which is a different bug -- see its docstring) -- the
+# per SITE until the FIFTH review's cure -- a different bug, see its docstring) -- the
 # play-found KQ6 rm220 lesson, a machine with N ways in needs N wraps -- but `patcher.py:3138`
 # skips any extra arming whose instance AND method match the primary's, so a handler that arms
 # the same machine under two verbs collapses to ONE wrap. The first verb is guarded, the second
@@ -459,11 +459,16 @@ def test_setscript_uses_the_statement_rule_and_reads_only_code():
              "target_script": "digScript", "target_room": 301}
 
     out, n = T.wrap_trigger_in_source(SETSCRIPT_VALUE_POS, place, "(gEgo has: 4)", "(Refuse)")
+    # containment, for the reason spelled out at the H3 twin below: "the guard comes first" also
+    # passes on a hold that opens and closes before the statement it should have withheld.
+    _if, _arm = out.find("(if "), out.find("(= local0")
+    _end = P._balanced_span(out, _if) if _if >= 0 else -1
     check("an arming in VALUE position is held at its statement, not inside the value slot",
-          n == 1 and "(= local0 (if " not in out and "(if (gEgo has: 4)\n" in out
-          and out.index("(if (gEgo has: 4)") < out.index("(= local0"),
-          detail="wrapping the send alone stores the refusal's value in local0 instead of "
-                 "withholding the arming.\nn=%r\n%s" % (n, out))
+          n == 1 and _if >= 0 and _arm >= 0 and _if < _arm < _end
+          and "(= local0 (if " not in out,
+          detail="the whole assignment must sit INSIDE the hold [%r, %r); the arming is at %r. "
+                 "Wrapping the send alone stores the refusal's value in local0 instead of "
+                 "withholding the arming.\nn=%r\n%s" % (_if, _end, _arm, n, out))
 
     out2, n2 = T.wrap_trigger_in_source(SETSCRIPT_COMMENTED, place, "(gEgo has: 4)", "(Refuse)")
     check("a commented-out arming is not the site (the scan reads CODE)",
@@ -541,8 +546,12 @@ ALL_ARMINGS_VALUE_POS = """(instance rm300 of Rm
 # unrelated exit withheld behind an item the player has no reason to be carrying, which is the
 # stranding class this project exists to remove rather than create.
 #
-# Verbatim shape from `kq5/src/rm051.sc::doit`, which is one of 13 real prefix collisions in the
+# Verbatim shape from `kq5/src/rm051.sc::doit`, one of **13** real prefix collisions in the
 # corpus (`shortJump`/`shortJump3`, `goBack`, `enterScreen`, `lockUp`, `cartoon`, ...).
+# Definition, because a number without one is this round's recurring defect: `(instance, method,
+# target)` triples whose `wrap_all_armings_in_source` SITE COUNT changes when the boundary is
+# applied. Two other natural readings of "collision" give 16 and 15 -- it is the count of triples
+# the fix actually moves that matters here.
 #
 # ⛔ AND `\b` IS THE WRONG BOUNDARY, which is why this fixture carries a ScriptID target too. A
 # `target_pattern` for a ScriptID machine is `\(ScriptID\s+344\s+3\s*\)` and ENDS IN `)`, so a
@@ -593,6 +602,19 @@ def test_a_target_name_is_a_whole_name():
                      "DIFFERENT machine's arming, withholding an unrelated exit behind an item "
                      "demand.\n%s" % (n, held_south, out))
 
+    # ...and the THIRD scan, the arm-clause branch. Its boundary bug predated this session and it
+    # is changed by the same cure, so it is exercised here rather than left as the one scan the
+    # fix touched with nothing pinning it (2026-08-20d seventh review).
+    ac = {"kind": "arm-clause", "trigger_instance": "rm051", "trigger_method": "doit",
+          "target_script": "leave", "target_pattern": _re.escape("leave"),
+          "obj_globals": {"ego": "global0", "room": "global2", "game": "global1", "hands": None}}
+    out_ac, n_ac = T.wrap_trigger_in_source(PREFIX_COLLISION, ac, "(gEgo has: 9)", "(NotNow)")
+    check("arm-clause: `leave` does not select `leaveSouth` either",
+          n_ac == 1 and "leaveSouth" not in out_ac.split("softlock-guard")[0].split("(if ")[-1],
+          detail="n=%r -- the arm-clause branch takes re.search's FIRST match, so an unbounded "
+                 "pattern makes it guard the wrong machine and leave the real one open.\n%s"
+                 % (n_ac, out_ac))
+
     sid = {"kind": "setscript", "trigger_instance": "rm340", "trigger_method": "doVerb",
            "target_script": "ScriptID 344 3",
            "target_pattern": r"\(ScriptID\s+344\s+3\s*\)", "target_room": 155}
@@ -628,17 +650,27 @@ def test_wrap_all_armings_obeys_the_same_rule_as_its_twin():
 
     out3, n3 = T.wrap_all_armings_in_source(ALL_ARMINGS_VALUE_POS, place, "(gEgo has: 4)",
                                             "(Refuse)")
-    # POSITIVELY, not just "the bad shape is absent" (2026-08-20d sixth review): asserting only
-    # `"(= local0 (if " not in out3` would also pass if the wrap had vanished entirely while `n`
-    # still said 1. The hold must OPEN BEFORE the assignment and the file must still balance.
+    # ⛔ CONTAINMENT, NOT ORDERING (2026-08-20d seventh review). Two weaker spellings were tried
+    # first and both pass on an emission where the arming ships UNGUARDED. `"(= local0 (if " not
+    # in out` alone passes if the wrap vanished entirely; adding "the guard appears before the
+    # assignment" still passes on
+    #
+    #     (if (gEgo has: 4) (Refuse))
+    #     (= local0 (global0 setScript: digScript))
+    #
+    # -- a hold that opens AND CLOSES before the statement it was meant to withhold. The question
+    # is whether the assignment is INSIDE the hold, so ask that against the hold's balanced span.
+    # `.find` rather than `.index`, so a missing substring FAILS the check instead of raising.
+    i_if, i_arm = out3.find("(if "), out3.find("(= local0")
+    i_end = P._balanced_span(out3, i_if) if i_if >= 0 else -1
     check("an arming in VALUE position is held at its statement, not inside the value slot",
-          n3 == 1 and "(= local0 (if " not in out3
-          and "(gEgo has: 4)" in out3
-          and out3.index("(gEgo has: 4)") < out3.index("(= local0")
+          n3 == 1 and i_if >= 0 and i_arm >= 0 and i_if < i_arm < i_end
+          and "(= local0 (if " not in out3
           and code_parens(out3)[0] == code_parens(out3)[1],
-          detail="n=%r -- the hold must open BEFORE `(= local0`, so the whole assignment is "
-                 "withheld; wrapping the send alone stores the refusal's return value in local0 "
-                 "instead (N1's shape). parens=%r\n%s" % (n3, code_parens(out3), out3))
+          detail="n=%r -- the whole assignment must sit INSIDE the hold [%r, %r); the arming is "
+                 "at %r. Wrapping the send alone stores the refusal's return value in local0 "
+                 "instead (N1's shape). parens=%r\n%s"
+                 % (n3, i_if, i_end, i_arm, code_parens(out3), out3))
 
 
 # KQ5's computed edge exit, verbatim shape from rm036.sc: `doit` reads `(gEgo edgeHit:)`,
@@ -1422,9 +1454,12 @@ def test_a_region_never_starts_inside_a_message():
     #             `patcher._place_capture_arm`
     #
     # ⛔ BY FUNCTION, NOT BY LINE NUMBER (2026-08-20d sixth review). The first version of this
-    # sentence cited line numbers and FIVE OF THEM WERE ALREADY WRONG when it was typed -- in the
-    # sentence that calls itself checkable. A line number rots on the next edit above it; a
-    # function name is what the reader can actually go and look at.
+    # sentence cited eleven line numbers and FOUR OF THEM WERE ALREADY WRONG when it was typed --
+    # each exactly 5 low -- in the sentence that calls itself checkable. ("Five" was the count in
+    # the commit that fixed them; re-derived at the commit where they were typed, it is four --
+    # a miscount inside a correction, which is the seventh review's point about this whole class.)
+    # A line number rots on the next edit above it; a function name is what the reader can go and
+    # look at.
     #
     # ⛔ THE TRIPWIRE COULD NOT FIRE FOR THE REASON IT NAMED (2026-08-20 third review, N3). The
     # family omitted `(method (` -- THE ONE PATTERN IN THIS CORPUS WITH HITS, named in the
