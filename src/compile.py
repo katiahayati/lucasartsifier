@@ -12,7 +12,7 @@ the flat movement edge stands (control_exits, in spirit).
 from __future__ import annotations
 
 import ir as I
-from guard_ast import GAnd, GNot, Pred
+from guard_ast import GAnd, GOr, GNot, Pred
 from extract import atom, _conj, item_transfer, item_transfers, EGO
 import machine as M
 
@@ -20,44 +20,235 @@ COUNTER_CAP = 40          # loop/unroll bound
 PATH_CAP = 4000           # per-machine path budget
 
 
+# ---- can this subtree DISCRIMINATE? --------------------------------------
+#
+# Enumerating paths is only worth its cost where two paths can produce DIFFERENT `Step`s.
+# `_interp` (below) is the authority on that: it folds a path into a Step and records exactly
+# six kinds of thing -- an exit / self-changeState / `state` write, an item transfer, a cue arm,
+# a constant write to a plain global, a counter op, and from a TEST whatever
+# `_ctr_or(node, pol, atom(node))` yields. Everything else in a path falls through every branch
+# of `_interp` and contributes NOTHING.
+#
+# So a subtree containing none of those yields the same Step on every path through it. Its
+# paths differ only in `Pred("OPAQUE")` conjuncts, and no consumer reads more than their
+# PRESENCE: `missability._has_opaque` asks a boolean, and `opmodel`'s three-valued eval projects
+# opaques out of a conjunction and reads an opaque disjunct as satisfiable. One path therefore
+# stands for all of them, carrying one opaque marker so `_has_opaque` sees what it saw before.
+#
+# This is a property of `_interp`, not of any game. It needs no threshold and no list: a subtree
+# either can discriminate or it cannot. What it buys (measured 2026-08-21, docs/QFG-STATE-
+# EXPLOSION.md): a fifth to a third of every title's enumeration is provably redundant and the
+# five gating surfaces do not move, while Quest for Glory -- written through wide shared
+# procedures the emitter inlines -- drops from 1.009e12 leaf paths to 65,208 and completes for
+# the first time.
+#
+# ⛔ `_records` IS A MIRROR OF `_interp` AND ONLY WORKS WHILE IT STAYS ONE. Every case `_interp`
+# grows, this must grow with it: an effect `_records` does not name reads as invisible, and the
+# branch that decides it silently stops being enumerated. They sit next to each other for that
+# reason, and `test_walkers.py` cannot help here -- it compares walkers ACROSS files, and these
+# two are one file. `test_discrimination.py` pins the pairing instead.
+
+_TIMER_PROPS = ("seconds", "cycles", "ticks")
+
+
+def _records(node):
+    """Would `_interp` keep anything from this node?
+
+    CONSERVATIVE where the two could differ: `_interp` also needs `as_int` to resolve
+    (`newRoom: <expr>`, `changeState: <expr>`, `(= gN <expr>)`) before it records anything,
+    and this answers True without asking. Over-approximating "records" only keeps a subtree
+    that could have been collapsed -- it enumerates more, never less -- which is the safe
+    direction for a rule whose failure mode is dropping a distinction."""
+    t = node.get("t")
+    if t == "Send":
+        recv, msgs = I.send_pairs(node)
+        for sel, params in msgs:
+            if sel == "newRoom" and params:
+                return True                       # -> EXIT / vexit
+            if sel == "changeState" and recv.get("t") == "Self" and params:
+                return True                       # -> JUMP
+            if item_transfers(recv, sel, params):
+                return True                       # -> gets / drops / moves
+        return bool(_count_cues_send(recv, msgs))  # -> cues, ADVANCE
+    if t == "Assignment":
+        dst = node["kids"][0]
+        if I.is_global(dst):
+            return True                           # -> a register write, or DEATH
+        if dst.get("t") == "Property" and dst.get("name") in _TIMER_PROPS + ("state",):
+            return True                           # -> a cue arm, or SETSTATE
+        return bool(dst.get("t") == "Variable" and dst.get("vtype") in ("Local", "Temp"))
+    if t in ("AssignmentAdd", "AssignmentSub"):
+        d = node["kids"][0]
+        return d.get("t") == "Property" and d.get("name") == "state"   # -> relative SETSTATE
+    if t in ("Increment", "Decrement"):
+        d = node["kids"][0]
+        return ((d.get("t") == "Property" and d.get("name") == "state")
+                or I.is_local_or_temp(d) or I.is_global(d))
+    if t in ("PublicCall", "LocalCall"):
+        kids = node.get("kids") or []
+        return bool(kids and isinstance(kids[-1], dict) and kids[-1].get("t") == "Self")
+    return False
+
+
+def _real_atom(g):
+    """Does this guard tree carry anything an analysis can read -- i.e. any non-OPAQUE atom?"""
+    if g is None:
+        return False
+    if isinstance(g, Pred):
+        return g.kind != "OPAQUE"
+    if isinstance(g, (GAnd, GOr)):
+        return any(_real_atom(k) for k in g.kids)
+    if isinstance(g, GNot):
+        return _real_atom(g.kid)
+    return False
+
+
+def _readable(test, memo):
+    """Does `_interp` keep anything from this TEST?
+
+    ⛔ NOT `atom(test)` -- that is the near-miss this predicate has to avoid, and it is not a
+    technicality. `_interp` appends `_ctr_or(node, pol, atom(node))`, and `_ctr_or` turns a
+    Local/Temp-vs-literal comparison into a ("CTR", ...) atom the machine walk resolves
+    CONCRETELY. Those are the machine-internal latches -- a shop slot, a which-branch-did-we-take
+    flag -- so reading them as unreadable collapses exactly the branches that discriminate.
+    Measured: an `atom()`-only version of this cost KQ5 its whole market squeeze (the
+    Golden_Needle / Gold_Coin `starves rm[5, 9, 13]` rows and the getSled/getPie sinks).
+    Ask the composition, because the composition is what the interpreter appends."""
+    if test is None:
+        return False
+    k = ("R", id(test))
+    got = memo.get(k)
+    if got is not None:
+        return got[1]
+    r = False
+    for pol in (True, False):                      # a polarity can decide it either way
+        try:
+            a = atom(test)
+            got_atom = _ctr_or(test, pol, a if pol else GNot(a))
+        except Exception:                          # noqa: BLE001 -- unreadable IS the answer
+            got_atom = None
+        if isinstance(got_atom, tuple) or _real_atom(got_atom):
+            r = True                               # a CTR tuple, or a readable atom
+            break
+    memo[k] = (test, r)                            # the node pins its own id -- see _paths_of
+    return r
+
+
+def _discriminating(node, memo):
+    """Can two paths through this subtree differ in what `_interp` keeps?"""
+    if node is None:
+        return False
+    k = ("D", id(node))
+    got = memo.get(k)
+    if got is not None:
+        return got[1]
+    if _records(node):
+        memo[k] = (node, True)
+        return True
+    shape = I.control_shape(node)
+    kind = shape[0]
+    r = False
+    if kind == "seq":
+        r = any(_discriminating(f, memo) for f in shape[1])
+    elif kind == "branch":
+        # An arm counts if its TEST is readable (the guard then differs between arms) or its
+        # BODY discriminates (the effects do). Neither: the arms are interchangeable.
+        for conds, body in shape[1]:
+            if any(_readable(t, memo) for (t, _pol) in conds) or _discriminating(body, memo):
+                r = True
+                break
+    elif kind == "loop":
+        r = any(_discriminating(x, memo)
+                for x in (shape[1], shape[2], shape[3], shape[4]))
+    # a leaf that records nothing decides nothing -- `_paths_of` never descends into one anyway
+    memo[k] = (node, r)
+    return r
+
+
+def _first_test(node):
+    """Any one branch test inside `node` -- the opaque marker a collapsed subtree keeps.
+
+    Only ever called on a subtree `_discriminating` rejected, so whatever this finds is a test
+    `_readable` already said nothing about: `_interp` will lower it to the same OPAQUE it lowered
+    before, and `_has_opaque` answers as it did. Returning nothing at all would be the cheaper
+    spelling and a different one -- an entry that used to carry an opaque would stop carrying it
+    (see `missability.entry_reqs`' single-entry rule, which asks exactly that)."""
+    if node is None:
+        return None
+    shape = I.control_shape(node)
+    kind = shape[0]
+    if kind == "branch":
+        for conds, body in shape[1]:
+            if conds:
+                return conds[0][0]
+            t = _first_test(body)
+            if t is not None:
+                return t
+        return None
+    if kind == "seq":
+        for f in shape[1]:
+            t = _first_test(f)
+            if t is not None:
+                return t
+        return None
+    if kind == "loop":
+        for x in (shape[1], shape[4]):
+            t = _first_test(x)
+            if t is not None:
+                return t
+    return None
+
+
 # ---- leaf-path enumeration through a state body --------------------------
-def _paths_of(node):
+def _paths_of(node, _memo=None):
     """List of paths through `node`; each path is a list of ('T', testnode, pol) and
     ('D', opnode) items in source order. Branches fan out; sequences compose.
 
     The control flow comes from `ir.control_shape`, shared with the three STREAMING walkers.
     Only the policy differs and legitimately so: they visit everything inside a loop, while this
     fans out "skipped" and "ran once". That split -- one shape, two policies -- is the whole
-    point; what used to be duplicated was the shape, and `Loop` was missing from this copy."""
+    point; what used to be duplicated was the shape, and `Loop` was missing from this copy.
+
+    `_memo` carries `_discriminating`/`_readable` verdicts for ONE top-level enumeration, which
+    is what makes the rule linear rather than quadratic in the body. It is keyed by `id(node)`
+    and stores the node ALONGSIDE its verdict, so the memo's own reference pins the id for as
+    long as it is live -- `opmodel._machine_info` hands us a freshly inlined tree per state, and
+    an unpinned id could be recycled under us. Per-call rather than global for the same reason:
+    those trees are temporary and a process-wide memo would pin every one of them forever."""
+    memo = {} if _memo is None else _memo
     if node is None:
         return [[]]
+    if not _discriminating(node, memo):
+        t = _first_test(node)
+        return [[("T", t, True)]] if t is not None else [[]]
     shape = I.control_shape(node)
     kind = shape[0]
     if kind == "seq":
-        return _seq(shape[1])
+        return _seq(shape[1], memo)
     if kind == "branch":
         out = []
         for conds, body in shape[1]:
             prefix = [("T", t, pol) for (t, pol) in conds]
-            for p in _paths_of(body):
+            for p in _paths_of(body, memo):
                 out.append(prefix + p)
         return out or [[]]
     if kind == "loop":
         init, _test, incr, body = shape[1], shape[2], shape[3], shape[4]
         if body is None:
-            return _seq([init])
+            return _seq([init], memo)
         # N iterations are deliberately not modelled: the effects are monotone (a get is a get
         # however many times it happens) and the alternative is unbounded.
-        return _seq([init]) + _seq([init, body, incr])
+        return _seq([init], memo) + _seq([init, body, incr], memo)
     return [[("D", node)]]
 
 
-def _seq(forms):
+def _seq(forms, _memo=None):
+    memo = {} if _memo is None else _memo
     res = [[]]
     for f in forms:
         nxt = []
         for pre in res:
-            for sub in _paths_of(f):
+            for sub in _paths_of(f, memo):
                 nxt.append(pre + sub)
         res = nxt
         if len(res) > PATH_CAP:
