@@ -313,8 +313,8 @@ holds at 800 MB, and `edge_meta` returns.
 
 `state_musts` is what is left: **495.0s** for all 1,246 machines (against 697.5s on the truncated
 build and KQ6's 1.8s), and `edge_meta` still calls it twice per machine — about 16 of the 42
-minutes. That is §7's third item, untouched here; fixing it should take the run well under ten
-minutes.
+minutes. That is §7's third item; §9 does it, and records that "well under ten minutes" was a
+bad prediction.
 
 ⚠️ **The result it produced is not usable, and the reason is anchors, not paths.** What it
 derived:
@@ -346,3 +346,86 @@ The rule is a probe (`_paths_of` patched at runtime), **not a change to `src/`**
 earned: five byte-identical analysis surfaces, and a QFG-VGA run that finishes. What it has not:
 the placement half of the snapshot, `tools/run_tests.py`, a QFG2 answer (§8.4), and any claim
 whatever about QFG's actual softlocks (§8.5).
+
+---
+
+# 9. Both fixes landed, and one prediction was wrong
+
+Branch `path-discrimination`, off `main`. Both changes are in `src/`, both measured against the
+FULL snapshot surface **with placements**, cold on both sides, and the suite is **749 / 0 / 0**.
+
+## 9.1 The rule (commit `9bd34ad`)
+
+`compile._paths_of` now asks `_discriminating(node)` before fanning a subtree out, exactly as §8
+derives it. `_records` sits next to `_interp` because it is a mirror of it, and
+`src/test_discrimination.py` pins the pairing three ways:
+
+* **from the source** — every IR node type `_interp` dispatches on must be named by `_records`,
+  derived by reading the file the way `test_walkers.py` derives its matrix rather than listing it;
+* **fixtures** for the shapes that must survive, including `ctr_test_survives` — the KQ5
+  near-miss of §8.2, which had no fixture when it happened;
+* **a differential against a naive enumerator carried in the test itself**, over every machine
+  state body of LSL2 and KQ4: same Step effects, same `_has_opaque`.
+
+The differential is mutation-checked, not merely written: teaching `_records` to forget that
+`(++ globalN)` is a counter op fails it on 1 LSL2 body and 7 KQ4 bodies.
+
+Full surface, placements included: **LSL2 / KQ4 / KQ5 / KQ6 / LB2 all byte-identical.**
+
+## 9.2 The guard walk (commit `22726a4`)
+
+`guard_reqs` documents itself as walking the guard tree once for ALL registers, "because walking
+it once per register made edge_meta 19x slower". Its own single-register wrapper
+`required_values` made that easy to undo, and **four** sites had — `state_musts`' inner loop,
+`_rstep`'s entry gates, and both of `_own_fixpoint`'s. `edge_meta` also computed every machine's
+musts twice, once to fill `_musts` and once as `sm`. Both fixed; `required_values` now carries
+the warning next to the trap.
+
+`state_musts` over every machine, both forms on the same tree, every answer unchanged:
+
+| | LSL2 | KQ4 | KQ5 | KQ6 | LB2 |
+|---|---:|---:|---:|---:|---:|
+| per register | 0.06s | 1.27s | 2.88s | 1.84s | 8.15s |
+| one walk | 0.01s | 0.06s | 0.20s | 0.08s | 0.38s |
+| | ×7 | ×22 | ×14 | ×23 | ×22 |
+
+Full surface byte-identical on all five again.
+
+## 9.3 QFG-VGA end to end
+
+| | stock | after §8's rule | after both |
+|---|---:|---:|---:|
+| model build | did not complete | ~42 min (whole run) | **67s** |
+| `edge_meta` | — | ~16 min | **6.0s** |
+| whole analysis (`--no-placements`) | — | ~42 min | **10m36s** warm, ~17m cold |
+
+Same result each time.
+
+**⚠️ "well under ten minutes" (§8.5) was wrong**, and wrong in an instructive way: it
+extrapolated from the one stage that had been profiled. `state_musts` did better than predicted —
+495s of the run became 6.0s for the whole of `edge_meta` — and the total still did not reach the
+number, because the rest of the run had never been measured at all. Where the 10m36s goes now:
+
+| stage | |
+|---|---:|
+| `guard_specs` | 210s |
+| detectors (`market_squeezes` 68s, `fatal_uses` 61s, `analyze` 24s, rest 27s) | 180s |
+| model load | 12s warm, ~90s cold |
+| the remainder is a ~2 GB model to build, pickle and hand around | |
+
+None of that is a known-bad pattern the way the guard walk was; it is work nobody has profiled,
+on a title four times the size of anything the pipeline was tuned for.
+
+## 9.4 What is still open
+
+* **the anchors** (§8.5) — QFG-VGA derives start `rm2` (the copyright notice) and ten "victory
+  rooms" that are the combat arenas plus `CharSave`. Nothing about its softlocks can be believed
+  until that is fixed, and a WRONG goal set is not caught the way an EMPTY one is. Optimising the
+  remaining 10m36s is premature until it is: the run currently produces an answer already known
+  to be vacuous.
+* **QFG2** (§8.4) — still ×19, one body (`bedSleep` state 1) holding 10¹¹ paths over effects
+  `_interp` genuinely records. Needs guarded assignments composed rather than enumerated.
+* **`PATH_CAP` inside `_seq`'s product** (§7 item 2) — still tested after the product is
+  materialised, and `_paths_of(f)` still re-evaluated once per prefix. Latent on any title with a
+  wide enough body; no title we build reaches the cap, and the rule makes reaching it much
+  harder, so it is less urgent than it was, not fixed.
