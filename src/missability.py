@@ -1268,7 +1268,22 @@ def guard_reqs(guard, regs, dom=None):
 
 
 def required_values(guard, reg):
-    """Values of `reg` this guard REQUIRES, or None if it doesn't constrain it. See guard_reqs."""
+    """Values of `reg` this guard REQUIRES, or None if it doesn't constrain it. See guard_reqs.
+
+    ⛔ NEVER CALL THIS IN A LOOP OVER REGISTERS. It is `guard_reqs(guard, (reg,))`, and
+    `guard_reqs` walks the whole guard tree per call -- so `for R in regs: required_values(g, R)`
+    walks it once PER REGISTER, which is precisely the cost `guard_reqs`'s docstring says it
+    exists to avoid ("walking it once per register made edge_meta 19x slower"). The wrapper made
+    that trap easy to fall into and four sites had: `state_musts`, `_rstep`'s entry gates, and
+    both of `_own_fixpoint`'s. Ask `guard_reqs(g, regs)` once and read the dict -- the answer is
+    identical, because `guard_reqs` fills its result per register with no interaction between
+    them. Measured 2026-08-21 on five titles: x7 to x23 on `state_musts` alone, every machine's
+    answer unchanged; QFG-VGA spent 495.0s in `state_musts` and its whole `edge_meta` now takes
+    6.0s.
+
+    Kept for the single-register question, which is a real one (`test_gate_aware` asks it), and
+    because the `or None` fold -- an empty value set reads as "no constraint" -- is a distinction
+    a batch caller has to make for itself."""
     return guard_reqs(guard, (reg,)).get(reg) or None
 
 
@@ -1508,6 +1523,8 @@ def state_musts(info, regs):
     conservative answer) plus `sm.at(K, guard)`, which keeps only the valuations that guard's own
     counter conditions admit -- what a consumer holding a specific path should ask."""
     import compile as C
+    regset = frozenset(regs)                       # `guard_reqs` only asks membership, and `regs`
+    #   arrives as a list -- an O(len(regs)) scan per atom, per path, per step of the walk.
     out = {}                                       # (K, loc-key) -> {R: set(values)}
     own = {}                                       # (K, loc-key) -> {item: set(owner values)}
     work = []
@@ -1611,8 +1628,26 @@ def state_musts(info, regs):
                    for a in (g if isinstance(g, list) else [g])):
                 continue                           # this branch is not taken at this valuation
             nxt = dict(cur)
-            for R in regs:
-                v = required_values(g, R)
+            # ONE walk of the guard for ALL the registers. `required_values(g, R)` is
+            # `guard_reqs(g, (R,))`, i.e. a full walk of the guard tree PER REGISTER -- which is
+            # the exact cost `guard_reqs` documents itself as existing to avoid ("walking it once
+            # per register made edge_meta 19x slower"), re-entered through its own single-register
+            # wrapper. It is the same answer either way: `guard_reqs` walks once into `atoms` and
+            # then fills `out` per register with no interaction between them, so the batch result
+            # equals the union of the singles. `_must_hold` is likewise computed once per guard
+            # instead of once per (guard, register).
+            #
+            # MEASURED 2026-08-21, both forms on the same tree, same answer on every machine of
+            # every title: LSL2 0.06s -> 0.01s, KQ4 1.27s -> 0.06s, KQ5 2.88s -> 0.20s, KQ6
+            # 1.84s -> 0.08s, LB2 8.15s -> 0.38s (x7 to x23). Quest for Glory is what made it
+            # visible at all -- QFG-VGA spent 495.0s here across its 1,246 machines, and the
+            # whole of `edge_meta`, which called this twice per machine, now takes 6.0s.
+            #
+            # An EMPTY value set still has to be skipped: `guard_reqs` can leave one behind (a
+            # `!=` whose domain is exactly the excluded value), and `required_values` folded that
+            # to None through its `or None`. Intersecting an empty set in would pin the register
+            # to nothing and read as a contradiction downstream.
+            for R, v in guard_reqs(g, regset).items():
                 if v:
                     nxt[R] = (nxt[R] & v) if R in nxt else set(v)
             for (gi, _val) in w:
@@ -3148,14 +3183,30 @@ def edge_meta(em, regs):
     # can inherit the armer's facts at the arming state. Cutscene chains hand off mid-sequence:
     # KQ6's `freeCeleste` walks you out of the catacombs and is armed at state 14 of
     # `minotaurCharging`, whose state 8 is where the red scarf decided you survived at all.
+    # ...built ONCE PER MACHINE. This loop and `sm` below both wanted the same walk and both
+    # paid for it, so every machine's musts were computed twice -- half of `edge_meta`'s cost on
+    # any game where the walk is not free (QFG-VGA: 495s of it, against KQ6's 1.8s).
+    #
+    # Memoised by `id(info)` rather than by the (script, inst, room) key `_musts` uses, and that
+    # is not a detail: the key exists to look up an ARMER by name and nothing guarantees it is
+    # unique across `em.machines`, so a collision would hand `sm` another machine's musts. The
+    # ids are stable for the whole call -- `em.machines` holds every dict alive.
+    _musts_memo = {}
+
+    def _musts_of(info):
+        got = _musts_memo.get(id(info))
+        if got is None:
+            got = _musts_memo[id(info)] = state_musts(info, regs)
+        return got
+
     _musts = {}
     for _i in em.machines:
         key = (_i.get("script"), _i.get("inst"), _i.get("room"))
-        _musts[key] = state_musts(_i, regs)
+        _musts[key] = _musts_of(_i)
     for info in em.machines:
         eo = entry_alts(info)
         er = entry_reqs(info, regs, dom)
-        sm = state_musts(info, regs)
+        sm = _musts_of(info)
         # What EVERY arming of this machine had already established.
         chain = None
         for armer in info.get("entry_armers", ()) or ():
@@ -3349,10 +3400,18 @@ class IrSccReach(SccReach):
             entries = list(info.get("entries", ())) + list(info.get("init_entries", ()))
             emust = entry_musts(info)
             gates = {}
-            for R in self.regs:
-                rvs = [required_values(eg, R) for _, eg in entries]
-                if rvs and all(rv for rv in rvs):        # every entry pins R -> ordering is sound
-                    gates[R] = set().union(*rvs)
+            # One walk of each ENTRY guard for all the registers, rather than one walk per
+            # (entry, register) -- see state_musts' note; this is the same shape. A register
+            # survives on the same terms as before: EVERY entry has to pin it, with a non-empty
+            # set, so intersect the keys and then union the values.
+            per_entry = [guard_reqs(eg, regset) for _, eg in entries]
+            if per_entry:
+                common = set(per_entry[0]).intersection(*(set(pe) for pe in per_entry[1:])) \
+                    if len(per_entry) > 1 else set(per_entry[0])
+                for R in common:
+                    rvs = [pe[R] for pe in per_entry]
+                    if all(rvs):                         # every entry pins R -> ordering is sound
+                        gates[R] = set().union(*rvs)
             for K, paths in info["states"].items():
                 for (g, w, gg, c, tr) in paths:
                     for (gi, v) in w:
@@ -3809,7 +3868,7 @@ class IrSccReach(SccReach):
         guards = {}
         for room, script, gi, v, g in self.em.handler_writes:
             if gi in regs:
-                d = {S: vs for S in self.regs if (vs := required_values(g, S))}
+                d = {S: vs for S, vs in guard_reqs(g, regs).items() if vs}
                 if d:
                     guards[(gi, room, v)] = d
         # ...and the ALWAYS-LIVE scopes, exactly as `_build_product` iterates them. A machine the
@@ -3842,8 +3901,7 @@ class IrSccReach(SccReach):
                         for S, vs in list(inherited.items()):
                             if vs:
                                 d[S] = (d[S] & vs) if S in d else set(vs)
-                        for S in self.regs:
-                            vs = required_values(g, S)
+                        for S, vs in guard_reqs(g, regs).items():
                             if vs:
                                 d[S] = (d[S] & vs) if S in d else set(vs)
                         if d:
