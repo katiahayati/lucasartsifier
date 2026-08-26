@@ -1721,8 +1721,12 @@ def current_room_global(ir):
     return None
 
 
+_PREV_G = {}
+
+
 def prev_room_global(ir):
-    """The global that holds the PREVIOUS room, or None.
+    """The global that holds the PREVIOUS room, or None.  Memoised per IR: `var_room_values`
+    asks on every indirect `newRoom:` destination now, and the derivation scans every script.
 
     DISCOVERED from the same Game-loop shape as `pending_room_global`. The loop saves the current
     room before switching, in the ROOM-SWITCH METHOD and nowhere else:
@@ -1746,6 +1750,10 @@ def prev_room_global(ir):
     It is what a virtual-map room reads to seed its entry cell, so `grid.analyze` gates a grid
     exit on it -- "you can only reach the island if you arrived from the whale" -- and what
     `missability.edge_meta` writes on every edge, since this assignment runs on every transition."""
+    key = id(ir)
+    if key in _PREV_G:
+        return _PREV_G[key]
+    _PREV_G[key] = None
     current = current_room_global(ir)
     if current is None:
         return None
@@ -1760,7 +1768,8 @@ def prev_room_global(ir):
                     ks = n.get("kids") or []
                     if (len(ks) >= 2 and I.is_global(ks[0]) and I.is_global(ks[1])
                             and ks[1]["index"] == current and ks[0]["index"] != current):
-                        return ks[0]["index"]
+                        _PREV_G[key] = ks[0]["index"]
+                        return _PREV_G[key]
     return None
 
 
@@ -1812,6 +1821,77 @@ def _room_object(script, ir=None):
         if o.name == want and not o.is_class:
             return o
     return None
+
+
+def inherited_room_methods(ir):
+    """{room -> [(class_script, class_name, method_name, ast)]}: the un-overridden ancestor
+    methods a room RUNS without holding their text.
+
+    A room instance executes every method of its class chain; a method it does not override is
+    still its own code, merely stored in another script -- the same scope fact regions and
+    ScriptID-loaded scripts already have ("where does this code run" is not "where is it
+    written"). QFG-VGA is the title that forced it: all ten combat arenas inherit `Arena::doit`
+    (script 211), and that method holds their ONLY exit -- `(global2 newRoom: global12)`, the
+    return to wherever combat interrupted you -- so the model read every arena as terminal and
+    `anchors.discover` promoted the lot to goals (docs/QFG-STATE-EXPLOSION.md §8.5).
+
+    Two exclusions, both structural:
+
+      * ONLY the room-species closure counts as ancestry here. A chain that leaves the closure
+        is no longer room behaviour, and a NAME-FALLBACK room (recognised as `rm<N>` without
+        inheriting the Rm class at all) has no derived chain to walk.
+
+      * An ancestor EVERY closure room inherits is walked NOWHERE. Code every room runs is the
+        game's uniform plumbing -- KQ6Room, KQ5Room, the Rm root itself -- and per-room
+        attribution of a universal fact is the mistake `_walk_game_newroom` already refuses for
+        `Game::newRoom` ("runs on every room change" belongs to the engine loop, not to each
+        room). A class only SOME rooms inherit discriminates those rooms, which is exactly what
+        makes its methods evidence about them. Universality is voted by closure-recognised
+        rooms only, so one name-fallback oddball cannot turn the whole root walkable (LSL2 has
+        such a room; without this rule `Rm::doit` would walk into 90 rooms).
+
+    Corpus census 2026-08-25b under these rules: QFG-VGA walks `Arena::doit` into 9 arenas
+    (the tenth, brigandArena, overrides it); LB2 walks `LBRoom::{doit,doVerb,setInset}` into
+    76 rooms; KQ6's CastleRoom/CliffRoom/LabRoom rows exist but their scripts are REGIONS whose
+    members already walk them (the caller dedups on that); LSL2 and KQ4 walk nothing.
+
+    Methods of a class living in the room's OWN script are skipped -- the extractor already
+    walks every object of the room script, class or not."""
+    closure = _room_species_closure(ir)
+    if not closure:
+        return {}
+    classes = {}                               # species -> (class Obj, script number)
+    for s in ir.scripts.values():
+        for o in s.objects:
+            if o.is_class and o.species not in classes:
+                classes[o.species] = (o, s.number)
+    chains, voters = {}, []
+    for s in ir.scripts.values():
+        ro = _room_object(s, ir)
+        if ro is None:
+            continue
+        chain, sp = [], ro.super
+        while sp in classes:
+            co, csn = classes[sp]
+            if sp in closure:
+                chain.append((sp, co, csn))
+            sp = co.super
+        chains[s.number] = (ro, chain)
+        if ro.super in closure:                # a closure-recognised room votes; a fallback not
+            voters.append({sp for (sp, _c, _n) in chain})
+    universal = set.intersection(*voters) if voters else set()
+    out = {}
+    for room, (ro, chain) in chains.items():
+        seen = set(ro.methods)
+        rows = []
+        for (sp, co, csn) in chain:            # nearest ancestor first: it shadows the rest
+            fresh = [mn for mn in co.methods if mn not in seen]
+            seen |= set(co.methods)
+            if sp in universal or csn == room:
+                continue
+            rows.extend((csn, co.name, mn, co.methods[mn]) for mn in fresh)
+        out[room] = rows
+    return out
 
 
 def death_screen_rooms(ir):
@@ -2159,6 +2239,7 @@ class Extractor:
                                movement=(mname != "changeState"),
                                verb_param=(_DOVERB_PARAM if mname == "doVerb" else None))
             self._cur_obj = self._cur_method = ""
+        inherited = inherited_room_methods(self.ir)
         for n, s in room_scripts.items():
             self._nav_edges(n, s)
             self._newroom_override_edges(n, s)
@@ -2172,17 +2253,34 @@ class Extractor:
                     self._cur_method = mname
                     self._walk(n, meth_ast, [], n, set(), movement=(mname != "changeState"),
                                verb_param=(_DOVERB_PARAM if mname == "doVerb" else None))
+            # ...and the methods this room INHERITS but does not override -- its own code,
+            # stored in an ancestor class's script (see inherited_room_methods; QFG's arenas
+            # keep their only exit there). Walked with the ROOM as context and the CLASS's
+            # script for call-following, exactly like the region/ScriptID scopes above.
+            # Skipped when the class's script is a REGION this room activates: the region
+            # pass has already walked every object of that script into this room.
+            for (csn, cname, mname, meth_ast) in inherited.get(n, ()):
+                if n in (regions.get(csn) or ()):
+                    continue
+                self._cur_obj = cname
+                self._cur_method = mname
+                self._walk(n, meth_ast, [], csn, set(), movement=(mname != "changeState"),
+                           verb_param=(_DOVERB_PARAM if mname == "doVerb" else None))
             self._cur_obj = self._cur_method = ""
             self._inherit_arming(n)
         self._nav_hubs()
-        # add any newRoom target we saw as a room
+        # add any newRoom target we saw as a room -- skipping PREV_DEST, which is a sentinel
+        # for "back where you came from", not a room (opmodel expands it once machine exits
+        # exist too)
         for e in self.ts.edges:
-            self.ts.rooms.add(e.dst)
+            if isinstance(e.dst, int):
+                self.ts.rooms.add(e.dst)
         # AFTER the rooms are known: _coord_tables asks whether the player can be in the
         # dispatcher room, which is only answerable once newRoom targets have been folded in.
         self._coord_tables()
         for e in self.ts.edges:
-            self.ts.rooms.add(e.dst)
+            if isinstance(e.dst, int):
+                self.ts.rooms.add(e.dst)
         return self.ts
 
     def _nav_hubs(self):
@@ -3001,8 +3099,16 @@ class Extractor:
                     #           Dropping it left rm26 a pure SINK with 16 in-edges, which
                     #           anchors.discover then read as a winning terminal.
                     # Resolve either to the room numbers the variable can hold, each with the
-                    # condition it was assigned under (see _var_room_values).
-                    dsts = self._var_room_values(room, params[0])
+                    # condition it was assigned under (see _var_room_values). Resolved in the
+                    # script whose TEXT is being walked (`script`), NOT the room whose scope it
+                    # runs in: a local or temp can only see its own script, and for a foreign
+                    # method walked into a host room -- a region, a ScriptID scene, an inherited
+                    # class method -- the room-scoped scan re-creates the KQ5 rm049 temp bleed
+                    # one level up. Live case: `KQ6Room::doit`'s `newRoom: temp0` walked into
+                    # rm105/rm580 picked up each room's own unrelated `(= temp0 100)` (a Display
+                    # count-down) and the phantom edges moved the derived START anchor. Same
+                    # scope `machine._var_dests` and `_array_room_values` already use.
+                    dsts = self._var_room_values(script, params[0])
                 elif dsts[0] is None and params[0].get("t") == "ComplexVariable":
                     # `newRoom: [array][region]` -- overland-map travel keyed by the PIC control
                     # map (Camelot rm1 is the whole world's hub). Dropping it severed the hub and
@@ -3055,11 +3161,27 @@ class Extractor:
         return var_room_values(self.ir, room, var)
 
 
+PREV_DEST = "PREV"     # var_room_values' answer for a prevRoom destination: "return to
+#   sender". Not a room number, because the destination is not a fact about the SITE -- it is
+#   whatever room the player arrived from, i.e. the in-edge set of wherever this code runs, and
+#   that set does not exist until the whole graph does (flat edges AND machine exits -- QFG's
+#   arenas are entered exclusively by machine EXIT). `opmodel.OpEmitter._resolve_prev_returns`
+#   expands the sentinel there, one edge per predecessor, each guarded `prev == p`.
+
+
 def var_room_values(ir, room, var):
     """Room numbers an indirect `newRoom:` destination variable can hold, from
     switch-on-V case labels and `(= V lit)` assignments anywhere in this room's script.
     Filtered to real rooms (an rm<N> Room instance exists), so cycle counters like 0
     are excluded.
+
+    ONE variable is not answered by the scan: the PREVIOUS-ROOM register
+    (`prev_room_global`). Its value is written by the engine's room switch, not by the
+    script, so `newRoom: <prev>` means "return to whichever room you came from" -- and a
+    script-local assignment scan gives a confidently WRONG answer instead of an empty one
+    when the script happens to write the register for its own bookkeeping (QFG-VGA's rm30
+    assigns it 31 two lines above the send; the scan answered {31}). Those sites return
+    the `PREV_DEST` sentinel instead; see its comment for who expands it.
 
     MODULE-LEVEL BECAUSE IT HAS TWO CALLERS, and the second one arriving late is what this
     project keeps paying for ([[same-rule-two-places]]). The flat-edge builder above resolved
@@ -3101,6 +3223,9 @@ def var_room_values(ir, room, var):
     A value assigned at more than one site drops to `None`: we compose conditions with AND
     and the honest reading of two sites is their OR, so the permissive answer is the sound
     one here (we never invent a constraint the game does not have)."""
+    if I.is_global(var) and var.get("index") == prev_room_global(ir) \
+            and var.get("index") is not None:
+        return {PREV_DEST: None}
     s = ir.scripts.get(room)
     if s is None:
         return {}

@@ -429,3 +429,67 @@ on a title four times the size of anything the pipeline was tuned for.
   materialised, and `_paths_of(f)` still re-evaluated once per prefix. Latent on any title with a
   wide enough body; no title we build reaches the cap, and the rule makes reaching it much
   harder, so it is less urgent than it was, not fixed.
+
+---
+
+# 10. The anchors are closed (2026-08-25b): the arenas' way back was real code the model dropped
+
+§8.5's first open item is done, and the diagnosis it recorded was HALF wrong in an instructive
+way. The arenas are not "entered as SCRIPTS through `(ScriptID global279 0)`" in any sense that
+matters to the graph — the entry is an ordinary `(global2 newRoom: global279)` that
+`var_room_values` already resolved. What the model dropped was the way BACK, and that return is
+explicit game code, not a derivation about script-armed scenes:
+
+    (class Arena of Rm ...                       ; script 211
+        (method (doit)
+            (cond (escaped ... (global2 newRoom: global12))     ; flee -> whence you came
+                  ((<= (monster health:) 0) ... (global2 newRoom: global12)))))  ; win -> same
+
+Two general facts, and QFG needed both at once (`goblinArena`/`brigandArena` also spell the
+return in their own `killGoblin`/`killBrigand` machines):
+
+* **`newRoom: <prevRoom>` is a resolvable destination** — return to sender, one edge per
+  in-edge, guarded `prev == p`. The register was already derived (`extract.prev_room_global`)
+  and already guards edges (KQ5 has 53); only the destination reading was missing — and the old
+  script-local assignment scan could answer a confidently WRONG literal instead of nothing.
+  `var_room_values` now answers `extract.PREV_DEST`; `opmodel._resolve_prev_returns` expands
+  the sentinel once flat edges AND machine exits exist (the arenas are entered exclusively by
+  machine EXIT, so nothing earlier can see their predecessors). Corpus census: 8 sites — QFG-VGA
+  4, KQ5 1 (`OpenBottle`), LB2 3 (`bigRosetta`, `sMeanWhile`, `sEmbraceStop`); LSL2/KQ4/KQ6 zero.
+* **a room RUNS the methods it INHERITS** — an un-overridden ancestor room-class method is the
+  room's own code stored in another script, the same scope fact regions and ScriptID scenes
+  already have (`extract.inherited_room_methods`). A class EVERY room inherits is excluded (the
+  `Game::newRoom` precedent: uniform plumbing is an engine fact), and so is ancestry outside
+  the room-species closure. Census under those rules: QFG walks `Arena::doit` into 9 arenas;
+  LB2 walks `LBRoom::{doit,doVerb,setInset}`; KQ6's candidates are all region-covered already;
+  LSL2/KQ4 walk nothing.
+
+Two defects were caught and cured DURING the measurement, both worth remembering:
+
+* the first inherited walk resolved a class method's `newRoom: temp0` against the HOST room's
+  script — the KQ5 rm049 temp bleed one level up — and two phantom KQ6 edges (a Display
+  count-down's `temp0 = 100` in rm105/rm580) moved KQ6's start anchor. Resolution now follows
+  the walked TEXT's script, as `machine._var_dests` always did; KQ6 returned byte-identical.
+* a "the start must be re-enterable" refinement (upstream-approach-ramp discount) fixed QFG's
+  notice-screen start and was RETRACTED the same day: LB2's ground-truth start rm110 is itself
+  a never-re-entered root, and QFG's character-generation ramp holds real acquisitions (rm203
+  hands over the starting kit), so anchoring below it would orphan item sources. **§8.5's start
+  complaint is re-derived as not a defect**: `start rm2` costs the analysis nothing — the wide
+  anchor sees more of the game, including the starting inventory.
+
+The result, measured (snapshot, no placements):
+
+    start_room       2                (unchanged, and now understood)
+    goal_rooms       601 = CharSave   (the ten arenas are gone; 601 is the post-victory export)
+    softlock_items   silver gold leather shield dagger disenchant magicGem
+    fatal_uses       dagger@rm84/sFightDagger, disenchant@rm97/spilledIt
+    edge_specs       rm37->rm600: (and (has 2) (has 3) (has 7) (has 8) (has 20) (or (has 17) (has 20)))
+
+None of those seven items is validated yet — that is the next job, against play — but they are
+the first QFG-VGA answers computed against the game's actual ending rather than against "can
+you still reach the minotaur pit". Full surfaces elsewhere: LSL2, KQ4, KQ6, KQ5 byte-identical;
+LB2 moves exactly where the new facts say it must (goals lose the Rosetta close-up rm456 and
+the Meanwhile cutscene rm521; `pressPass` relocates from two act-1 edge guards to act-crossing
+register demands because rm250's `sDoTakeOffFlight`/`sMoveBuildings` — computed-exit machines
+the effect test used to drop — now gate exits that had been free cs-edge fallbacks). The LB2
+oracle pin and watched surface await the USER's re-pin/refresh ruling; every other gate is green.

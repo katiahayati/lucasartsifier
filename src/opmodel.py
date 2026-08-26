@@ -622,6 +622,13 @@ class OpEmitter:
                                                   and m[2] == it and repr(m[4]) == repr(g))]
                     break
 
+        # Every `newRoom: <prevRoom>` sentinel expands here -- flat edges and machine exits
+        # are both final, which is the one precondition the expansion has (QFG's arenas are
+        # entered exclusively by machine EXIT, so an extract-time expansion would see no
+        # predecessor at all). Before the gate passes, which read the edge lists; before the
+        # domain fold below, which must see the values the synthesized `prev == p` guards use.
+        self._resolve_prev_returns()
+
         # Control-map oracle FIRST (reads the PIC control plane + VIEW cels, not declared):
         #  - prop-gate  (rm82): machine EXIT->83 requires causedEruption (the aDoor Prop covers
         #    the onControl-$0004 floor until the bomb opens it);
@@ -684,7 +691,12 @@ class OpEmitter:
         for K, steps in steps_by_state.items():
             paths = []
             for st in steps:
-                if C.step_effects(st) or st.trans[0] in ("EXIT", "DEATH"):
+                if C.step_effects(st) or st.trans[0] in ("EXIT", "DEATH") \
+                        or st.vexit is not None:
+                    # vexit: a computed `newRoom: <var>` IS an exit -- the step just cannot
+                    # name the room yet (a prevRoom return names it only once the whole graph
+                    # exists). Without this a machine whose only effect is that exit is
+                    # dropped before the fan runs.
                     has_effect = True
                 # one tuple normally; several when the step counts a global up or down, or
                 # computes its destination (`newRoom: <var>`) -- one branch per room it can hold
@@ -757,6 +769,94 @@ class OpEmitter:
                 "restores_control": set(getattr(m, "restores_control", None) or ()),
                 "chase_states": set(getattr(m, "chase_states", None) or ()),
                 "start": m.start, "delivered": delivered, "drops": drops, "moves": moves}
+
+    def _resolve_prev_returns(self):
+        """Expand `extract.PREV_DEST` -- the `newRoom: <prevRoom>` sentinel -- into RETURN
+        edges: one per predecessor of the room the send runs in, each guarded `prev == p`.
+
+        The guard is not an approximation. The game's own semantics are "go to the value of
+        the previous-room register", the register is derived (`extract.prev_room_global`) and
+        written on every crossing (`missability.edge_meta`), so `prev == p` composed onto the
+        return is exactly the reading KQ5's 53 prevRoom-GUARDED edges already get -- this is
+        the same register on the destination side. QFG-VGA's ten combat arenas are the title
+        that forced it: their only exit is the inherited `Arena::doit` return, and without it
+        they read terminal and became the derived GOALS (docs/QFG-STATE-EXPLOSION.md §8.5).
+
+        Fixpoint, because a return is itself an in-edge: killGoblin's return into rm73 makes
+        rm73 a predecessor a later expansion must see if rm73 hosts a sentinel of its own.
+        Terminates -- the done-set grows within sites × rooms and nothing is ever removed.
+
+        A site in a room NOTHING enters expands to no edge at all, which is the status quo
+        (the send used to be dropped); scrubbing the sentinel is still required so no
+        downstream reader mistakes the string for a room number."""
+        P = X.PREV_DEST
+        ts = self.ts
+        flat_sites = [(ts.edges, e) for e in ts.edges if e.dst == P] \
+            + [(ts.cs_edges, e) for e in ts.cs_edges if e.dst == P]
+        ts.edges[:] = [e for e in ts.edges if e.dst != P]
+        ts.cs_edges[:] = [e for e in ts.cs_edges if e.dst != P]
+        mach_sites = []
+        for info in self.machines:
+            for K, paths in info["states"].items():
+                rows = [pp for pp in paths
+                        if pp[4] and pp[4][0] == "EXIT" and pp[4][1] == P]
+                if rows:
+                    info["states"][K] = [pp for pp in paths if pp not in rows]
+                    mach_sites.extend((info, K, pp) for pp in rows)
+            if P in info.get("delivered", ()):
+                info["delivered"].discard(P)
+        self.machine_delivered = {(r, d) for (r, d) in self.machine_delivered if d != P}
+        if not flat_sites and not mach_sites:
+            return
+        prev = X.prev_room_global(self.ir)
+        if prev is None:
+            return                     # no register to hang the guard on; sites stay dropped
+        preds = {}
+
+        def _in(a, b):
+            if isinstance(b, int) and a != b:
+                preds.setdefault(b, set()).add(a)
+        for e in ts.edges:
+            _in(e.src, e.dst)
+        for e in ts.cs_edges:
+            _in(e.src, e.dst)
+        for info in self.machines:
+            for paths in info["states"].values():
+                for (_g, _w, _gg, _c, tr) in paths:
+                    if tr and tr[0] == "EXIT":
+                        _in(info["room"], tr[1])
+        done, changed = set(), True
+        while changed:
+            changed = False
+            for (store, e) in flat_sites:
+                for p in sorted(preds.get(e.src, ())):
+                    key = (id(e), p)
+                    if key in done:
+                        continue
+                    done.add(key)
+                    changed = True
+                    g = Pred("CMP", var=prev, op="==", value=str(p))
+                    store.append(X.Edge(e.src, p,
+                                        g if e.guard is None else GAnd([e.guard, g]), e.via))
+                    self.reg_vals.setdefault(prev, {0}).add(p)
+                    _in(e.src, p)
+            for (info, K, row) in mach_sites:
+                room = info["room"]
+                for p in sorted(preds.get(room, ())):
+                    key = (id(row), p)
+                    if key in done:
+                        continue
+                    done.add(key)
+                    changed = True
+                    g0, w, gg, c, _tr = row
+                    g = Pred("CMP", var=prev, op="==", value=str(p))
+                    gl = (list(g0) if isinstance(g0, list)
+                          else [] if g0 is None else [g0]) + [g]
+                    info["states"][K].append((gl, w, gg, c, ("EXIT", p)))
+                    info.setdefault("delivered", set()).add(p)
+                    self.machine_delivered.add((room, p))
+                    self.reg_vals.setdefault(prev, {0}).add(p)
+                    _in(room, p)
 
     def edge_hit_registers(self):
         """Registers that carry the ego's `edgeHit` CODE, discovered from identity copies.

@@ -44,6 +44,16 @@ def run():
         check(f"arena {a} has a way out", bool(outs), "no out-edges")
     print("-- and none of them is mistaken for the ending --")
     start, goals = A.discover(em)
+    # The START stays the wide root (rm2, the notice screen) DELIBERATELY. A recurrence pin was
+    # tried here (2026-08-25b, "the start must be a room the game can return to") and RETRACTED
+    # the same day, twice over: LB2's ground-truth start rm110 is itself a never-re-entered
+    # root, so recurrence is not a truth about starts; and QFG's character-generation ramp
+    # holds real acquisitions (rm203 hands the hero the starting kit), so an anchor below it
+    # would orphan item sources. The upstream-discount rule built for that pin moved LB2's
+    # start onto the act-break card and broke the pressPass oracle row -- the cure was worse
+    # than the cosmetic wrongness of a notice-screen start, which costs the analysis nothing
+    # (the anchor merely sees MORE of the game). §8.5's start complaint is thereby re-derived
+    # as: the GOALS were the vacuousness; the start is fine as derived.
     hit = sorted(set(goals) & set(ARENAS))
     check("no combat arena is a goal", not hit, f"goals include arenas {hit}")
     check("a goal still exists at all", bool(goals), "empty goal set")

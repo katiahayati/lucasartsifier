@@ -135,6 +135,32 @@ def test_inherited_room_methods():
           repr(got.get(50)))
 
 
+def test_inherited_scope_no_temp_bleed():
+    print("Part 2b: an inherited method's computed exit resolves in the CLASS's script")
+    # The KQ5 rm049 temp-bleed shape, one level up: `Mid::doit` sends `newRoom: temp0` and never
+    # assigns it a literal; the HOST room's own unrelated `(= temp0 11)` (a counter, a view
+    # number, anything) must not become that method's destination. Caught live on KQ6: walking
+    # `KQ6Room::doit` into rm105/rm580 minted phantom edges ->100 from a Display count-down
+    # temp, and the phantoms moved the derived START anchor. Resolution belongs to the script
+    # whose TEXT is walked -- exactly the scope `machine._var_dests` and `_array_room_values`
+    # already use.
+    import ir as I
+    import extract as X
+    ROOM_SP, MID_SP = 5, 6
+    ir = I.IR({"game": "fake", "selectors": [], "scripts": [
+        _script(994, [_obj("Rm", {}, is_class=True, species=ROOM_SP, super_=0)]),
+        _script(211, [_obj("Mid", {"doit": [SEND(OBJ("self"), MSG("newRoom", V("Temp", 0)))]},
+                           is_class=True, species=MID_SP, super_=ROOM_SP)]),
+        _script(425, [_obj("rm425", {"init": [ASSIGN(V("Temp", 0), N(11))]},
+                           species=0, super_=MID_SP)]),
+        _script(11, [_obj("rm11", {"init": []}, species=0, super_=ROOM_SP)]),
+    ]})
+    ts = X.extract(ir)
+    got = sorted((e.src, e.dst) for e in ts.edges)
+    check("the host room's unrelated temp does not become a destination",
+          (425, 11) not in got, repr(got))
+
+
 def test_resolve_prev_returns():
     print("Part 3: _resolve_prev_returns -- the sentinel expands over the FULL graph, fixpoint")
     import extract as X
@@ -196,6 +222,7 @@ def test_resolve_prev_returns():
 def run():
     test_prev_dest_sentinel()
     test_inherited_room_methods()
+    test_inherited_scope_no_temp_bleed()
     test_resolve_prev_returns()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     return 0 if not FAIL else 1

@@ -62,6 +62,33 @@ SRC = os.path.join(_ROOT, "src")
 # matters for a patcher edit: the snapshot surface freezes whether a guard landed, never its
 # text. R6 is not here because it never had a test -- it needs a design decision from the USER.
 KNOWN_RED = {
+    # ⚠️ LB2 AWAITS A USER RULING (2026-08-25b, branch qfg1) -- three checks, ONE story, fully
+    # decomposed in memory [[lb2-pending-ruling-presspass-relocation]] and docs/QFG-STATE-
+    # EXPLOSION.md §10. The QFG anchors work made three sound model changes (prevRoom returns,
+    # inherited room-class methods, computed-exit machines retained) and LB2 moved where those
+    # facts say it must: rm456 (Rosetta close-up) and rm521 (Meanwhile cutscene) stop being
+    # GOALS because their `newRoom: global12` returns are modelled now, and pressPass's
+    # mechanism relocates from two act-1 edge guards (rm210/rm280 -> rm250) to act-crossing
+    # register demands, because `sDoTakeOffFlight`/`sMoveBuildings` -- rm250 machines whose
+    # only tracked effect is a computed exit -- now gate destinations that had been free
+    # cs-edge fallbacks. The item is still CAUGHT (5 register rows); what changed is the PIN.
+    # Re-pinning the oracle, refreshing the watched surface and blessing the emission delta
+    # are each a bless ([[refresh-is-a-bless]]); they wait for the user's yes, together.
+    "test_lb2_ground_truth.py": {
+        "mechanism pinned: pressPass":
+            "pressPass mechanism relocated by the QFG-anchors model fixes; caught via 5 "
+            "register rows; re-pin awaits the USER (see the block comment above)",
+    },
+    "test_watched_surface.py": {
+        "LB2: full surface unchanged (23 keys)  -- 14 row(s) moved":
+            "14 rows moved with the pressPass relocation + goals losing rm456/rm521; "
+            "refresh is a bless -- awaits the USER",
+    },
+    "test_emission_manifest.py": {
+        "emission: dagger matches manifest":
+            "LB2's rm210/rm280 setscript placements left the surface, so the emitted tree "
+            "moved; bless via tools/bless_emission.py only after the USER's ruling",
+    },
     # ⛔ F6 RETIRED 2026-08-20d [USER: "yeah remove the red please. i'm just not sure we're ever
     # going to hit that"]. `test_patch_text.py` held this file's only declared red -- a hold
     # placed inside a host's OWN `init` after `(super init:)` leaves a refused host cast-resident
