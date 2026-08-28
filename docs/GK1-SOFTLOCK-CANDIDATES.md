@@ -87,12 +87,12 @@ preventable from its own screen counts.
 |---|---|---|
 | `dangerous_sinks sLakePatter@rm410 -> 1 room` (+ `market_specs`, edge specs `rm200/rm50->rm290: (has: 31)`) | giving the lake pattern to the artist (`neJackson.sc:1355`) strands its use at Magentia's (rm290, verb 23) | **FP** — the give IS the day-2 gate (flag 231); no `has: 31` exists; the Magentia site is flavour |
 | `register_strandings reconVeve@reg123=10 / reg475=1 -> [200, 205, 340]` (+ `rm200/rm205->rm372: (has: 38)` specs) | the day counter reaching 10 strands reconVeve for the map's day-3 gate and Hartridge | **FP** — never consumed (no `put: 38`); every demand is day-3/4 gated and dead after the flip. Detector defect: a flip that also kills the DEMAND is not a stranding |
-| `fatal_uses knife@rm899/sDaggerOnMalia` (+ action spec, placement) | stabbing Malia during the throw-the-talisman window is death | **on-screen death** — preventable from its own screen ([[one-rule-death-is-in-scope]]); KQ6's skull was ruled IN on a similar "bad use" shape — **USER to rule** |
+| `fatal_uses knife@rm899/sDaggerOnMalia` (+ action spec, placement) | stabbing Malia during the throw-the-talisman window is death | **FP — USER RULING 2026-08-27**: KQ6's skull counted because throwing it *wastes it for later*; the knife is not consumed, the stab is a death you restore from, preventable on its own screen |
 | R1 VoodooCode1 | — | **MISSED** (red) — the day counter is a `++` register with range guards; no literal flip to key on |
 | R2 rod + signal device deposit, R3 guises | — | **MISSED** (reds) — the hounfour's scenes are `Script`s inside room 800; Grace's room is an intra-room switch |
 | R4 flag 44 | — | **MISSED** (red) — Teller/Interrogation topic dispatch unmodelled |
 
-Coverage: **0 of 4 real rows caught; 2 FP rows; 1 on-screen-death row awaiting a ruling.**
+Coverage: **0 of 4 real rows caught; 3 FP rows (knife ruled out by the USER).**
 
 ## 2. What the model needs that GK1 introduces (SCI32 shapes) — see the commit log on `gk1`
 

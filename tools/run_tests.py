@@ -80,12 +80,12 @@ KNOWN_RED = {
     # play and unruled by the USER -- the rows themselves may move when they rule.
     "test_gk1_ground_truth.py": {
         "no UNEXPECTED unit flagged (suspicion)":
-            "two FALSE POSITIVES: sLakePatter (dangerous_sinks -- the give is the day-2 gate, "
+            "three FALSE POSITIVES: knife (fatal_uses -- an on-screen death, not a consumption; USER ruling 2026-08-27), sLakePatter (dangerous_sinks -- the give is the day-2 gate, "
             "flag 231; no `has: 31` exists) and reconVeve (register_strandings on the day "
             "counter reaching 10 -- never consumed, every demand day-3/4 gated and dead after "
-            "the flip). Both recorded in CONFIRMED_SAFE; cure the detectors, never the list",
+            "the flip). All three recorded in CONFIRMED_SAFE; cure the detectors, never the list",
         "a safe item is not flagged":
-            "same two false positives as the row above (the two checks are one defect seen "
+            "same three false positives as the row above (the two checks are one defect seen "
             "from the oracle's two sides)",
         "R1: VoodooCode1 is caught as a day-window stranding (source closes at day 5)":
             "the day counter (global123) advances by `++` and gates by RANGE (< 5 / >= 5); "

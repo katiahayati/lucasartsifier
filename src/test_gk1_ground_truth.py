@@ -61,14 +61,14 @@ CONFIRMED_SAFE = {
                     # is not a stranding; the detector does not check that.
 }
 
-# A fatal USE the tool reports and the USER has not ruled on: stabbing Malia during the
-# throw-the-talisman window (EndGame.sc:1994-2001, `local7` -> sDaggerOnMalia -> 770). It is a
-# death preventable from its own screen (do something else in that window), so under the ONE
-# RULE it is out of scope -- but KQ6's skull was ruled in by the user on the same shape ("a bad
-# use the game invites"). Allowed, not required, until the user says.
-FATAL_USE_ON_SCREEN = {"knife"}
+# USER RULING 2026-08-27: the knife-on-Malia row is OUT of scope. `fatal_uses` flags stabbing
+# Malia during the throw-the-talisman window (EndGame.sc:1994-2001, `local7` -> sDaggerOnMalia
+# -> 770). KQ6's skull was ruled IN because throwing it WASTES it for later ("the problem with
+# the skull is you waste it for later"); the knife is not consumed -- the stab is a death you
+# restore from, preventable on its own screen. A plain on-screen death: a false positive here.
+CONFIRMED_SAFE.add("knife")
 
-ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS | _units(FATAL_USE_ON_SCREEN)
+ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS
 
 # Item ids ARE the inventory `add:` order (GKInvItem.sc:93). Pinned because the tool got all 81
 # wrong on its first run (declaration order; the `(ScriptID 24 N)` entries were unresolvable and
