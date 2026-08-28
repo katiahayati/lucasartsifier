@@ -107,7 +107,15 @@ KNOWN_RED = {
     "test_lb2_ground_truth.py": {
         "mechanism pinned: pressPass":
             "pressPass mechanism relocated by the QFG-anchors model fixes; caught via "
-            "register rows; re-pin awaits the USER (see the block comment above)",
+            "register rows; re-pin awaits the USER (see the block comment above). gk1 "
+            "2026-08-28: the act-1 rows reg(12,123)=(110,2)/(330,3) and reg123=4/5 RETIRE -- "
+            "the rm335 need site is `global123==2` (dead at acts 3-5, `_need_live`) and the "
+            "item-less player cannot make those flips (`_flip_live`); reg(12,123)=(26,2) and "
+            "reg123=1 remain. The retirement [[lb2-pass-necessary-for-act1]] predicted",
+        "mechanism pinned: grapes":
+            "(gk1 2026-08-28) `grapes@reg123=5` loses need-room 520: the act-4 exit interceptor "
+            "`(== global123 4) AND has: 31` is dead at act 5 (`_need_live` reads needs per site); "
+            "[750] remains, verdict unchanged; re-pin with the pressPass ruling",
         # gk1 2026-08-27: the COUNTER fixes (an increment is a flip -- `_flip_seeds` reads
         # `_rstep`; relational site guards get the projection's domain; flat pickups carry the
         # object's presence) give these four column-A items a SECOND mechanism row each,

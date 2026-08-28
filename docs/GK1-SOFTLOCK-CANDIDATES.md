@@ -231,3 +231,17 @@ Grace can end day 3. `still_needed_at` now `[50, 340]` (rm50 = Grace's topic 50 
 VoodooCode1/sVoodooCode at flag 246 REMAIN: step 5 does not reach them -- `prev == 302` is produced by LEAVING 302 (free); what the return edge `50->302` really presupposes is having ENTERED 302 (priced at both sketches), a two-step fact the register-cost index cannot express. Open: a return-to-sender edge should carry its origin room's entry cost. **R1 CAUGHT** — `VoodooCode1@reg123=5 -> [240, 260, 300]` (and the joint rows), once the inset's If-valued arming `(if (proc13_0 394) 3025 else 3024)` was split into two armings (a register-less arming was consistent with every `switch register` arm and diluted the 3022 arm's day<5 inheritance) and machine states' `get:`s joined the co-grant table (the gift certificate's `(get: 5 getPoints: 122 1)` had surfaced as a new row). R2/R3/R4 unchanged (scenes; the
 flag-stranding detector R4 needs is not built — the Teller lowering now makes Crash's topic 8 a
 `flag 44` site, so the writer/use chain is visible).
+
+**Round-3 closing measurements (2026-08-28, later).** Two cuts to the eighth store, both derived,
+no catalogue: (a) a property the class library writes through its `client` (`cel`, `loop`, `x`,
+`y`, `heading`… — `vocab._client_written_selectors`) is NOT the script's store on an object the
+script hands to the engine (`setCycle:`/`setMotion:`/`setScaler:`/`setLooper:`); (b) a property an
+ANCESTOR class assigns on `self` (`register`, `seconds`, `cycles` — `_library_self_written`) is the
+library's. Without (a) KQ5 lowered 29 animation registers and `register_strandings` went from 20.8 s
+to 1249 s (profiled, 3 rows either way); without (b) `register` itself would have been lowered and
+the carried-local reading broken. Census after both: GK1 3 (theInView.view, credit.view,
+drJohn.noun), KQ4 0, KQ6 13, KQ5 5, LB2 1, LSL2 0. Gate joints: a triple only where no pair closes
+the cycle (KQ5's flag 331 now counts and had filled the 8-joint cap with permutations). Final
+surfaces (s10 + the KQ5 re-time): LSL2/KQ4/KQ6/KQ5 byte-identical, LB2 15 lines, GK1 38 lines.
+⚠️ PERF DEBT: KQ5's snapshot is 634 s (baseline 244 s) — its new counter's projection and the
+`_flip_at` walks (`scratchpad/prof_kq5b.log` vs `prof_kq5_base.log`); GK1 269 s.
