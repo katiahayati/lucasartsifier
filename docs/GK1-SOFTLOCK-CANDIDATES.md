@@ -327,7 +327,10 @@ half of the test — a register with no projection is judged "carried across wro
 `reach_avoiding(writer_rooms)` alone, i.e. "the player could reach the flip without entering a room
 that writes it", which is almost always true for a flag with one writer. Reverted whole rather than
 filtered: an allow-list over 23 rows would be a clause protecting a known answer, and the FP shape
-is the design, not an accident. The backup is `scratchpad/missability_carryup.py.bak`.
+is the design, not an accident. The reverted code is NOT in git (it was reverted before the commit); the only copy is
+`/tmp/claude-1001/-home-hayati-coding-sierra-softlock/f07bccf3-faa5-4127-a635-bc03a3216c6e/scratchpad/missability_carryup.py.bak`,
+which lives in an EPHEMERAL session scratchpad. It is kept for archaeology only — the description
+above is the thing to rebuild from, and the conclusion is that it should not be rebuilt as-is.
 
 ### Surfaces (s11 vs the s10 baseline, all six games)
 **LSL2, KQ4, KQ6, KQ5 and LB2 byte-identical.** GK1 moved 13 lines, all joint-row churn on rows
