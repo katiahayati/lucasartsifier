@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import ir as I
 from guard_ast import GAnd, GOr, GNot, Pred
-from extract import atom, _conj, item_transfer, item_transfers, EGO
+from extract import atom, _conj, item_transfer, item_transfers, EGO, dest_key
 import machine as M
 
 COUNTER_CAP = 40          # loop/unroll bound
@@ -300,7 +300,11 @@ def _count_cues_send(recv, msgs):
     return n
 
 
-def _interp(path, is_death, state_k=None):
+def _interp(path, is_death, state_k=None, prop_dests=()):
+    """`prop_dests`: names of the Script properties this machine's script gives to `newRoom:`
+    (the `("Property", name)` keys of `machine.var_dests`) -- a routing script's `register`.
+    Without the ir here, that recorded set is what says a Property argument is a computed
+    destination and not some other object's attribute."""
     st = Step()
     armed = False
     fixed = False   # an immediate transition already taken
@@ -319,7 +323,9 @@ def _interp(path, is_death, state_k=None):
                     r = I.as_int(params[0])
                     if r is not None:
                         st.trans = ("EXIT", r); fixed = True
-                    elif I.is_global(params[0]) or I.is_local_or_temp(params[0]):
+                    elif (I.is_global(params[0]) or I.is_local_or_temp(params[0])
+                          or (params[0].get("t") == "Property"
+                              and params[0].get("name") in prop_dests)):
                         # INDIRECT exit. Recorded, not resolved: the variable holds several
                         # rooms and a Step carries one transition, so the fan happens where the
                         # counter fan already does. Until this landed, a state that computed its
@@ -328,7 +334,7 @@ def _interp(path, is_death, state_k=None):
                         # wrote on the way out. LB2's act break is exactly that: `(++ global123)`
                         # and `(newRoom: local0)` in one state, so the act advance never reached
                         # the crossing that performs it. See `_fan_exit`.
-                        st.vexit = (params[0].get("vtype"), params[0].get("index"))
+                        st.vexit = dest_key(params[0])
                         fixed = True
                 elif sel == "changeState" and recv.get("t") == "Self" and params and not fixed:
                     k = I.as_int(params[0])
@@ -760,7 +766,8 @@ def compile_machine(machine, is_death):
     gdom = getattr(machine, "glob_dom", {}) or {}
     dests = getattr(machine, "var_dests", None) or {}
     lregs = getattr(machine, "local_regs", None) or {}
-    steps = {k: [_interp(p, is_death, state_k=k) for p in _paths_of(body)]
+    prop_dests = {name for (t, name) in dests if t == "Property"}
+    steps = {k: [_interp(p, is_death, state_k=k, prop_dests=prop_dests) for p in _paths_of(body)]
              for k, body in machine.bodies.items()}
     carry_cues(steps, machine.start)      # SCI cross-state cue carry: PARK -> ADVANCE where covered
     _entry_states = {k for k, _ in machine.entries} | {k for k, _ in machine.init_entries}

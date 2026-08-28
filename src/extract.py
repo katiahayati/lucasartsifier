@@ -1816,11 +1816,38 @@ def _room_object(script, ir=None):
             for o in script.objects:
                 if not o.is_class and o.super in closure:
                     return o
+            # A room declared as a CLASS with nothing beneath it. SCI32's GK1 writes its
+            # hounfour (script 800) as `(class Hounfour of Room)` -- the twelve ring scenes
+            # are `Script`s the class arms, and no object anywhere is `of Hounfour` -- so the
+            # class is the room: a class nothing inherits from and nothing instantiates serves
+            # only as its own instance. An INTERMEDIATE base (QFG2's `Stage of Rm`) has
+            # descendants and stays what it is. Without this the whole day-10 finale was not a
+            # room, `rm455 -> 800` led nowhere, and `EndGame` (899, entered only from the
+            # hounfour) became a ROOT the start-anchor derivation could pick -- and did.
+            leaf = _leaf_room_class(script, ir, closure)
+            if leaf is not None:
+                return leaf
     want = f"rm{script.number}"
     for o in script.objects:
         if o.name == want and not o.is_class:
             return o
     return None
+
+
+_HAS_KIDS = {}
+
+
+def _leaf_room_class(script, ir, closure):
+    """The script's Room-descendant CLASS that no object inherits from, if it has exactly one."""
+    key = id(ir)
+    if key not in _HAS_KIDS:
+        _HAS_KIDS[key] = {o.super for s in ir.scripts.values() for o in s.objects}
+    parents = _HAS_KIDS[key]
+    base = _room_species(ir)
+    leaves = [o for o in script.objects
+              if o.is_class and o.super in closure and o.species != base
+              and o.species not in parents]
+    return leaves[0] if len(leaves) == 1 else None
 
 
 def inherited_room_methods(ir):
@@ -1913,9 +1940,43 @@ def death_screen_rooms(ir):
     for (sn, name) in V.derive_death_send(ir):
         sc = ir.scripts.get(sn)
         ro = _room_object(sc, ir) if sc is not None else None
-        if ro is not None and ro.name == name:
+        if ro is None:
+            continue
+        if ro.name == name:
+            out.add(sn)
+        elif _init_arms(ro.methods.get("init"), name):
+            # The room's own `init` hands itself to the dialog, unconditionally: the room is
+            # still nothing but the offer, it just keeps the offer in a `Script` beside it.
+            # GK1's `deathRm` (770): `init` ends `(self setScript: deathScript)` and every
+            # hazard in the game ends `(global2 newRoom: 770)` -- 19 sites that were journeys.
+            # A death ROOM with gameplay in it arms its cutscene from a hazard, not from `init`
+            # at top level, so KQ6's 34 stay what they are (measured: 0 screens there).
             out.add(sn)
     return out
+
+
+def _init_arms(init, name):
+    """Does this `init` body `setScript:` the object `name` at top level -- outside any test?"""
+    if init is None:
+        return False
+    stack = [init]
+    while stack:
+        n = stack.pop()
+        if not isinstance(n, dict):
+            continue
+        t = n.get("t")
+        if t == "List":
+            stack.extend(n.get("kids") or [])
+        elif t == "Send":
+            try:
+                _r, msgs = I.send_pairs(n)
+            except Exception:                               # noqa: BLE001
+                continue
+            for sel, params in msgs:
+                if (sel == "setScript" and params and isinstance(params[0], dict)
+                        and params[0].get("t") == "Object" and params[0].get("name") == name):
+                    return True
+    return False
 
 
 class Extractor:
@@ -3088,7 +3149,8 @@ class Extractor:
             elif sel in ("newRoom", "entranceTo") and params:
                 dsts = [I.as_int(params[0])]
                 if dsts[0] is None and (I.is_global(params[0])
-                                        or I.is_local_or_temp(params[0])):
+                                        or I.is_local_or_temp(params[0])
+                                        or is_script_prop_dest(self.ir, params[0])):
                     # INDIRECT destination `newRoom: <var>` -- a routing room that COMPUTES
                     # where you go next and keeps it in a variable. Two storage choices, one
                     # idiom:
@@ -3161,6 +3223,135 @@ class Extractor:
         return var_room_values(self.ir, room, var)
 
 
+_SCRIPT_PARAM_PROPS = {}
+
+
+def script_param_props(ir):
+    """{property: init-parameter index} for the engine `Script` class -- the slots `setScript:`
+    fills from its trailing arguments.
+
+    Read off `Script::init` itself: `(= caller param2)`, `(= register param3)` in every SCI
+    library from SCI0 to SCI32, and `Rm::setScript` forwards `&rest` into `init:` unchanged. So a
+    Script's `register` IS the third `setScript:` argument at whichever site armed it -- engine
+    vocabulary, not a name assumed here."""
+    key = id(ir)
+    if key not in _SCRIPT_PARAM_PROPS:
+        out = {}
+        cls = ir.find_class("Script")
+        init = cls.methods.get("init") if cls is not None else None
+        for n in I.walk(init) if init is not None else ():
+            if n.get("t") != "Assignment":
+                continue
+            ks = n.get("kids") or []
+            if (len(ks) == 2 and ks[0].get("t") == "Property"
+                    and ks[1].get("t") == "Variable" and ks[1].get("vtype") == "Parameter"):
+                out[ks[0]["name"]] = ks[1]["index"]
+        _SCRIPT_PARAM_PROPS[key] = out
+    return _SCRIPT_PARAM_PROPS[key]
+
+
+def is_script_prop_dest(ir, node):
+    """A `newRoom:` argument that is one of the Script class's `setScript`-filled properties."""
+    return (isinstance(node, dict) and node.get("t") == "Property"
+            and node.get("name") in script_param_props(ir))
+
+
+def dest_key(node):
+    """The identity a computed destination is filed under -- a variable by (type, index), a
+    Script property by (\"Property\", name). One spelling for the three places that record one
+    (`Extractor`, `machine._var_dests`, `compile` steps) so they cannot drift apart."""
+    if node.get("t") == "Property":
+        return ("Property", node.get("name"))
+    return (node.get("vtype"), node.get("index"))
+
+
+def _script_prop_values(ir, s, var):
+    """`newRoom: register` -- a routing SCRIPT whose destination was handed to it when armed.
+
+    GK1's two travel maps are the shape: each map icon's `cue` does `(global2 cue: 210)`, the
+    room's `cue` does `(self setScript: chgRoom 0 param1)`, and `chgRoom`'s state 1 ends
+    `(global2 newRoom: register)`. Nothing assigns the register a literal anywhere -- the value
+    rides `setScript:`'s third argument, which rides a parameter, which rides the icons' sends.
+    Dropping it left both maps (rm200 with 12 destinations, rm205 with 8) as near-sinks, the
+    bayou a ROOT, and the derived start anchor on the wrong side of the game.
+
+    Resolved within this script, one hop of parameter flow:
+      * arming sites -- `(X setScript: OBJ c V)` or `(OBJ init: c c V)` -- give V, at the
+        parameter index `Script::init` stores the property from;
+      * V a literal: a destination, under the arming site's path condition;
+      * V a PARAMETER of the enclosing method M: every send of selector M in this script whose
+        argument at that position is a literal -- the icons -- each a destination, unguarded
+        (the icon that was clicked is the player's choice, not a state);
+      * plus any `(= register lit)` inside the owner and `(OBJ register: lit)` anywhere here.
+    Filtered to real rooms as the variable scan is. A value from several sites drops its guard,
+    for the same permissive reason (OR of conditions is not a conjunct)."""
+    prop = var.get("name")
+    k = script_param_props(ir)[prop]           # 1-based init parameter index
+    owner = next((o for o in s.objects
+                  if any(n is var for ast in o.methods.values() for n in I.walk(ast))), None)
+    if owner is None:
+        return {}
+    seen = {}
+
+    def is_room(v):
+        rs = ir.scripts.get(v)
+        return rs is not None and _room_object(rs, ir) is not None
+
+    def note(v, g):
+        if v is not None and is_room(v):
+            seen.setdefault(v, []).append(g)
+
+    def owns(node):
+        return (isinstance(node, dict) and node.get("t") == "Object"
+                and node.get("name") == owner.name)
+
+    param_flows = []                            # (method selector, parameter index)
+    for o in s.objects:
+        for mn, ast in o.methods.items():
+            def on_leaf(n, pc, mn=mn):
+                if n.get("t") == "Assignment":
+                    ks = n.get("kids") or []
+                    if (len(ks) == 2 and ks[0].get("t") == "Property"
+                            and ks[0].get("name") == prop and o is owner):
+                        note(I.as_int(ks[1]), _conj(pc))
+                    return
+                if n.get("t") != "Send":
+                    return
+                try:
+                    recv, msgs = I.send_pairs(n)
+                except Exception:               # noqa: BLE001
+                    return
+                for sel, params in msgs:
+                    v = None
+                    if sel == prop and owns(recv) and params:
+                        v = params[0]
+                    elif sel == "setScript" and params and owns(params[0]) and len(params) > k - 1:
+                        v = params[k - 1]       # params = [script, caller, register, ...]
+                    elif sel == "init" and owns(recv) and len(params) >= k:
+                        v = params[k - 1]       # init: client caller register
+                    if v is None:
+                        continue
+                    if I.as_int(v) is not None:
+                        note(I.as_int(v), _conj(pc))
+                    elif v.get("t") == "Variable" and v.get("vtype") == "Parameter":
+                        param_flows.append((mn, v.get("index")))
+            walk_stream(ast, [], on_leaf)
+    for (mname, pidx) in set(param_flows):
+        for o in s.objects:
+            for ast in o.methods.values():
+                for n in I.walk(ast):
+                    if n.get("t") != "Send":
+                        continue
+                    try:
+                        _r, msgs = I.send_pairs(n)
+                    except Exception:           # noqa: BLE001
+                        continue
+                    for sel, params in msgs:
+                        if sel == mname and len(params) >= pidx:
+                            note(I.as_int(params[pidx - 1]), None)
+    return {v: (gs[0] if len(gs) == 1 else None) for v, gs in seen.items()}
+
+
 PREV_DEST = "PREV"     # var_room_values' answer for a prevRoom destination: "return to
 #   sender". Not a room number, because the destination is not a fact about the SITE -- it is
 #   whatever room the player arrived from, i.e. the in-edge set of wherever this code runs, and
@@ -3229,6 +3420,8 @@ def var_room_values(ir, room, var):
     s = ir.scripts.get(room)
     if s is None:
         return {}
+    if is_script_prop_dest(ir, var):
+        return _script_prop_values(ir, s, var)
     vtype, vindex = var.get("vtype"), var.get("index")
     seen = {}                              # room -> [guard, ...] one per assignment site
 

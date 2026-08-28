@@ -838,6 +838,7 @@ def derive_death_send(ir):
     is window-restore, a different meaning; only a death dialog sends both together. The Game object
     is skipped (its handleEvent reaches the menu). Returns [(script_num, object_name), ...]."""
     game = {o.name for o in game_objects(ir)}
+    quit_g = derive_quit_global(ir)
     out = []
     for s in ir.scripts.values():
         for o in s.objects:
@@ -854,10 +855,43 @@ def derive_death_send(ir):
                         for sel, _p in msgs:
                             if sel in RESTART_SELECTORS:
                                 sels.add(sel)
+                    elif (n.get("t") == "Assignment" and quit_g is not None):
+                        # "Restart" spelled as the game's QUIT: SCI32's GK1 death screen offers
+                        # Restore / Quit / Restart, and its restart button is a `newRoom:` into
+                        # the restart ROOM (script 93 re-initialises the globals by hand) rather
+                        # than a `restart:` send -- so the dialog carried only one of the two
+                        # selectors and was invisible; the game modelled zero deaths. The quit
+                        # write is the same evidence the `restart:` send is: an offer to END THE
+                        # RUN beside the offer to restore it. Only a death dialog puts both in
+                        # one method; the control panel offers each through a separate button
+                        # object, and the credits' quit write comes with no restore.
+                        ks = n.get("kids") or []
+                        if (len(ks) == 2 and I.is_global(ks[0]) and ks[0]["index"] == quit_g
+                                and (I.as_int(ks[1]) or 0) != 0):
+                            sels.add("restart")
                 if all(x in sels for x in RESTART_SELECTORS):
                     out.append((s.number, o.name))
                     break
     return out
+
+
+def derive_quit_global(ir):
+    """The global whose non-zero value ends the engine loop -- what `Game::quitGame` writes.
+
+    Engine vocabulary of the same tier as RESTART_SELECTORS: the class library's own `quitGame`
+    method on the Game hierarchy assigns the quit flag (`(= global4 1)` on KQ6/LB2/KQ5/GK1). None
+    when no Game-class method of that name writes a constant to a global (SCI0's Game keeps the
+    flag elsewhere -- and the SCI0 death model never asks)."""
+    for o in game_objects(ir):
+        body = o.methods.get("quitGame")
+        if body is None:
+            continue
+        for n in I.walk(body):
+            if n.get("t") == "Assignment":
+                ks = n.get("kids") or []
+                if len(ks) == 2 and I.is_global(ks[0]) and (I.as_int(ks[1]) or 0) != 0:
+                    return ks[0]["index"]
+    return None
 
 
 def is_sci11(ir):
@@ -1177,10 +1211,28 @@ def derive_flags(ir):
                 a = calls[0].get("kids") or []
                 if a and I.as_int(a[0]) in sm:
                     procs[name] = sm[I.as_int(a[0])]
-    return base, procs
+    # METHOD wrappers: a class method that hands one of its own parameters to a flag proc.
+    # GK1's `GKEgo::getPoints` is `(if (!= param1 -999) (proc13_1 param1))` -- every score
+    # award `(gEgo getPoints: N pts)` ALSO raises flag N, and 92 sites award that way. Measured
+    # before this: four flags read as gates (159 169 176 393) had NO writer the lowering could
+    # see, so their gates could never open in the model -- a phantom requirement, the unsound
+    # direction. {selector: (op, 1-based parameter index)}; `lower_flags` rewrites the sends.
+    wrappers = {}
+    for s in ir.scripts.values():
+        for o in s.objects:
+            if not o.is_class:
+                continue
+            for mn, body in o.methods.items():
+                for n in I.walk(body):
+                    if n.get("t") in ("PublicCall", "LocalCall") and n.get("name") in procs:
+                        a = n.get("kids") or []
+                        if (a and a[0].get("t") == "Variable"
+                                and a[0].get("vtype") == "Parameter"):
+                            wrappers[mn] = (procs[n["name"]], a[0]["index"])
+    return base, procs, wrappers
 
 
-def lower_flags(ir, base_global, flag_procs):
+def lower_flags(ir, base_global, flag_procs, wrappers=None):
     """Rewrite every call to a test/set/clear flag proc with LITERAL flag arguments into a
     synthetic per-flag global read or write, IN PLACE, so a flag becomes an ordinary global the
     gating-register machinery already promotes. Flag N maps to `synth_base + N`, one contiguous
@@ -1190,7 +1242,7 @@ def lower_flags(ir, base_global, flag_procs):
 
     Toggle calls and non-literal flag arguments are left unlowered -- a bounded, SOUND gap: an
     unmodelled write cannot invent a stranding, only miss one. Returns (synth_base, lowered, skipped)."""
-    max_gi, calls = 0, []
+    max_gi, calls, wsends = 0, [], []
     for s in ir.scripts.values():
         bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
         for body in bodies:
@@ -1199,9 +1251,47 @@ def lower_flags(ir, base_global, flag_procs):
                     max_gi = max(max_gi, node["index"])
                 elif node.get("t") in ("PublicCall", "LocalCall") and node.get("name") in flag_procs:
                     calls.append(node)
+                elif wrappers and node.get("t") == "Send":
+                    ks = node.get("kids") or []
+                    if any(m.get("t") == "SendMessage" and (m.get("kids") or [{}])[0].get("name")
+                           in wrappers for m in ks[1:]):
+                        wsends.append(node)
     synth_base = _synth_base(ir, max_gi)
     lowered = skipped = 0
     seen_flags = set()
+    # Wrapper sends: `(gEgo getPoints: N pts)` -> `(= gSYNTH_N 1)`, keeping every OTHER message
+    # of a multi-message send (`(gEgo view: 254 getPoints: -999 2 get: 21 put: 30)` hands over
+    # the mask -- the item transfer must survive). A non-literal or negative flag argument
+    # (the -999 sentinel the wrapper itself refuses) is left alone.
+    for node in wsends:
+        ks = node.get("kids") or []
+        keep, assigns = [ks[0]], []
+        for m in ks[1:]:
+            mk = m.get("kids") or []
+            sel = mk[0].get("name") if mk else None
+            if sel in wrappers:
+                op, k = wrappers[sel]
+                arg = mk[k] if len(mk) > k else None
+                f = I.as_int(arg) if arg is not None else None
+                if op != "toggle" and f is not None and f >= 0:
+                    seen_flags.add(f)
+                    BOOL_GLOBALS.add(synth_base + f)
+                    if op == "test":
+                        assigns.append({"t": "Variable", "vtype": "Global", "index": synth_base + f})
+                    else:
+                        assigns.append({"t": "Assignment", "kids": [
+                            {"t": "Variable", "vtype": "Global", "index": synth_base + f},
+                            {"t": "Number", "value": 1 if op == "set" else 0}]})
+                    lowered += 1
+                    continue
+                skipped += 1
+            keep.append(m)
+        if not assigns:
+            continue
+        rest = {"t": "Send", "kids": keep} if len(keep) > 1 else None
+        parts = assigns + ([rest] if rest is not None else [])
+        node.clear()
+        node.update(parts[0] if len(parts) == 1 else {"t": "List", "kids": parts})
     for node in calls:
         op = flag_procs[node["name"]]
         flags = [I.as_int(k) for k in (node.get("kids") or []) if I.as_int(k) is not None]
@@ -3284,7 +3374,71 @@ def derive_debug(ir):
             ks = n.get("kids") or []
             if ks and I.is_global(ks[0]):
                 out.setdefault(ks[0]["index"], set()).add(f"proc {name}")
+    # A global set from WHETHER A FILE EXISTS ON DISK is environment, not game state -- and the
+    # environment it reads is the developer's. GK1's `gKInitCode::doit` does
+    # `(if (FileIO 10 "99.scr") (= global110 1) else (= global110 0))` and `global110` is the
+    # one gate on `(ScriptID 99)`, the debug handler that teleports, sets the day counter and
+    # hands out items. 99.scr ships inside the resource volume (so the decompiler sees it) but
+    # the test is for a PATCH FILE beside the executable, which a retail install does not have.
+    # The write pattern is not `^=`, so the toggle rule above cannot find it; the file test is
+    # the tell. FileIO sub-op 10 is `fileExists` from SCI1.1 on.
+    #
+    # The global must BE the answer -- assigned a constant in the then-arm AND in the else-arm
+    # of that test, and written nowhere else. Measured before tightening: reading "any global
+    # assigned under a file test" pinned KQ6's globals 12 (prevRoom!), 90, 100 and 153, which
+    # its Main assigns inside `(if (FileIO 10 ...) ...)` for CD/floppy setup, and moved the
+    # gated KQ6 surface. A boolean mirror of the test has no other writer by construction.
+    cands = {}                                   # global -> {"arms": n, "where"}
+    writers = {}
+    for s in ir.scripts.values():
+        bodies = [(f"{o.name}::{mn}", b) for o in s.objects for mn, b in o.methods.items()]
+        bodies += [(f"proc {pn}", b) for pn, b in s.procs.items()]
+        for where, body in bodies:
+            for n in I.walk(body):
+                if n.get("t") == "Assignment":
+                    ak = n.get("kids") or []
+                    if ak and I.is_global(ak[0]):
+                        writers[ak[0]["index"]] = writers.get(ak[0]["index"], 0) + 1
+                if n.get("t") != "If":
+                    continue
+                ks = n.get("kids") or []
+                if len(ks) < 3 or not _tests_file_exists(ks[0], body):
+                    continue
+                per_arm = []
+                for arm in ks[1:]:
+                    got = set()
+                    for a in I.walk(arm):
+                        if a.get("t") == "Assignment":
+                            ak = a.get("kids") or []
+                            if len(ak) == 2 and I.is_global(ak[0]) and I.as_int(ak[1]) is not None:
+                                got.add(ak[0]["index"])
+                    per_arm.append(got)
+                for g in set.intersection(*per_arm) if per_arm else set():
+                    cands.setdefault(g, set()).add(f"{where} (file exists)")
+    for g, where in cands.items():
+        if writers.get(g, 0) == 2 * len(where):     # one write per arm, nothing else anywhere
+            out.setdefault(g, set()).update(where)
     return out
+
+
+def _tests_file_exists(test, body=None):
+    """`(FileIO 10 <name>)` -- and the name is a SCRIPT PATCH (`*.scr`), spelled as a literal in the
+    same body (GK1: `(temp1 format: {%d.scr} 99)` two lines above the test). A retail game ships
+    its scripts inside the resource volume; a loose `.scr` beside the executable is the
+    developer's own drop-in, so the global mirroring its presence is QA scaffolding. Any other
+    file test is configuration -- KQ6's `Kq6::init` mirrors a Format'd resource name into
+    global100 (CD/floppy), and pinning that moved the gated KQ6 surface."""
+    hit = False
+    for n in I.walk(test):
+        if n.get("t") == "KernelCall" and n.get("name") == "FileIO":
+            ks = n.get("kids") or []
+            if ks and I.as_int(ks[0]) == 10:
+                hit = True
+    if not hit:
+        return False
+    scope = body if body is not None else test
+    return any(n.get("t") == "String" and str(n.get("value", "")).lower().endswith(".scr")
+               for n in I.walk(scope))
 
 
 def _item_family(ir):
@@ -3402,9 +3556,75 @@ def item_names(ir):
     # partial list (17 and 12 of their items), and both build the real inventory by declaring in
     # order, so they keep the fallback and stay byte-identical.
     ordered = _inv_list_order(ir, fam)
-    if len(ordered) == len(names) and len(ordered) > 1:
-        return {i: re.sub(r"[^0-9A-Za-z]+", "_", nm).strip("_") for i, nm in enumerate(ordered)}
-    return names
+    # ...OR when the list is sent to the STORE COLLECTION ITSELF -- the object `get:`/`has:`/
+    # `put:` index through (`Ego::has` reads `(global9 at: N)`, and `GKInventory::init` does
+    # `(= global9 self)` before `(self ... add: ...)`). That list IS the numbering by
+    # construction, whether or not every declared item is on it: GK1 declares `bookTribe` and
+    # never adds it, so the full-coverage rule above fell one short and every one of its 81
+    # names came out in declaration order (the knife reported as the flashlight, the rod as the
+    # talisman). Same shape QFG-VGA has -- eight spells declared, never added.
+    store_list = _store_add_list(ir, fam)
+    if store_list and len(store_list) > 1:
+        ordered = store_list
+    elif not (len(ordered) == len(names) and len(ordered) > 1):
+        return names
+    return {i: re.sub(r"[^0-9A-Za-z]+", "_", nm).strip("_") for i, nm in enumerate(ordered)}
+
+
+def _store_index_global(ir):
+    """The global the store's own accessors index with `at:` -- the inventory COLLECTION."""
+    voc = Vocabulary.from_ir(ir)
+    store = getattr(voc, "store", None) if voc is not None else None
+    if not isinstance(store, dict):
+        return None
+    from collections import Counter
+    hits = Counter()
+    for w in store.get("wrappers", ()):
+        cls = ir.find_class(w.get("class", ""))
+        body = cls.methods.get(w.get("selector", "")) if cls is not None else None
+        for n in I.walk(body) if body is not None else ():
+            if n.get("t") != "Send":
+                continue
+            try:
+                recv, msgs = I.send_pairs(n)
+            except Exception:                                   # noqa: BLE001
+                continue
+            if I.is_global(recv) and any(sel == "at" for sel, _p in msgs):
+                hits[recv["index"]] += 1
+    return hits.most_common(1)[0][0] if hits else None
+
+
+def _store_add_list(ir, fam):
+    """The `add:` list whose receiver is the inventory collection (see `_store_index_global`):
+    the collection global itself, or `self` inside the object that assigns itself to it."""
+    g = _store_index_global(ir)
+    if g is None:
+        return []
+    best = []
+    for s in ir.scripts.values():
+        for o in s.objects:
+            registers = any(
+                n.get("t") == "Assignment" and I.is_global((n.get("kids") or [{}])[0], g)
+                and (n.get("kids") or [{}, {}])[1].get("t") == "Self"
+                for body in o.methods.values() for n in I.walk(body))
+            for body in o.methods.values():
+                for n in I.walk(body):
+                    if n.get("t") != "Send":
+                        continue
+                    try:
+                        recv, msgs = I.send_pairs(n)
+                    except Exception:                           # noqa: BLE001
+                        continue
+                    is_store = I.is_global(recv, g) or (registers and recv.get("t") == "Self")
+                    if not is_store:
+                        continue
+                    for sel, params in msgs:
+                        if sel != "add":
+                            continue
+                        got = [nm for nm in (_item_ref_name(p, ir, fam) for p in params) if nm]
+                        if len(got) > len(best):
+                            best = got
+    return best
 
 
 def _inv_list_order(ir, fam):
@@ -3443,19 +3663,39 @@ def _item_ref_name(p, ir, fam):
     """An `add:` argument -> the inventory-item instance it denotes, else None."""
     if not isinstance(p, dict):
         return None
+    if p.get("t") == "Send":
+        p = (p.get("kids") or [None])[0]                # the configuring send's RECEIVER
+        if not isinstance(p, dict):
+            return None
     if p.get("t") == "Object":
         nm = p.get("name")
-    elif p.get("t") == "Send":
-        recv = (p.get("kids") or [None])[0]
-        nm = recv.get("name") if isinstance(recv, dict) and recv.get("t") == "Object" else None
+    elif p.get("t") == "KernelCall" and p.get("name") == "ScriptID":
+        # An item referenced BY EXPORT: `((ScriptID 24 31) setCursor: ... yourself:)`. GK1 keeps
+        # 52 of its 81 items in a second script (24) and adds them this way; the decompiler has
+        # no name to print, so the reference stays a kernel call. The export table is in the IR
+        # (`Script.exports`, index -> object name) -- the same table `ScriptID` resolves at run
+        # time. Without this the `add:` list fell one short of "every item", the fallback to
+        # DECLARATION order kicked in, and all 81 names were wrong -- `get: 64` (the knife) was
+        # reported as the flashlight, `put: 60` (the rod) as the talisman.
+        ks = p.get("kids") or []
+        sn, ex = (I.as_int(ks[0]) if ks else None), (I.as_int(ks[1]) if len(ks) > 1 else 0)
+        s = ir.scripts.get(sn) if sn is not None else None
+        exports = getattr(s, "exports", None) or []
+        nm = exports[ex] if s is not None and ex is not None and ex < len(exports) else None
     else:
         return None
     if not nm:
         return None
+    # Match SANITISED: the IR keeps raw object names (`policeVeve ` with a trailing space),
+    # while a reference to the object can carry the decompiler's cleaned spelling.
+    want = re.sub(r"[^0-9A-Za-z]+", "_", nm).strip("_")
     for s in ir.scripts.values():
         o = s.by_name.get(nm)
+        if o is None:
+            o = next((x for x in s.objects
+                      if re.sub(r"[^0-9A-Za-z]+", "_", x.name).strip("_") == want), None)
         if o is not None and not o.is_class and (o.super in fam or o.species in fam):
-            return nm
+            return o.name
     return None
 
 

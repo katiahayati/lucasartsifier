@@ -63,6 +63,23 @@ LIT = re.compile(r'"([A-Za-z_]+)"')
 # Anything NOT in here that is known to some walkers and not others fails the test, which is the
 # whole point: a new asymmetry must be justified in writing before it can be ignored.
 ACCEPTED = {
+    "KernelCall":  "read by NAME as vocabulary, never as control flow. extract resolves "
+                   "`(ScriptID n k)` as an object reference (a scene/region load); vocab reads "
+                   "`(FileIO 10 <name>)` as the script-patch existence test behind a debug "
+                   "global (GK1 99.scr, LB2 10.scr -- derive_debug, 2026-08-27) and `ScriptID` "
+                   "inside an inventory `add:` list as an item referenced by export "
+                   "(GK1 keeps 52 items in script 24 -- item_names). Every other walker treats "
+                   "a kernel call as an opaque leaf, which is what it is to them.",
+    "List":        "extract._init_arms and vocab's death-dialog injection both ask a STRUCTURAL "
+                   "question of a body -- 'at top level, outside any test' (a room init that "
+                   "arms its death dialog; where to inject the death write) -- so they step "
+                   "through the `List` spine themselves. The walkers proper get statement "
+                   "sequences from ir.control_shape and never name the node.",
+    "at":          "one idiom, two questions. extract reads `(gInv at: N)` as the store's CELL "
+                   "accessor (which item); vocab._store_index_global reads the same send inside "
+                   "the store's own wrappers to name the COLLECTION global (the receiver), so "
+                   "the `add:` list sent to that collection can be recognised as the item "
+                   "numbering (GK1, 2026-08-27).",
     "changeState": "extract deliberately skips changeState -- the MACHINE owns those bodies, and "
                    "a flat duplicate would bypass the gate (see Extractor.run).",
     "newRoom":     "opmodel does not read newRoom itself; it consumes the edges extract and "

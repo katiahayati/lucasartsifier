@@ -7645,7 +7645,8 @@ def _build(cfg, ir_path):
     # too. A no-op on games with no bit-array store -- LSL2/KQ4 have none, so they are untouched.
     flags = V.derive_flags(ir)
     if flags:
-        synth_base = V.lower_flags(ir, flags[0], flags[1])[0]
+        synth_base = V.lower_flags(ir, flags[0], flags[1],
+                                   flags[2] if len(flags) > 2 else None)[0]
         # Keep the mapping back. Lowering is deliberately one-way for the ANALYSIS -- nothing
         # downstream should know what a "flag" is -- but a PATCH has to be written in the game's
         # own spelling, and a synthetic register has none. `guards.render_register` reverses it:

@@ -87,7 +87,16 @@ def engine_entry(em, edges=None):
     reading Main at all."""
     edges = edges if edges is not None else movement_edges(em)
     has_in = {b for bs in edges.values() for b in bs}
-    return {r for r in em.rooms if r not in has_in and edges.get(r)}
+    # A death SCREEN has no in-edges either -- every `newRoom:` into it was lowered to a death
+    # write -- and its one exit is the Restart button. GK1's rm770 leads to the restart room
+    # (93) and from there to the title, so it out-reached the real intro root and became an
+    # "engine entry": the model started the game by dying. Arriving there is the end of a
+    # run, not the start of one.
+    screens = set(getattr(em, "init_deaths", set()) or set())
+    if getattr(em, "ir", None) is not None:
+        import extract as X
+        screens |= X.death_screen_rooms(em.ir)   # ONE definition of "screen" (see extract)
+    return {r for r in em.rooms if r not in has_in and edges.get(r) and r not in screens}
 
 
 def discover_start(em, edges=None, entries=None):
@@ -159,6 +168,13 @@ def discover_start(em, edges=None, entries=None):
     # which is exactly what we are trying to drop -- keep the candidate unless the widest room
     # reaches real rooms the candidate cannot. LSL2's rm10 adds only rm10, so rm11 still wins;
     # KQ6's rm320 adds 29 real rooms, so it wins. No threshold to tune.
+    #
+    # ⚠️ MEASURED AND REVERTED (2026-08-27, GK1): discounting a root's whole private corridor
+    # (rooms reached by exactly one entry) instead of the root alone moved KQ6's start from
+    # rm99 to rm140 -- the catacombs half is reached by one spurious labyrinth root only, so it
+    # was discounted out of `wide_reach` and the swap that rescues the 29 rooms never fired.
+    # GK1 did not need it: once the death screen stopped counting as an entry
+    # (`engine_entry`) the game has ONE root and degrades to widest-reach, like KQ4.
     if (cand_reach & wide_reach) and not ((wide_reach - entries) - (cand_reach - entries)):
         return candidate
     return widest

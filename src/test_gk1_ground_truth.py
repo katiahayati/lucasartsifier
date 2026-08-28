@@ -1,0 +1,184 @@
+"""GK1 (Gabriel Knight: Sins of the Fathers, SCI32) stranding ORACLE -- the first SCI2 title.
+
+Same contract as `test_kq6_ground_truth`: columns of requirement UNITS, a DROP from
+EXPECTED_CAUGHT is a regression (STOP and confirm), an ADDITION is a suspicion (confirm), a
+CONFIRMED_SAFE name being flagged is a false positive. Every row's provenance is inline; ALL of it
+is script-derived and UNVALIDATED by play -- the USER has ruled on none of it (2026-08-27,
+autonomous run). See docs/GK1-SOFTLOCK-CANDIDATES.md for the derivations, file:line each.
+
+What GK1 adds to the corpus: a DAY-structured game (`global123`, 1..10) whose point of no return is
+the day counter itself, not a room edge. Its four real dead ends are all "the day advanced past the
+only window" or "you walked into the finale without X", and the tool catches NONE of them yet
+(2026-08-27). The reds below name each gap; `tools/run_tests.py` KNOWN_RED carries the reasons.
+"""
+import os
+import sys
+
+import config
+import missability as M
+
+
+def _unit(x):
+    return frozenset({x}) if isinstance(x, str) else frozenset(x)
+
+
+def _units(xs):
+    return {_unit(x) for x in xs}
+
+
+def _names(units):
+    return {n for u in units for n in u}
+
+
+# REAL, and the tool catches it. EMPTY on 2026-08-27 -- honest, not a placeholder.
+EXPECTED_CAUGHT = _units(set())
+
+# REAL per the scripts, MISSED by the tool. Each is a declared RED below with its mechanism.
+KNOWN_GAPS = _units({
+    "VoodooCode1",          # R1: the first tomb-marking sketch; source only while day < 5
+                            # (rm300.sc:121), demanded from day 5 to write on the tomb
+                            # (rm300.sc:952), without which the day-6 ritual is a forced death.
+    "rod",                  # R2: must be DEPOSITED in the left confessional (rm455.sc:828 ->
+                            # flag 280) before Grace's room, which has no exit (sHRoom8.sc);
+    ("signalDev", "signalDev2"),
+                            # R2: ...together with either signal device (rm455.sc:818 -> 281);
+                            # 280 & 281 -> 351 (sHRoom6.sc:131) or EndGame.sc:637 kills you.
+    "BoarGuise",            # R3: Mosely's disguise, demanded in Grace's room (sHRoom8.sc:690)
+    "WolfGuise",            # R3: Gabriel's, demanded there too (sHRoom8.sc:1050); every
+                            # combination lacking them ends in sDJKills -> newRoom: 770.
+})
+
+# Flagging one of these is a FALSE POSITIVE (script evidence, no user ruling yet).
+CONFIRMED_SAFE = {
+    "sLakePatter",  # dangerous_sinks says giving it to the artist (neJackson.sc:1355) strands
+                    # its use at Magentia's (rm290 verb 23). The give is REQUIRED -- it is the
+                    # day-2 gate's flag 231 (theMapPrint.sc:237) -- and no `has: 31` exists
+                    # anywhere; the Magentia site is flavour.
+    "reconVeve",    # register_strandings says the day counter reaching 10 strands it for
+                    # rm200/rm205/rm340. It is never consumed (no `put: 38` in the tree) and
+                    # every demand is day-3/4 gated (theMapPrint.sc:251, rm340.sc:1151) --
+                    # dead after the flip the row is built on. A flip that kills the DEMAND
+                    # is not a stranding; the detector does not check that.
+}
+
+# A fatal USE the tool reports and the USER has not ruled on: stabbing Malia during the
+# throw-the-talisman window (EndGame.sc:1994-2001, `local7` -> sDaggerOnMalia -> 770). It is a
+# death preventable from its own screen (do something else in that window), so under the ONE
+# RULE it is out of scope -- but KQ6's skull was ruled in by the user on the same shape ("a bad
+# use the game invites"). Allowed, not required, until the user says.
+FATAL_USE_ON_SCREEN = {"knife"}
+
+ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS | _units(FATAL_USE_ON_SCREEN)
+
+# Item ids ARE the inventory `add:` order (GKInvItem.sc:93). Pinned because the tool got all 81
+# wrong on its first run (declaration order; the `(ScriptID 24 N)` entries were unresolvable and
+# `bookTribe` is declared but never added) -- the QFG1 lesson, again.
+ITEM_IDS = {32: "VoodooCode1", 60: "rod", 64: "knife", 69: "talisman", 78: "BoarGuise",
+            79: "WolfGuise", 80: "hounfourKey", 18: "tracker", 19: "signalDev", 38: "reconVeve",
+            0: "phoEnvelope"}
+
+PASS, FAIL = [], []
+
+
+def check(name, cond, detail=""):
+    (PASS if cond else FAIL).append(name)
+    print(f"  [{'PASS' if cond else 'FAIL'}] {name}" + (f"\n      {detail}" if detail and not cond else ""))
+
+
+def run():
+    print("=== test_gk1_ground_truth: the GK1 / SCI32 stranding oracle ===")
+    cfg = config.by_name("gk1")
+    if cfg is None or not os.path.exists(cfg.ir_path):
+        print("  (skip: no GK1 IR under build/sweep/gk1)")
+        return True
+    s = M.load(cfg=cfg)
+
+    # --- anchors: the day-1 boot and the credits, derived (see GK1-SOFTLOCK-CANDIDATES §0) -----
+    check("start is the engine root (speed test 17, which sets day 1)", s.em.cfg.start_room == 17,
+          f"start_room = {s.em.cfg.start_room}")
+    check("goal is the WIN credits (680), not the opening credits (180)",
+          set(s.em.cfg.goal_rooms) == {680}, f"goal_rooms = {sorted(s.em.cfg.goal_rooms)}")
+    check("the hounfour (800, a Room CLASS) is a room", 800 in set(s.em.rooms),
+          f"rooms lack 800; sample = {sorted(s.em.rooms)[-6:]}")
+    import anchors as A
+    deadly = A.death_rooms(s.em)
+    check("deaths are modelled: every newRoom: 770 host is a death room",
+          {260, 480, 500, 710, 800, 899} <= deadly, f"death rooms = {sorted(deadly)}")
+    names = {i: s.g.item_name(i) for i in ITEM_IDS}
+    check("item ids follow the inventory add: order (knife=64, rod=60, VoodooCode1=32 ...)",
+          all(names[i] == nm for i, nm in ITEM_IDS.items()),
+          f"got {names}")
+
+    # --- the caught set, every detector, in units ---------------------------------------------
+    caught = set()
+    for e in s.edge_strandings():
+        caught |= {_unit(s.g.item_name(i)) for i in e["items"]}
+        caught |= {frozenset(s.g.item_name(i) for i in g) for g in e["groups"]}
+    for r in s.group_strandings():
+        caught.add(frozenset(s.g.item_name(i) for i in r["items"]))
+    rows_by_det = {}
+    for det, rows in (("joint", s.joint_strandings()), ("exhaustion", s.resource_exhaustion()),
+                      ("dangerous_sinks", s.dangerous_sinks()),
+                      ("register_flip", s.register_flip_strandings()),
+                      ("fatal_uses", s.fatal_uses()), ("toll", s.toll_strandings()),
+                      ("register_strandings", s.register_strandings()),
+                      ("ownedby_death_folds", s.ownedby_death_folds())):
+        rows_by_det[det] = rows
+        caught |= {_unit(s.g.item_name(r["item"])) for r in rows}
+    caught_names = _names(caught)
+    print("  -- attribution: every detector row, by item --")
+    for det, rows in rows_by_det.items():
+        for r in rows:
+            extra = {k: r[k] for k in ("register", "value", "pattern", "room", "at_room",
+                                      "need_room", "still_needed_at") if k in r}
+            print(f"     {det:22s} {s.g.item_name(r['item']):14s} {extra}")
+    for e in s.edge_strandings():
+        print(f"     {'edge':22s} {[s.g.item_name(i) for i in e['items']]} "
+              f"{[[s.g.item_name(i) for i in g] for g in e['groups']]}")
+
+    missing = EXPECTED_CAUGHT - caught
+    check("no confirmed softlock has DROPPED (regression)", not missing,
+          f"DROPPED: {sorted(sorted(u) for u in missing)} -- STOP and confirm.")
+    surprises = caught - ALLOWED
+    check("no UNEXPECTED unit flagged (suspicion)", not surprises,
+          f"NEW: {sorted(sorted(u) for u in surprises)} -- promote with the user's OK or record "
+          f"the false positive.")
+    check("a safe item is not flagged", not (caught_names & CONFIRMED_SAFE),
+          f"FLAGGED: {sorted(caught_names & CONFIRMED_SAFE)}")
+
+    # --- THE FOUR GAPS, each a RED naming its mechanism -----------------------------------------
+    # R1: the day counter is the point of no return. VoodooCode1's source is armed under
+    # (< global123 5) and its demand under day >= 5 in the SAME room; the counter only ever
+    # `++`s (rm370.sc:174 etc.), so no literal "flip" exists for register_strandings to key on.
+    check("R1: VoodooCode1 is caught as a day-window stranding (source closes at day 5)",
+          _unit("VoodooCode1") in caught,
+          "no detector names VoodooCode1; the day counter's `++` advances are not read as a "
+          "point of no return over the range guards (< 5) / (>= 5)")
+    # R2/R3: the hounfour's twelve scenes are `Script`s inside ONE room (800) and Grace's room
+    # (sHRoom8) is entered by an intra-room scene switch, so the one-way door is invisible.
+    check("R2: the confessional deposit (rod + a signal device -> flags 280/281 -> 351) is caught",
+          _unit("rod") in caught and _unit(("signalDev", "signalDev2")) in caught,
+          "the point of no return is sHRoom8.sc:71 inside room 800; the model has no intra-room "
+          "scene boundary to hang a carry-in on")
+    check("R3: the two guises are caught as carry-ins to Grace's room",
+          _unit("BoarGuise") in caught and _unit("WolfGuise") in caught,
+          "same intra-room boundary as R2")
+    # R4: a FLAG stranding through the conversation system. Flag 44's only writer is a Teller
+    # topic (hartridge.sc:257) reachable only while day < 4 (rm270.sc:200); day 4's gate needs
+    # it transitively (crash.sc:66-84 -> rm450.sc:674 -> rm450.sc:421 -> theMapPrint.sc:265).
+    regs = {(r.get("register"), r.get("value")) for r in rows_by_det["register_strandings"]}
+    fbase = getattr(getattr(s.em, "ir", None), "flag_synth_base", None)
+    flag44 = fbase + 44 if fbase is not None else None
+    check("R4: flag 44 (Cazaunoux topic 54 -> Crash's 'Voodoo Hounfour') is caught as a stranding",
+          flag44 is not None and any(r == flag44 for (r, _v) in regs),
+          f"register_strandings registers = {sorted(regs)}; flag44 synthetic = {flag44}. The "
+          f"Teller/Interrogation topic dispatch (GKTeller.sc, interrogation.sc) and the "
+          f"topic-said array (global182, proc50_5..8) are not modelled")
+
+    print(f"\n  {len(PASS)} passed, {len(FAIL)} failed")
+    return not FAIL
+
+
+if __name__ == "__main__":
+    ok = run()
+    sys.exit(0 if ok else 1)

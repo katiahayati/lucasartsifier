@@ -681,9 +681,10 @@ class OpEmitter:
         states = {}
         has_effect = False
         steps_by_state = {}
+        prop_dests = {name for (t, name) in (m.var_dests or {}) if t == "Property"}
         for K, body in m.bodies.items():
             body = self._inline_calls(body, m.script, set())
-            steps_by_state[K] = [C._interp(p, self.is_death, state_k=K)
+            steps_by_state[K] = [C._interp(p, self.is_death, state_k=K, prop_dests=prop_dests)
                                  for p in C._paths_of(body)]
         C.carry_cues(steps_by_state, m.start)   # SCI cross-state cue carry (PARK -> ADVANCE)
         entry_states = {k for k, _ in m.entries} | {k for k, _ in m.init_entries}

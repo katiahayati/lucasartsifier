@@ -446,9 +446,10 @@ class MachineBuilder:
                             p = params[0]
                             if I.as_int(p) is not None:
                                 continue
-                            if not (I.is_global(p) or I.is_local_or_temp(p)):
+                            if not (I.is_global(p) or I.is_local_or_temp(p)
+                                    or X.is_script_prop_dest(self.ir, p)):
                                 continue
-                            key = (p.get("vtype"), p.get("index"))
+                            key = X.dest_key(p)
                             if key not in got:
                                 got[key] = X.var_room_values(self.ir, script.number, p)
         return got
@@ -1006,7 +1007,8 @@ class MachineBuilder:
                 if r is not None:
                     out.append(Op("EXIT", g, r))
                 elif room is not None and (I.is_global(params[0])
-                                           or I.is_local_or_temp(params[0])):
+                                           or I.is_local_or_temp(params[0])
+                                           or X.is_script_prop_dest(self.ir, params[0])):
                     # INDIRECT destination inside a state body -- `(newRoom: <var>)`. The flat
                     # edge builder has resolved this since LSL2's revolving door; the machine
                     # lift never did, and that costs more than an edge, because a state's
