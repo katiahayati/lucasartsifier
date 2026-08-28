@@ -988,6 +988,15 @@ def gating_registers(em):
     # way in demands it clear.
     for room, vs in getattr(em, "init_writes", {}).items():
         written.update(vs)
+    # ...and a CONDITIONAL entry write is a write too. `init_writes` keeps only the
+    # unconditional ones (they double as initial values); the guarded ones live in `init_seq`.
+    # GK1's day-end flag 15 is raised in `bookstore::init` under `(== global12 50)` AND the
+    # day's own gate, nowhere unconditionally -- so it was "never written", never promoted, and
+    # the day machine it arms advanced for free: every day-counter flip read as costless and
+    # reconVeve (which day 3 cannot end without) was reported stranded by day 4.
+    for room, seq in getattr(em, "init_seq", {}).items():
+        for (gi, _v, _g) in seq:
+            written.add(gi)
     # BOTH lists: an always-live scope's writes are real writes -- KQ6's flag 22 (the magic
     # paint) is written by the inventory `doVerb` and nowhere else, so without this it can never
     # be promoted and the castle's long door reads as free. See opmodel.global_machines for why
