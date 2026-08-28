@@ -1496,8 +1496,21 @@ def _entry_reach_walk(info, ents, carried, _ctr_ok, _apply, lregs=None):
 _STATE_MUSTS_CAP = 200000
 
 
-def state_musts(info, regs):
+def state_musts(info, regs, dom=None):
     """State -> {register: allowed values} that hold on EVERY path reaching it from an entry.
+
+    ⭐ `dom` MAKES A CUTSCENE'S RELATIONAL BRANCH READABLE (2026-08-28). `guard_reqs` turns
+    `(>= G 4)` into a value set only when it is told the register's domain; without one a
+    relational path condition constrains NOTHING (its documented rule), so every `if <counter is
+    past K>` inside every machine was invisible to this walk. GK1's Cazaunoux house is the
+    specimen: `knockOnDoor` state 4 branches on `(>= global123 4)` and only the day<4 path walks
+    on toward states 9/11 and their `newRoom: 280` -- but the exit those states hand to
+    `edge_meta` carried no day requirement, and the house that shuts on day 4 stayed open in the
+    model. Measured on that machine: state 7's musts go from `{}` to `123 in {0,1,2,3}`.
+
+    Passed by the EDGE reading (`edge_meta`, which already computes the domain for `entry_reqs`);
+    the callers feeding the domain-less branch tables pass nothing and keep their measured
+    surfaces -- the two-readings discipline `_wbranch` and `_wbranch_dom` already state.
 
     A cutscene decides its outcome early and pays it off late. KQ6's minotaur fight branches at
     state 8 -- with the red scarf on the minotaur it charges into the wall and dies, without it you
@@ -1675,7 +1688,7 @@ def state_musts(info, regs):
             # `!=` whose domain is exactly the excluded value), and `required_values` folded that
             # to None through its `or None`. Intersecting an empty set in would pin the register
             # to nothing and read as a contradiction downstream.
-            for R, v in guard_reqs(g, regset).items():
+            for R, v in guard_reqs(g, regset, dom).items():
                 if v:
                     nxt[R] = (nxt[R] & v) if R in nxt else set(v)
             for (gi, _val) in w:
@@ -3224,7 +3237,9 @@ def edge_meta(em, regs):
     def _musts_of(info):
         got = _musts_memo.get(id(info))
         if got is None:
-            got = _musts_memo[id(info)] = state_musts(info, regs)
+            # DOMAIN-AWARE here, and only here: this is the movement reading, where a
+            # cutscene's `(>= counter K)` branch has to be readable (see `state_musts`).
+            got = _musts_memo[id(info)] = state_musts(info, regs, dom)
         return got
 
     _musts = {}

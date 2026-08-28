@@ -1217,18 +1217,48 @@ def cast_conditions(script, proc_guard=None, machine_guard=None, init_sels=None,
                             and bulk & set(delegate_sels) and p.get("name") in declared):
                         pend.append((p["name"], key, _conj(pc)))
 
-    for o in script.objects:
-        for mn, body in o.methods.items():
-            seed = [machine_guard(o.name)] if (machine_guard and mn == "changeState") else []
-            walk_stream(body, seed, leaf)
-    for pn, body in script.procs.items():
-        walk_stream(body, [proc_guard(pn)] if proc_guard else [], leaf)
+    # ⭐ WHAT AN OBJECT INITS IS PRESENT ONLY WHEN THE OBJECT IS (2026-08-28). An `init:` sent
+    # from inside another object's own `init` (or any non-machine method) runs only when THAT
+    # object runs -- and an object the room only sometimes puts in the cast runs its `init` only
+    # then. Read from an empty path condition, the inits it makes are unconditional, and the
+    # presence this function derived for the parent stops at the parent. GK1's dead-Crash inset
+    # is the case: `deadCrash` is `init:`ed by `sDoInset`, armed under flag 74 (rm450.sc:674),
+    # and `deadCrash::init` inits `myShirt` and `chest`, whose `doVerb`s arm the script that
+    # hands over the tattoo trace -- so the trace's source read as live before Crash was dead.
+    # The seed for a method is the presence of the object it belongs to, which is this very
+    # function's output; iterated to a (bounded) fixpoint, exactly as `MachineBuilder.prime`
+    # iterates the casts/entries recursion. A round can only narrow (the seed only ever joins a
+    # conjunction), and an object nobody inits keeps `None` -- the permissive answer.
     dep = _object_departures(script)
-    for rname, key, g in pend:
-        if any((S, key) in armed for S in dep.get(rname, ())):
-            continue                     # a departing init: the object exists but is never
+
+    def _collect(prev):
+        pend.clear()
+        armed.clear()
+        for o in script.objects:
+            for mn, body in o.methods.items():
+                if machine_guard and mn == "changeState":
+                    seed = [machine_guard(o.name)]
+                else:
+                    og = any_guard(prev.get(o.name)) if o.name in prev else None
+                    seed = [og] if og is not None else []
+                walk_stream(body, seed, leaf)
+        for pn, body in script.procs.items():
+            walk_stream(body, [proc_guard(pn)] if proc_guard else [], leaf)
+        got = {}
+        for rname, key, g in pend:
+            if any((S, key) in armed for S in dep.get(rname, ())):
+                continue                 # a departing init: the object exists but is never
                                          # clickable from this site -- see _object_departures
-        out.setdefault(rname, []).append(g)
+            got.setdefault(rname, []).append(g)
+        return got
+
+    out = _collect({})
+    for _round in range(3):
+        nxt = _collect(out)
+        if {k: [str(g) for g in v] for k, v in nxt.items()} == \
+                {k: [str(g) for g in v] for k, v in out.items()}:
+            break
+        out = nxt
     # ...and the init sites in OTHER scripts, which reach this one by export index
     # (`((ScriptID 550 3) init:)`) and so name no object this walk can see. Supplied by
     # `MachineBuilder.foreign_inits`, which carries each site's path condition conjoined with

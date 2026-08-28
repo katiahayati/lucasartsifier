@@ -245,3 +245,94 @@ the cycle (KQ5's flag 331 now counts and had filled the 8-joint cap with permuta
 surfaces (s10 + the KQ5 re-time): LSL2/KQ4/KQ6/KQ5 byte-identical, LB2 15 lines, GK1 38 lines.
 ⚠️ PERF DEBT: KQ5's snapshot is 634 s (baseline 244 s) — its new counter's projection and the
 `_flip_at` walks (`scratchpad/prof_kq5b.log` vs `prof_kq5_base.log`); GK1 269 s.
+
+## §1.9 Round 4 (2026-08-28, later still): R4's chain, three model fixes, one detector REVERTED
+
+R4 stays a **declared RED** — not caught. What this round bought is the chain, script-verified end
+to end, and three model fixes that make it expressible; the detector attempt built on top of them
+was measured, found to be an FP factory, and reverted. Reported the way it happened, not the way it
+was hoped.
+
+### R4's chain, as the model now sees it
+`tatooTrace` (item 26) is required at rm200/205/210 and its only source is rm450, handed over by
+`sTraceTattoo`. Reading down:
+
+1. `sTraceTattoo` is armed from `myShirt::doVerb` and `chest::doVerb` (`rm450.sc:1147,1264`), both
+   objects `init:`ed by `deadCrash::init` — an `Inset` armed by `sDoInset` under flag 74
+   (`rm450.sc:674`).
+2. Flag 74's only writer is Crash's Teller arm 42 (`crash.sc:81-84`), which is not a topic anyone
+   can pick: arm 8 selects it (`(= iconValue (cond ((proc50_5 280) 42) ...))`, `crash.sc:68-80`).
+3. Arm 8 is offered by flag 44 or flag 47 (the global band, `GKTeller.sc:80-83`). Flag 44's only
+   setter is a Teller topic in `hartridge.sc:257`; flag 47's is day 5's opening — behind the very
+   gate the trace unlocks.
+4. Which character's Teller runs on the interrogation screen (rm50) is `global178`
+   (`interrogation.sc:192-238`: `(switch global178 (12 ((ScriptID 1055 1) init:)) ...)`), and
+   `global178 := 12` is written only in rm280 — Cazaunoux's house, reached only through rm270,
+   whose `knockOnDoor` cutscene branches on `(>= global123 4)` and never reaches its
+   `newRoom: 280` states on day 4+ (`rm270.sc:199-262`).
+
+Every link of that is now in the model **except the last**: the edge `270->280` still carries only
+`req={808: [1]}` (`local4`, the state's own guard) and no day requirement, so rm280 — and with it
+flag 44 — reads as reachable on day 4. Measured, not assumed: with the day counter joined to the
+subject register, `(rm50, (day 4, subject 12))` is still a reachable product state.
+
+### Why the edge misses the day, isolated to one line
+`state_musts` is the right machinery and `edge_meta` already applies it to machine EXITs
+(`sm.at(K, g)`), so the gap was inside the walk. Two causes, one fixed:
+
+* **FIXED — the walk read guards with no domain.** `guard_reqs` turns `(>= G 4)` into a value set
+  only when told the register's domain; without one a relational path condition constrains nothing
+  (its documented rule). So every `if <counter is past K>` inside every machine in the corpus was
+  invisible to this walk. `state_musts` now takes `dom`, passed by `edge_meta` alone (the movement
+  reading; the domain-less branch-table callers pass nothing, the `_wbranch`/`_wbranch_dom`
+  discipline). Measured on `knockOnDoor`: state 7's musts go `{}` -> `123 in {0,1,2,3}`.
+* **OPEN — the walk stops at a PARK.** State 7 waits (`setCycle: End self`), and states 8-11 past
+  it come back `{}` with the constraint gone. It is not a rogue entry: `knockOnDoor` has exactly
+  one entry, `(0, opaque())`. A PARK is "wait for a cue", and the cue advances carrying everything
+  the path established — so a walk that ends at one loses every fact established before a wait,
+  which in a Sierra cutscene is most of them. `compile.carry_cues` converts PARK -> ADVANCE at
+  build time and did not convert this one. **This is the next thing to look at, and it is general,
+  not GK1's.**
+
+### The three model fixes that stand (all derived, all measured)
+1. `extract.cast_conditions` — **what an object inits is present only when the object is.** An
+   `init:` sent from inside another object's method runs only when that object does; read from an
+   empty path condition its inits were unconditional, so the presence the function derived stopped
+   at the parent. Iterated to a bounded fixpoint, the same casts/entries recursion
+   `MachineBuilder.prime` already iterates; round 0 reproduces the old answer exactly and a round
+   can only narrow. GK1: `deadCrash`'s cast condition now carries flag 74, and `sTraceTattoo`'s
+   entry guard inherits it.
+2. `vocab.lower_teller_cases._lower_followup_arms` — **a follow-up arm runs only after the arm that
+   selected it.** A Teller re-dispatches after each message and an arm assigns the next
+   `iconValue`; an arm the menu never offers inherits the disjunction of the path conditions under
+   which other arms assign its value, processed in dependency order to a fixpoint. Permissive
+   wherever it cannot read (an unreadable assignment is a source of every unoffered arm; an
+   unconditional source leaves the arm free; a cycle stays unconditional; an object whose icon
+   property is assigned from another script is skipped). GK1: 278 -> 308 arms lowered, and arm 42's
+   flag-74 write is now conditioned on flag 44 or flag 47. Inert on the SCI0/SCI1.1 corpus by
+   construction (no `showCases` protocol).
+3. `state_musts(dom)` above.
+
+### REVERTED, with the measurement that killed it
+A `register_value_strandings` **carry-up**: when the sealed region does write the demanded
+register, ask (per write branch, disjunction-split, at the flipped value) whether every live write
+is itself blocked by a register the seal froze, and report that register instead. Supporting parts:
+`chain_registers` (registers one hop up a write chain, recorded in the branch tables without being
+promoted — promotion itself was re-measured and re-rejected: +7 registers, **196 LSL2 golden lines**,
+and `softlock_items` LOST the Swimsuit, Sunscreen, Wig, Bikini_Top, Knife, Bobby_Pin and Pamphlet,
+oracle rows all), `_split_or`, and a third `_wbranch_or` table.
+
+**Measured on GK1: 23 rows, every one a carry, and R4 not among them.** The rows rest on the weak
+half of the test — a register with no projection is judged "carried across wrong" from
+`reach_avoiding(writer_rooms)` alone, i.e. "the player could reach the flip without entering a room
+that writes it", which is almost always true for a flag with one writer. Reverted whole rather than
+filtered: an allow-list over 23 rows would be a clause protecting a known answer, and the FP shape
+is the design, not an accident. The backup is `scratchpad/missability_carryup.py.bak`.
+
+### Surfaces (s11 vs the s10 baseline, all six games)
+**LSL2, KQ4, KQ6, KQ5 and LB2 byte-identical.** GK1 moved 13 lines, all joint-row churn on rows
+already reported: four `VoodooCode1@reg(123,257,263|507)` triple-joint rows and four `reconVeve`
+triples retire, `reconVeve@reg(123,257)=(7,0)` becomes `(0,0)`. **`softlock_items` is unchanged**
+(`sLakePatter, VoodooCode1, sVoodooCode, reconVeve, knife`) and **R1 is still caught** —
+`VoodooCode1@reg123=5 -> [240, 260, 300]`, the oracle-pinned row. No coverage change anywhere.
+Times: LSL2 37s, KQ4 81s, KQ6 102s, KQ5 612s, LB2 53s, GK1 241s (KQ5 634s -> 612s, GK1 269s -> 241s).

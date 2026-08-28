@@ -4061,6 +4061,24 @@ def lower_teller_cases(ir):
     classes = {o.species: o for s in ir.scripts.values() for o in s.objects if o.is_class}
     bands = derive_teller_bands(ir)
     sites = []
+    # `selector -> {receiver object names}` for every `(<obj> sel: <value>)` in the game: an
+    # object whose icon property is assigned from OUTSIDE its own methods has follow-up arms
+    # this lowering cannot account for (`_lower_followup_arms`), and is left unlowered there.
+    extern_by_prop = collections.defaultdict(set)
+    for s_ in ir.scripts.values():
+        for body in ([b for o_ in s_.objects for b in o_.methods.values()]
+                     + list(s_.procs.values())):
+            for n in I.walk(body):
+                if n.get("t") != "Send":
+                    continue
+                try:
+                    recv, msgs = I.send_pairs(n)
+                except Exception:                              # noqa: BLE001
+                    continue
+                if isinstance(recv, dict) and recv.get("t") == "Object" and recv.get("name"):
+                    for sel, params in msgs:
+                        if params:
+                            extern_by_prop[sel].add(recv["name"])
     for sn, s in ir.scripts.items():
         for o in s.objects:
             if o.is_class or "showCases" not in o.methods:
@@ -4068,6 +4086,7 @@ def lower_teller_cases(ir):
             prop = _teller_icon_prop(classes, o.super)
             if not prop:
                 continue
+            extern = extern_by_prop.get(prop, set())
             pairs = _teller_pairs(o.methods["showCases"])
             chain, sp = [], o.super
             while sp in classes and classes[sp] not in chain:
@@ -4093,6 +4112,7 @@ def lower_teller_cases(ir):
                     if not (isinstance(head, dict) and head.get("t") == "Property"
                             and head.get("name") == prop):
                         continue
+                    offered, arms = set(), {}
                     for c in ks[1:]:
                         ck = c.get("kids") or []
                         if c.get("t") != "Case" or len(ck) < 2:
@@ -4100,6 +4120,7 @@ def lower_teller_cases(ir):
                         v = I.as_int(ck[0])
                         if v is None:
                             continue
+                        arms[v] = c
                         conds = []
                         if v in pairs:
                             conds.append(copy.deepcopy(pairs[v]))
@@ -4109,10 +4130,137 @@ def lower_teller_cases(ir):
                                 conds.append(bc)
                         if not conds:
                             continue
+                        offered.add(v)
                         test = conds[0] if len(conds) == 1 else {"t": "And", "kids": conds}
                         ck[1] = {"t": "If", "kids": [test, ck[1]]}
                         sites.append((sn, o.name, mn, v))
+                    if o.name not in extern:
+                        sites += [(sn, o.name, mn, v)
+                                  for v in _lower_followup_arms(arms, offered, prop)]
     return sites
+
+
+def _prop_assign_sites(body, prop):
+    """`[(value | None, [(test, pol)...])]` -- every assignment of a literal to property `prop`
+    under `body`, with its AST path condition; an `if`/`cond`-valued right-hand side yields one
+    site per literal leaf under the leaf's own conditions, and a value that cannot be read (an
+    `Increment`, a computed expression) is a `None` site -- it may produce ANY value."""
+    out = []
+
+    def leaves(expr, pc):
+        shape = I.control_shape(expr)
+        if shape[0] == "branch":
+            for conds, b in shape[1]:
+                leaves(b, pc + list(conds))
+            return
+        if shape[0] == "seq":
+            if shape[1]:
+                leaves(shape[1][-1], pc)
+            else:
+                out.append((None, pc))
+            return
+        v = I.as_int(expr) if isinstance(expr, dict) else None
+        out.append((v, pc))
+
+    def walk(n, pc):
+        shape = I.control_shape(n)
+        if shape[0] == "seq":
+            for k in shape[1]:
+                walk(k, pc)
+            return
+        if shape[0] == "branch":
+            for conds, b in shape[1]:
+                walk(b, pc + list(conds))
+            return
+        if shape[0] == "loop":
+            for k in shape[1:]:
+                walk(k, pc)
+            return
+        if not isinstance(n, dict):
+            return
+        ks = n.get("kids") or []
+        tgt = ks[0] if ks else None
+        if (isinstance(tgt, dict) and tgt.get("t") == "Property" and tgt.get("name") == prop):
+            if n.get("t") == "Assignment" and len(ks) > 1:
+                leaves(ks[1], pc)
+                return
+            if n.get("t") in ("Increment", "Decrement"):
+                out.append((None, pc))
+                return
+        for k in ks:
+            walk(k, pc)
+
+    walk(body, [])
+    return out
+
+
+def _pc_ast(pc):
+    """The AST conjunction of a `[(test, pol)...]` path condition (deep-copied); None if empty."""
+    parts = []
+    for (test, pol) in pc:
+        t = copy.deepcopy(test)
+        parts.append(t if pol else {"t": "Not", "kids": [t]})
+    if not parts:
+        return None
+    return parts[0] if len(parts) == 1 else {"t": "And", "kids": parts}
+
+
+def _lower_followup_arms(arms, offered, prop):
+    """⭐ A FOLLOW-UP ARM RUNS ONLY AFTER THE ARM THAT SELECTED IT (2026-08-28). A Teller's
+    `(switch iconValue ...)` re-dispatches after every message (`sayMessage` -> `cue`), and an
+    arm assigns the NEXT value to run: GK1's Crash answers topic 8 with `(= iconValue (cond
+    ((proc50_5 280) 42) ((proc50_6 284) 41) (else 40)))`, and arm 42 -- which raises flag 74,
+    the day-4 lead -- is not a topic anyone can pick. It is reached only through arm 8, which
+    flag 44 offers; read standalone it ran unconditionally, and the flag-74 write carried no
+    trace of the Cazaunoux conversation that unlocks it.
+
+    An arm the menu never offers (no `showCases` pair, outside the global band) inherits the
+    DISJUNCTION of the path conditions under which the other arms assign its value -- after
+    those arms were wrapped, so the topic's own offer condition is part of the path. Processed
+    in dependency order to a fixpoint: an arm whose sources are all settled is wrapped, then it
+    is a settled source for the next. Permissive everywhere it cannot read: an assignment of a
+    value it cannot read (`(++ iconValue)`) is a source of EVERY unoffered arm, an unconditional
+    source leaves the arm unwrapped, an arm on a dependency cycle stays unconditional, and an
+    object whose property is assigned from OUTSIDE (a `<prop>:` send from another script) is
+    left alone by the caller."""
+    settled = set(offered)
+    pending = [v for v in arms if v not in offered]
+    lowered = []
+    for _round in range(6):
+        if not pending:
+            break
+        srcs = {v: [] for v in pending}
+        taint = []                            # unreadable assignments: sources of every arm
+        for v0, c in arms.items():
+            body = (c.get("kids") or [None, None])[1]
+            for (val, pc) in _prop_assign_sites(body, prop):
+                if val is None:
+                    taint.append((v0, pc))
+                elif val in srcs:
+                    srcs[val].append((v0, pc))
+        progress = False
+        for v in list(pending):
+            ss = [(v0, pc) for (v0, pc) in srcs[v] + taint if v0 != v]   # self-assign: not a way in
+            if not ss:
+                continue                      # nothing assigns it: leave it (permissive)
+            if not all(v0 in settled for (v0, _pc) in ss):
+                continue                      # a source not yet settled (or a cycle): wait
+            alts = [_pc_ast(pc) for (_v0, pc) in ss]
+            if any(a is None for a in alts):
+                settled.add(v)                # an unconditional source: the arm stays free
+                pending.remove(v)
+                progress = True
+                continue
+            test = alts[0] if len(alts) == 1 else {"t": "Or", "kids": alts}
+            ck = arms[v]["kids"]
+            ck[1] = {"t": "If", "kids": [test, ck[1]]}
+            lowered.append(v)
+            settled.add(v)
+            pending.remove(v)
+            progress = True
+        if not progress:
+            break
+    return lowered
 
 
 # --- the EIGHTH store: a same-script object's property, reset when the room reloads ----------
