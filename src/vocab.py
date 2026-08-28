@@ -3868,3 +3868,206 @@ def _assigned_selectors(obj):
                     and ks[0].get("t") == "Selector" and len(ks) > 1:
                 out.add(ks[0].get("name"))
     return out
+
+
+# --- the SCI32 Teller: a conversation topic is a guarded handler ------------------------------
+
+def _teller_icon_prop(classes, species):
+    """The property the ROOT `showCases` assigns its result to -- `iconValue` in Sierra's
+    `Teller` (`(return (= iconValue (printMenu init:)))`) -- found by walking the class chain
+    to the ancestor whose `showCases` does NOT defer to `super`. Derived, so the name is never
+    spelled here."""
+    sp = species
+    seen = set()
+    while sp in classes and sp not in seen:
+        seen.add(sp)
+        o = classes[sp]
+        body = o.methods.get("showCases")
+        if body is not None:
+            defers = any(n.get("t") == "Send" and (n.get("kids") or [{}])[0].get("t") == "Super"
+                         for n in I.walk(body))
+            if not defers:
+                # The property RETURNED -- `(return (= iconValue (printMenu init:)))` -- not the
+                # first one assigned (`addY`, `numButtons` are the menu's layout scratch).
+                for n in I.walk(body):
+                    ks = n.get("kids") or []
+                    if n.get("t") == "Return" and ks and isinstance(ks[0], dict):
+                        a = ks[0]
+                        ak = a.get("kids") or []
+                        if (a.get("t") == "Assignment" and ak and isinstance(ak[0], dict)
+                                and ak[0].get("t") == "Property"):
+                            return ak[0].get("name")
+                return None
+        sp = o.super
+    return None
+
+
+def _teller_pairs(body):
+    """`{topic: condition node}` from a `(super showCases: v1 c1 v2 c2 ...)` send."""
+    for n in I.walk(body):
+        if n.get("t") != "Send":
+            continue
+        ks = n.get("kids") or []
+        if not ks or not isinstance(ks[0], dict) or ks[0].get("t") != "Super":
+            continue
+        for sm in ks[1:]:
+            sk = sm.get("kids") or []
+            if not sk or sk[0].get("t") != "Selector" or sk[0].get("name") != "showCases":
+                continue
+            args = sk[1:]
+            out = {}
+            for i in range(0, len(args) - 1, 2):
+                v = I.as_int(args[i])
+                if v is not None:
+                    out[v] = args[i + 1]
+            return out
+    return {}
+
+
+def derive_teller_bands(ir):
+    """`species -> (lo, hi, C, test_template, add_node)`: a class method that loops a temp over
+    `lo..hi`, tests a flag at `temp + C`, and adds a button VALUED at the temp -- GK1's
+    `Interrogation::addGlobals` (topics 1..15 shown iff flag 36+n). The template is the If's
+    test node; `add_node` the `Add` inside it whose place the concrete flag number takes."""
+    out = {}
+    for s in ir.scripts.values():
+        for o in s.objects:
+            if not o.is_class:
+                continue
+            for body in o.methods.values():
+                for n in I.walk(body):
+                    if n.get("t") != "Loop":
+                        continue
+                    ks = [k for k in (n.get("kids") or []) if isinstance(k, dict)]
+                    tvar = lo = hi = None
+                    for k in ks:
+                        kk = k.get("kids") or []
+                        if (k.get("t") == "Assignment" and len(kk) == 2 and I.is_local_or_temp(kk[0])
+                                and kk[0].get("vtype") == "Temp" and I.as_int(kk[1]) is not None):
+                            tvar, lo = kk[0]["index"], I.as_int(kk[1])
+                    for k in ks:
+                        kk = k.get("kids") or []
+                        if (k.get("t") in ("Le", "Lt") and len(kk) == 2 and I.is_local_or_temp(kk[0])
+                                and kk[0].get("vtype") == "Temp" and kk[0].get("index") == tvar
+                                and I.as_int(kk[1]) is not None):
+                            hi = I.as_int(kk[1]) - (1 if k["t"] == "Lt" else 0)
+                    if tvar is None or lo is None or hi is None:
+                        continue
+
+                    def _is_t(x):
+                        return (isinstance(x, dict) and x.get("t") == "Variable"
+                                and x.get("vtype") == "Temp" and x.get("index") == tvar)
+                    for k in ks:
+                        for x in I.walk(k):
+                            if x.get("t") != "If" or len(x.get("kids") or []) < 2:
+                                continue
+                            test, then = x["kids"][0], x["kids"][1]
+                            adds = [a for a in I.walk(test) if a.get("t") == "Add"
+                                    and len(a.get("kids") or []) == 2 and _is_t(a["kids"][0])
+                                    and I.as_int(a["kids"][1]) is not None]
+                            if len(adds) != 1:
+                                continue
+                            valued = False
+                            for sd in I.walk(then):
+                                if sd.get("t") != "Send":
+                                    continue
+                                for sm in (sd.get("kids") or [])[1:]:
+                                    sk = sm.get("kids") or []
+                                    if (sk and sk[0].get("t") == "Selector"
+                                            and sk[0].get("name") == "addButton"
+                                            and len(sk) > 1 and _is_t(sk[1])):
+                                        valued = True
+                            if valued:
+                                out[o.species] = (lo, hi, I.as_int(adds[0]["kids"][1]), test, adds[0])
+    return out
+
+
+def _band_cond(band, v):
+    lo, hi, C, test, add = band
+    tt = copy.deepcopy(test)
+    for a in I.walk(tt):
+        ks = a.get("kids") or []
+        if (a.get("t") == "Add" and len(ks) == 2 and I.as_int(ks[1]) == C
+                and ks[0].get("t") == "Variable" and ks[0].get("vtype") == "Temp"):
+            a.clear()
+            a.update({"t": "Number", "value": C + v})
+            return tt
+    return None
+
+
+def lower_teller_cases(ir):
+    """A CONVERSATION TOPIC IS A GUARDED HANDLER. Sierra's SCI32 `Teller` builds a menu of
+    topics and runs `(switch iconValue (K <what saying K does>))` for the one picked; the topic
+    is on the menu only under the condition its `showCases` pair states --
+
+        (method (showCases) (super showCases: 49 (proc50_2 65) ...))    ; 49 offered iff flag 65
+        (method (cue) (switch iconValue ... (49 (proc50_3 15) ...)))    ; saying 49 ends the day
+
+    -- and, for the GLOBAL band, only while the flag `addGlobals` tests for it is set (GK1:
+    topics 1..15 iff flag 36+n, `derive_teller_bands`). `control_shape` guards a switch arm
+    only under a valued head, and a property head is not one, so every topic handler read as
+    unconditional: Grace's "go home" set the day-end flag on any day, which made GK1's day 3
+    end without the evidence the map's `endDay` demands, and Crash's "Voodoo Hounfour" answer
+    -- the day-4 lead -- carried no trace of the Cazaunoux conversation that unlocks it.
+
+    Rewrites IN PLACE, before the flag store is lowered, wrapping each such arm's body in
+    `(if <condition> <body>)` so every walker reads the condition as a path condition. Keyed on
+    the property the ROOT `showCases` assigns (`_teller_icon_prop`), so a switch on any other
+    property is untouched. A game without a `showCases` protocol is untouched by construction
+    (SCI0/SCI1.1: LSL2, KQ4, KQ6, KQ5, LB2). Returns the census `[(script, object, method,
+    topic)]`."""
+    classes = {o.species: o for s in ir.scripts.values() for o in s.objects if o.is_class}
+    bands = derive_teller_bands(ir)
+    sites = []
+    for sn, s in ir.scripts.items():
+        for o in s.objects:
+            if o.is_class or "showCases" not in o.methods:
+                continue
+            prop = _teller_icon_prop(classes, o.super)
+            if not prop:
+                continue
+            pairs = _teller_pairs(o.methods["showCases"])
+            chain, sp = [], o.super
+            while sp in classes and classes[sp] not in chain:
+                chain.append(classes[sp])
+                sp = classes[sp].super
+            band = next((bands[c.species] for c in chain if c.species in bands), None)
+            dg = o.props.get("doGlobals")
+            if dg is None:
+                dg = next((c.props.get("doGlobals") for c in chain if "doGlobals" in (c.props or {})),
+                          None)
+            if not dg:
+                band = None
+            if not pairs and band is None:
+                continue
+            for mn, body in o.methods.items():
+                if mn == "showCases":
+                    continue
+                for n in I.walk(body):
+                    if n.get("t") != "Switch":
+                        continue
+                    ks = n.get("kids") or []
+                    head = ks[0] if ks else None
+                    if not (isinstance(head, dict) and head.get("t") == "Property"
+                            and head.get("name") == prop):
+                        continue
+                    for c in ks[1:]:
+                        ck = c.get("kids") or []
+                        if c.get("t") != "Case" or len(ck) < 2:
+                            continue
+                        v = I.as_int(ck[0])
+                        if v is None:
+                            continue
+                        conds = []
+                        if v in pairs:
+                            conds.append(copy.deepcopy(pairs[v]))
+                        if band is not None and band[0] <= v <= band[1]:
+                            bc = _band_cond(band, v)
+                            if bc is not None:
+                                conds.append(bc)
+                        if not conds:
+                            continue
+                        test = conds[0] if len(conds) == 1 else {"t": "And", "kids": conds}
+                        ck[1] = {"t": "If", "kids": [test, ck[1]]}
+                        sites.append((sn, o.name, mn, v))
+    return sites

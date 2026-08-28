@@ -7872,6 +7872,15 @@ def _build(cfg, ir_path):
         cfg = dataclasses.replace(cfg, debug_globals=frozenset(V.derive_debug(ir)))
     if not cfg.death_signal:
         cfg = dataclasses.replace(cfg, death_signal=sig)   # so reports show what was derived
+    # A CONVERSATION TOPIC IS A GUARDED HANDLER (SCI32 `Teller`, see vocab.lower_teller_cases):
+    # each `(switch iconValue (K ...))` arm gets its `showCases`/global-band condition as a path
+    # condition. BEFORE the flag store, so the flag tests it copies are lowered with the rest;
+    # it allocates nothing. Inert by construction on a game without the `showCases` protocol.
+    _tc = V.lower_teller_cases(ir)
+    if _tc:
+        import sys as _sys
+        print("  [lowered] %d Teller topic arm(s) in %d object(s)"
+              % (len(_tc), len({(s, o) for s, o, *_r in _tc})), file=_sys.stderr)
     # Flag store: lower the game's boolean-flag bit-array into synthetic per-flag globals, so each
     # flag becomes an ordinary gating register with nothing downstream aware of "flags" (see
     # vocab.derive_flags). Runs after death lowering so the synthetic block clears the death flag
