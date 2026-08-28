@@ -627,10 +627,24 @@ def build_maps(em):
         # Matched by the emitting object, exactly as `edge_meta` matches a suppressed cs_edge.
         if (a.room, a.via, a.item) in mg:
             continue
-        if (not _debug_gated(a.guard) and a.item not in _own_required(a.guard)
-                and not _prev_impossible(a.guard, a.room, prev, edges)):
+        # THE OBJECT'S PRESENCE IS PART OF THE SITE'S CONDITION. The handler walk seeds every
+        # method with `cast_guard` (opmodel: "the cat is placed by proc550_16 in three rooms and
+        # is nowhere near"); the flat walk records the same `get:` with only its own path, so a
+        # pickup on a feature the room inits under `(< global123 5)` had two guards -- one that
+        # knew and one that did not -- and `_source_live`, permissive over ANY site, took the
+        # one that did not. GK1's first tomb sketch (rm300 `message1`) is the case. Same fact,
+        # applied by the second reader ([[same-rule-two-places]]); None stays None.
+        ag = a.guard
+        sc = em.ir.scripts.get(a.room) if getattr(em, "ir", None) is not None else None
+        if sc is not None and a.via and sc.by_name.get(a.via) is not None \
+                and getattr(em, "mb", None) is not None:
+            pres = X.cast_guard(em.mb._cast(sc), a.via)
+            if pres is not None:
+                ag = X._conj([ag, pres]) if ag is not None else pres
+        if (not _debug_gated(ag) and a.item not in _own_required(ag)
+                and not _prev_impossible(ag, a.room, prev, edges)):
             sources[a.item].add(a.room)
-            source_guards.setdefault(a.item, {}).setdefault(a.room, []).append(a.guard)
+            source_guards.setdefault(a.item, {}).setdefault(a.room, []).append(ag)
     for room, script, it, g in em.handler_gets:
         if (not _debug_gated(g) and it not in _own_required(g)
                 and not _prev_impossible(g, room, prev, edges)):
@@ -4396,6 +4410,12 @@ class IrSccReach(SccReach):
         room, st = node
         vals = st if isinstance(R, tuple) else (st,)
         regs = R if isinstance(R, tuple) else (R,)
+        # The register's DOMAIN is what the projection enumerated -- every value the walk ever
+        # produced -- so a relational site guard can answer. Without it `(< global123 5)`
+        # constrains nothing (guard_reqs' documented rule), and a pickup the game closes on day
+        # 5 read as live on day 10. Same completeness claim `_pstates` already rests on.
+        pst = getattr(self, "_pstates", None) or {}
+        dom = {Ri: {v for (_r, v) in pst[Ri]} for Ri in regs if Ri in pst} or None
         for it in ban:
             gs = self.source_guards.get(it, {}).get(room)
             if not gs:
@@ -4403,7 +4423,7 @@ class IrSccReach(SccReach):
             for g in gs:
                 if g is None:
                     return True
-                need = structural_reqs(g, regs)
+                need = structural_reqs(g, regs, dom)
                 if all(v in need[Ri] for Ri, v in zip(regs, vals) if Ri in need):
                     return True
         return False
@@ -6027,9 +6047,17 @@ class IrSccReach(SccReach):
         written to its component. Requiring the whole tuple to be written at once would find
         nothing, because no single write sets two registers -- which is exactly why a joint seal
         was invisible here."""
+        # A write INTO `w` is a seed whether it is recorded as a plain in-room write or as an
+        # ORDERED step (`_rstep`: `frm -> w`, the shape a fanned `(++ G)` takes -- LB2's act
+        # break, GK1's day counter, KQ4's Lolotte errands). The steps were invisible here, so a
+        # counter that only ever advances by increment never seeded a flip at all: GK1's day 5
+        # closes the first tomb sketch's only source and nothing looked (2026-08-27).
+        def _lands(Ri, r, v):
+            return (v in self._inroom[Ri].get(r, ())
+                    or any(t == v for (_f, t) in self._rstep.get(Ri, {}).get(r, ())))
         if isinstance(R, tuple):
             def writes(r):
-                return any(w[i] in self._inroom[Ri].get(r, ()) for i, Ri in enumerate(R))
+                return any(_lands(Ri, r, w[i]) for i, Ri in enumerate(R))
 
             def sets_it(sets):
                 return any(sets.get(Ri) == w[i] for i, Ri in enumerate(R))
@@ -6037,7 +6065,8 @@ class IrSccReach(SccReach):
         else:
             def sets_it(sets):
                 return sets.get(R) == w
-            seeds = {(r, w) for r, vs in self._inroom[R].items() if w in vs}
+            rooms = set(self._inroom[R]) | set(self._rstep.get(R, {}))
+            seeds = {(r, w) for r in rooms if _lands(R, r, w)}
         for (_a, b), metas in self._emeta.items():
             for (_req, sets, _alts) in metas:
                 if sets_it(sets):

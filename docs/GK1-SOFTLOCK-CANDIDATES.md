@@ -94,6 +94,38 @@ preventable from its own screen counts.
 
 Coverage: **0 of 4 real rows caught; 3 FP rows (knife ruled out by the USER).**
 
+### 1.6 Round 2 — the day counter as a point of no return (2026-08-27, later)
+
+Three general fixes in `missability.py`, measured LSL2/KQ4/KQ6/KQ5 byte-identical, LB2 moved
+(mechanism pins only — see §1.7):
+1. `_flip_seeds` reads `_rstep` — an ordered step `frm -> w` (what a fanned `(++ G)` becomes) IS
+   a write into `w`. The day-5 flip at rm370 now seeds (it never had).
+2. `_source_live` hands `structural_reqs` the projection's domain, so `(< global123 5)` on a
+   pickup site answers (it constrained nothing without one).
+3. flat-extractor pickups carry the emitting object's presence (`cast_guard`), as the handler
+   walk already did — `message1`'s `get: 32` now knows `123<5`.
+
+Result on R1: VoodooCode1 IS named by `register_strandings` — but on synthetic flag 247 ("wrong
+message written"), not on the day counter, so the pinned check stays RED. The day-5 flip still
+finds one live source: `theInView` inside the inset (`rm300.sc:1368`), whose `(== view 3022)`
+is object-property state set from the inset machine's `register` — the census's gap #3. Two new
+rows are FPs of one shape, "the flip's own precondition demands the item": `sVoodooCode@flag247`
+(writing on the tomb needs both sketches) and `reconVeve@reg123=4` (day 3 cannot end without
+it — `theMapPrint.sc:251` — but that gate writes flag 15 from `IconMap::endDay`, a METHOD called
+by send from rm200/rm205, which the walkers do not follow, so flag 15 has no visible writer,
+is not a gating register, and the day advance costs nothing in the model). The general cure is
+following sends to game-defined methods the way procedure calls are inlined; not built.
+
+### 1.7 What moved on an existing game (row-accounted)
+
+* **LB2** (watched tier, declared red, awaiting the USER): the pressPass relocation (14 rows,
+  from the qfg1 cherry-pick) + `debug_globals: [110]` + **the counter fixes**: `bifocals`,
+  `daggerOfRa`, `redHair`, `wireCutters` each gain a `register_strandings reg123=5 -> [750]`
+  row (the act-5 flip strands the finale's carry-ins — a second mechanism for four items the
+  oracle already had in column A; no verdict moved), `pressPass` reg123=1/4/5 rows in place of
+  =2, and the write specs those imply. 21 rows in all.
+* LSL2, KQ4, KQ6, KQ5: byte-identical throughout.
+
 ## 2. What the model needs that GK1 introduces (SCI32 shapes) — see the commit log on `gk1`
 
 1. A room declared as a **Room subclass with nothing beneath it** (`class Hounfour of Room`, 800).

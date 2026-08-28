@@ -80,12 +80,12 @@ KNOWN_RED = {
     # play and unruled by the USER -- the rows themselves may move when they rule.
     "test_gk1_ground_truth.py": {
         "no UNEXPECTED unit flagged (suspicion)":
-            "three FALSE POSITIVES: knife (fatal_uses -- an on-screen death, not a consumption; USER ruling 2026-08-27), sLakePatter (dangerous_sinks -- the give is the day-2 gate, "
+            "four FALSE POSITIVES: sVoodooCode (register_strandings on flag 247 -- the flip needs both sketches in hand, neither is consumed), knife (fatal_uses -- an on-screen death, not a consumption; USER ruling 2026-08-27), sLakePatter (dangerous_sinks -- the give is the day-2 gate, "
             "flag 231; no `has: 31` exists) and reconVeve (register_strandings on the day "
             "counter reaching 10 -- never consumed, every demand day-3/4 gated and dead after "
-            "the flip). All three recorded in CONFIRMED_SAFE; cure the detectors, never the list",
+            "the flip). All four recorded in CONFIRMED_SAFE; cure the detectors, never the list",
         "a safe item is not flagged":
-            "same three false positives as the row above (the two checks are one defect seen "
+            "same four false positives as the row above (the two checks are one defect seen "
             "from the oracle's two sides)",
         "R1: VoodooCode1 is caught as a day-window stranding (source closes at day 5)":
             "the day counter (global123) advances by `++` and gates by RANGE (< 5 / >= 5); "
@@ -101,15 +101,27 @@ KNOWN_RED = {
     },
     "test_lb2_ground_truth.py": {
         "mechanism pinned: pressPass":
-            "pressPass mechanism relocated by the QFG-anchors model fixes; caught via 5 "
+            "pressPass mechanism relocated by the QFG-anchors model fixes; caught via "
             "register rows; re-pin awaits the USER (see the block comment above)",
+        # gk1 2026-08-27: the COUNTER fixes (an increment is a flip -- `_flip_seeds` reads
+        # `_rstep`; relational site guards get the projection's domain; flat pickups carry the
+        # object's presence) give these four column-A items a SECOND mechanism row each,
+        # `reg123=5 -> [750]`: the act-5 flip strands them for the finale. The verdicts did not
+        # move (no drop, no surprise, the safe trio holds); only the pin gains a row. Re-pin
+        # awaits the USER with the pressPass ruling.
+        "mechanism pinned: bifocals": "gains register_strandings reg123=5->[750] (act-5 carry)",
+        "mechanism pinned: daggerOfRa": "gains register_strandings reg123=5->[750] (act-5 carry)",
+        "mechanism pinned: redHair": "gains register_strandings reg123=5->[750] (act-5 carry)",
+        "mechanism pinned: wireCutters": "gains register_strandings reg123=5->[750] (act-5 carry)",
     },
     "test_watched_surface.py": {
-        "LB2: full surface unchanged (23 keys)  -- 15 row(s) moved":
+        "LB2: full surface unchanged (23 keys)  -- 21 row(s) moved":
             "14 rows moved with the pressPass relocation + goals losing rm456/rm521, PLUS "
             "(gk1, 2026-08-27) `debug_globals` gaining 110 -- LB2's Main.sc:987 mirrors "
             "`(FileIO 10 {10.scr})` into global110, the same script-patch debug idiom GK1 has, "
-            "and vocab.derive_debug now pins it; nothing else moved (row-accounted); "
+            "and vocab.derive_debug now pins it; PLUS the counter fixes' 6 register rows "
+            "(bifocals/daggerOfRa/redHair/wireCutters@reg123=5, pressPass@reg123=1/4/5 in place "
+            "of =2) and the reg123=1/4/5 write specs they imply -- row-accounted; "
             "refresh is a bless -- awaits the USER",
     },
     "test_emission_manifest.py": {

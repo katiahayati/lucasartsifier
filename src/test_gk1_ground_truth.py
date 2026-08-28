@@ -68,6 +68,12 @@ CONFIRMED_SAFE = {
 # restore from, preventable on its own screen. A plain on-screen death: a false positive here.
 CONFIRMED_SAFE.add("knife")
 
+# sVoodooCode (33): register_strandings on synthetic flag 247 ("wrong message written",
+# rm302.sc:154). Writing on the tomb REQUIRES holding both sketches (rm300.sc:952 `(has: 32)
+# (has: 33)`), neither is ever consumed (no `put: 32/33`), so the player who can flip the seal
+# holds the item. A flip whose own precondition demands the item cannot strand it.
+CONFIRMED_SAFE.add("sVoodooCode")
+
 ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS
 
 # Item ids ARE the inventory `add:` order (GKInvItem.sc:93). Pinned because the tool got all 81
@@ -150,10 +156,20 @@ def run():
     # R1: the day counter is the point of no return. VoodooCode1's source is armed under
     # (< global123 5) and its demand under day >= 5 in the SAME room; the counter only ever
     # `++`s (rm370.sc:174 etc.), so no literal "flip" exists for register_strandings to key on.
+    # MECHANISM-PINNED ([[oracle-must-pin-the-mechanism]]): the row must be a register_strandings
+    # row on the DAY COUNTER (register 123) flipping to 5. Measured 2026-08-27 after the counter
+    # fixes (increment seeds, relational domains, presence on flat pickups): VoodooCode1 IS
+    # named -- but on synthetic flag 247 (the "wrong message written" hide), a coincidence that
+    # names the right item for the wrong reason. The day-5 flip still finds the `theInView`
+    # pickup inside the inset live, because its `(== view 3022)` is object-property state.
+    r1 = [r for r in rows_by_det["register_strandings"]
+          if s.g.item_name(r["item"]) == "VoodooCode1" and r.get("register") == 123]
     check("R1: VoodooCode1 is caught as a day-window stranding (source closes at day 5)",
-          _unit("VoodooCode1") in caught,
-          "no detector names VoodooCode1; the day counter's `++` advances are not read as a "
-          "point of no return over the range guards (< 5) / (>= 5)")
+          bool(r1) and any(r.get("value") == 5 for r in r1),
+          f"register_strandings rows for VoodooCode1: "
+          f"{[(r.get('register'), r.get('value')) for r in rows_by_det['register_strandings'] if s.g.item_name(r['item']) == 'VoodooCode1']} "
+          f"-- none on the day counter at 5; the inset's `theInView` site (rm300.sc:1368, "
+          f"`(== view 3022)`) stays live because object-property state is not modelled")
     # R2/R3: the hounfour's twelve scenes are `Script`s inside ONE room (800) and Grace's room
     # (sHRoom8) is entered by an intra-room scene switch, so the one-way door is invisible.
     check("R2: the confessional deposit (rod + a signal device -> flags 280/281 -> 351) is caught",
