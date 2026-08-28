@@ -3521,11 +3521,69 @@ class IrSccReach(SccReach):
         self._apply_hazard_gates()
         self._apply_death_traps()
         self._own_fixpoint()
+        # ...PLUS the joints a counter asks for when its advance is gated by a flag whose own
+        # write is conditioned on the counter -- see `_gate_joints`.
+        for J in self._gate_joints(self._register_dom()):
+            if J not in self._joints:
+                self._joints.append(J)
         # Projections = one per register, PLUS the few joints the death traps ask for. See
         # _trap_joints: `self.regs` stays scalar because everything else iterates it expecting a
         # register, and only the four reachability walks look at `self.proj`.
         self.proj = list(self.regs) + list(self._joints)
         self._pstates = {R: self._walk(R, frozenset()) for R in self.proj}
+
+    def _gate_joints(self, dom):
+        """The (counter, gate) pairs whose gating is MUTUAL: an ordered step of A is armed under
+        a value of B, and some write of B is conditioned on a value of A.
+
+        ⭐ A COUNTER'S PROJECTION CANNOT SEE ITS OWN GATE (2026-08-28). GK1's day counter
+        advances at rm370 only under flag 15 (the day-end flag), and flag 15 is written by
+        `endDay` from one arm per day, each arm asking for that day's evidence -- reconVeve and
+        the wolf phone on day 3, the tattoo trace and the bracelet repair on day 4, nothing on
+        days 2 and 5. In the counter's own projection the step 3 -> 4 costs whatever
+        `_own_fixpoint` composes for "flag 15 == 1": the INTERSECTION over the four arms, i.e.
+        nothing. So every day advance is free, the day-4 flip looks able to strand reconVeve
+        (it cannot: the day does not end without it), and the day-5 flip -- which CAN strand the
+        first tomb sketch, because no arm asks for it -- is indistinguishable from it. In the
+        joint (123, flag 15) the write "flag 15 := 1" at day 3 is the day-3 arm alone
+        (`_wbranch`, read by `_psucc_joint`), priced at reconVeve, and the flip is unreachable
+        for the player who lacks it -- which is what `register_strandings._flip_live` asks.
+
+        The USER's own words for GK1: the day system prevents SOME strandings, sneakily not all.
+        This is the structure that tells the two apart.
+
+        Self-selecting like `_trap_joints`: the pair comes from the mutual dependency in the
+        write table, so a game whose counters are not gated by a flag they themselves gate gets
+        no joint (LSL2, KQ4, KQ6, KQ5 -- measured). LB2's act counter is gated by the gown flag,
+        whose write is act-conditioned: the pressPass shape, the same structure. Bounded the
+        same way, and sharing the same cap of eight joints in all."""
+        regs = set(self.regs)
+        steps_dep = defaultdict(set)
+        writes_dep = defaultdict(set)
+        for (gi, room, v), brs in self._wbranch.items():
+            ordered = any(to == v for (_f, to) in self._rstep[gi].get(room, ()))
+            for (deps, _cost, _co) in brs:
+                for S in deps:
+                    if S == gi or S not in regs:
+                        continue
+                    writes_dep[gi].add(S)
+                    if ordered:
+                        steps_dep[gi].add(S)
+        want = []
+        for A in sorted(steps_dep):
+            for B in sorted(steps_dep[A]):
+                if A not in writes_dep.get(B, ()):
+                    continue
+                pair = tuple(sorted((A, B)))
+                if pair in want or pair in self._joints:
+                    continue
+                size = 1
+                for R in pair:
+                    size *= max(1, len(dom.get(R) or (0,)))
+                if size > 4000 or len(want) + len(self._joints) >= 8:
+                    continue
+                want.append(pair)
+        return want
 
     def _trap_joints(self, traps, dom):
         """The register TUPLES a death trap needs evaluated together.
@@ -3889,11 +3947,34 @@ class IrSccReach(SccReach):
         # an earlier state (KQ6 branches on the scarf at state 8 and sets the flag at 14).
         regs = set(self.regs)
         guards = {}
+        # ⭐ ...AND EVERY BRANCH KEPT APART (2026-08-28): `(R, room, val) -> [(deps, cost,
+        # co-writes)]`, one per write site, where `deps` is what the write's guard establishes
+        # about OTHER registers and `cost` what it prices. `cheapest`/`guards` above fold the
+        # branches of one (R, room, val) into ONE cost (the intersection) and ONE dependency
+        # map (the last writer wins), and both folds lose the same fact: WHICH branch is live
+        # depends on the other register. GK1's `endDay` writes flag 15 from four arms, one per
+        # day, and only the day-3 arm costs reconVeve -- intersected, the day ends free; keyed
+        # by write, the day-3 arm's dependency is overwritten by day 5's. The joint projection
+        # (`_gate_joints`, `_psucc_joint`) reads THIS table and picks the branch whose
+        # dependencies the current tuple satisfies. The scalar projections keep the folds.
+        dbg = frozenset(self.em.cfg.debug_globals)
+        wb = self._wbranch = defaultdict(list)
         for room, script, gi, v, g in self.em.handler_writes:
             if gi in regs:
                 d = {S: vs for S, vs in guard_reqs(g, regs).items() if vs}
                 if d:
                     guards[(gi, room, v)] = d
+                if not _debug_gated_guard(g, dbg):
+                    wb[(gi, room, v)].append((d, frozenset(_own_positive(g)), frozenset()))
+        for room, vs in getattr(self.em, "init_writes", {}).items():
+            for gi, v in vs.items():
+                if gi in regs:
+                    wb[(gi, room, v)].append(({}, frozenset(), frozenset()))
+        for room, seq in getattr(self.em, "init_seq", {}).items():
+            for (gi, v, g) in seq:
+                if gi in regs and g is not None:
+                    d = {S: set(vs) for S, vs in structural_reqs(g, regs).items() if vs}
+                    wb[(gi, room, v)].append((d, frozenset(_own_positive(g)), frozenset()))
         # ...and the ALWAYS-LIVE scopes, exactly as `_build_product` iterates them. A machine the
         # icon bar dispatches records its own cost through `cheapest` up there but was never a
         # source of register-chain DEPENDENCIES down here, so half of what that scope contributes
@@ -3914,6 +3995,7 @@ class IrSccReach(SccReach):
             # composes it onto an EXIT: intersect, because both must hold.
             er = entry_reqs(info, self.regs)
             by_guard = er.get("_by_guard")
+            emust = entry_musts(info)
             for K, paths in info["states"].items():
                 for (g, w, gg, c, tr) in paths:
                     for (gi, v) in w:
@@ -3929,6 +4011,16 @@ class IrSccReach(SccReach):
                                 d[S] = (d[S] & vs) if S in d else set(vs)
                         if d:
                             guards[(gi, info["room"], v)] = d
+                        # The branch, kept apart: its dependencies, its price (the path's own
+                        # items plus what arming the machine cost -- the same two terms
+                        # `cheapest` receives in `_build_product`), and the other writes of the
+                        # SAME state body, which happen together: rm370 clears flag 15 and
+                        # advances the day in one state, and a joint that applied them one at a
+                        # time would pass through "day 4, flag 15 still set" -- a state the game
+                        # never has, and one that lets the next day start for free.
+                        wb[(gi, info["room"], v)].append(
+                            (d, frozenset(_own_positive(g)) | emust.get(K, frozenset()),
+                             frozenset((gj, vj) for (gj, vj) in w if gj in regs and gj != gi)))
 
         def value_cost(R, val, own):
             """Items needed to make R == val: the cheapest write, or free if none writes it."""
@@ -4031,20 +4123,35 @@ class IrSccReach(SccReach):
         so it stays untouched."""
         r, st = node
         out = set()
+        wb = getattr(self, "_wbranch", None) or {}
         for i, Ri in enumerate(Rs):
-            for v in self._inroom[Ri].get(r, ()):
+            cands = set(self._inroom[Ri].get(r, ()))
+            cands |= {to for (frm, to) in self._rstep[Ri].get(r, ()) if st[i] == frm}
+            for v in sorted(cands):
                 if banned and self._inroom_own.get((Ri, r, v), frozenset()) & banned:
                     continue
-                nv = list(st)
-                nv[i] = v
-                out.add((r, tuple(nv)))
-            for (frm, to) in self._rstep[Ri].get(r, ()):
-                if st[i] != frm or (banned and
-                                    self._inroom_own.get((Ri, r, to), frozenset()) & banned):
+                brs = wb.get((Ri, r, v))
+                if not brs:
+                    nv = list(st)
+                    nv[i] = v
+                    out.add((r, tuple(nv)))
                     continue
-                nv = list(st)
-                nv[i] = to
-                out.add((r, tuple(nv)))
+                # THE WRITE IS ONE OF ITS BRANCHES, not the fold of them (`_wbranch`): a branch
+                # is open when the tuple satisfies what its guard establishes about the other
+                # tracked registers and nothing it prices is banned; it lands together with the
+                # same state's other writes. A joint sees exactly what the scalar projections
+                # fold away -- which arm of `endDay` a day-3 player is standing in.
+                for (deps, cost, co) in brs:
+                    if banned and cost & banned:
+                        continue
+                    if any(S in deps and st[j] not in deps[S] for j, S in enumerate(Rs)):
+                        continue
+                    nv = list(st)
+                    nv[i] = v
+                    for (gj, vj) in co:
+                        if gj in Rs:
+                            nv[Rs.index(gj)] = vj
+                    out.add((r, tuple(nv)))
         for b in self.edges.get(r, ()):
             for (req, sets, alts) in self._emeta.get((r, b), (self._FREE,)):
                 if any(req.get(Ri) is not None and st[i] not in req[Ri]

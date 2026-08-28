@@ -187,7 +187,7 @@ def run():
     flag44 = fbase + 44 if fbase is not None else None
     check("R4: flag 44 (Cazaunoux topic 54 -> Crash's 'Voodoo Hounfour') is caught as a stranding",
           flag44 is not None and any(r == flag44 for (r, _v) in regs),
-          f"register_strandings registers = {sorted(regs)}; flag44 synthetic = {flag44}. The "
+          f"register_strandings registers = {sorted(regs, key=str)}; flag44 synthetic = {flag44}. The "
           f"Teller/Interrogation topic dispatch (GKTeller.sc, interrogation.sc) and the "
           f"topic-said array (global182, proc50_5..8) are not modelled")
 
