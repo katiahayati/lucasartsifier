@@ -116,6 +116,17 @@ by send from rm200/rm205, which the walkers do not follow, so flag 15 has no vis
 is not a gating register, and the day advance costs nothing in the model). The general cure is
 following sends to game-defined methods the way procedure calls are inlined; not built.
 
+**Correction after measuring (same day):** flag 15 IS a gating register (synthetic 257 — the
+death flag takes 241, flags start at 242) with writers at rm200/rm205/rm210 (the map scripts are
+ScriptID-scoped into their rooms, so `endDay` is walked). The real cause is the COST model:
+`_inroom_own[(15, room, 1)]` is the INTERSECTION of the own-costs of every branch that writes it
+in that room, and `endDay`'s day-2 branch costs no item — so the day-3 branch's `has: 38` and
+the day-4 branch's `has: 26/41` are intersected away and every day advance is free. The day
+counter's projection (register 123) cannot see that its own flip at rm370 needs flag 15; only a
+JOINT projection of the counter with the flags that gate its advance would — the LB2 pressPass
+shape exactly ([[lb2-pending-ruling-presspass-relocation]]). Counting conditional `init` writes
+in `gating_registers` was measured inert and kept for the principle.
+
 ### 1.7 What moved on an existing game (row-accounted)
 
 * **LB2** (watched tier, declared red, awaiting the USER): the pressPass relocation (14 rows,
