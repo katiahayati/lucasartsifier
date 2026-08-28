@@ -1137,6 +1137,38 @@ def _proc_touches_flags(body, script=None):
     return base, wops, reads
 
 
+def _flag_read_negated(body, base, script=None):
+    """Does this read-only flag proc return the NEGATION of the masked bit?  `(not (& word bit))`
+    -- the bit test sits directly under a `Not`, and no un-negated read of the word exists."""
+    neg = pos = False
+    for n in I.walk(body):
+        if n.get("t") == "Not":
+            k = (n.get("kids") or [None])[0]
+            if (isinstance(k, dict) and k.get("t") == "BinAnd"
+                    and any(_flag_word_base(x, script) == base for x in (k.get("kids") or []))):
+                neg = True
+    for n in I.walk(body):
+        if n.get("t") == "BinAnd" and any(_flag_word_base(x, script) == base
+                                          for x in (n.get("kids") or [])):
+            pos = True
+    return neg and pos and not _has_unnegated_read(body, base, script)
+
+
+def _has_unnegated_read(body, base, script=None):
+    """A masked read of the flag word that is NOT the direct kid of a `Not`."""
+    under_not = set()
+    for n in I.walk(body):
+        if n.get("t") == "Not":
+            k = (n.get("kids") or [None])[0]
+            if isinstance(k, dict):
+                under_not.add(id(k))
+    for n in I.walk(body):
+        if (n.get("t") == "BinAnd" and id(n) not in under_not
+                and any(_flag_word_base(x, script) == base for x in (n.get("kids") or []))):
+            return True
+    return False
+
+
 def _flag_switch_map(body, base, script=None):
     """A dispatcher's `(switch op ...)` -> {op-value: op-kind}. The op is the switched PARAMETER;
     each case's kind is read from the write it performs on the flag word (a break/read case is a
@@ -1198,8 +1230,14 @@ def derive_flags(ir):
             dispatchers[name] = (body, sn)
         elif len(wops) == 1:            # a single-op writer: set / clear / toggle
             procs[name] = next(iter(wops))
-        elif reads:                     # reads only: a test
-            procs[name] = "test"
+        elif reads:                     # reads only: a test -- of which POLARITY?
+            # GK1's interrogation script keeps TWO read procs on the same array: `proc50_2`
+            # returns the masked bit, `proc50_1` returns `(not (& word bit))` -- "the flag is
+            # CLEAR". Lowering both as `test` inverted every "not yet said" topic condition
+            # (Grace's topic 50 is offered under `(proc50_1 36)`), so a topic gated on a flag's
+            # absence read as gated on its presence. A read whose masked word sits under a
+            # `Not` is the negated test.
+            procs[name] = "ntest" if _flag_read_negated(body, base, sn) else "test"
     for dname, (dbody, dsn) in dispatchers.items():
         sm = _flag_switch_map(dbody, base, dsn) or {}
         doff = _localproc_offset(dname)
@@ -1303,6 +1341,10 @@ def lower_flags(ir, base_global, flag_procs, wrappers=None):
         if op == "test":
             node.clear()
             node.update({"t": "Variable", "vtype": "Global", "index": synth_base + flags[0]})
+        elif op == "ntest":                                 # `(not (& word bit))`: the flag CLEAR
+            node.clear()
+            node.update({"t": "Not", "kids": [{"t": "Variable", "vtype": "Global",
+                                               "index": synth_base + flags[0]}]})
         else:
             val = 1 if op == "set" else 0
             assigns = [{"t": "Assignment",

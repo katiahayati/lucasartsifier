@@ -1014,7 +1014,41 @@ def gating_registers(em):
     prev = prev_room_reg(em)
     if prev is not None:
         written.add(prev)
-    return sorted((compared & written) - _object_valued_globals(em))
+    objv = _object_valued_globals(em)
+    out = (compared & written) - objv
+    # ⭐ ...AND WHAT GATES A PROMOTED REGISTER'S WRITE IS COMPARED TOO (2026-08-28), to a
+    # fixpoint. A register read only in the GUARD OF A WRITE of a promoted register never
+    # touched a movement guard itself, so it stayed out -- and with it the chain `_own_fixpoint`
+    # and the joints follow through write dependencies. GK1's flag 65 is the case: it is what
+    # offers Grace's "go home" topic (the Teller lowering), whose handler raises the day-end
+    # flag 15 -- a promoted register -- and it is raised only by the day-1 opening and the
+    # rm470 cutscenes. Unpromoted, the day-end write at rm50 had no visible gate and day 3
+    # ended for free. Same structural test, one hop further along the write chain.
+    guarded = []
+    for room, script, gi, v, g in em.handler_writes:
+        guarded.append((gi, g))
+    for room, seq in getattr(em, "init_seq", {}).items():
+        for (gi, _v, g) in seq:
+            guarded.append((gi, g))
+    for info in all_machines(em):
+        for K, paths in info["states"].items():
+            for (g, w, gg, c, tr) in paths:
+                for (gi, v) in w:
+                    guarded.append((gi, g))
+    while True:
+        more = set()
+        for gi, g in guarded:
+            if gi not in out or g is None:
+                continue
+            atoms = []
+            _cmp_atoms(g, atoms)
+            for (r, op, v, pol) in atoms:
+                if r in written and r not in out and r not in objv:
+                    more.add(r)
+        if not more:
+            break
+        out |= more
+    return sorted(out)
 
 
 def _object_valued_globals(em):
@@ -3578,20 +3612,30 @@ class IrSccReach(SccReach):
                     writes_dep[gi].add(S)
                     if ordered:
                         steps_dep[gi].add(S)
+        # The cycle may pass through a THIRD register: the counter's step needs B, B's write
+        # needs C, and C's write needs the counter. GK1 again: day 3 can also end through
+        # Grace's "go home" topic (flag 15 <- flag 65), and flag 65 is raised only on day 1 and
+        # by rm470's day-gated cutscenes -- so (123, 15, 65) is the tuple that sees the day end
+        # exactly. Bounded to three registers and the same product size.
         want = []
+
+        def _add(regs_):
+            J = tuple(sorted(set(regs_)))
+            if len(J) < 2 or J in want or J in self._joints:
+                return
+            size = 1
+            for R in J:
+                size *= max(1, len(dom.get(R) or (0,)))
+            if size > 4000 or len(want) + len(self._joints) >= 8:
+                return
+            want.append(J)
         for A in sorted(steps_dep):
             for B in sorted(steps_dep[A]):
-                if A not in writes_dep.get(B, ()):
-                    continue
-                pair = tuple(sorted((A, B)))
-                if pair in want or pair in self._joints:
-                    continue
-                size = 1
-                for R in pair:
-                    size *= max(1, len(dom.get(R) or (0,)))
-                if size > 4000 or len(want) + len(self._joints) >= 8:
-                    continue
-                want.append(pair)
+                if A in writes_dep.get(B, ()):
+                    _add((A, B))
+                for C in sorted(writes_dep.get(B, ())):
+                    if C != A and A in writes_dep.get(C, ()):
+                        _add((A, B, C))
         return want
 
     def _trap_joints(self, traps, dom):
