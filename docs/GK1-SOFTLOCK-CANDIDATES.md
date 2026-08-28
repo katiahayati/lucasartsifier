@@ -162,3 +162,72 @@ Day-range derivations by five parallel read-only agents over the scripts (2026-0
 claim re-grepped here before entering §1; walkthrough leads from walkthroughking.com,
 adventuregamers.com (Tom Hayes' guide, facts only), gameboomers.com, the Steam point-list thread and
 the GK Omnipedia "Dead end" page.
+
+### 1.8 Round 3 (2026-08-28, autonomous) — the day system prevents SOME strandings, sneakily not all
+
+The USER's framing for this round. `endDay`'s per-day arms (§0) are what prevents a stranding:
+day 3 cannot end without reconVeve + wolfPhone, day 4 not without tatooTrace + braceRep; day 5's
+arm asks for neither sketch, so the first tomb sketch (R1) is what the day system does NOT protect.
+The model had to learn to tell those apart. Every step measured on the six snapshots (baselines
+from a detached worktree at 7642461); goldens byte-identical unless stated.
+
+1. **A fanned counter drops its contradictory branches** (`compile._fan_globals`, same test as
+   `_fan_exit`). `graceComeOut` state 101 does `(++ global123)` then `(switch global123 …)`, and the
+   post-increment switch arm conjoined onto the pre-increment fan made every branch contradictory;
+   `structural_reqs` read the empty intersection as "unconstrained", the write landed free, and the
+   counter-monotonicity rule turned it into `(u, v)` for every `u ≤ v` — the day could jump 1→8 in
+   rm370. Now `_rstep[123][370]` is exactly the seven consecutive steps.
+2. **A self-redirect is not a way in** (`machine._floor_self_redirects`): `(self changeState: 99)` in
+   the machine's OWN handleEvent inherits the arming disjunction (third spelling of the arming floor;
+   `_drop_continuation_entries` is the second). graceComeOut's state-101 day advance now needs flag 15.
+3. **A flip the item-less player cannot make strands nothing** (`register_strandings._flip_live`):
+   the flip state must be live under the ban in every projection tracking the register. Sound for
+   this detector's claim; losing the item AFTER the flip is a sink, the sink detectors' business.
+4. **The joint projection of a counter with the flag gating its advance** (`_gate_joints`,
+   `_wbranch`, `_psucc_joint`): per-branch write records (deps, cost, same-state co-writes, read
+   with the registers' domains), a joint built only for a register that COUNTS whose ordered step is
+   armed under B while B's write is conditioned on the counter (3-cycles through the counter too),
+   and exact joint successors (branch deps enforced, co-writes atomic — rm370 clears 15 and
+   advances the day in one state). ⛔ Measured without the "counts" qualifier: LSL2 grew flag-pair
+   joints and the Vine surfaced (19 golden lines), KQ6 grew `(165,166)`; with it, both identical.
+   GK1 joints: `(123,257)`, `(123,257,263)`, `(123,257,507)`.
+5. **A crossing is a register writer** (`_reg_cost` indexes `_emeta` sets): `prevRoom == 302` cost
+   nothing, so the banned walk took the interrogation screen's return edge `50→302` into the tomb-
+   writing room without the priced crossing `300→302`.
+6. **A flip-killed demand is not a demand** (`register_strandings` reads needs per site via
+   `_need_live`): reconVeve's `still_needed_at` loses `endDay`'s day-3 arm (rm200/205) after day 4.
+7. **A conversation topic is a guarded handler** (`vocab.lower_teller_cases`, SCI32 `Teller`):
+   `showCases` pairs and the `addGlobals` band (topics 1–15 iff flag 36+n) become path conditions on
+   the `(switch iconValue (K …))` arms — 278 arms in 24 tellers. Keyed on the property the root
+   `showCases` RETURNS (`iconValue`, derived). Inert on SCI0/SCI1.1 by construction.
+8. **A negated flag test lowers as `Not`** (`derive_flags` op `ntest`): `proc50_1` is
+   `(not (& word bit))`; as `test` it inverted every "not yet said" topic condition.
+9. **The object-local property store** (`vocab.derive_obj_locals`/`lower_obj_locals`, the EIGHTH
+   store; LAST allocating, so earlier stores' numbering is untouched): a room script's own instance's
+   property written with a constant and read back, reset to its declared value on reload through the
+   room-local channel. GK1: 14 registers (theInView.view among them); KQ4 2, KQ6 3, KQ5 29, LB2 4,
+   LSL2 0. With it: `switch register` arms are VALUED (`ir.control_shape`), a `register`-valued write
+   `(theInView view: register)` is SYMBOLIC and resolved by `compile._fan_globals` / the walk's
+   counters (dropped when unpinned), and `_source_live` asks `_locals_reachable`: a room-local
+   register the site guard pins must be producible in THIS visit by a write branch whose deps the
+   projection state satisfies.
+10. ⛔ **Reverted**: promoting (to a fixpoint) every register compared in the guard of a promoted
+    register's write moved LSL2 by 196 lines. Flag 65 (Grace's "go home" token) therefore stays
+    unpromoted.
+
+**What moved on existing games (row-accounted):** LSL2, KQ4, KQ6, KQ5 byte-identical at every kept
+step. **LB2 (watched, declared red): 15 lines** — `grapes@reg123=5` loses need-room 520 (the act-4
+exit interceptor is dead at act 5); pressPass loses `reg(12,123)=(110,2)`, `(330,3)`, `reg123=4`,
+`reg123=5` and the two guard specs those implied (`reg123=4: (has: 6)`, has:6 in the reg123=5
+spec) — the rm335 need site is `global123==2` (dead at 3–5), and the (110,2) seed's pass-less walk
+reaches rm335 only at act 3. `pressPass@reg(12,123)=(26,2)` and `reg123=1` remain, so the item is
+still CAUGHT. This is the retirement [[lb2-pass-necessary-for-act1]] said would come "when the
+measurement lands"; the re-pin is the USER's.
+
+**GK1 after the round:** reconVeve still flagged at the day-4 flip — the surviving leak is Grace's
+"go home" topic 49 (`(proc50_3 15)` under flag 65): flag 65 is re-raised by rm470's four cutscenes,
+whose once-only gate (flag 11, set alongside 65) does not reach their write branches, so in the model
+Grace can end day 3. `still_needed_at` now `[50, 340]` (rm50 = Grace's topic 50 `(has: 38)`).
+VoodooCode1/sVoodooCode at flag 246 gone (step 5). R1: see below. R2/R3/R4 unchanged (scenes; the
+flag-stranding detector R4 needs is not built — the Teller lowering now makes Crash's topic 8 a
+`flag 44` site, so the writer/use chain is visible).

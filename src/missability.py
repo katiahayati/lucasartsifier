@@ -4005,27 +4005,45 @@ class IrSccReach(SccReach):
         # dependencies the current tuple satisfies. The scalar projections keep the folds.
         dbg = frozenset(self.em.cfg.debug_globals)
         wb = self._wbranch = defaultdict(list)
-        # The branch table reads its dependencies WITH the registers' domains, so a relational
-        # guard answers (`(< global123 5)` -> days 0..4); the fixpoint's `guards` keep the
-        # domain-less reading they were measured with.
+        # TWO readings of every branch's dependencies. `_wbranch` reads them WITHOUT the
+        # registers' domains -- the reading the joints were measured with (⛔ with domains,
+        # LB2's (12, 123) joint lost acts 4-5 at the act card and every play-confirmed act-5
+        # carry with them). `_wbranch_dom` reads them WITH the domains, so a relational guard
+        # answers (`(< global123 5)` -> days 0..4), for `_locals_reachable` alone.
+        wbd = self._wbranch_dom = defaultdict(list)
         dom = self._register_dom()
+        # ...for the promoted registers AND every room-local one (a lowered local or object
+        # property that resets on reload): `_locals_reachable` asks whether such a register can
+        # be produced in this visit, and GK1's `theInView.view` is compared only in a pickup
+        # guard, so it is never promoted -- without this it had no branches to be found in.
+        locs = set()
+        for _rn, rs in (getattr(getattr(self.em, "ir", None), "_room_local_resets", None)
+                        or {}).items():
+            locs |= set(rs)
+        regs_wb = regs | locs
+        self._wb_regs = regs_wb
         for room, script, gi, v, g in self.em.handler_writes:
             if gi in regs:
                 d = {S: vs for S, vs in guard_reqs(g, regs).items() if vs}
                 if d:
                     guards[(gi, room, v)] = d
-                if not _debug_gated_guard(g, dbg):
-                    dd = {S: set(vs) for S, vs in guard_reqs(g, regs, dom).items() if vs}
-                    wb[(gi, room, v)].append((dd, frozenset(_own_positive(g)), frozenset()))
+            if gi in regs_wb and not _debug_gated_guard(g, dbg):
+                d0 = {S: set(vs) for S, vs in guard_reqs(g, regs_wb).items() if vs}
+                dd = {S: set(vs) for S, vs in guard_reqs(g, regs_wb, dom).items() if vs}
+                wb[(gi, room, v)].append((d0, frozenset(_own_positive(g)), frozenset()))
+                wbd[(gi, room, v)].append((dd, frozenset(_own_positive(g)), frozenset()))
         for room, vs in getattr(self.em, "init_writes", {}).items():
             for gi, v in vs.items():
-                if gi in regs:
+                if gi in regs_wb:
                     wb[(gi, room, v)].append(({}, frozenset(), frozenset()))
+                    wbd[(gi, room, v)].append(({}, frozenset(), frozenset()))
         for room, seq in getattr(self.em, "init_seq", {}).items():
             for (gi, v, g) in seq:
-                if gi in regs and g is not None:
-                    d = {S: set(vs) for S, vs in structural_reqs(g, regs, dom).items() if vs}
-                    wb[(gi, room, v)].append((d, frozenset(_own_positive(g)), frozenset()))
+                if gi in regs_wb and g is not None:
+                    d0 = {S: set(vs) for S, vs in structural_reqs(g, regs_wb).items() if vs}
+                    d = {S: set(vs) for S, vs in structural_reqs(g, regs_wb, dom).items() if vs}
+                    wb[(gi, room, v)].append((d0, frozenset(_own_positive(g)), frozenset()))
+                    wbd[(gi, room, v)].append((d, frozenset(_own_positive(g)), frozenset()))
         # ...and the ALWAYS-LIVE scopes, exactly as `_build_product` iterates them. A machine the
         # icon bar dispatches records its own cost through `cheapest` up there but was never a
         # source of register-chain DEPENDENCIES down here, so half of what that scope contributes
@@ -4052,7 +4070,23 @@ class IrSccReach(SccReach):
             for K, paths in info["states"].items():
                 for (g, w, gg, c, tr) in paths:
                     for (gi, v) in w:
+                        if gi not in regs_wb:
+                            continue
                         if gi not in regs or (gi, info["room"], v) not in self._inroom_own:
+                            for tbl, bg, erx, dm in ((wb, by_guard, er, None),
+                                                     (wbd, by_guard_d, er_d, dom)):
+                                dd = dict(sm.at(K, g))
+                                inh_d = bg(K, g) if bg else erx.get(K, {})
+                                for S, vs in list(inh_d.items()):
+                                    if vs:
+                                        dd[S] = (dd[S] & set(vs)) if S in dd else set(vs)
+                                for S, vs in guard_reqs(g, regs_wb, dm).items():
+                                    if vs:
+                                        dd[S] = (dd[S] & set(vs)) if S in dd else set(vs)
+                                tbl[(gi, info["room"], v)].append(
+                                    (dd, frozenset(_own_positive(g)) | emust.get(K, frozenset()),
+                                     frozenset((gj, vj) for (gj, vj) in w
+                                               if gj in regs_wb and gj != gi)))
                             continue
                         d = dict(sm.at(K, g))
                         inherited = by_guard(K, g) if by_guard else er.get(K, {})
@@ -4071,17 +4105,20 @@ class IrSccReach(SccReach):
                         # advances the day in one state, and a joint that applied them one at a
                         # time would pass through "day 4, flag 15 still set" -- a state the game
                         # never has, and one that lets the next day start for free.
-                        dd = dict(sm.at(K, g))
-                        inh_d = by_guard_d(K, g) if by_guard_d else er_d.get(K, {})
-                        for S, vs in list(inh_d.items()):
-                            if vs:
-                                dd[S] = (dd[S] & set(vs)) if S in dd else set(vs)
-                        for S, vs in guard_reqs(g, regs, dom).items():
-                            if vs:
-                                dd[S] = (dd[S] & set(vs)) if S in dd else set(vs)
-                        wb[(gi, info["room"], v)].append(
-                            (dd, frozenset(_own_positive(g)) | emust.get(K, frozenset()),
-                             frozenset((gj, vj) for (gj, vj) in w if gj in regs and gj != gi)))
+                        for tbl, bg, erx, dm in ((wb, by_guard, er, None),
+                                                 (wbd, by_guard_d, er_d, dom)):
+                            dd = dict(sm.at(K, g))
+                            inh_d = bg(K, g) if bg else erx.get(K, {})
+                            for S, vs in list(inh_d.items()):
+                                if vs:
+                                    dd[S] = (dd[S] & set(vs)) if S in dd else set(vs)
+                            for S, vs in guard_reqs(g, regs_wb, dm).items():
+                                if vs:
+                                    dd[S] = (dd[S] & set(vs)) if S in dd else set(vs)
+                            tbl[(gi, info["room"], v)].append(
+                                (dd, frozenset(_own_positive(g)) | emust.get(K, frozenset()),
+                                 frozenset((gj, vj) for (gj, vj) in w
+                                           if gj in regs_wb and gj != gi)))
 
         def value_cost(R, val, own):
             """Items needed to make R == val: the cheapest write, or free if none writes it."""
@@ -4622,16 +4659,27 @@ class IrSccReach(SccReach):
         resets = (getattr(getattr(self.em, "ir", None), "_room_local_resets", None) or {}).get(room)
         if not resets:
             return True
-        pst = getattr(self, "_pstates", None) or {}
-        domall = {Ri: {v for (_r, v) in pst[Ri]} for Ri in self.regs if Ri in pst} or None
-        need = structural_reqs(g, set(self.regs), domall)
+        # Memoised: the walks ask this per state, and both the domain and a guard's reading are
+        # pure functions of the built model.
+        cache = self.__dict__.setdefault("_locreach_cache", {})
+        if "dom" not in cache:
+            pst = getattr(self, "_pstates", None) or {}
+            cache["dom"] = ({Ri: {v for (_r, v) in pst[Ri]} for Ri in self.regs if Ri in pst}
+                            or None)
+        domall = cache["dom"]
+        key = ("need", id(g))
+        if key not in cache:
+            cache[key] = structural_reqs(g, set(self.regs) | set(resets), domall)
+        need = cache[key]
+        if not any(S in resets for S in need):
+            return True
 
         def producible(S, k, depth):
             if S not in resets or resets[S] == k:
                 return True
             if depth > 3:
                 return True
-            for (deps, _cost, _co) in self._wbranch.get((S, room, k), ()):
+            for (deps, _cost, _co) in getattr(self, "_wbranch_dom", self._wbranch).get((S, room, k), ()):
                 ok = True
                 for T, tv in deps.items():
                     if T in vals and vals[T] not in tv:
