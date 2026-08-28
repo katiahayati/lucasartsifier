@@ -274,7 +274,13 @@ def control_shape(node):
         # carried no requirement and the catacombs could be escaped without it.
         param = bool(head) and head.get("t") == "Variable" and head.get("vtype") == "Parameter"
         dispatch = bool(head) and (is_selected_item(head) or param)
-        valued = glob or dispatch
+        # ...and the Script's own `register` -- the job it was armed for. `(switch register
+        # (3022 <first sketch>) (3023 <second>) ...)` is how GK1's tomb inset chooses what it
+        # shows, and `extract._cmp_atom` already reads `(== register N)` as the carried-local
+        # test the machine walk resolves; only the switch spelling was unguarded, so every arm
+        # ran under every arming. Same priors as a global head: the arms are exclusive.
+        reg = bool(head) and head.get("t") == "Property" and head.get("name") == "register"
+        valued = glob or dispatch or reg
         arms, priors = [], []
         for c in ks[1:]:
             ck = c.get("kids") or []

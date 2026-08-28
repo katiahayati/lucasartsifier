@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import ir as I
 from guard_ast import GAnd, GOr, GNot, Pred
-from extract import atom, _conj, item_transfer, item_transfers, EGO, dest_key
+from extract import atom, _conj, item_transfer, item_transfers, EGO, dest_key, _is_register, REG_KEY
 import machine as M
 
 COUNTER_CAP = 40          # loop/unroll bound
@@ -360,6 +360,10 @@ def _interp(path, is_death, state_k=None, prop_dests=()):
                         st.trans = ("DEATH",); fixed = True
                     elif v is not None:
                         st.writes.append((dst["index"], v))
+                elif _is_register(src):
+                    # `(= gSYNTH register)`: symbolic, resolved by `_fan_globals` / the walk's
+                    # counters -- see machine._assign_op, the same rule in its other walker.
+                    st.writes.append((dst["index"], ("CTR", REG_KEY)))
             elif dst.get("t") == "Property" and dst.get("name") in ("seconds", "cycles", "ticks"):
                 armed = True
                 st.cues += 1
@@ -672,6 +676,17 @@ def _fan_globals(guard, writes, gincs, gdom):
     reads the POST-increment value, so the survivor is one off; the machine's other increments
     carry the true steps, and the direction is permissive -- an ordered step, never a free one.)
     """
+    # A SYMBOLIC write -- `(gi, ("CTR", key))`, machine._assign_op's spelling of `(= gSYNTH
+    # register)` -- takes the value the path pins for that counter (`("CTR", key, "==", K)`
+    # among the guard's atoms, however the arm was spelled) and is DROPPED otherwise: an
+    # unresolved write can only miss a stranding, a guessed one can invent a seal.
+    if any(isinstance(v, tuple) for (_g, v) in writes):
+        pinned = {}
+        for a in guard:
+            if isinstance(a, tuple) and len(a) == 4 and a[0] == "CTR" and a[2] == "==":
+                pinned[a[1]] = a[3]
+        writes = [(gi, pinned[v[1]] if isinstance(v, tuple) else v) for (gi, v) in writes
+                  if not isinstance(v, tuple) or v[1] in pinned]
     branches = [(guard, writes)]
     for (gi, delta) in gincs:
         dom = gdom.get(gi) or ()
@@ -818,9 +833,14 @@ def compile_machine(machine, is_death):
             if not ok:
                 continue
             nc = _apply_counters(counters, st.counters)
-            for (gi, v) in st.writes:
-                if gi in lregs:               # the machine's own write to its lowered local:
-                    nc[gi] = v                # tracked here AND delivered as a register write
+            # A symbolic `register`-valued write resolves against the counters THIS walk
+            # established (the arming's register); counter atoms never reach `ext`, so
+            # `_fan_globals` could not do it from the guard here as it does in `step_paths`.
+            st_writes = [(gi, nc[v[1]] if isinstance(v, tuple) and v[1] in nc else v)
+                         for (gi, v) in st.writes]
+            for (gi, v) in st_writes:
+                if gi in lregs and not isinstance(v, tuple):   # the machine's own write to its
+                    nc[gi] = v                # lowered local: tracked AND delivered as a write
             # key=repr: counter names mix (vt,idx) tuples, REG_KEY and lowered-local ints,
             # which Python cannot order together.
             key = (state, tuple(sorted(nc.items(), key=repr)))
@@ -829,7 +849,7 @@ def compile_machine(machine, is_death):
             # `G == v` and delivering `G := v+delta`. A global with no known domain is dropped
             # rather than guessed, which is what keeps this inert on the games that only ever
             # increment a score.
-            for (ng0, nw) in _fan_globals(guard + ext, writes + st.writes, st.gincs, gdom):
+            for (ng0, nw) in _fan_globals(guard + ext, writes + st_writes, st.gincs, gdom):
                 # ...and the same fan for a COMPUTED destination, in the same loop so the two
                 # compose: LB2's act break both advances the counter and routes on it, and the
                 # branches must agree about which act they are in.

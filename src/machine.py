@@ -1081,6 +1081,12 @@ class MachineBuilder:
                     out.append(Op("DEATH", g))
                 else:
                     out.append(Op("WRITE", g, gi, v))
+            elif X._is_register(src):
+                # A write of the Script's own `register` -- `(theInView view: register)` in the
+                # arm of `(switch register (3024 ...))`. SYMBOLIC here; `compile._fan_globals`
+                # resolves it against the path's `register == K` atom, the one place a step's
+                # writes are made concrete, and drops it when no atom pins the value.
+                out.append(Op("WRITE", g, gi, ("CTR", X.REG_KEY)))
         elif dst.get("t") == "Property" and dst.get("name") in ("seconds", "cycles", "ticks"):
             out.append(Op("ADVANCE", g))            # timing set -> cue will fire
         elif dst.get("t") == "Property" and dst.get("name") == "state":

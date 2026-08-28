@@ -647,7 +647,7 @@ def defer_to_entry(s, sp):
 # records no index map, and its registers are caught by the synthetic-base test instead, which
 # is the backstop for every store allocated after `lower_flags`.
 STORE_INDEX_ATTRS = ("_obj_prop_index", "_room_local_index", "_prop_flag_index",
-                     "_mask_global_index")
+                     "_mask_global_index", "_obj_local_index")
 
 _AMBIGUOUS = {}
 
@@ -1116,6 +1116,8 @@ def render_register(s, R, value):
         return test if value == 1 else f"(== {test} {value})"
     if R in (getattr(ir, "_room_local_index", {}) if ir is not None else {}):
         return None
+    if R in (getattr(ir, "_obj_local_index", {}) if ir is not None else {}):
+        return None                            # a same-script property: no cross-script spelling
     # PROPERTY-WORD bit flags render in their own spelling -- and the check must come before the
     # proc-flag block below for the same reason the object-property check does: that block has no
     # upper bound, so a prop-flag register would render as a phantom proc-flag number otherwise.

@@ -1014,41 +1014,12 @@ def gating_registers(em):
     prev = prev_room_reg(em)
     if prev is not None:
         written.add(prev)
-    objv = _object_valued_globals(em)
-    out = (compared & written) - objv
-    # ⭐ ...AND WHAT GATES A PROMOTED REGISTER'S WRITE IS COMPARED TOO (2026-08-28), to a
-    # fixpoint. A register read only in the GUARD OF A WRITE of a promoted register never
-    # touched a movement guard itself, so it stayed out -- and with it the chain `_own_fixpoint`
-    # and the joints follow through write dependencies. GK1's flag 65 is the case: it is what
-    # offers Grace's "go home" topic (the Teller lowering), whose handler raises the day-end
-    # flag 15 -- a promoted register -- and it is raised only by the day-1 opening and the
-    # rm470 cutscenes. Unpromoted, the day-end write at rm50 had no visible gate and day 3
-    # ended for free. Same structural test, one hop further along the write chain.
-    guarded = []
-    for room, script, gi, v, g in em.handler_writes:
-        guarded.append((gi, g))
-    for room, seq in getattr(em, "init_seq", {}).items():
-        for (gi, _v, g) in seq:
-            guarded.append((gi, g))
-    for info in all_machines(em):
-        for K, paths in info["states"].items():
-            for (g, w, gg, c, tr) in paths:
-                for (gi, v) in w:
-                    guarded.append((gi, g))
-    while True:
-        more = set()
-        for gi, g in guarded:
-            if gi not in out or g is None:
-                continue
-            atoms = []
-            _cmp_atoms(g, atoms)
-            for (r, op, v, pol) in atoms:
-                if r in written and r not in out and r not in objv:
-                    more.add(r)
-        if not more:
-            break
-        out |= more
-    return sorted(out)
+    # ⛔ MEASURED AND REVERTED (2026-08-28): promoting, to a fixpoint, every register compared
+    # in the GUARD OF A WRITE of a promoted register (GK1's flag 65 offers Grace's "go home"
+    # topic, whose handler raises the day-end flag) moved LSL2 by 196 golden lines -- the
+    # widened register set changes every intersection downstream. The write-chain gate stays a
+    # cost-model question (`_own_fixpoint`, `_wbranch`), not a promotion.
+    return sorted((compared & written) - _object_valued_globals(em))
 
 
 def _object_valued_globals(em):
@@ -4034,13 +4005,18 @@ class IrSccReach(SccReach):
         # dependencies the current tuple satisfies. The scalar projections keep the folds.
         dbg = frozenset(self.em.cfg.debug_globals)
         wb = self._wbranch = defaultdict(list)
+        # The branch table reads its dependencies WITH the registers' domains, so a relational
+        # guard answers (`(< global123 5)` -> days 0..4); the fixpoint's `guards` keep the
+        # domain-less reading they were measured with.
+        dom = self._register_dom()
         for room, script, gi, v, g in self.em.handler_writes:
             if gi in regs:
                 d = {S: vs for S, vs in guard_reqs(g, regs).items() if vs}
                 if d:
                     guards[(gi, room, v)] = d
                 if not _debug_gated_guard(g, dbg):
-                    wb[(gi, room, v)].append((d, frozenset(_own_positive(g)), frozenset()))
+                    dd = {S: set(vs) for S, vs in guard_reqs(g, regs, dom).items() if vs}
+                    wb[(gi, room, v)].append((dd, frozenset(_own_positive(g)), frozenset()))
         for room, vs in getattr(self.em, "init_writes", {}).items():
             for gi, v in vs.items():
                 if gi in regs:
@@ -4048,7 +4024,7 @@ class IrSccReach(SccReach):
         for room, seq in getattr(self.em, "init_seq", {}).items():
             for (gi, v, g) in seq:
                 if gi in regs and g is not None:
-                    d = {S: set(vs) for S, vs in structural_reqs(g, regs).items() if vs}
+                    d = {S: set(vs) for S, vs in structural_reqs(g, regs, dom).items() if vs}
                     wb[(gi, room, v)].append((d, frozenset(_own_positive(g)), frozenset()))
         # ...and the ALWAYS-LIVE scopes, exactly as `_build_product` iterates them. A machine the
         # icon bar dispatches records its own cost through `cheapest` up there but was never a
@@ -4070,6 +4046,8 @@ class IrSccReach(SccReach):
             # composes it onto an EXIT: intersect, because both must hold.
             er = entry_reqs(info, self.regs)
             by_guard = er.get("_by_guard")
+            er_d = entry_reqs(info, self.regs, dom)
+            by_guard_d = er_d.get("_by_guard")
             emust = entry_musts(info)
             for K, paths in info["states"].items():
                 for (g, w, gg, c, tr) in paths:
@@ -4093,8 +4071,16 @@ class IrSccReach(SccReach):
                         # advances the day in one state, and a joint that applied them one at a
                         # time would pass through "day 4, flag 15 still set" -- a state the game
                         # never has, and one that lets the next day start for free.
+                        dd = dict(sm.at(K, g))
+                        inh_d = by_guard_d(K, g) if by_guard_d else er_d.get(K, {})
+                        for S, vs in list(inh_d.items()):
+                            if vs:
+                                dd[S] = (dd[S] & set(vs)) if S in dd else set(vs)
+                        for S, vs in guard_reqs(g, regs, dom).items():
+                            if vs:
+                                dd[S] = (dd[S] & set(vs)) if S in dd else set(vs)
                         wb[(gi, info["room"], v)].append(
-                            (d, frozenset(_own_positive(g)) | emust.get(K, frozenset()),
+                            (dd, frozenset(_own_positive(g)) | emust.get(K, frozenset()),
                              frozenset((gj, vj) for (gj, vj) in w if gj in regs and gj != gi)))
 
         def value_cost(R, val, own):
@@ -4616,8 +4602,51 @@ class IrSccReach(SccReach):
                     return True
                 need = structural_reqs(g, regs, dom)
                 if all(v in need[Ri] for Ri, v in zip(regs, vals) if Ri in need):
-                    return True
+                    if self._locals_reachable(g, room, dict(zip(regs, vals))):
+                        return True
         return False
+
+    def _locals_reachable(self, g, room, vals):
+        """Can every ROOM-LOCAL register the site guard pins hold that value in THIS visit?
+
+        ⭐ A PROPERTY THAT RESETS ON RELOAD IS PRODUCED HERE OR NOT AT ALL (2026-08-28). GK1's
+        first tomb sketch is taken from the tomb inset only under `theInView.view == 3022`
+        (rm300.sc:1364), and 3022 is written by the inset script's arm that `message1` arms --
+        a View the room inits only while `(< global123 5)`. The view resets to 3001 every time
+        rm300 loads, so on day 5 no write of 3022 exists in the room: the source is dead, and
+        the day-5 flip strands the sketch. The plain projection test above cannot say so (the
+        guard names the view register, not the day); the branch table (`_wbranch`, read with
+        domains) can: a write of the value whose dependencies the projection state satisfies,
+        recursively for dependencies on other room-locals. A register that is not room-local
+        keeps the permissive answer -- it may have been set on an earlier visit."""
+        resets = (getattr(getattr(self.em, "ir", None), "_room_local_resets", None) or {}).get(room)
+        if not resets:
+            return True
+        pst = getattr(self, "_pstates", None) or {}
+        domall = {Ri: {v for (_r, v) in pst[Ri]} for Ri in self.regs if Ri in pst} or None
+        need = structural_reqs(g, set(self.regs), domall)
+
+        def producible(S, k, depth):
+            if S not in resets or resets[S] == k:
+                return True
+            if depth > 3:
+                return True
+            for (deps, _cost, _co) in self._wbranch.get((S, room, k), ()):
+                ok = True
+                for T, tv in deps.items():
+                    if T in vals and vals[T] not in tv:
+                        ok = False
+                        break
+                    if T != S and T in resets and not any(producible(T, t, depth + 1) for t in tv):
+                        ok = False
+                        break
+                if ok:
+                    return True
+            return False
+        for S, ks in need.items():
+            if S in resets and not any(producible(S, k, 0) for k in ks):
+                return False
+        return True
 
     def reobtainable_rooms(self, item):
         """Rooms from which `item` can still be ACQUIRED -- GATE-AWARE, intersected over every
@@ -8027,6 +8056,15 @@ def _build(cfg, ir_path):
               "%s" % (sorted(_macc), _mw, _mr,
                       "" if not _mskips else ", skipped %s" % _mskips), file=_sys.stderr)
     V.lower_mask_globals(ir, V.derive_mask_globals(ir))
+    # EIGHTH store: a room script's OWN instance keeping per-visit state in a property, reset on
+    # reload like a room local (vocab.derive_obj_locals). GK1's tomb inset shows the first
+    # sketch only while `theInView.view == 3022`. LAST of the allocating stores, so every
+    # earlier store's numbering is exactly what it was (allocation order is register identity).
+    _ol = V.lower_obj_locals(ir, V.derive_obj_locals(ir, _X._room_numbers(ir)))
+    if _ol[1]:
+        import sys as _sys
+        print("  [lowered] %d object-local property register(s), %d site(s)"
+              % (_ol[1], _ol[0]), file=_sys.stderr)
     # A `switch` case label that is a PROPERTY is a literal the model was throwing away -- see
     # vocab.lower_property_case_labels. Runs LAST, after every store, deliberately: it allocates
     # no register, but it DOES change path conditions, and the derivations above key their

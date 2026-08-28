@@ -4113,3 +4113,253 @@ def lower_teller_cases(ir):
                         ck[1] = {"t": "If", "kids": [test, ck[1]]}
                         sites.append((sn, o.name, mn, v))
     return sites
+
+
+# --- the EIGHTH store: a same-script object's property, reset when the room reloads ----------
+
+def _obj_local_scopes(s):
+    """[(scope id, body, owning object name or None)] for one script."""
+    out = [((o.name, mn), b, o.name) for o in s.objects for mn, b in o.methods.items()]
+    out += [(("proc", pn), b, None) for pn, b in s.procs.items()]
+    return out
+
+
+def derive_obj_locals(ir, rooms):
+    """`{(script, object, selector)}` -- a ROOM script's own instance keeping per-visit state in a
+    property: written with a constant (`(theInView view: 3022)`, `(= view 3022)`, `(self view: 3022)`)
+    and read back (`(== view 3022)`, `(theInView view:)`) from another scope.
+
+    The census's third gap ("object property state") in the spelling `derive_obj_props` cannot
+    see: that store keys on singletons addressed ACROSS scripts, because two instances of a class
+    would merge into one register. A same-script instance addressed by NAME (or as `self` inside
+    its own methods) is just as static -- there is exactly one `theInView` in rm300 -- and it has
+    the one semantics a script local has: the script UNLOADS when the player leaves the room, so
+    the property resets to its DECLARED value on every entry. That reset is what lets a source
+    guard be dead at a later day: GK1's first tomb sketch is taken from the inset only while
+    `view == 3022`, and 3022 is written only by the arm the day-1..4 `message1` arms.
+
+    Same discipline as `derive_room_locals`: constant writes and reads, at least two scopes
+    involved, and any write we cannot read as a value TAINTS the property outright -- half a
+    store fabricates seals. The one non-literal write admitted is the Script's own `register`
+    (`(theInView view: register)` inside `(switch register ...)`), which `compile._fan_globals`
+    resolves against the arm that pinned it and otherwise drops."""
+    out = set()
+    for sn in sorted(set(rooms) & set(ir.scripts)):
+        s = ir.scripts[sn]
+        objs = {o.name: o for o in s.objects if not o.is_class and o.props}
+        if not objs:
+            continue
+        writes, reads, tainted = collections.defaultdict(set), collections.defaultdict(set), set()
+        for sid, body, owner in _obj_local_scopes(s):
+            def visit(n, parent=None):
+                if not isinstance(n, dict):
+                    return
+                t = n.get("t")
+                kids = n.get("kids") or []
+                if t == "Send":
+                    try:
+                        recv, msgs = I.send_pairs(n)
+                    except Exception:                          # noqa: BLE001
+                        recv, msgs = None, []
+                    target = None
+                    if isinstance(recv, dict):
+                        if recv.get("t") == "Object" and recv.get("name") in objs:
+                            target = recv["name"]
+                        elif recv.get("t") == "Self" and owner in objs:
+                            target = owner
+                    if target is not None:
+                        for sel, ps in msgs:
+                            if sel is None or sel not in objs[target].props:
+                                continue
+                            key = (sn, target, sel)
+                            if not ps:
+                                reads[key].add(sid)
+                            elif len(ps) == 1 and (I.as_int(ps[0]) is not None
+                                                   or (_is_register_node(ps[0])
+                                                       and sid[1] == "changeState")):
+                                writes[key].add(sid)
+                            else:
+                                tainted.add(key)
+                    for k in kids:
+                        visit(k, n)
+                    return
+                if t and t.startswith("Assignment") and kids and isinstance(kids[0], dict) \
+                        and kids[0].get("t") == "Property" and owner in objs \
+                        and kids[0].get("name") in objs[owner].props:
+                    key = (sn, owner, kids[0]["name"])
+                    rhs = kids[1] if len(kids) > 1 else None
+                    v = I.as_int(rhs) if rhs is not None else None
+                    if t == "Assignment" and (v is not None or (_is_register_node(rhs)
+                                                                and sid[1] == "changeState")):
+                        writes[key].add(sid)
+                    else:
+                        tainted.add(key)
+                    for k in kids[1:]:
+                        visit(k, n)
+                    return
+                if t == "Property" and owner in objs and n.get("name") in objs[owner].props:
+                    reads[(sn, owner, n["name"])].add(sid)
+                for k in kids:
+                    visit(k, n)
+            visit(body)
+        for key in sorted((set(writes) & set(reads)) - tainted):
+            if len(writes[key] | reads[key]) <= 1:
+                continue
+            if all(mn == "init" for (_o, mn) in writes[key]):
+                continue                        # a per-visit constant, not state (see room locals)
+            out.add(key)
+    return out
+
+
+def _is_register_node(n):
+    return isinstance(n, dict) and n.get("t") == "Property" and n.get("name") == "register"
+
+
+def lower_obj_locals(ir, keys):
+    """Rewrite the derived object-local properties into synthetic globals, IN PLACE -- the same
+    shape as `lower_room_locals`, reset through the same channel (`ir._room_local_resets`, which
+    opmodel merges into the room's entry writes). A constant write becomes a register write, a
+    `register`-valued write an `(= gSYNTH register)` the machine walkers resolve, and every read
+    -- `(obj sel:)` or the bare property inside the object's own methods -- a register read.
+    Chained sends are split first (statement position only, as `_split_chained_writes`)."""
+    if not keys:
+        return 0, 0
+    max_gi = 0
+    for s in ir.scripts.values():
+        for body in [b for o in s.objects for b in o.methods.values()] + list(s.procs.values()):
+            for n in I.walk(body):
+                if I.is_global(n):
+                    max_gi = max(max_gi, n["index"])
+    base = _synth_base(ir, max_gi)
+    index = {k: base + i for i, k in enumerate(sorted(keys))}
+    _synth_taken(ir, base + len(index))
+    resets = getattr(ir, "_room_local_resets", None) or {}
+    written = collections.defaultdict(set)
+    sites = 0
+    by_script = collections.defaultdict(dict)
+    for (sn, on, sel), gi in index.items():
+        by_script[sn][(on, sel)] = gi
+    for sn, wanted in by_script.items():
+        s = ir.scripts[sn]
+        objs = {o.name: o for o in s.objects if not o.is_class}
+        for (on, sel), gi in wanted.items():
+            v = objs[on].props.get(sel, 0)
+            resets.setdefault(sn, {})[gi] = (v - 65536 if isinstance(v, int) and v > 32767
+                                             else (v or 0))
+        # 1. split chained sends in statement position so a lowerable write stands alone
+        for sid, body, owner in _obj_local_scopes(s):
+            for lst in I.walk(body):
+                if lst.get("t") != "List" or not lst.get("kids"):
+                    continue
+                out = []
+                for kid in lst["kids"]:
+                    pieces = _split_obj_local(kid, wanted, owner) if isinstance(kid, dict) else None
+                    if pieces is None:
+                        out.append(kid)
+                    else:
+                        out.extend(pieces)
+                lst["kids"] = out
+        # 2. rewrite
+        for sid, body, owner in _obj_local_scopes(s):
+            for n in I.walk(body):
+                t = n.get("t")
+                kids = n.get("kids") or []
+                if t == "Send":
+                    try:
+                        recv, msgs = I.send_pairs(n)
+                    except Exception:                          # noqa: BLE001
+                        continue
+                    target = None
+                    if isinstance(recv, dict):
+                        if recv.get("t") == "Object" and recv.get("name") in objs:
+                            target = recv["name"]
+                        elif recv.get("t") == "Self" and owner in objs:
+                            target = owner
+                    if target is None or len(msgs) != 1:
+                        continue
+                    sel, ps = msgs[0]
+                    gi = wanted.get((target, sel))
+                    if gi is None:
+                        continue
+                    if not ps:
+                        n.clear()
+                        n.update({"t": "Variable", "vtype": "Global", "index": gi})
+                        sites += 1
+                    elif len(ps) == 1 and (I.as_int(ps[0]) is not None or _is_register_node(ps[0])):
+                        val = ps[0]
+                        if I.as_int(val) is not None:
+                            written[gi].add(I.as_int(val))
+                            val = {"t": "Number", "value": I.as_int(val)}
+                        n.clear()
+                        n.update({"t": "Assignment",
+                                  "kids": [{"t": "Variable", "vtype": "Global", "index": gi},
+                                           copy.deepcopy(val)]})
+                        sites += 1
+                elif t == "Assignment" and kids and isinstance(kids[0], dict) \
+                        and kids[0].get("t") == "Property" and owner in objs \
+                        and (owner, kids[0].get("name")) in wanted:
+                    gi = wanted[(owner, kids[0]["name"])]
+                    v = I.as_int(kids[1]) if len(kids) > 1 else None
+                    if v is not None:
+                        written[gi].add(v)
+                    kids[0].clear()
+                    kids[0].update({"t": "Variable", "vtype": "Global", "index": gi})
+                    sites += 1
+                elif t == "Property" and owner in objs and (owner, n.get("name")) in wanted:
+                    gi = wanted[(owner, n["name"])]
+                    n.clear()
+                    n.update({"t": "Variable", "vtype": "Global", "index": gi})
+                    sites += 1
+    for gi, vals in written.items():
+        if vals <= {0, 1}:
+            BOOL_GLOBALS.add(gi)
+    try:
+        ir._obj_local_index = {gi: k for k, gi in index.items()}
+        ir._room_local_resets = resets
+    except Exception:                                      # noqa: BLE001
+        pass
+    return sites, len(index)
+
+
+def _split_obj_local(node, wanted, owner):
+    """One chained send -> the statement list it becomes, or None if nothing here is lowered."""
+    if node.get("t") != "Send":
+        return None
+    kids = node.get("kids") or []
+    if len(kids) < 3:
+        return None
+    recv = kids[0]
+    try:
+        msgs = I.send_pairs(node)[1]
+    except Exception:                                      # noqa: BLE001
+        return None
+    if len(msgs) != len(kids) - 1:
+        return None
+    target = None
+    if isinstance(recv, dict):
+        if recv.get("t") == "Object":
+            target = recv.get("name")
+        elif recv.get("t") == "Self":
+            target = owner
+    if target is None:
+        return None
+
+    def lowerable(sel, ps):
+        return ((target, sel) in wanted and len(ps) == 1
+                and (I.as_int(ps[0]) is not None or _is_register_node(ps[0])))
+    if not any(lowerable(sel, ps) for sel, ps in msgs):
+        return None
+    out, run = [], []
+
+    def flush():
+        if run:
+            out.append({"t": "Send", "kids": [copy.deepcopy(recv)] + run[:]})
+            run.clear()
+    for sm, (sel, ps) in zip(kids[1:], msgs):
+        if not lowerable(sel, ps):
+            run.append(sm)
+            continue
+        flush()
+        out.append({"t": "Send", "kids": [copy.deepcopy(recv), sm]})
+    flush()
+    return out
