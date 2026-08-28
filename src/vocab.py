@@ -4144,11 +4144,39 @@ def derive_obj_locals(ir, rooms):
     (`(theInView view: register)` inside `(switch register ...)`), which `compile._fan_globals`
     resolves against the arm that pinned it and otherwise drops."""
     out = set()
+    engine = _client_written_selectors(ir)
+    classes = {o.species: o for s_ in ir.scripts.values() for o in s_.objects if o.is_class}
     for sn in sorted(set(rooms) & set(ir.scripts)):
         s = ir.scripts[sn]
         objs = {o.name: o for o in s.objects if not o.is_class and o.props}
         if not objs:
             continue
+        # ⛔ STATE THE ENGINE WRITES IS NOT THE SCRIPT'S STORE. A cycler advances `cel`/`loop`,
+        # a mover `x`/`y`/`heading`, a scaler `view`... -- the class library writes them through
+        # its `client` (`_client_written_selectors`), so on an object the script hands to the
+        # engine (`setCycle:`/`setMotion:`/`setScaler:`/`setLooper:`) such a property's value is
+        # not the script's constants: modelling it as one fabricates "this frame is never
+        # reached" seals, and it cost KQ5 sixty times its `register_strandings` (29 registers
+        # of cat/bird/bear animation). An object never handed to the engine keeps them: GK1's
+        # `theInView` is only ever `view: 3022`-ed by the inset script.
+        animated = set()
+        for sid, body, owner in _obj_local_scopes(s):
+            for n in I.walk(body):
+                if n.get("t") != "Send":
+                    continue
+                try:
+                    recv, msgs = I.send_pairs(n)
+                except Exception:                          # noqa: BLE001
+                    continue
+                tgt = None
+                if isinstance(recv, dict):
+                    if recv.get("t") == "Object":
+                        tgt = recv.get("name")
+                    elif recv.get("t") == "Self":
+                        tgt = owner
+                if tgt in objs and any(sel in ("setCycle", "setMotion", "setScaler", "setLooper")
+                                       for sel, _ps in msgs):
+                    animated.add(tgt)
         writes, reads, tainted = collections.defaultdict(set), collections.defaultdict(set), set()
         for sid, body, owner in _obj_local_scopes(s):
             def visit(n, parent=None):
@@ -4207,7 +4235,67 @@ def derive_obj_locals(ir, rooms):
                 continue
             if all(mn == "init" for (_o, mn) in writes[key]):
                 continue                        # a per-visit constant, not state (see room locals)
-            out.add(key)
+            if key[1] in animated and key[2] in engine:
+                continue                        # the engine writes it: not the script's store
+            if key[2] in _library_self_written(classes, objs[key[1]].super):
+                continue                        # the class library assigns it: `register`,
+            out.add(key)                        #   `seconds`, `cycles` -- not the script's store
+    return out
+
+
+_SELFW = {}
+
+
+def _library_self_written(classes, species):
+    """Selectors some ANCESTOR class writes on `self` -- `(= register param3)` in Script::init,
+    `(-- seconds)` in Script::doit, `(self x: ...)` in a mover's client class. A property the
+    class library assigns is the library's to own; the instance's constant writes are cosmetics
+    on top of it. Same principle as `_client_written_selectors`, one spelling over. Lowering
+    `register` would also break the carried-local (`REG_KEY`) reading the machine walks rest on."""
+    key = (id(classes), species)
+    if key in _SELFW:
+        return _SELFW[key]
+    out, seen, sp = set(), set(), species
+    while sp in classes and sp not in seen:
+        seen.add(sp)
+        for b in classes[sp].methods.values():
+            for n in I.walk(b):
+                t = n.get("t") or ""
+                ks = n.get("kids") or []
+                if ((t.startswith("Assignment") or t in ("Increment", "Decrement")) and ks
+                        and isinstance(ks[0], dict) and ks[0].get("t") == "Property"):
+                    out.add(ks[0].get("name"))
+                if t == "Send" and ks and isinstance(ks[0], dict) and ks[0].get("t") == "Self":
+                    for sm in ks[1:]:
+                        sk = sm.get("kids") or []
+                        if sk and sk[0].get("t") == "Selector" and len(sk) > 1:
+                            out.add(sk[0].get("name"))
+        sp = classes[sp].super
+    _SELFW[key] = out
+    return out
+
+
+def _client_written_selectors(ir):
+    """Selectors the class library writes through its `client` -- `(client cel: ...)` in a
+    Cycle, `(client x: ...)` in a Motion -- i.e. properties an object does not own once it is
+    handed to the engine. Derived from the game's own class table, no catalogue."""
+    out = set()
+    for s in ir.scripts.values():
+        for o in s.objects:
+            if not o.is_class:
+                continue
+            for b in o.methods.values():
+                for n in I.walk(b):
+                    if n.get("t") != "Send":
+                        continue
+                    recv = (n.get("kids") or [{}])[0]
+                    if not (isinstance(recv, dict) and recv.get("t") == "Property"
+                            and recv.get("name") == "client"):
+                        continue
+                    for sm in n["kids"][1:]:
+                        sk = sm.get("kids") or []
+                        if sk and sk[0].get("t") == "Selector" and len(sk) > 1:
+                            out.add(sk[0].get("name"))
     return out
 
 
