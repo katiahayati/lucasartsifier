@@ -3888,6 +3888,28 @@ class IrSccReach(SccReach):
             idx = defaultdict(list)
             for (Rk, _room, vk), own in self._inroom_own.items():
                 idx[(Rk, vk)].append(own)
+            # ⭐ ...AND THE VALUES ONLY A CROSSING PRODUCES (2026-08-28). An edge that SETS a
+            # register (`_emeta`'s `sets` -- above all prevRoom, written by every crossing)
+            # is a writer too, priced at what every alternative way across demands. Read
+            # from in-room writes alone, `prevRoom == 302` cost nothing, so the item-banned
+            # walk took the interrogation screen's return-to-sender edge `50 -> 302`
+            # (guarded `12 == 302`) into GK1's tomb-writing room without ever having made the
+            # one crossing that produces that value -- `300 -> 302`, priced at both sketches.
+            # The room whose only entrance demands X was reachable to the player without X,
+            # and the flag it sets on the way out "stranded" the sketches you must hold to
+            # be there. Same composition as the writes: the cheapest crossing, intersected.
+            regs = set(self.regs)
+            for (_a, _b), metas in self._emeta.items():
+                for (_req, sets, alts) in metas:
+                    for Rk, vk in sets.items():
+                        if Rk not in regs:
+                            continue
+                        cost = frozenset()
+                        if alts:
+                            cost = frozenset(alts[0])
+                            for alt in alts[1:]:
+                                cost &= alt
+                        idx[(Rk, vk)].append(cost)
             self._own_by_regval = idx
         best = None
         for v in sorted(vals):
@@ -6183,11 +6205,22 @@ class IrSccReach(SccReach):
                         if _live_srcs(it, srcs, a_st) \
                                 or not _live_srcs(it, srcs, b_st):
                             continue                # still obtainable, or never was from here
-                        if self.required[it] & a:
+                        # ...AND A USE THE FLIP ITSELF KILLED IS NOT A USE (2026-08-28). The
+                        # need was read at ROOM level -- `required[it]` -- so a demand whose
+                        # every site is dead at the post-flip value still counted, and GK1's
+                        # day counter reported reconVeve stranded by the day-7 flip for the
+                        # day-3 arm of `endDay` (`theMapPrint.sc:251`, `123 == 3`), a site no
+                        # day-7 player can stand in. `_need_live` is the site-level reading
+                        # this codebase already applies to a crossing (`crossing_retires_need`)
+                        # and it is asked of the post-flip states of the walk that found no
+                        # source -- the stuck player's world, as the need should be.
+                        if any(self._need_live(it, q, R, a_st) for q in self.required[it]):
                             strand_at.append(r)
                     if strand_at:
                         sealed = set().union(*(_flip_at(r, ban)[0] for r in strand_at))
-                        ahead = self.required[it] & sealed
+                        ahead = {q for q in self.required[it] & sealed
+                                 if any(self._need_live(it, q, R, _flip_at(r, ban)[2])
+                                        for r in strand_at)}
                         out.append({"pattern": "register-flip-point-of-no-return",
                                     "register": R, "value": w, "item": it,
                                     "item_name": self.g.item_name(it),

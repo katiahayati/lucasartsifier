@@ -2313,6 +2313,10 @@ def apply_guards(s, specs):
     # just rewritten -- a stale entry here would walk the UNGUARDED game, i.e. exactly the model
     # this pass exists to stop trusting.
     s._psucc_cache.clear()
+    # `_reg_cost` indexes `_emeta`'s edge `sets` too (a crossing is a writer), so its memo and
+    # index are stale for the same reason.
+    s._regcost_cache = {}
+    s._own_by_regval = None
     # ...and the register-stranding rows, which are a cache over this same movement model.
     # `verify` exists to prove a guard creates no NEW softlock, so a detector answering from
     # its pre-guard result would report the one thing this pass must never miss. Nothing reads
