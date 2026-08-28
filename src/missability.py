@@ -5911,6 +5911,50 @@ class IrSccReach(SccReach):
             if (R, ban) not in live_cache:
                 live_cache[(R, ban)] = set(self._walk(R, ban))
             return live_cache[(R, ban)]
+
+        def _regs_of(P):
+            return P if isinstance(P, tuple) else (P,)
+
+        def _flip_live(R, r, w, ban):
+            """Can the item-less player REACH the flip state itself -- in every projection that
+            tracks a register of R?
+
+            ⭐ A FLIP WHOSE OWN PRECONDITION DEMANDS THE ITEM CANNOT STRAND IT (2026-08-28). The
+            row's claim is "you crossed the point of no return without X and every source of X
+            is behind it". If the crossing itself is impossible without X -- the write prices
+            X, or an edge that sets the register does, or a register the write is ordered
+            behind can only be reached by using X -- then whoever crosses is holding X, and
+            what the crossing closes does not matter to them. Losing X AFTERWARDS is a sink,
+            and the sink detectors own that.
+
+            GK1 is the case, and the USER's words for it: the day system prevents SOME
+            strandings -- sneakily not all. Day 3 cannot end without reconVeve and the wolf
+            phone (`endDay`'s day-3 arm sets flag 15 under `has: 38`/`has: 8`), day 4 not
+            without the tattoo trace and the bracelet repair; so the day-4 flip cannot strand
+            reconVeve, while the day-5 flip -- whose arm asks for neither sketch -- CAN strand
+            the first tomb sketch. The per-day demand is the write's cost in the joint
+            projection of the counter with its gate flag; the scalar counter projection
+            cannot see it, which is why this is asked of EVERY projection tracking R, the same
+            intersection `_build_product` states for movement: a walkable path is walkable in
+            every projection, so a state unreachable in any one of them is unreachable.
+
+            Asked only under a ban (an unbanned walk is the permissive product the seeds came
+            from), and only of projections sharing a register with R, so the extra walks are
+            the joints' -- bounded by `_trap_joints`/`_gate_joints`."""
+            if not ban:
+                return True
+            wt = w if isinstance(R, tuple) else (w,)
+            Rr = _regs_of(R)
+            for P in self.proj:
+                Pr = _regs_of(P)
+                common = [(i, Pr.index(x)) for i, x in enumerate(Rr) if x in Pr]
+                if not common:
+                    continue
+                if not any(q == r and all((v if isinstance(P, tuple) else (v,))[j] == wt[i]
+                                          for i, j in common)
+                           for (q, v) in _live(P, ban)):
+                    return False
+            return True
         for R in self.proj:
             states = self._pstates[R]
             vals = {v for (_r, v) in states}
@@ -6023,6 +6067,8 @@ class IrSccReach(SccReach):
                         a, b, a_st, b_st = _flip_at(r, ban)
                         if b is None:
                             continue                # no item-less pre-flip player -> arrival
+                        if not _flip_live(R, r, w, ban):
+                            continue                # the flip itself needs the item: not a strand
                         if goal and not (goal & _flip_at(r, frozenset())[0]):
                             continue                # that flip is a dead end, not a softlock
                         #   ^ PERMISSIVE deliberately: a flip is a softlock only if some

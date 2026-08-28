@@ -659,6 +659,18 @@ def _fan_globals(guard, writes, gincs, gdom):
 
     Yields the single unchanged branch when there is nothing to expand, so the common path
     allocates no more than before.
+
+    A fanned branch that CONTRADICTS the path it is fanned onto is dropped, exactly as
+    `_fan_exit` drops its own cross-product cells (`_contradicts`, the same test). The case is a
+    state that increments the counter and then switches on it in the same body -- GK1's
+    `graceComeOut` state 101 does `(++ global123) (switch global123 ...)` -- so the path already
+    carries `123 == 7` (the switch's arm) when the fan conjoins `123 == 3`. Kept, that branch is
+    a write nobody can order: `structural_reqs` reads the empty intersection as "unconstrained",
+    the write lands as a free in-room value, and the counter-monotonicity rule then turns it
+    into a step from EVERY lower value -- the day counter could jump 1 -> 8 in one room. Dropped,
+    the surviving branch `123 == 7 -> 8` is ordered like every other fanned step. (The switch
+    reads the POST-increment value, so the survivor is one off; the machine's other increments
+    carry the true steps, and the direction is permissive -- an ordered step, never a free one.)
     """
     branches = [(guard, writes)]
     for (gi, delta) in gincs:
@@ -668,8 +680,9 @@ def _fan_globals(guard, writes, gincs, gdom):
         nxt = []
         for (g0, w0) in branches:
             for v in dom:
-                nxt.append((g0 + [Pred("CMP", var=gi, op="==", value=str(v))],
-                            w0 + [(gi, v + delta)]))
+                g1 = g0 + [Pred("CMP", var=gi, op="==", value=str(v))]
+                if not _contradicts(g1):
+                    nxt.append((g1, w0 + [(gi, v + delta)]))
         branches = nxt
     return branches
 

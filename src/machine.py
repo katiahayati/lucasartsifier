@@ -84,6 +84,9 @@ class Machine:
     entry_sources: list = field(default_factory=list)   # PARALLEL to entries: the METHOD the
     #   arming was found in ("init", "doit", "cue", a proc, ...). A `cue` is not a way IN -- see
     #   MachineBuilder._drop_continuation_entries.
+    entry_self: list = field(default_factory=list)      # PARALLEL to entries: True when the arming
+    #   is `(self changeState: K)` inside THIS machine's own object -- a REDIRECT of a running
+    #   machine, not a way in. See MachineBuilder._floor_self_redirects.
     entry_site: list = field(default_factory=list)      # PARALLEL to entries: the guard AS BUILT
     #   AT THE ARMING SITE, before `_chain_entries` conjoined the armer's preconditions and before
     #   `_inherit_local_continuations` conjoined the latch writes. `entries[i]` is what must HOLD
@@ -622,8 +625,38 @@ class MachineBuilder:
                                  owner=(X.cast_guard(self._cast(s2), oname) if s2 else None),
                                  selfobj=oname)
         self._drop_continuation_entries(m)
+        self._floor_self_redirects(m)
         self._inherit_local_continuations(m, script)
         return m
+
+    @staticmethod
+    def _floor_self_redirects(m):
+        """`(self changeState: K)` in the machine's OWN handleEvent/doit/init is a REDIRECT of a
+        machine that is already running, not a way in -- so it inherits the arming disjunction.
+
+        The arming floor ([[arming-floor]]) says you cannot be executing any state of a machine
+        without having armed it; `_drop_continuation_entries` says a `cue` is not a way in. This
+        is the same rule for the third spelling. GK1's `graceComeOut` (rm370, the bookshop's
+        end-of-day script) is armed from the room's init under `flag 15 AND day-of-week arms`,
+        and its handleEvent answers a keypress with `(self changeState: 99)` -- an entry whose
+        guard is the keypress alone. Read as an independent arming, state 101's `(++ global123)`
+        is a day advance that costs nothing and needs no day-end flag, which is exactly the hole
+        the day-end gate (`endDay`'s per-day item demands) was supposed to close.
+
+        Composed like `_chain_entries`: the REAL entries are alternatives (a disjunction), and
+        that disjunction is conjoined onto each self-redirect's own path condition. Stands down
+        toward the permissive reading whenever it could not be right: no real entry (we do not
+        know how the machine is armed), any real entry unconditional (the floor is trivially
+        true), or more real entries than a guard should carry (the `_chain_entries` bound)."""
+        real = [g for i, (_k, g) in enumerate(m.entries) if not m.entry_self[i]]
+        if not real or len(real) == len(m.entries) or len(real) > 3:
+            return
+        if any(g is None for g in real):
+            return
+        pre = real[0] if len(real) == 1 else GOr(list(real))
+        for i, (K, g) in enumerate(m.entries):
+            if m.entry_self[i]:
+                m.entries[i] = (K, GAnd([pre, g]) if g is not None else pre)
 
     def _inherit_local_continuations(self, m, script):
         """An entry gated on a room LOCAL inherits the condition of whoever SETS that local.
@@ -728,6 +761,7 @@ class MachineBuilder:
         m.entry_sources = [m.entry_sources[i] for i in keep]
         m.entry_recv = [m.entry_recv[i] for i in keep]
         m.entry_site = [m.entry_site[i] for i in keep]
+        m.entry_self = [m.entry_self[i] for i in keep]
         # `init_entry_idx` points INTO `entries`, so re-index it here or the arrival copies
         # would later be restated from whatever entry slid into the dropped row's place. A
         # dropped row is always a `cue` arming and an init entry never is, so nothing an init
@@ -896,13 +930,15 @@ class MachineBuilder:
                             recv=(ev[3] if len(ev) > 3 else None))
             #   are ADDITIONALLY bundled onto room arrival, not instead -- still normal entries too
 
-    def _add_entry(self, m, state, guard, locals_, is_init, armer=None, source=None, recv=None):
+    def _add_entry(self, m, state, guard, locals_, is_init, armer=None, source=None, recv=None,
+                   is_self=False):
         """Append an entry AND its carried locals, keeping the parallel lists in lockstep."""
         m.entries.append((state, guard))
         m.entry_locals.append(dict(locals_))
         m.entry_armers.append(armer)
         m.entry_sources.append(source)
         m.entry_recv.append(recv)
+        m.entry_self.append(bool(is_self))
         m.entry_site.append(guard)        # frozen here; the strengthening passes rewrite
         #   `entries[i]` and deliberately leave this alone. See Machine.entry_site.
         if is_init:
@@ -950,7 +986,8 @@ class MachineBuilder:
                 if sel == "changeState" and params:
                     k = I.as_int(params[0])
                     if k is not None:
-                        self._add_entry(m, k, _conj(pc), {}, source == "init")
+                        self._add_entry(m, k, _conj(pc), {}, source == "init",
+                                        is_self=(recv.get("t") == "Self" and is_self_obj))
         elif tp in ("PublicCall", "LocalCall"):
             tgt, name = I.proc_ref(self.ir, node, script)
             body = self.procs_by.get((tgt, name))
