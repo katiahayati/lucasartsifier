@@ -1014,11 +1014,16 @@ def gating_registers(em):
     prev = prev_room_reg(em)
     if prev is not None:
         written.add(prev)
-    # ⛔ MEASURED AND REVERTED (2026-08-28): promoting, to a fixpoint, every register compared
-    # in the GUARD OF A WRITE of a promoted register (GK1's flag 65 offers Grace's "go home"
-    # topic, whose handler raises the day-end flag) moved LSL2 by 196 golden lines -- the
-    # widened register set changes every intersection downstream. The write-chain gate stays a
-    # cost-model question (`_own_fixpoint`, `_wbranch`), not a promotion.
+    # ⛔ MEASURED AND REVERTED TWICE (2026-08-28, and again the same day): promoting, to a
+    # fixpoint, every register compared in the GUARD OF A WRITE of a promoted register (GK1's
+    # flag 65 offers Grace's "go home" topic, whose handler raises the day-end flag; flag 44
+    # offers Crash's "Voodoo Hounfour", whose handler raises flag 74) moved LSL2 by 196 golden
+    # lines -- the widened register set changes every intersection downstream. Re-measured as a
+    # single hop rather than a fixpoint: +7 registers either way, the SAME 196 lines, and in the
+    # wrong direction -- `softlock_items` LOST the Swimsuit, Sunscreen, Wig, Bikini_Top, Knife,
+    # Bobby_Pin and Pamphlet, oracle rows all. A projection over a register no movement guard
+    # reads gates nothing and only adds walks whose intersections eat findings. The write-chain
+    # gate stays a cost-model question (`_own_fixpoint`, `_wbranch`), not a promotion.
     return sorted((compared & written) - _object_valued_globals(em))
 
 
