@@ -3507,12 +3507,14 @@ class IrSccReach(SccReach):
         #
         # `<= v`, not `< v`: a write of the value it already holds is a harmless self-write, and
         # refusing it would be a second unevidenced claim.
+        self._counters = set()
         for gi in list(self._rstep):
             steps = {st for room in self._rstep[gi].values() for st in room}
             vals = ({v for st in steps for v in st}
                     | {v for vs in self._inroom.get(gi, {}).values() for v in vs})
             if len(steps) < 2 or len(vals) <= 2 or not all(t == f + 1 for (f, t) in steps):
                 continue
+            self._counters.add(gi)
             for room, wr in list(self._inroom.get(gi, {}).items()):
                 for v in sorted(wr):
                     self._rstep[gi][room] |= {(u, v) for u in vals if u <= v}
@@ -3553,15 +3555,22 @@ class IrSccReach(SccReach):
         This is the structure that tells the two apart.
 
         Self-selecting like `_trap_joints`: the pair comes from the mutual dependency in the
-        write table, so a game whose counters are not gated by a flag they themselves gate gets
-        no joint (LSL2, KQ4, KQ6, KQ5 -- measured). LB2's act counter is gated by the gown flag,
-        whose write is act-conditioned: the pressPass shape, the same structure. Bounded the
-        same way, and sharing the same cap of eight joints in all."""
+        write table, and A must be a register that COUNTS (`_counters`, the monotonicity rule's
+        own census: two or more consecutive ordered steps over more than two values), because
+        "the flag gating its ADVANCE" is a claim about a point of no return, and a boolean has
+        none. ⛔ Measured without that qualifier (2026-08-28): LSL2 grew joints over flag pairs
+        and the Vine surfaced as a sink (19 golden lines), KQ6 grew `(165, 166)` and a second
+        letter row -- both goldens moved, so the unqualified rule was wrong. With it, a game
+        whose counters are not gated by a flag they themselves gate gets no joint. LB2's act
+        counter is gated by the gown flag, whose write is act-conditioned: the pressPass shape,
+        the same structure. Bounded like `_trap_joints`, sharing its cap of eight joints."""
         regs = set(self.regs)
+        counters = getattr(self, "_counters", set())
         steps_dep = defaultdict(set)
         writes_dep = defaultdict(set)
         for (gi, room, v), brs in self._wbranch.items():
-            ordered = any(to == v for (_f, to) in self._rstep[gi].get(room, ()))
+            ordered = (gi in counters
+                       and any(to == v for (_f, to) in self._rstep[gi].get(room, ())))
             for (deps, _cost, _co) in brs:
                 for S in deps:
                     if S == gi or S not in regs:
