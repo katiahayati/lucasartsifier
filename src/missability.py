@@ -3622,9 +3622,13 @@ class IrSccReach(SccReach):
             for B in sorted(steps_dep[A]):
                 if A in writes_dep.get(B, ()):
                     _add((A, B))
+                    continue                    # the pair closes the cycle: a triple adds nothing
                 for C in sorted(writes_dep.get(B, ())):
                     if C != A and A in writes_dep.get(C, ()):
                         _add((A, B, C))
+        # ⛔ Measured 2026-08-28: triples beside a closing pair are redundant (GK1's rows all
+        # sit on (123, 257) and the scalar) and KQ5 -- whose flag 331 now counts -- filled the
+        # cap with eight permutations of four registers, 550s of walks for no row.
         return want
 
     def _trap_joints(self, traps, dom):
