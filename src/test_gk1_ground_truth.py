@@ -8,8 +8,8 @@ autonomous run). See docs/GK1-SOFTLOCK-CANDIDATES.md for the derivations, file:l
 
 What GK1 adds to the corpus: a DAY-structured game (`global123`, 1..10) whose point of no return is
 the day counter itself, not a room edge. Its four real dead ends are all "the day advanced past the
-only window" or "you walked into the finale without X", and the tool catches NONE of them yet
-(2026-08-27). The reds below name each gap; `tools/run_tests.py` KNOWN_RED carries the reasons.
+only window" or "you walked into the finale without X". R1 (the day-5 window) is CAUGHT since
+2026-08-28; the reds below name the remaining gaps; `tools/run_tests.py` KNOWN_RED carries the reasons.
 """
 import os
 import sys
@@ -71,10 +71,12 @@ CONFIRMED_SAFE = {
 # restore from, preventable on its own screen. A plain on-screen death: a false positive here.
 CONFIRMED_SAFE.add("knife")
 
-# sVoodooCode (33): register_strandings on synthetic flag 247 ("wrong message written",
-# rm302.sc:154). Writing on the tomb REQUIRES holding both sketches (rm300.sc:952 `(has: 32)
-# (has: 33)`), neither is ever consumed (no `put: 32/33`), so the player who can flip the seal
-# holds the item. A flip whose own precondition demands the item cannot strand it.
+# sVoodooCode (33): register_strandings on synthetic flag 246 (formerly 247; the tomb-writing
+# room's dispose, rm302.sc:149-154). Writing on the tomb REQUIRES holding both sketches
+# (rm300.sc:952 `(has: 32) (has: 33)`), neither is ever consumed (no `put: 32/33`), so the player
+# who can flip the seal holds the item. Still flagged 2026-08-28 because the model reaches rm302
+# through the interrogation screen's return-to-sender edge `50->302` (guarded `prev == 302`)
+# without the priced crossing `300->302` -- a return edge should carry its origin's entry cost.
 CONFIRMED_SAFE.add("sVoodooCode")
 
 ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS

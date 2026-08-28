@@ -74,30 +74,35 @@ KNOWN_RED = {
     # cs-edge fallbacks. The item is still CAUGHT (5 register rows); what changed is the PIN.
     # Re-pinning the oracle, refreshing the watched surface and blessing the emission delta
     # are each a bless ([[refresh-is-a-bless]]); they wait for the user's yes, together.
-    # ⛔ GK1 (SCI32, branch gk1, 2026-08-27): FOUR real dead ends derived from the scripts
-    # (docs/GK1-SOFTLOCK-CANDIDATES.md §1.1), NONE caught. Each red names the modelling gap;
-    # none of them is a limitation to pin green ([[commit-rule-and-red-tests]]). Unvalidated by
-    # play and unruled by the USER -- the rows themselves may move when they rule.
+    # ⛔ GK1 (SCI32, branch gk1, 2026-08-27/28): FOUR real dead ends derived from the scripts
+    # (docs/GK1-SOFTLOCK-CANDIDATES.md §1.1); R1 CAUGHT 2026-08-28 (§1.8 -- the counter x gate-flag
+    # joint, the object-local property store, room-local source liveness). Each red names the
+    # modelling gap; none of them is a limitation to pin green ([[commit-rule-and-red-tests]]).
+    # Unvalidated by play and unruled by the USER -- the rows themselves may move when they rule.
     "test_gk1_ground_truth.py": {
         "no UNEXPECTED unit flagged (suspicion)":
-            "four FALSE POSITIVES: sVoodooCode (register_strandings on flag 247 -- the flip needs both sketches in hand, neither is consumed), knife (fatal_uses -- an on-screen death, not a consumption; USER ruling 2026-08-27), sLakePatter (dangerous_sinks -- the give is the day-2 gate, "
-            "flag 231; no `has: 31` exists) and reconVeve (register_strandings on the day "
-            "counter reaching 10 -- never consumed, every demand day-3/4 gated and dead after "
-            "the flip). All four recorded in CONFIRMED_SAFE; cure the detectors, never the list",
+            "four FALSE POSITIVES: sVoodooCode (register_strandings on flag 246 -- the tomb-"
+            "writing room is reached through the interrogation screen's return edge 50->302 "
+            "without the priced crossing 300->302; a return edge should carry its origin's entry "
+            "cost), knife (fatal_uses -- an on-screen death, not a consumption; USER ruling "
+            "2026-08-27), sLakePatter (dangerous_sinks -- the give is the day-2 gate, flag 231; "
+            "no `has: 31` exists) and reconVeve (register_strandings at the day-4/7 flips -- in "
+            "the model Grace's 'go home' topic 49 can end day 3 because flag 65 is re-raised by "
+            "rm470's cutscenes whose once-only gate, flag 11, does not reach their write "
+            "branches). All four recorded in CONFIRMED_SAFE; cure the detectors, never the list",
         "a safe item is not flagged":
             "same four false positives as the row above (the two checks are one defect seen "
             "from the oracle's two sides)",
-        "R1: VoodooCode1 is caught as a day-window stranding (source closes at day 5)":
-            "the day counter (global123) advances by `++` and gates by RANGE (< 5 / >= 5); "
-            "register_strandings keys on a literal one-way write and has no counter reading",
         "R2: the confessional deposit (rod + a signal device -> flags 280/281 -> 351) is caught":
             "the point of no return (sHRoom8.sc:71) is an intra-room scene switch inside the "
             "hounfour (room 800); the model has no scene-level boundary to hang a carry-in on",
         "R3: the two guises are caught as carry-ins to Grace's room":
             "same intra-room boundary as R2",
         "R4: flag 44 (Cazaunoux topic 54 -> Crash's 'Voodoo Hounfour') is caught as a stranding":
-            "conversation topics (Teller/Interrogation dispatch, the global-topic band 1-15 "
-            "keyed on flags 37-51, the topic-said array global182) are not modelled",
+            "a FLAG stranding: the Teller lowering (2026-08-28) makes Crash's topic 8 a `flag 44` "
+            "site and rm270's topic 54 its only writer, but no detector treats a flag value as "
+            "the strandable resource (register_strandings strands ITEMS); the topic-said array "
+            "global182 (proc50_5..8) is also still unmodelled",
     },
     "test_lb2_ground_truth.py": {
         "mechanism pinned: pressPass":
