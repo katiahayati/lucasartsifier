@@ -32,7 +32,7 @@ import config
 from dataclasses import dataclass, field
 
 import ir as I
-from guard_ast import GAnd, GOr, Pred
+from guard_ast import GAnd, GOr, GNot, Pred
 from extract import atom, _conj, item_transfer, EGO
 import extract as X
 
@@ -159,6 +159,13 @@ def _is_cue_send(recv, msgs):
                 and I.as_int(params[0]) != 0:
             return True
     return False
+
+
+def _unlist(n):
+    """An `If` arm arrives as a one-statement `List`; the value inside is what it yields."""
+    while isinstance(n, dict) and n.get("t") == "List" and len(n.get("kids") or []) == 1:
+        n = n["kids"][0]
+    return n
 
 
 def _setscript_target(param, ir=None):
@@ -907,8 +914,27 @@ class MachineBuilder:
                     # local write so the entry only reaches the arm it selected: without it,
                     # KQ6's `walkOut 0 1` (flag-gated, out to the surface) and `walkOut 0 0`
                     # (back into the maze) merge, and the gated escape reads as free.
-                    reg = X.REG_KEY if len(params) > 2 and I.as_int(params[2]) is not None else None
-                    events.append(("a", list(p), I.as_int(params[2]) if reg else None, slot))
+                    p2 = params[2] if len(params) > 2 else None
+                    vals = []
+                    if p2 is not None and I.as_int(p2) is not None:
+                        vals = [(I.as_int(p2), [])]
+                    elif (isinstance(p2, dict) and p2.get("t") == "If"
+                          and len(p2.get("kids") or []) == 3
+                          and all(I.as_int(_unlist(k)) is not None for k in p2["kids"][1:])):
+                        # `setScript: s 0 (if <c> A else B)` -- GK1's tomb arms its inset with
+                        # `(if (proc13_0 394) 3025 else 3024)`. Read as ONE arming with no
+                        # register, it is consistent with every `switch register` arm, and the
+                        # arm that message1 selects (3022, present only while day < 5) inherited
+                        # this arming's guard too -- the day dropped out of the sketch's source.
+                        # Two armings, each with its literal and its half of the condition.
+                        c = X.atom(p2["kids"][0])
+                        vals = [(I.as_int(_unlist(p2["kids"][1])), [c] if c is not None else []),
+                                (I.as_int(_unlist(p2["kids"][2])), [GNot(c)] if c is not None else [])]
+                    if vals:
+                        for v, extra in vals:
+                            events.append(("a", list(p) + extra, v, slot))
+                    else:
+                        events.append(("a", list(p), None, slot))
         # A doVerb that arms this machine with `setScript:` gates it on the item the player used --
         # `(== param1 <item.message>)` -> OWN. verb_param_scope makes `atom` see that inside the
         # arming path condition (the machine lift shares extract.atom but does not set the context).

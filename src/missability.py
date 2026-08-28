@@ -3338,6 +3338,20 @@ class IrSccReach(SccReach):
             cost = frozenset(cost)
             self._inroom_own[key] = (self._inroom_own[key] & cost
                                      if key in self._inroom_own else cost)
+        # ⭐ WHAT A WRITE HANDS OVER (2026-08-28): the items `get:`-ed under the SAME guard in
+        # the same handler. `(global0 get: 5 getPoints: 122 1)` -- GK1's gift certificate --
+        # raises flag 122 and grants item 5 in one send, so the flip "into 122" cannot strand
+        # the certificate: whoever flips is holding it. LB2's pressPass pickup is the same
+        # shape (the pass and its story tick, hop C of [[lb2-pass-necessary-for-act1]]).
+        # Read by `register_strandings`; keyed like `_inroom_own`.
+        self._cogrants = defaultdict(list)
+        gets_by = defaultdict(set)
+        for room_, script_, it_, g_ in getattr(em, "handler_gets", ()):
+            gets_by[(room_, script_, str(g_))].add(it_)
+        for room, script, gi, v, g in em.handler_writes:
+            if gi in regset:
+                self._cogrants[(gi, room, v)].append(
+                    frozenset(gets_by.get((room, script, str(g)), ())))
         for room, script, gi, v, g in em.handler_writes:
             # A debug-gated write is not real availability -- the same reason `build_maps` skips
             # debug-gated ACQUISITIONS (rm82's `if gDebugging` hands over the whole bomb). Applied
@@ -3485,6 +3499,10 @@ class IrSccReach(SccReach):
                         # started, so reading only that made every cutscene effect free.
                         cheapest((gi, info["room"], v),
                                  _own_positive(g) | emust.get(K, frozenset()))
+                        # ...and what the same state HANDS OVER (`gg`): GK1's gift certificate
+                        # is `(global0 get: 5 getPoints: 122 1)` inside a bookstore cutscene.
+                        self._cogrants[(gi, info["room"], v)].append(
+                            frozenset(x if isinstance(x, int) else x[0] for x in (gg or ())))
         # ⭐ A COUNTER MAY NOT BE WOUND BACKWARDS.
         #
         # A write whose from-value we could not recover lands in `_inroom`, which means "settable
@@ -6328,6 +6346,9 @@ class IrSccReach(SccReach):
                             continue                # no item-less pre-flip player -> arrival
                         if not _flip_live(R, r, w, ban):
                             continue                # the flip itself needs the item: not a strand
+                        cog = self._cogrants.get((R, r, w)) if not isinstance(R, tuple) else None
+                        if cog and all(it in c for c in cog):
+                            continue                # every write of the flip HANDS OVER the item
                         if goal and not (goal & _flip_at(r, frozenset())[0]):
                             continue                # that flip is a dead end, not a softlock
                         #   ^ PERMISSIVE deliberately: a flip is a softlock only if some

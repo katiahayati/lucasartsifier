@@ -30,14 +30,17 @@ def _names(units):
     return {n for u in units for n in u}
 
 
-# REAL, and the tool catches it. EMPTY on 2026-08-27 -- honest, not a placeholder.
-EXPECTED_CAUGHT = _units(set())
-
-# REAL per the scripts, MISSED by the tool. Each is a declared RED below with its mechanism.
-KNOWN_GAPS = _units({
+# REAL, and the tool catches it. VoodooCode1 CAUGHT 2026-08-28 (round 3): `register_strandings`
+# on the DAY COUNTER at 5 -- the joint (123, flag 15) projection, the object-local `theInView.view`
+# store and the room-local source liveness together (docs/GK1-SOFTLOCK-CANDIDATES.md §1.8).
+EXPECTED_CAUGHT = _units({
     "VoodooCode1",          # R1: the first tomb-marking sketch; source only while day < 5
                             # (rm300.sc:121), demanded from day 5 to write on the tomb
                             # (rm300.sc:952), without which the day-6 ritual is a forced death.
+})
+
+# REAL per the scripts, MISSED by the tool. Each is a declared RED below with its mechanism.
+KNOWN_GAPS = _units({
     "rod",                  # R2: must be DEPOSITED in the left confessional (rm455.sc:828 ->
                             # flag 280) before Grace's room, which has no exit (sHRoom8.sc);
     ("signalDev", "signalDev2"),

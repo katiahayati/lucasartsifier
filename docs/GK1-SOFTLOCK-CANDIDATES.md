@@ -228,6 +228,6 @@ measurement lands"; the re-pin is the USER's.
 "go home" topic 49 (`(proc50_3 15)` under flag 65): flag 65 is re-raised by rm470's four cutscenes,
 whose once-only gate (flag 11, set alongside 65) does not reach their write branches, so in the model
 Grace can end day 3. `still_needed_at` now `[50, 340]` (rm50 = Grace's topic 50 `(has: 38)`).
-VoodooCode1/sVoodooCode at flag 246 gone (step 5). R1: see below. R2/R3/R4 unchanged (scenes; the
+VoodooCode1/sVoodooCode at flag 246 REMAIN: step 5 does not reach them -- `prev == 302` is produced by LEAVING 302 (free); what the return edge `50->302` really presupposes is having ENTERED 302 (priced at both sketches), a two-step fact the register-cost index cannot express. Open: a return-to-sender edge should carry its origin room's entry cost. R1: see below. R2/R3/R4 unchanged (scenes; the
 flag-stranding detector R4 needs is not built — the Teller lowering now makes Crash's topic 8 a
 `flag 44` site, so the writer/use chain is visible).
