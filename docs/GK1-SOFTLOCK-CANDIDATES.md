@@ -545,3 +545,52 @@ The honest reading: the monotonicity test genuinely needs the built step tables,
 **second pass** — promote, build the tables, apply the narrow rule with the real `_counters`,
 rebuild — not a cleverer early approximation. Given that promotion has broken the goldens twice,
 that pass deserves its own measured round.
+
+## §1.12 A conversation topic is a MOVE (2026-08-29, the USER's reframe)
+
+> *"this is an sci2 new idiom, the conversation tree. we're trying to shoehorn it into the
+> previous worldview, which is too narrow. either we need to widen the worldview, or it would be
+> ok to have SCI2 handling that understands conversation trees and corresponding registers."*
+
+That is the right diagnosis of §1.11. `gating_registers` promotes a register iff a MOVEMENT guard
+compares it — rooms, doors, machine exits — which is SCI0/SCI1's complete answer to how a game
+advances. SCI32 put a **second graph beside the room graph**, and GK1 runs much of its plot on it.
+Asking Grace to go home ends the day exactly as walking out of a room would; the flag that puts
+that topic on the menu gates progress as surely as a lock gates a corridor. Reading only the room
+graph is not a conservative simplification here — it is the wrong worldview.
+
+So: **a topic offering IS a movement guard.** `vocab.topic_gate_tests` yields the condition of
+every lowered topic (the `If` wrappers `lower_teller_cases` builds are tagged where they are
+built), and `_movement_guards` yields them beside edges, exits and entries.
+
+GK1: **214 → 249 promoted registers.** Flag 65 lands (Grace's "go home") and so does **flag 44**
+(Crash's "Voodoo Hounfour" — R4's blocked link). The day-end write at rm50 goes
+`deps={178:[2]} cost=[]` → `deps={178:[2], 307:[1]}`.
+
+**Surfaces: LSL2, KQ4, KQ6, KQ5, GK1 byte-identical; LB2 unchanged from its already-declared 4
+rows. Suite 878/13/0/0.** Inert on SCI0/SCI1.1 **by construction** — no `showCases` protocol means
+no tagged node — which is the property §1.11's candidate rule was straining to buy by measurement.
+
+### ⛔ What was rejected on the way, and why it mattered
+§1.11's narrow promotion (one hop up the write chain, but only off the gate of a counter's ordered
+step) measured well — 0 new registers on LSL2/KQ4/KQ6/LB2, +2 KQ5, +5 GK1 including flag 65. It was
+still **a clause protecting a known answer**: nothing about "a counter's gate" explains why a
+conversation flag matters, and it only ever pointed at flag 65 because that is where I started
+from. It also needed a second build pass (the counter test wants tables that exist only after
+promotion; five promotion-time approximations were measured and every one missed, LSL2 +6/+8 too
+loose or GK1's counter vanishing entirely). The right rule is shorter, needs no second pass, and
+says something true about the game.
+
+### ⭐ NEXT — and the next question is about the GAME, not the model
+`reconVeve@reg123=4` does **not** retire yet. The day-end branch now demands flag 65, but flag 65's
+own writers are still free: `_wbranch[(flag65, rm470, 1)]` has **14 branches**, one carrying
+`{253: [0]}` (flag 11, the once-only gate) and thirteen with **empty deps**. Every one is inside
+`afterTheCloseUp` (`rm470.sc:329-557`), armed under `(== global12 471)` — returning from the
+magnifying-glass close-up — and gated internally by locals (`local5`) and by which sub-scene ran.
+rm470's first-visit cutscene is a different script (472, armed under `(not (proc13_0 11))`).
+
+So the open question is not "how do we model the gate" but **"is flag 65 genuinely once-only?"** —
+i.e. can the player re-enter rm471, come back, and be offered "go home" again on a later day? If
+yes, `reconVeve`'s row may not be a false positive at all and the declared red is wrong in its
+VERDICT, not just its cure ([[re-derive-a-reds-premise]]). That wants a play-check or a ruling
+before any more model work.
