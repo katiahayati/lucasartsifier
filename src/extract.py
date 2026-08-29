@@ -3295,6 +3295,30 @@ def dest_key(node):
     return (node.get("vtype"), node.get("index"))
 
 
+def script_slot(recv, selfobj=None):
+    """The ONE `setScript:` slot a receiver names -- ("G", idx) for a global, ("O", name)
+    otherwise -- or None if the receiver is not something that holds a Script.
+
+    An object holds exactly one Script at a time, so this key is what says two armings COMPETE
+    (`death_traps`' rival machines) and what says a `setScript:` on a running Script's own host
+    DISPOSES it (`compile._ends_script`). Both readings must spell the slot the same way or they
+    are talking about different objects; `machine._arm_events` records it under this key and
+    `machine.entry_recv` carries it per entry, so this is the single spelling.
+
+    `selfobj` is the object whose method we are standing in: `(self setScript: X)` arms the same
+    slot a named receiver would, and dropping it cost `death_traps` every room that kills you by
+    arming its own death script (LB2's act-5 walls)."""
+    if not isinstance(recv, dict):
+        return None
+    if recv.get("t") == "Variable" and recv.get("vtype") == "Global":
+        return ("G", recv["index"])
+    if recv.get("name"):
+        return ("O", recv["name"])
+    if recv.get("t") == "Self" and selfobj:
+        return ("O", selfobj)
+    return None
+
+
 def _script_prop_values(ir, s, var):
     """`newRoom: register` -- a routing SCRIPT whose destination was handed to it when armed.
 

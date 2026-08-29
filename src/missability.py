@@ -431,8 +431,10 @@ def _after(info, tr, gr, goal_ok):
         return False                           # death is just one way to fail goal-reachability
     if tr[0] == "EXIT":
         return tr[1] in goal_ok
-    if tr[0] == "PARK":
+    if tr[0] in ("PARK", "END"):
         return info["room"] in goal_ok         # control returns to the player, in this room
+        #   -- and an END (the script disposed itself) hands it back the same way a PARK does.
+        #   The two differ only in whether state K+1 can still run; see `compile._ends_script`.
     return True                                # ADVANCE/JUMP/SETSTATE resolve via `gr`
 
 
@@ -1517,6 +1519,31 @@ def state_musts(info, regs, dom=None):
     the callers feeding the domain-less branch tables pass nothing and keep their measured
     surfaces -- the two-readings discipline `_wbranch` and `_wbranch_dom` already state.
 
+    ⭐ AND THE WALK CROSSES A PARK (2026-08-28b). A PARK is "this state armed no cue we can see",
+    which for a cutscene means it handed off and is waiting -- GK1's `knockOnDoor` state 7 is
+    `(madamTeller doVerb: 11)`, a conversation, and the cue that ends it lands on state 8 exactly
+    as an ADVANCE would. Stopping there is not the conservative choice it looks like: this walk's
+    consumers read a state's EXIT state-locally, so `edge_meta` was publishing `270->280` from
+    states 9 and 11 while the walk that prices them declared those states unreachable and returned
+    `{}` -- no constraint at all, the loosest possible answer, and Cazaunoux's house stayed open on
+    day 4. A state whose exit the model publishes must have its incoming paths walked; where the
+    machine's own reachability model stops (`next_state`, `_succ_state`, `_entry_reach_walk`, which
+    answer "does state K+1 RUN") this one must not, because it answers "IF state K runs, what did
+    every path here establish". That difference is deliberate, and it is why the rule is not shared
+    (cf. [[same-rule-two-places]] -- one question, two readings, like `_wbranch`/`_wbranch_dom`).
+
+    ⛔ IT ONLY WORKS WITH THE OTHER HALF. `compile._ends_script` splits the old PARK into PARK
+    (waiting) and END (the script disposed itself, so nothing lands on K+1) and the walk stops at
+    an END. Measured on `knockOnDoor` the three ways: stopping at every PARK leaves states 8-13
+    with `{}`; crossing every PARK is WORSE, because state 5's `(>= global123 4)` branch ends with
+    `(self dispose:)` and its `123 in {4..10}` then merged into the day<4 spine and dissolved even
+    the constraint state 7 already had; crossing a PARK and stopping at an END carries
+    `123 in {0,1,2,3}` all the way to both `newRoom: 280` exits. Neither half is the fix on its own.
+
+    Adding a predecessor edge can only LOOSEN a state that some other path already reaches (the
+    merge below is a union over the registers both agree on), so the risk lives entirely in states
+    that had no predecessor at all and now have one -- exactly the states this exists to price.
+
     A cutscene decides its outcome early and pays it off late. KQ6's minotaur fight branches at
     state 8 -- with the red scarf on the minotaur it charges into the wall and dies, without it you
     are gored -- and only the surviving path walks on to state 14, which sets the minotaur-defeated
@@ -1714,6 +1741,8 @@ def state_musts(info, regs, dom=None):
                 dst = tr[1]
             elif tr[0] == "SETSTATE":
                 dst = tr[1] + 1
+            elif tr[0] == "PARK":
+                dst = K + 1                        # ⭐ A PARK IS A WAIT, AND THIS WALK MUST CROSS IT
             else:
                 continue
             nloc = proj(C._apply_counters(loc, c or ()))

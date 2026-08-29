@@ -14,6 +14,7 @@ from __future__ import annotations
 import ir as I
 from guard_ast import GAnd, GOr, GNot, Pred
 from extract import atom, _conj, item_transfer, item_transfers, EGO, dest_key, _is_register, REG_KEY
+import extract as X
 import machine as M
 
 COUNTER_CAP = 40          # loop/unroll bound
@@ -51,7 +52,51 @@ PATH_CAP = 4000           # per-machine path budget
 _TIMER_PROPS = ("seconds", "cycles", "ticks")
 
 
-def _records(node):
+def _ends_script(recv, sel, params, hosts=()):
+    """Does this send END the running Script -- so that no later cue can advance it?
+
+    An object holds ONE Script at a time (`extract.script_slot`), so a Script stops running when
+    its own slot is emptied or handed to another Script. Three spellings, one fact:
+      `(self dispose:)`          -- Script::dispose (GK1 567 sites, KQ6 624, LB2 439, KQ5 129,
+                                    KQ4 11, LSL2 13)
+      `(client setScript: ...)`  -- `client` IS the object holding this Script, whatever armed it
+      `(<host> setScript: ...)`  -- the same, spelled with the host's own name; `hosts` is this
+                                    machine's `entry_recv`, the slot each arming wrote
+    The third is not a variant for completeness. KQ6's minotaur fight is decided by it: state 8's
+    no-scarf arm is `(global2 setScript: hornSwaggled 0 register)`, and rm440 armed
+    `minotaurCharging` into that very slot (`minoTrigger.sc:81`) -- so the gored branch hands the
+    room away and never reaches state 9.
+
+    ⭐ WHY IT HAD TO BE READ. A state that arms no cue PARKS, and a PARK was two different things
+    spelled one way: "waiting for a cue we cannot see" (a `doVerb:` conversation, an inset, a
+    hand-off that will call back) and "this script is over". They differ in exactly one place --
+    whether state K+1 still runs -- and `state_musts` is where that matters, because a walk that
+    stops at every PARK loses every fact a Sierra cutscene established before its first wait.
+
+    ⛔ AND THE MEASUREMENTS SAY BOTH HALVES OR NEITHER, TWICE:
+      * GK1 `knockOnDoor` (`rm270.sc:199-262`): crossing every PARK is WORSE than stopping. State
+        5's day-4 branch ends with `(self dispose:)`, and letting it flow on merged `123 in
+        {4..10}` into the day<4 spine and dissolved the constraint state 7 already had.
+      * KQ6 `minotaurCharging` -- with only the two `dispose`/`client` spellings reading, state
+        8's no-scarf arm PARKed, the walk crossed it into state 9, and `443` (the scarf on the
+        minotaur) merged to `{0,1}` at state 13. The RED SCARF LEFT `softlock_items` and rm340's
+        three exit guards lost `has: 41`: a golden regression, caught by the golden.
+
+    Missing an END is the only dangerous direction here; over-declaring one merely stops the walk
+    where it always stopped."""
+    if sel == "dispose" and not params and recv.get("t") == "Self":
+        return True
+    if sel != "setScript" or not params:
+        return False                      # `(x setScript:)` with no argument READS the slot
+    slot = X.script_slot(recv)
+    return slot == ("O", "client") or (slot is not None and slot in hosts)
+
+
+_HOSTS = "hosts"          # the memo's reserved key -- see `_paths_of`. Not an id-keyed tuple,
+#   so it cannot collide with a ("R", id) / ("D", id) verdict.
+
+
+def _records(node, hosts=()):
     """Would `_interp` keep anything from this node?
 
     CONSERVATIVE where the two could differ: `_interp` also needs `as_int` to resolve
@@ -69,6 +114,12 @@ def _records(node):
                 return True                       # -> JUMP
             if item_transfers(recv, sel, params):
                 return True                       # -> gets / drops / moves
+            if _ends_script(recv, sel, params, hosts):
+                return True                       # -> END. This function IS `_interp`'s twin
+                #   ([[same-rule-two-places]]): a node it does not record is COLLAPSED by
+                #   `_paths_of` and `_interp` never sees it, so teaching the interpreter to read
+                #   `(self dispose:)` without teaching this one changed nothing at all -- measured,
+                #   knockOnDoor's two disposing states stayed PARK through a full rebuild.
         return bool(_count_cues_send(recv, msgs))  # -> cues, ADVANCE
     if t == "Assignment":
         dst = node["kids"][0]
@@ -142,7 +193,7 @@ def _discriminating(node, memo):
     got = memo.get(k)
     if got is not None:
         return got[1]
-    if _records(node):
+    if _records(node, memo.get(_HOSTS, ())):
         memo[k] = (node, True)
         return True
     shape = I.control_shape(node)
@@ -200,7 +251,7 @@ def _first_test(node):
 
 
 # ---- leaf-path enumeration through a state body --------------------------
-def _paths_of(node, _memo=None):
+def _paths_of(node, _memo=None, hosts=()):
     """List of paths through `node`; each path is a list of ('T', testnode, pol) and
     ('D', opnode) items in source order. Branches fan out; sequences compose.
 
@@ -214,8 +265,14 @@ def _paths_of(node, _memo=None):
     and stores the node ALONGSIDE its verdict, so the memo's own reference pins the id for as
     long as it is live -- `opmodel._machine_info` hands us a freshly inlined tree per state, and
     an unpinned id could be recycled under us. Per-call rather than global for the same reason:
-    those trees are temporary and a process-wide memo would pin every one of them forever."""
-    memo = {} if _memo is None else _memo
+    those trees are temporary and a process-wide memo would pin every one of them forever.
+
+    `hosts` -- this machine's `setScript:` slots (`machine.entry_recv`) -- rides in the memo
+    under `_HOSTS` rather than through four signatures, because its scope is exactly the memo's:
+    ONE top-level enumeration, of ONE machine's state body. `_records` needs it to tell a send
+    that ENDS this script from one that hands some other object a script (see `_ends_script`),
+    and a node `_records` rejects is collapsed before `_interp` can ever see it."""
+    memo = {_HOSTS: frozenset(hosts)} if _memo is None else _memo
     if node is None:
         return [[]]
     if not _discriminating(node, memo):
@@ -259,14 +316,15 @@ def _seq(forms, _memo=None):
 # ---- interpret a path into (guard, writes, gets, counters, transition) ---
 class Step:
     __slots__ = ("guard", "writes", "gets", "counters", "trans", "cues", "drops", "moves",
-                 "gincs", "vexit")
+                 "gincs", "vexit", "ends")
 
     def __init__(self):
         self.guard = []            # atoms (external) or ("CTR", (vt,idx), op, val)
         self.writes = []           # (glob, val)
         self.gets = []
         self.counters = []         # ((vt,idx), kind, val)
-        self.trans = ("PARK",)     # first immediate transition wins; else ADVANCE/PARK
+        self.trans = ("PARK",)     # first immediate transition wins; else ADVANCE/PARK/END
+        self.ends = False          # this path DISPOSES the script -- see `_ends_script`
         self.cues = 0              # # of cues this path ARMS (each fires one `self cue:`)
         self.drops = []            # items CONSUMED here (`gEgo put: N -1`). Consuming an item
         #   requires owning it, and some requirements have NO own() guard at all -- the Flower
@@ -300,7 +358,7 @@ def _count_cues_send(recv, msgs):
     return n
 
 
-def _interp(path, is_death, state_k=None, prop_dests=()):
+def _interp(path, is_death, state_k=None, prop_dests=(), hosts=()):
     """`prop_dests`: names of the Script properties this machine's script gives to `newRoom:`
     (the `("Property", name)` keys of `machine.var_dests`) -- a routing script's `register`.
     Without the ir here, that recorded set is what says a Property argument is a computed
@@ -347,6 +405,8 @@ def _interp(path, is_death, state_k=None, prop_dests=()):
                     for (it, dest) in item_transfers(recv, sel, params):
                         st.moves.append((it, dest))
                         (st.gets if dest == EGO else st.drops).append(it)
+                if _ends_script(recv, sel, params, hosts):
+                    st.ends = True
             c = _count_cues_send(recv, msgs)
             if c:
                 st.cues += c
@@ -422,6 +482,11 @@ def _interp(path, is_death, state_k=None, prop_dests=()):
                 st.cues += 1
     if not fixed and armed:
         st.trans = ("ADVANCE",)
+    elif not fixed and st.ends:
+        # A PARK that will never be cued again. Only where the step would otherwise PARK:
+        # a path that arms a cue AND disposes is left as an ADVANCE, because dropping a
+        # fall-through is the TIGHT direction and nothing here has measured that case.
+        st.trans = ("END",)
     return st
 
 
@@ -445,7 +510,7 @@ def carry_cues(steps_by_state, start):
         paths = steps_by_state.get(K)
         if paths is None:
             continue                       # absent state: SCI falls through, no cue consumed
-        flow = [st for st in paths if st.trans[0] in ("PARK", "ADVANCE")]
+        flow = [st for st in paths if st.trans[0] in ("PARK", "ADVANCE", "END")]
         if not flow:
             surplus = 0                    # only immediate transitions here -> spine ends
             continue
@@ -453,6 +518,10 @@ def carry_cues(steps_by_state, start):
             for st in flow:
                 if st.trans[0] == "PARK":
                     st.trans = ("ADVANCE",)
+                # ...but NOT an END. A carried cue fires into a script that has disposed
+                # itself, and nothing happens. It still counts for the surplus arithmetic
+                # below (it arms no cue of its own, so it contributes the same -1 a PARK
+                # does) -- what it must not do is come back to life.
         surplus = min(max(0, surplus + st.cues - 1) for st in flow)   # least carry (conservative)
 
 
@@ -795,7 +864,12 @@ def compile_machine(machine, is_death):
     dests = getattr(machine, "var_dests", None) or {}
     lregs = getattr(machine, "local_regs", None) or {}
     prop_dests = {name for (t, name) in dests if t == "Property"}
-    steps = {k: [_interp(p, is_death, state_k=k, prop_dests=prop_dests) for p in _paths_of(body)]
+    # The slots this machine was armed into: a `setScript:` on one of them hands this Script's
+    # own place away and ENDS it (see `_ends_script`). Both the enumerator and the interpreter
+    # need them, and they must agree -- `_records` decides what `_interp` ever gets to see.
+    hosts = frozenset(r for r in (machine.entry_recv or ()) if r is not None)
+    steps = {k: [_interp(p, is_death, state_k=k, prop_dests=prop_dests, hosts=hosts)
+                 for p in _paths_of(body, hosts=hosts)]
              for k, body in machine.bodies.items()}
     carry_cues(steps, machine.start)      # SCI cross-state cue carry: PARK -> ADVANCE where covered
     _entry_states = {k for k, _ in machine.entries} | {k for k, _ in machine.init_entries}

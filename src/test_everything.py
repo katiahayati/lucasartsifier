@@ -342,6 +342,30 @@ def test_setscript():
           sm.at(1, [("CTR", ("L", 1), "==", 0)]) == {},
           repr(sm.at(1, [("CTR", ("L", 1), "==", 0)])))
 
+    # ...AND THE WALK CROSSES A PARK BUT STOPS AT AN END -- the two halves of one reading, and
+    # neither works alone. GK1's knockOnDoor (rm270) is the specimen: state 7 waits on a Teller
+    # conversation (a PARK), and state 5's day-4 branch closes the house with `(self dispose:)`
+    # (an END). Stop at every PARK and states past the wait are never priced at all; cross every
+    # PARK and the disposing branch's `123 in {4..10}` merges into the day<4 spine and dissolves
+    # even the constraint the wait state already had.
+    GATE_A = Pred("CMP", var=900, op="==", value="1")
+    GATE_B = Pred("CMP", var=900, op="==", value="2")
+    info = {
+        "entries": [(0, None)], "init_entries": [], "entry_locals": [{}], "init_entry_locals": [],
+        "states": {
+            0: [([GATE_A], [], [], [], ("ADVANCE",)),     # the branch that walks on
+                ([GATE_B], [], [], [], ("END",))],        # ...and the one that disposes
+            1: [([], [], [], [], ("PARK",))],             # a wait: the cue lands on state 2
+            2: [([], [], [], [], ("ADVANCE",))],
+        },
+    }
+    sm = MI.state_musts(info, {900})
+    check("an END branch does not carry its facts into the state after it",
+          sm.get(1, {}) == {900: {1}}, repr(sm.get(1, {})))
+    check("...and the musts walk CROSSES a PARK to the state its cue lands on",
+          sm.get(2, {}) == {900: {1}} and sm.get(3, {}) == {900: {1}},
+          f"2={sm.get(2, {})} 3={sm.get(3, {})}")
+
     # DEATH TRAPS. A Script object holds one `setScript:` slot, so machines armed into the same
     # slot are competitors and the player's action cancels the timer that was in it. But taking the
     # slot is not enough: KQ6's rm420 offers `throwSkull` (own 11), which ENDS by re-arming the

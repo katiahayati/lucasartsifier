@@ -55,6 +55,79 @@ def test_carry_cues():
     C.carry_cues(sbs, 0)
     check("surplus does not carry past an EXIT-only state", sbs[2][0].trans == ("PARK",))
 
+    # ...and a carried cue does NOT revive a script that disposed itself. The END still counts
+    # for the surplus arithmetic (it arms nothing, so it spends one like a PARK does).
+    sbs = {0: [_step(("ADVANCE",), cues=3)], 1: [_step(("END",))], 2: [_step(("PARK",))],
+           3: [_step(("PARK",))]}
+    C.carry_cues(sbs, 0)
+    check("a carried cue does NOT flip an END back to ADVANCE", sbs[1][0].trans == ("END",))
+    check("...and the surplus it spends is still counted (one park after, not two)",
+          sbs[2][0].trans == ("ADVANCE",) and sbs[3][0].trans == ("PARK",))
+
+
+def _send(recv, sel, params=()):
+    return {"t": "Send", "kids": [recv, {"t": "SendMessage",
+                                         "kids": [{"t": "Selector", "name": sel}] + list(params)}]}
+
+
+def test_ends_script():
+    """`(self dispose:)` / `(client setScript: 0)` -- the two spellings of "this script is over".
+
+    A PARK meant both "waiting for a cue" and "gone", and `state_musts` needs them apart: it
+    crosses the first and stops at the second (GK1 rm270's knockOnDoor -- state 7 waits on a
+    `doVerb:` conversation, state 5's day-4 branch disposes)."""
+    print("test_ends_script")
+    SELF, CLIENT = {"t": "Self"}, {"t": "Property", "name": "client"}
+    OTHER = {"t": "Object", "name": "egoHead"}
+    GROOM = {"t": "Variable", "vtype": "Global", "index": 2}
+    NUM0, NUM5 = {"t": "Number", "value": 0}, {"t": "Number", "value": 5}
+    HOSTS = frozenset({("G", 2)})              # armed by `(global2 setScript: thisMachine ...)`
+    check("(self dispose:) ends the script", C._ends_script(SELF, "dispose", []))
+    check("(egoHead dispose:) does NOT -- that is another object",
+          not C._ends_script(OTHER, "dispose", []))
+    check("(client setScript: 0) ends the script", C._ends_script(CLIENT, "setScript", [NUM0]))
+    check("(client setScript: 5) ends it too -- the slot is handed to another Script",
+          C._ends_script(CLIENT, "setScript", [NUM5]))
+    check("(egoHead setScript: 0) does NOT -- not a slot this machine runs in",
+          not C._ends_script(OTHER, "setScript", [NUM0], HOSTS))
+    # ⭐ KQ6's minotaur: the host's own name. Without `hosts` this reads as somebody else's
+    # script and the gored branch walks on into the survivor's states.
+    check("(global2 setScript: X) ends a machine ARMED into global2",
+          C._ends_script(GROOM, "setScript", [OTHER, NUM0], HOSTS))
+    check("...and does not end one armed somewhere else",
+          not C._ends_script(GROOM, "setScript", [OTHER, NUM0], frozenset({("G", 0)})))
+    check("a bare `(x setScript:)` READS the slot and ends nothing",
+          not C._ends_script(GROOM, "setScript", [], HOSTS))
+
+    # ⭐ THE TWIN RULE. `_records` decides what `_paths_of` hands `_interp` at all, so an
+    # interpreter that reads a node `_records` rejects reads nothing: measured on a full GK1
+    # rebuild, knockOnDoor's two disposing states stayed PARK until this line agreed.
+    check("_records keeps a disposing send (or _interp never sees it)",
+          C._records(_send(SELF, "dispose")))
+    check("_records keeps (client setScript: 0)", C._records(_send(CLIENT, "setScript", [NUM0])))
+    check("_records keeps a host setScript ONLY with the same hosts _interp gets",
+          C._records(_send(GROOM, "setScript", [OTHER, NUM0]), HOSTS)
+          and not C._records(_send(GROOM, "setScript", [OTHER, NUM0])))
+    # ...and the hosts reach `_records` through the memo `_paths_of` seeds.
+    body = {"t": "Send", "kids": _send(GROOM, "setScript", [OTHER, NUM0])["kids"]}
+    check("_paths_of carries the hosts into the enumeration",
+          C._paths_of(body, hosts=HOSTS) == [[("D", body)]] and C._paths_of(body) == [[]])
+
+    # ...and end to end through the interpreter.
+    st = C._interp([("D", _send(SELF, "dispose"))], lambda *a: False, state_k=0)
+    check("a disposing path compiles to END", st.trans == ("END",))
+    st = C._interp([("D", _send(OTHER, "dispose"))], lambda *a: False, state_k=0)
+    check("a path disposing something else still PARKs", st.trans == ("PARK",))
+    st = C._interp([("D", _send(GROOM, "setScript", [OTHER, NUM0]))], lambda *a: False,
+                   state_k=0, hosts=HOSTS)
+    check("handing this machine's own slot away compiles to END", st.trans == ("END",))
+    # a path that ARMS a cue and also disposes keeps its ADVANCE: dropping a fall-through is the
+    # tight direction and nothing has measured that case (see `_interp`).
+    st = C._interp([("D", _send({"t": "Object", "name": "madam"}, "setCycle",
+                                [{"t": "Object", "name": "End"}, SELF])),
+                    ("D", _send(SELF, "dispose"))], lambda *a: False, state_k=0)
+    check("arming a cue wins over disposing (permissive)", st.trans == ("ADVANCE",))
+
 
 def test_compress_chains():
     print("test_compress_chains")
@@ -109,6 +182,7 @@ def test_opaque_elimination():
 def run():
     print("=== test_abstractions ===")
     test_carry_cues()
+    test_ends_script()
     test_compress_chains()
     test_opaque_elimination()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed" + (f"  FAILURES: {FAIL}" if FAIL else ""))

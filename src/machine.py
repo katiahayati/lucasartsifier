@@ -886,26 +886,12 @@ class MachineBuilder:
                     events.append(("w", d["index"], I.as_int(ks[1]), list(p)))
             elif t == "Send":
                 _r, msgs = I.send_pairs(n)
-                slot = None
-                if isinstance(_r, dict):
-                    if _r.get("t") == "Variable" and _r.get("vtype") == "Global":
-                        slot = ("G", _r["index"])
-                    elif _r.get("name"):
-                        slot = ("O", _r["name"])
-                    elif _r.get("t") == "Self" and selfobj:
-                        # `(self setScript: X)` IS a slot arming -- `self` is the object whose
-                        # method we are standing in, and it holds the one Script slot exactly as a
-                        # named receiver does. Recorded as ("O", <that object>), the same key the
-                        # named spelling produces, so the two spellings compete correctly.
-                        #
-                        # It read as NO SLOT, and `death_traps` bails on `if not slots` -- so a
-                        # room that kills you by arming its own death script was not a trap at all.
-                        # LB2's act-5 walls are precisely that: `rm350`/`rm500`'s `init` do
-                        # `(self setScript: sLauraDies)` under `global12 == 420 AND global123 == 5`,
-                        # a fully-modelled arming whose negation is exactly "do not arrive from the
-                        # pursuit region during act 5" -- and it was discarded for want of a
-                        # receiver name.
-                        slot = ("O", selfobj)
+                # ONE spelling of the slot key, shared with `compile._ends_script` -- see
+                # `extract.script_slot`. `(self setScript: X)` names the same slot a named
+                # receiver does; reading it as NO SLOT cost `death_traps` every room that kills
+                # you by arming its own death script (LB2's act-5 walls, `(self setScript:
+                # sLauraDies)` under `global12 == 420 AND global123 == 5`).
+                slot = X.script_slot(_r, selfobj)
                 for sel, params in msgs:
                     if sel != "setScript" or not params or not self._targets(params[0], m):
                         continue

@@ -80,6 +80,15 @@ def pairing():
     # meet; flag a stray so the pair cannot drift the other way unnoticed either.
     check("records_names_nothing_alien", not (records - interp - {"Self"}),
           f"named only by _records: {sorted(records - interp - {'Self'})}")
+    # A reading the two SHARE is only paired while both call it. `_ends_script` is the case:
+    # `_interp` classifies the END and `_records` decides whether the node survives to be
+    # classified at all, and dropping either call is invisible to the node-type scan above --
+    # measured, teaching only `_interp` changed nothing on a full rebuild.
+    helpers = {h for h in ("_ends_script",)}
+    for h in sorted(helpers):
+        check("both_halves_call_%s" % h,
+              (h + "(") in _body_of("_interp", text) and (h + "(") in _body_of("_records", text),
+              "`%s` must be consulted by BOTH `_interp` and `_records`" % h)
 
 
 # --------------------------------------------------------------------------- 2. fixtures
@@ -226,20 +235,26 @@ def differential(name, cfg):
     bodies = []
     for _sn, sc in ir.scripts.items():
         for m in mb.machines(sc):
-            bodies.extend((m.script, m.inst, K, b) for K, b in (m.bodies or {}).items())
+            # the machine's own `setScript:` slots ride along: they are what tells `_records`
+            # and `_interp` that a send ENDS this script (see `compile._ends_script`), and a
+            # differential run without them would not exercise the reading at all.
+            hosts = frozenset(r for r in (m.entry_recv or ()) if r is not None)
+            bodies.extend((m.script, m.inst, K, b, hosts) for K, b in (m.bodies or {}).items())
     bad_sig, bad_opq, n_naive, n_ruled = [], [], 0, 0
-    for sn, inst, K, body in bodies:
+    for sn, inst, K, body, hosts in bodies:
         naive = _naive_paths(body)
-        ruled = C._paths_of(body)
+        ruled = C._paths_of(body, hosts=hosts)
         n_naive += len(naive)
         n_ruled += len(ruled)
         died = lambda gi, v: False
-        sn_ = {_sig(C._interp(p, died, state_k=K)) for p in naive}
-        sr_ = {_sig(C._interp(p, died, state_k=K)) for p in ruled}
+        sn_ = {_sig(C._interp(p, died, state_k=K, hosts=hosts)) for p in naive}
+        sr_ = {_sig(C._interp(p, died, state_k=K, hosts=hosts)) for p in ruled}
         if sn_ != sr_:
             bad_sig.append((sn, inst, K, sorted(sn_ ^ sr_)[:1]))
-        on_ = any(MS._has_opaque(C._conj(C._interp(p, died, state_k=K).guard)) for p in naive)
-        or_ = any(MS._has_opaque(C._conj(C._interp(p, died, state_k=K).guard)) for p in ruled)
+        on_ = any(MS._has_opaque(C._conj(C._interp(p, died, state_k=K, hosts=hosts).guard))
+                  for p in naive)
+        or_ = any(MS._has_opaque(C._conj(C._interp(p, died, state_k=K, hosts=hosts).guard))
+                  for p in ruled)
         if on_ != or_:
             bad_opq.append((sn, inst, K, on_, or_))
     check(f"{name}_effects_preserved", not bad_sig,

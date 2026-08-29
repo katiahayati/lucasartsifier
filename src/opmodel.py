@@ -682,10 +682,12 @@ class OpEmitter:
         has_effect = False
         steps_by_state = {}
         prop_dests = {name for (t, name) in (m.var_dests or {}) if t == "Property"}
+        hosts = frozenset(r for r in (m.entry_recv or ()) if r is not None)   # see _ends_script
         for K, body in m.bodies.items():
             body = self._inline_calls(body, m.script, set())
-            steps_by_state[K] = [C._interp(p, self.is_death, state_k=K, prop_dests=prop_dests)
-                                 for p in C._paths_of(body)]
+            steps_by_state[K] = [C._interp(p, self.is_death, state_k=K, prop_dests=prop_dests,
+                                           hosts=hosts)
+                                 for p in C._paths_of(body, hosts=hosts)]
         C.carry_cues(steps_by_state, m.start)   # SCI cross-state cue carry (PARK -> ADVANCE)
         entry_states = {k for k, _ in m.entries} | {k for k, _ in m.init_entries}
         C.compress_chains(steps_by_state, entry_states, m.start)   # collapse effect-free ADVANCE runs

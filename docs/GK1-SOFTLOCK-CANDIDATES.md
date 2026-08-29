@@ -339,3 +339,80 @@ triples retire, `reconVeve@reg(123,257)=(7,0)` becomes `(0,0)`. **`softlock_item
 (`sLakePatter, VoodooCode1, sVoodooCode, reconVeve, knife`) and **R1 is still caught** —
 `VoodooCode1@reg123=5 -> [240, 260, 300]`, the oracle-pinned row. No coverage change anywhere.
 Times: LSL2 37s, KQ4 81s, KQ6 102s, KQ5 612s, LB2 53s, GK1 241s (KQ5 634s -> 612s, GK1 269s -> 241s).
+
+## §1.10 Round 5 (2026-08-28b): the PARK cure — a wait is not an ending
+
+Round 4 left one isolated blocker under R4: `state_musts` stopped at every PARK, so nothing a
+Sierra cutscene establishes before its first wait reached the states after it. This round closes
+that. **All six surfaces are byte-identical**, which is the honest headline: the model now knows
+things it did not, and no detector reads them yet — the remaining GK1 blocker is named in §1.10.3.
+
+### 1.10.1 A PARK was two different things spelled one way
+A state that arms no cue we can count compiles to `PARK`. That covers two situations the model
+could not tell apart:
+
+* **a WAIT** — the state handed off to something that will cue it back. GK1 `knockOnDoor` state 7
+  is `(madamTeller doVerb: 11)`, a conversation; when it ends, the cue lands on state 8 exactly as
+  an `ADVANCE` would.
+* **an ENDING** — the Script is gone and no cue can reach it.
+
+The musts walk needs them apart, and the split is derivable, because an object holds exactly ONE
+Script at a time (`extract.script_slot`, now the single spelling of that key, shared with
+`machine._arm_events` where it already lived). A Script stops running when its own slot is emptied
+or handed on — three spellings, one fact (`compile._ends_script`):
+
+| spelling | sites: GK1 / KQ6 / LB2 / KQ5 / KQ4 / LSL2 |
+|---|---|
+| `(self dispose:)` | 567 / 624 / 439 / 129 / 11 / 13 |
+| `(client setScript: …)` — `client` IS the holder | 0 / 0 / 0 / 227 / 25 / 5 |
+| `(<host> setScript: …)` — the same slot, named; `host` ∈ this machine's `entry_recv` | — |
+
+`_interp` now emits `("END",)` where the step would otherwise PARK (a path that ALSO arms a cue
+keeps its `ADVANCE`: dropping a fall-through is the tight direction and that case is unmeasured),
+`carry_cues` will not flip an END back to `ADVANCE` (a carried cue fires into a disposed script and
+is lost) and `missability._after` reads an END exactly as it reads a PARK (control returns to the
+player, in this room). `state_musts` crosses a PARK and stops at an END.
+
+### 1.10.2 Both halves or neither — measured twice, and the second one was a golden regression
+* **GK1 `knockOnDoor`** (`rm270.sc:199-262`), three readings of the same machine: stopping at every
+  PARK leaves states 8-13 with `{}`; crossing every PARK is **worse than stopping**, because state
+  5's `(>= global123 4)` branch ends with `(self dispose:)` and its `123 in {4..10}` then merged
+  into the day<4 spine and dissolved even the constraint state 7 already had; crossing a PARK and
+  stopping at an END carries `123 in {0,1,2,3}` to both `newRoom: 280` exits.
+* **KQ6 `minotaurCharging`** — the third spelling is not completeness, it is the fight. With only
+  `dispose`/`client` reading, state 8's no-scarf arm `(global2 setScript: hornSwaggled 0 register)`
+  PARKed, the walk crossed it into state 9, and register 443 (the scarf on the minotaur) merged to
+  `{0,1}` at state 13. Measured on the full surface: **the red scarf LEFT `softlock_items`**,
+  rm340's three exit guards lost `has: 41`, and two rm340 placements went. rm440 arms
+  `minotaurCharging` into `global2` (`minoTrigger.sc:81`), so the gored branch hands the room away
+  and never reaches state 9 — reading `entry_recv` as the host restores KQ6 byte-for-byte.
+
+A third correctness point, and it cost a whole rebuild to find: **`_records` is `_interp`'s twin**.
+A node `_records` does not keep is collapsed by `_paths_of` before the interpreter can see it, so
+teaching `_interp` to read `(self dispose:)` changed nothing at all until `_records` agreed.
+`test_discrimination` now pins that both halves consult `_ends_script`, and its LSL2/KQ4
+differential passes each machine's `entry_recv` so the reading is actually exercised.
+
+### 1.10.3 ⭐ THE NEXT THING — the machine's gate is bypassed by its own flat edge
+The day requirement now rides GK1's `270->280` machine rows:
+
+```
+req={808: [1]}                        <- flat cs_edge, via knockOnDoor   FREE
+req={808: [1]}                        <- flat cs_edge, via knockOnDoor   FREE
+req={808: [1], 123: [0, 1, 2, 3]}     <- machine EXIT, state 9
+req={808: [],  123: [0, 1, 2, 3]}     <- machine EXIT, state 11 (contradictory: local4 is false
+                                         on every path that reaches 11, so that exit is dead)
+```
+
+`_emeta` rows are alternatives, so the two free rows keep the house open on day 4 and **nothing
+moved**. They are not suppressed because `machine_delivered` says knockOnDoor does not deliver 280
+— and `machine_delivered` comes from `compile_machine`'s walk, **which has the same PARK-stop
+defect this round fixed in the musts walk**. So the model publishes an exit from a state it
+simultaneously declares unreachable, and `edge_meta`'s own comment names the consequence
+("keeping both as separate rows makes the flat one a free bypass of the gate").
+
+Census of that gap, one row per machine that publishes an exit its own walk cannot reach:
+LSL2 **1** (rm47 `henchScript` -> 96), KQ4 **4**, KQ6 **9 pairs / 11 machines**, GK1 **18 pairs, 12
+of them published as a free flat row**. Crossing a PARK in `compile_machine`'s walk is the same
+one-line change with the same END guard — but it changes edge GUARDS on four golden titles, so it
+is measured on its own and parked if any golden moves.
