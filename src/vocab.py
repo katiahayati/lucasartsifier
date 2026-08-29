@@ -4037,6 +4037,37 @@ def _band_cond(band, v):
     return None
 
 
+TOPIC_GATE = "topic_gate"      # marks the `If` wrapper `lower_teller_cases` builds -- see
+#   `topic_gate_tests`. An extra key on the node is inert: every walker reads `t` and `kids`.
+
+
+def topic_gate_tests(ir):
+    """The condition on each CONVERSATION TOPIC -- the SCI32 answer to "what gates progress here".
+
+    ⭐ THE ROOM GRAPH IS NOT THE WHOLE PROGRESS GRAPH (2026-08-28c, the USER's framing). Every
+    rule about which registers matter was written for SCI0/SCI1, where a game advances by walking
+    through doors, so `missability.gating_registers` promotes a register iff a MOVEMENT guard
+    compares it. In GK1 a large part of the progress graph is the CONVERSATION graph: asking Grace
+    to go home ends the day exactly as walking out of a room would, and the flag that offers the
+    topic gates that as surely as a locked door gates a corridor.
+
+    So a topic offering IS a movement guard, and this is where they come from. Measured on GK1:
+    41 topic-gate flags, 14 of them already promoted for other reasons, **27 new** -- among them
+    flag 65 (Grace's "go home", whose handler raises the day-end flag, so day 3 could end without
+    the evidence `endDay` demands) and flag 44 (Crash's "Voodoo Hounfour", the day-4 lead).
+
+    ⛔ INERT ON SCI0/SCI1.1 BY CONSTRUCTION, like the lowering that plants the marker: a game with
+    no `showCases` protocol has no tagged node, so LSL2/KQ4/KQ6/KQ5/LB2 cannot move. That is the
+    point -- the widening is paid for by the games that need it.
+    """
+    for s in ir.scripts.values():
+        bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
+        for b in bodies:
+            for n in I.walk(b):
+                if n.get(TOPIC_GATE) and (n.get("kids") or []):
+                    yield n["kids"][0]
+
+
 def lower_teller_cases(ir):
     """A CONVERSATION TOPIC IS A GUARDED HANDLER. Sierra's SCI32 `Teller` builds a menu of
     topics and runs `(switch iconValue (K <what saying K does>))` for the one picked; the topic
@@ -4132,7 +4163,7 @@ def lower_teller_cases(ir):
                             continue
                         offered.add(v)
                         test = conds[0] if len(conds) == 1 else {"t": "And", "kids": conds}
-                        ck[1] = {"t": "If", "kids": [test, ck[1]]}
+                        ck[1] = {"t": "If", "kids": [test, ck[1]], TOPIC_GATE: True}
                         sites.append((sn, o.name, mn, v))
                     if o.name not in extern:
                         sites += [(sn, o.name, mn, v)
@@ -4253,7 +4284,7 @@ def _lower_followup_arms(arms, offered, prop):
                 continue
             test = alts[0] if len(alts) == 1 else {"t": "Or", "kids": alts}
             ck = arms[v]["kids"]
-            ck[1] = {"t": "If", "kids": [test, ck[1]]}
+            ck[1] = {"t": "If", "kids": [test, ck[1]], TOPIC_GATE: True}
             lowered.append(v)
             settled.add(v)
             pending.remove(v)

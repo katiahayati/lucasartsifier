@@ -948,8 +948,31 @@ def _cmp_atoms(guard, out):
 
 
 def _movement_guards(em):
-    """Every guard that can gate MOVEMENT: room edges, machine EXIT paths, and machine entries
-    (an entry gates the state chain that leads to an EXIT)."""
+    """Every guard that can gate PROGRESS: room edges, machine EXIT paths, machine entries
+    (an entry gates the state chain that leads to an EXIT) -- and, where the game has one, the
+    offering condition of a CONVERSATION TOPIC.
+
+    ⭐ THE ROOM GRAPH IS NOT THE WHOLE PROGRESS GRAPH (2026-08-28c, the USER's framing). The
+    three original sources are all SCI0/SCI1's answer to "how does this game advance": through
+    doors. SCI32 added a second graph beside the room graph, and GK1 runs a great deal of its
+    plot on it -- asking Grace to go home ENDS THE DAY exactly as walking out would, and the flag
+    that puts that topic on the menu gates it as surely as a lock gates a corridor. Reading only
+    the room graph is not a conservative simplification here, it is the wrong worldview: the
+    condition was in the model (`lower_teller_cases` conjoins it onto the arm) and `gating_registers`
+    threw it away one step later, because no DOOR compares it.
+
+    Measured on GK1: 41 topic-gate flags, 14 already promoted for other reasons, 27 new -- flag 65
+    (Grace's "go home", whose handler raises the day-end flag, so day 3 could end without the
+    evidence `endDay` demands, and `reconVeve` read as strandable) and flag 44 (Crash's "Voodoo
+    Hounfour", the day-4 lead) among them.
+
+    ⛔ The alternative considered and REJECTED was a promotion rule shaped to reach flag 65 -- one
+    hop up the write chain, but only off the gate of a counter's ordered step. It measured well
+    (0 new registers on LSL2/KQ4/KQ6/LB2) and it was still a clause protecting a known answer
+    ([[clause-that-protects-a-known-answer]]): nothing about "a counter's gate" explains why a
+    conversation flag matters. This does, and it is inert on the SCI0/SCI1.1 corpus by
+    construction rather than by measurement -- those games have no `showCases` protocol, so
+    `topic_gate_tests` yields nothing at all."""
     for e in em.ts.edges:
         yield e.guard
     for e in em.ts.cs_edges:
@@ -961,6 +984,14 @@ def _movement_guards(em):
                     yield g
         for K, eg in list(info.get("entries", ())) + list(info.get("init_entries", ())):
             yield eg
+    ir = getattr(em, "ir", None)
+    if ir is not None:
+        from extract import atom
+        for t in vocab.topic_gate_tests(ir):
+            try:
+                yield atom(t)
+            except Exception:            # noqa: BLE001 -- an unreadable offering compares
+                continue                 #   nothing, which is what `_cmp_atoms` would find
 
 
 def gating_registers(em):
