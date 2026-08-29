@@ -416,3 +416,58 @@ LSL2 **1** (rm47 `henchScript` -> 96), KQ4 **4**, KQ6 **9 pairs / 11 machines**,
 of them published as a free flat row**. Crossing a PARK in `compile_machine`'s walk is the same
 one-line change with the same END guard — but it changes edge GUARDS on four golden titles, so it
 is measured on its own and parked if any golden moves.
+
+### 1.10.4 The delivery half — and the two links R4 has left
+Two more one-line readings, both the SAME defect as 1.10.1 in the OTHER walk, the one whose exits
+become `machine_delivered`:
+
+1. **`compile_machine`'s walk crosses a PARK too** (and stops at an END). Without it the model
+   published an exit from a state it simultaneously declared unreachable, and `edge_meta` left the
+   flat cs_edge carrying the same `newRoom` statement standing as a free alternative.
+2. **A wait costs that walk its LOCALS.** The seed (`local_regs`, "the script reloads on room
+   entry, so a local starts at its declared reset") is a fact about ROOM ENTRY, and a PARK hands
+   control back to the room whose handlers own the same storage. GK1 rm270 is the case and it is
+   not a corner: state 7 waits on `(madamTeller doVerb: 11)`, the Teller's own `cue` does
+   `(= local4 1)` (`rm270.sc:544,554`), and states 8-11 branch on local4 — so carrying the seed
+   across the wait made `local4 != 0` decidably false and `_lreg_test` pruned BOTH `newRoom: 280`
+   paths. The register the ARMING selected is kept: it is a property of this Script, which no
+   handler in the room can reach.
+
+Result — `270->280` is now gated, the free rows are gone:
+```
+req={808: [1], 123: [0, 1, 2, 3]}     machine EXIT, state 9
+req={808: [],  123: [0, 1, 2, 3]}     machine EXIT, state 11 (dead: local4 is false on every
+                                      path that reaches 11, so that exit contradicts itself)
+```
+
+**Surfaces: LSL2, KQ4, KQ6, KQ5 and GK1 byte-identical; LB2 moves 2 rows** — `bifocals` and
+`redHair`'s act-5 joint rows change prev-room from rm454 to rm480. LB2 gains **20**
+`machine_delivered` pairs (rm455->454 among them, plus `18->{230,355,420}` and eleven `*->26`), so
+arriving at 454 is a gated machine edge now instead of a free flat one. Same items, same mechanism,
+same need room [750]; only the prevRoom in the joint moved. Declared in KNOWN_RED (21 -> 25 rows).
+
+#### R4 is still a declared RED, and its remaining links are now NAMED
+The day gate holds and rm280 is sealed at day 4 **as far as `270->280` goes**. Measured, two links
+remain, and neither is new — both are open items this project already carries:
+
+* **The return edge `50->280` is unpriced.** `_emeta[(50,280)]` is `{12: [280], 178: [...]}` — a
+  `newRoom: <prevRoom>` return. Any projection that does not track prevRoom crosses it freely, so
+  the day-4 player "returns" to rm280 without ever having been there. **This is the same gap that
+  keeps `sVoodooCode` an FP** (the `50->302` return edge, §1.8): *a return-to-sender edge should
+  carry its origin room's entry cost*. One fix, an FP killed and a red unblocked.
+  Simulated in the product (entry cost conjoined onto the return row): rm280 does close, and
+  `braceMold@reg123=4 -> [460]` (source rm280) appears — three new rows, plausibly the same
+  day-cannot-end-without-it FP class as `reconVeve`'s, so the fix needs the `_flip_live` reading
+  measured with it, not after.
+* **The acquisition's own register demand is never asked in the post-flip world.**
+  `tatooTrace`'s source is rm450 and rm450 stays reachable; what dies is the ACQUISITION, armed
+  under flag 74. `register_strandings._live_srcs` already refuses a source whose guard is dead
+  **at the walked value of R** (`_source_live`), but flag 74 is a different register, so in the
+  R=123 projection it is simply unconstrained. `register_value_strandings` is the detector shaped
+  for this and returns nothing, because its conjunct 3 ("no write past the flip puts S into the
+  accepted set") sees flag 74's write site at rm50 as reachable — the write is gated by flag 44,
+  one hop further up. That hop is exactly the reverted carry-up (1.9), and the conclusion there
+  stands: not as-is. What is new is that the hop is now the ONLY modelling question left in the
+  chain, and the joint machinery (`_gate_joints`) is the shape that can answer it — but R4's
+  dependency is a CHAIN (123 -> rm280 -> 178 -> flag 44 -> flag 74), not the mutual cycle
+  `_gate_joints` selects on.

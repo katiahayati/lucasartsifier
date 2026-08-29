@@ -128,7 +128,13 @@ KNOWN_RED = {
         "mechanism pinned: wireCutters": "gains register_strandings reg123=5->[750] (act-5 carry)",
     },
     "test_watched_surface.py": {
-        "LB2: full surface unchanged (23 keys)  -- 21 row(s) moved":
+        "LB2: full surface unchanged (23 keys)  -- 25 row(s) moved":
+            "(gk1 2026-08-28b) +4: `bifocals` and `redHair`'s act-5 joint rows move their "
+            "prev-room from rm454 to rm480 (one changed row = one REMOVED + one ADDED). The "
+            "PARK cure's delivery half gives LB2 20 more `machine_delivered` pairs -- rm455->454 "
+            "among them -- so arriving at 454 is a GATED machine edge now instead of a free flat "
+            "cs_edge, and 480 is what is left. Same items, same mechanism, same need room [750]; "
+            "only the prevRoom in the joint moved. PLUS "
             "14 rows moved with the pressPass relocation + goals losing rm456/rm521, PLUS "
             "(gk1, 2026-08-27) `debug_globals` gaining 110 -- LB2's Main.sc:987 mirrors "
             "`(FileIO 10 {10.scr})` into global110, the same script-patch debug idiom GK1 has, "

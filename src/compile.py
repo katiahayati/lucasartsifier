@@ -940,7 +940,35 @@ def compile_machine(machine, is_death):
                         walk(tr[1], nc, ng, nw, depth + 1, seen | {key})
                     elif tr[0] == "SETSTATE":
                         walk(tr[1] + 1, nc, ng, nw, depth + 1, seen | {key})
-                    # PARK: dead end (no exit from this path)
+                    elif tr[0] == "PARK":
+                        # ⭐ A PARK IS A WAIT HERE TOO. This walk's exits become `delivered`
+                        # (`opmodel._machine_info`), which is what `edge_meta` uses to SUPPRESS
+                        # the flat cs_edge carrying the same `newRoom` statement -- so a machine
+                        # whose walk stopped at a wait had its own gate published alongside a
+                        # FREE flat alternative, which is the bypass `edge_meta`'s comment warns
+                        # about. GK1's Cazaunoux house is the case: `knockOnDoor` waits on a
+                        # Teller conversation at state 7 and hands over `newRoom: 280` at 9/11,
+                        # so 280 read as undelivered and the day-4 gate the machine rows carry
+                        # was bypassed by two unconditional rows.
+                        #
+                        # Same reading as `missability.state_musts`, and it is sound for the same
+                        # reason: an END (the script disposed itself, see `_ends_script`) is still
+                        # a dead end, so the "segments-per-entry" rule this file's header states
+                        # is kept where it is about the script STOPPING rather than waiting.
+                        #
+                        # ⛔ AND THE WAIT COSTS THE WALK ITS LOCALS. The seed below is a fact
+                        # about ROOM ENTRY ("the script reloads, so a local starts at its declared
+                        # reset"), and a PARK hands control back to the room -- whose handlers own
+                        # that same storage. GK1 rm270 is the case and it is not a corner: state 7
+                        # waits on `(madamTeller doVerb: 11)`, the Teller's own `cue` does
+                        # `(= local4 1)` (`rm270.sc:544,554`), and states 8-11 branch on local4.
+                        # Carrying the seed across the wait made `local4 != 0` decidably false, so
+                        # `_lreg_test` pruned BOTH `newRoom: 280` paths and the machine delivered
+                        # nothing at all. The register the ARMING selected is kept -- it is a
+                        # property of this Script, which no handler in the room can reach.
+                        walk(state + 1, {k: v for k, v in nc.items() if k == REG_KEY},
+                             ng, nw, depth + 1, seen | {key})
+                    # END: dead end -- the Script is gone, no cue can reach state+1
 
     # Lowered own-script locals seed at their declared reset value -- the script reloads on room
     # entry, so the reset is the value a walk starts from, exactly as an untracked raw local has
