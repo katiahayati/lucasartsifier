@@ -471,3 +471,77 @@ remain, and neither is new — both are open items this project already carries:
   chain, and the joint machinery (`_gate_joints`) is the shape that can answer it — but R4's
   dependency is a CHAIN (123 -> rm280 -> 178 -> flag 44 -> flag 74), not the mutual cycle
   `_gate_joints` selects on.
+
+## §1.11 The reconVeve FALSE POSITIVE, diagnosed to the line (2026-08-28c)
+
+`reconVeve@reg123=4 -> [50, 340]` is a declared FP: the day-4 flip cannot strand reconVeve because
+**day 3 does not end without it**. Nailed down, no code changed.
+
+### The game
+`theMapPrint::endDay` (`theMapPrint.sc:230-275`) switches on the day and each arm demands that
+day's evidence:
+```
+(3 (if (and (proc13_0 265) (proc13_0 21) (proc13_0 256)
+            (global0 has: 38)      ; reconVeve
+            (global0 has: 8))  (proc13_1 15) (return 1)))
+(4 (if (and (proc13_0 447) (proc13_0 248) (proc13_0 36) (proc13_0 227)
+            (global0 has: 26)      ; tatooTrace -- R4's item
+            (global0 has: 41)) (proc13_1 15) (return 1)))
+```
+`bookstore.sc:211-243` re-checks the same conditions on entry from rm50 for days 2, 4 and 5 —
+**not day 3**. So day 3's only exit is the arm that demands reconVeve.
+
+### What the model has, and where it loses it
+The three `endDay` sites are priced correctly — `_wbranch[(flag15, rm200|205|210, 1)]` carries
+`{123:[3], …} cost=[8, 38]` and `{123:[4], …} cost=[26, 41]`. But there is a **fourth** writer:
+
+```
+rm50 -> flag15 := 1 :  deps={178: [2]}  cost=[]        <- FREE, no day, no items
+```
+
+That is Grace's Teller topic 49, "go home" (`grace.sc:141-146`):
+`(49 (proc50_3 15) (proc50_4 65) (global0 getPoints: 130 2 1) (self doVerb:))`, offered under
+`(proc50_2 65)` (`grace.sc:49-50`). ⚠️ `proc50_1..4` and `proc13_0..2` are the SAME bit array —
+both index `global127` (`interrogation.sc:31-49` vs `n013.sc:17-35`) — so topic 49 really does
+raise the day-end flag. Only `proc50_5..8` are the separate topic-said array (`global182`).
+
+**The model HAS the offering condition and throws it away.** `em.handler_writes` for that site is
+```
+GAnd([GAnd([178==2, 11==50]), 307!=0])          ; 307 = flag 65
+```
+`lower_teller_cases` lowered it correctly. It is `_wbranch`'s `deps` that keeps only PROMOTED
+registers, and **flag 65 is not promoted**: `gating_registers` requires "compared in a MOVEMENT
+guard AND written", and flag 65 is compared only in a `showCases` offering condition. Measured:
+`flag65 (reg 307) promoted=False`, and no movement guard anywhere compares it.
+
+### The fix is a promotion, and its size is measured
+Blanket write-chain promotion is closed — twice measured, 196 LSL2 golden lines and 7 lost oracle
+items (`gating_registers`' own comment). But the NARROW rule is a different animal:
+
+> promote R iff R is compared in the guard of a write to a promoted S, **where S gates an ORDERED
+> STEP of a COUNTER** — the `_gate_joints` structure, which already earns its keep on the ground
+> that "the flag gating its ADVANCE is a claim about a point of no return".
+
+Sized against the real post-promotion tables (`_counters`, `_rstep`, `_wbranch`):
+
+| | LSL2 | KQ4 | KQ6 | KQ5 | LB2 | GK1 |
+|---|---|---|---|---|---|---|
+| new registers | **0** | **0** | **0** | +2 | **0** | +5 |
+
+GK1's five are `[11, 18, 307, 314, 689]` — **307 is flag 65**. Inert on three goldens and on LB2;
+the whole risk is KQ5's +2.
+
+### ⛔ AND IT NEEDS A SECOND PASS — five promotion-time approximations all failed
+`gating_registers` runs BEFORE `_rstep`/`_wbranch`/`_counters` exist, and the rule needs the
+counter test. Every attempt to approximate that test from raw writes missed in one direction or
+the other, measured:
+* counter = "3+ distinct written values" → 6-14 counters/game, and GK1's flag 65 not reached at all;
+* + entry guards folded in → LSL2 **+6**, KQ4 +4 (near the +7 that cost 196 lines);
+* counter = "has 2+ (v-1 -> v) steps" → GK1 correct (+5 incl. 307) but LSL2 **+8**;
+* + the real `all(t == f+1)` test, disqualifying unconditional writes → GK1's counter VANISHES;
+* + treating unconditional writes as `_inroom` (the real semantics) → GK1's counter still missing.
+
+The honest reading: the monotonicity test genuinely needs the built step tables, so this wants a
+**second pass** — promote, build the tables, apply the narrow rule with the real `_counters`,
+rebuild — not a cleverer early approximation. Given that promotion has broken the goldens twice,
+that pass deserves its own measured round.
