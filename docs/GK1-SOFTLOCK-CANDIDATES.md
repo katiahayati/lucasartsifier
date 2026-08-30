@@ -594,3 +594,55 @@ i.e. can the player re-enter rm471, come back, and be offered "go home" again on
 yes, `reconVeve`'s row may not be a false positive at all and the declared red is wrong in its
 VERDICT, not just its cure ([[re-derive-a-reds-premise]]). That wants a play-check or a ruling
 before any more model work.
+
+## §1.13 reconVeve IS a false positive — proved from the scripts (2026-08-30)
+
+§1.12 left the question "is flag 65 once-only?" as something that might need a play-check. It does
+not. The scripts settle it, exhaustively.
+
+**Every setter of flag 15 (the day-end flag) in the whole game — 8 sites:**
+| site | when |
+|---|---|
+| `theMapPrint.sc:241,254,268,274` | `endDay`'s arms: days **2, 3, 4, 5** |
+| `bookstore.sc:218,231,242` | re-check on entry from rm50: days **5, 4, 2** |
+| `grace.sc:142` | Grace's topic 49, "go home" — **any day, needs flag 65** |
+
+**There is no day-1 arm anywhere.** So the day 1 → 2 advance can only come from Grace's topic 49.
+
+**Flag 65's only clearer is `grace.sc:143`** — topic 49 itself, one line after it raises flag 15.
+So taking "go home" spends it.
+
+**Flag 65's setters** are all inside `theOpeningCartoon` (script 472, armed at rm470 under
+`(not (proc13_0 11))`) and rm470's day-1 cutscenes `afterTheCloseUp` / `takeTheBody` / `takeOff` /
+`putBodyAway`. Each of those also raises flag 11, and `rm471::init` raises it too (`rm471.sc:36`).
+**Nothing in the game ever clears flag 11** — no `proc13_2 11`, no toggle; the only other setter is
+`debugHandler.sc:253`, the excluded debug class. And rm471's sole entrance is `theOpeningCartoon`
+(`newRoom: 471` at its states 24 and 102, nowhere else in the corpus), so `afterTheCloseUp`'s
+`(== global12 471)` arming can fire exactly once.
+
+**Therefore:** to be on day 3 you must have ended day 1; ending day 1 spends flag 65; flag 65 can
+never be re-raised. On day 3 "go home" is not on Grace's menu, day 3's only ending is `endDay`'s
+day-3 arm, and that arm demands `(global0 has: 38)` — reconVeve. **The declared red is right in its
+verdict: `reconVeve@reg123=4` is a false positive.**
+
+### The model gap, located exactly
+The model already has every piece: `470->471` is gated `253: [0]` (flag 11 clear), the day-3 arm is
+priced `cost=[8, 38]`, and since §1.12 the rm50 branch is priced `deps={178:[2], 307:[1]}`. What it
+cannot see is that **flag 65 is SPENT to make the first day advance** — so it believes a day-3
+player may still be holding it. That is a joint question, `(123, 307)`: measured, the model says
+flag 65 can be 1 at every day 0-10.
+
+`_gate_joints` is the right machinery and it already supports the three-register form ("the cycle
+may pass through a THIRD register"). It declines `(123, 257, 307)` because of one line:
+
+```python
+if A in writes_dep.get(B, ()):
+    _add((A, B))
+    continue                    # the pair closes the cycle: a triple adds nothing
+```
+
+added as a KQ5 performance fix (`6239d2c`, 8 redundant joints, 796s → 634s). Here the pair does
+NOT make the triple redundant: `(123, 257)` sees that `endDay`'s arms are day-conditioned, but it
+cannot see that flag 15's OTHER writer — topic 49 — is gated by a one-shot flag. The `continue` is
+an over-generalisation, and relaxing it is a change to a performance-motivated rule that previously
+filled the 8-joint cap with permutations, so it wants its own measured round.
