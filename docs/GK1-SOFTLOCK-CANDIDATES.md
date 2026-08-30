@@ -632,17 +632,49 @@ cannot see is that **flag 65 is SPENT to make the first day advance** — so it 
 player may still be holding it. That is a joint question, `(123, 307)`: measured, the model says
 flag 65 can be 1 at every day 0-10.
 
-`_gate_joints` is the right machinery and it already supports the three-register form ("the cycle
-may pass through a THIRD register"). It declines `(123, 257, 307)` because of one line:
+`_gate_joints` is the right machinery and it already supports the three-register form. It declines
+`(123, 257, 307)` for TWO reasons, not one: the `continue` added as a KQ5 performance fix
+(`6239d2c`, "a triple only where no pair closes the cycle"), AND the triple's own condition
+`A in writes_dep[C]`, which fails because flag 65's writers are conditioned on flag 11 and prevRoom,
+never on the day. See §1.14 for what happened when the joint was built anyway.
 
-```python
-if A in writes_dep.get(B, ()):
-    _add((A, B))
-    continue                    # the pair closes the cycle: a triple adds nothing
-```
+## §1.14 The one-shot-enabler joint: BUILT, MEASURED, REVERTED (2026-08-30)
 
-added as a KQ5 performance fix (`6239d2c`, 8 redundant joints, 796s → 634s). Here the pair does
-NOT make the triple redundant: `(123, 257)` sees that `endDay`'s arms are day-conditioned, but it
-cannot see that flag 15's OTHER writer — topic 49 — is gated by a one-shot flag. The `continue` is
-an over-generalisation, and relaxing it is a change to a performance-motivated rule that previously
-filled the 8-joint cap with permutations, so it wants its own measured round.
+§1.13 said the model needs to see that flag 65 is spent to advance day 1. That is true, and a
+three-register joint is not enough to see it. Built and reverted the same session; recorded so it
+is not rebuilt as-is.
+
+**The rule tried.** A counter `A` whose ordered step is gated by `B`, plus any `C` that a write of
+`B` DEMANDS and that the same room writes OUT of the demanded values — raising `B` SPENDS `C`, so
+whether `C` is still available is a question about how far `A` has come. Added after the existing
+selection, through the same `_add`, so no current joint could be displaced.
+
+**Census** (with the qualifier that the enabler must have been EARNED — a demand for `C`'s start
+value 0 is a demand that nothing be done, and without it KQ5 yields eleven triples and LB2 eight,
+the permutation shape the cap exists to refuse):
+
+| | LSL2 | KQ4 | KQ6 | KQ5 | LB2 | GK1 |
+|---|---|---|---|---|---|---|
+| one-shot triples | 0 | 0 | 0 | 7+ | 4 | **1** — `(123, 257, 307)` |
+| joints already held (cap 8) | 0 | 0 | 1 | **7** | 3 | 1 |
+
+**It built, and it did not work.** `gk1 joints: [(123, 257), (123, 257, 307)]`, and the walk still
+says flag 65 can be 1 on every day 0-10. `reconVeve` did not retire — it gained **two more rows**
+on the new joint (`reg(123,257,307)=(0,0,0)` and `(4,0,0)`).
+
+**Why — and this is the useful part.** Re-raising flag 65 needs rm470 *arrived at from rm471*, and
+`470->471` is gated `253: [0]` — flag 11 clear. Measured: **flag 11 is written only to 1**, at
+rm470 and rm471, and never back; and **13 of the 14 flag-65 raise branches never mention it** (they
+carry `{12: [471]}` or nothing). So the projection needs a FOURTH register, and `_gate_joints` is
+bounded to three by construction.
+
+Reverted rather than shipped: with the FP still standing, the triple is two noise rows on GK1 and
+joint budget spent on LB2/KQ5 for nothing.
+
+### ⭐ What this actually points at: MONOTONE LATCHES
+Flag 11 is written to exactly one value and never back. That is not a state a product has to
+track — it is a fact about the register: `flag 11 == 0` holds only until the first write, and every
+site that raises flag 65 also raises flag 11. So "flag 65 can be raised at most once" is derivable
+WITHOUT a four-way product, from monotonicity plus co-writes. The model has no notion of a
+write that can happen at most once, and that — not a wider joint — is what `reconVeve` needs.
+Same family as the R4 chain's remaining link, which is also "this can never be made true again".
