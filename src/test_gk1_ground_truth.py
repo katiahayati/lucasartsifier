@@ -79,6 +79,17 @@ CONFIRMED_SAFE.add("knife")
 # without the priced crossing `300->302` -- a return edge should carry its origin's entry cost.
 CONFIRMED_SAFE.add("sVoodooCode")
 
+# braceMold (40): register_strandings at the day-4/6/7 flips, appearing 2026-08-30 with the
+# return-to-sender pricing (docs §1.15) -- which is right about the SOURCE (`rm280.sc:794`, and
+# day 4 shuts Cazaunoux's house) and wrong about the player. The mold's only need site is
+# `napoleon.sc` doVerb 43 -> `showMold`, which `put: 40`s it at state 4 (`:838`) and raises flag
+# 256 at state 9 (`:858`, the only non-debug setter); day 3's `endDay` arm demands
+# `(proc13_0 256)` (`theMapPrint.sc:249-256`). So day 3 cannot END without having shown the mold,
+# and the site that "still needs" it is the one that consumed it. Same class as reconVeve -- the
+# flip's own precondition demands the item -- one register further up: `_wbranch[(498,460,1)]`
+# already costs braceMold, and the day-3 branch of the flag-15 write never inherits it.
+CONFIRMED_SAFE.add("braceMold")
+
 ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS
 
 # Item ids ARE the inventory `add:` order (GKInvItem.sc:93). Pinned because the tool got all 81

@@ -219,11 +219,82 @@ def test_resolve_prev_returns():
           em.reg_vals.get(12, set()) >= {10, 11}, repr(em.reg_vals))
 
 
+def test_return_to_sender_pricing():
+    """Part 4: what a RETURN-TO-SENDER edge costs -- `missability._return_to_sender`.
+
+    Part 3 builds the return; this prices it. An edge `a -> b` guarded `prev == b` is takeable
+    only by someone who came to `a` straight from `b`, so it may assert whatever every OTHER
+    arrival at `b` necessarily demanded -- of the registers neither room can have changed since.
+    Unit level, over a synthetic `meta`: no game, no model build, no register named."""
+    print("Part 4: _return_to_sender -- a return may assert its destination's entry condition")
+    import missability as M
+
+    def _em(start=0, writes=()):
+        """`_return_to_sender` reads only these five things off the model."""
+        em = type("em", (), {})()
+        em.cfg = type("cfg", (), {"start_room": start})()
+        em.handler_writes = [(room, 0, gi, 1, None) for (room, gi) in writes]
+        em.init_writes, em.init_seq, em.machines = {}, {}, []
+        return em
+    P = 12                                     # the previous-room register
+    dom = {P: {0, 10, 20, 30}, 5: {0, 1, 2, 3}, 6: {0, 1}, 7: {0, 1}}
+    regset = {P, 5, 6, 7}
+
+    def _meta(extra=None):
+        # 30 -> 20 is the return (`prev == 20`); 10 -> 20 is the real way in.
+        m = {(10, 20): [({5: {0, 1}}, {P: 10}, (frozenset(),))],
+             (20, 30): [({}, {P: 20}, (frozenset(),))],
+             (30, 20): [({P: {20}}, {P: 30}, (frozenset(),))]}
+        m.update(extra or {})
+        return m
+    meta = _meta()
+    M._return_to_sender(meta, _em(), regset, dom, P)
+    check("the return inherits the destination's entry requirement",
+          meta[(30, 20)][0][0].get(5) == {0, 1}, repr(meta[(30, 20)][0][0]))
+    check("...and the real way in is untouched", meta[(10, 20)][0][0] == {5: {0, 1}},
+          repr(meta[(10, 20)][0][0]))
+
+    meta = _meta()
+    M._return_to_sender(meta, _em(writes=[(30, 5)]), regset, dom, P)   # the SCENE writes it
+    check("a register the intermediate room writes is withdrawn", 5 not in meta[(30, 20)][0][0],
+          repr(meta[(30, 20)][0][0]))
+
+    meta = _meta()
+    M._return_to_sender(meta, _em(writes=[(20, 5)]), regset, dom, P)   # the DESTINATION writes it
+    check("a register the DESTINATION writes is withdrawn too (the window opens at the entry, "
+          "not at the departure)", 5 not in meta[(30, 20)][0][0], repr(meta[(30, 20)][0][0]))
+
+    meta = _meta()
+    del meta[(10, 20)]                                                 # no other way in
+    M._return_to_sender(meta, _em(), regset, dom, P)
+    check("a destination with no non-return arrival asserts nothing",
+          meta[(30, 20)][0][0] == {P: {20}}, repr(meta[(30, 20)][0][0]))
+
+    meta = _meta()
+    M._return_to_sender(meta, _em(start=20), regset, dom, P)
+    check("the START room asserts nothing about itself",
+          meta[(30, 20)][0][0] == {P: {20}}, repr(meta[(30, 20)][0][0]))
+
+    meta = _meta({(10, 20): [({6: {0, 1}}, {P: 10}, (frozenset(),))]})
+    M._return_to_sender(meta, _em(), regset, dom, P)
+    check("a requirement covering the whole domain constrains nothing",
+          6 not in meta[(30, 20)][0][0], repr(meta[(30, 20)][0][0]))
+
+    # TWO real arrivals: the NECESSARY reading -- only what both name, and then the union.
+    meta = _meta({(11, 20): [({5: {2}, 7: {1}}, {P: 11}, (frozenset(),))]})
+    M._return_to_sender(meta, _em(), regset, dom, P)
+    got = meta[(30, 20)][0][0]
+    check("two arrivals: the shared register keeps the UNION of their values",
+          got.get(5) == {0, 1, 2}, repr(got))
+    check("...and a register only one arrival names is dropped", 7 not in got, repr(got))
+
+
 def run():
     test_prev_dest_sentinel()
     test_inherited_room_methods()
     test_inherited_scope_no_temp_bleed()
     test_resolve_prev_returns()
+    test_return_to_sender_pricing()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     return 0 if not FAIL else 1
 

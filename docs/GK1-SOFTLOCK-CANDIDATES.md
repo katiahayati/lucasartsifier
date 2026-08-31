@@ -678,3 +678,111 @@ site that raises flag 65 also raises flag 11. So "flag 65 can be raised at most 
 WITHOUT a four-way product, from monotonicity plus co-writes. The model has no notion of a
 write that can happen at most once, and that — not a wider joint — is what `reconVeve` needs.
 Same family as the R4 chain's remaining link, which is also "this can never be made true again".
+
+## §1.15 RETURN-TO-SENDER: the conversation screen was a free door into every room (2026-08-30)
+
+§1.10.4 left two named links under R4. This round closes the first one, and it is the older of
+the two open items — the same gap §1.8 recorded under `sVoodooCode`.
+
+### The game
+GK1 holds its conversations in a room of their own. Talking to anyone leaves the map for the
+interrogation screen (rm50); when the conversation ends, `newRoom: <prevRoom>` puts you back where
+you were. Twenty of GK1's rooms are reached that way, and the model read every one of those
+returns as an ordinary edge `50 -> X`. So the day-4 player walks into a conversation from anywhere
+and "returns" to Cazaunoux's house — a house day 4 shut (`rm270.sc:200,217,845`, and rm270 is the
+only way into rm280) and which they may never have entered. Two rounds of work put the day
+requirement on `270->280`; the return walked around it.
+
+### The rule, and why it is forced by the guard
+An edge `a -> b` whose requirement pins the previous-room register to exactly `{b}` can be taken
+ONLY by a player who came to `a` directly from `b`. So they satisfied some way into `b` at that
+moment, and any register that neither room can write still holds the value it held then —
+and therefore still satisfies whatever **every non-return way into `b`** demanded of it. Conjoin
+those demands onto the return (`missability._return_to_sender`, called at the end of `edge_meta`).
+
+Three qualifiers, each derived, and the first one is load-bearing:
+
+1. **Only registers NEITHER ROOM writes**, nor any arrival at `b` sets on the way in. The window
+   opens when the player last *entered* `b`, not when they left it — they stood in `b` first and
+   in `a` second — so `b`'s own writes count, its `init` among them (it runs after the entry guard
+   was tested). Measured without this qualifier: `50->240` gained `flag 16 == 0` from `230->240`,
+   and rm240 is exactly where flag 16 is raised. That single unsound conjunct invented two
+   softlock items (`badge`, `tracker`) and a `register_value_strandings` row.
+2. **Only destinations with a non-return arrival.** A room whose only way in is the return asserts
+   nothing about itself; nor does the start room.
+3. **The necessary reading over those arrivals** — a register survives only if every arrival
+   constrains it, and then its allowed values are the union. The same merge `_merged` and `chain`
+   already apply in `edge_meta`.
+
+### Census, and what moves
+| | LSL2 | KQ4 | KQ6 | KQ5 | LB2 | GK1 |
+|---|---|---|---|---|---|---|
+| return-to-sender edges | 1 | 2 | 0 | 0 | 5 | **30** |
+| edges actually constrained | 0 | 0 | 0 | 0 | 0 | **4** |
+
+The other titles' destinations have no other way in, or their arrivals share no requirement.
+The four GK1 edges and what each gains, all from the destination's single other arrival:
+
+```
+50->280  += 123 in {0,1,2,3}        <- 270->280   Cazaunoux's house, shut on day 4
+50->340  += 123 in {0,1,2,3,4,5}    <- 330->340
+50->240  += 785 == 1                <- 230->240   (its 258 == 0 is withdrawn by qualifier 1)
+50->720  += 864 == 1, 867 == 0      <- 710->720
+```
+
+### ⛔ AND IT ADDS A FALSE POSITIVE — `braceMold`, proved from the scripts
+GK1's surface gains one `softlock_items` entry and twelve `register_strandings` rows. The rows on
+`VoodooCode1` and `reconVeve` are refinements of rows already reported (day 6 joins day 5/7; the
+need room 340 drops out at days 6-7 because rm340 now closes). The new item is **`braceMold` (40)
+at `reg123 = 4/6/7`, and it is a FALSE POSITIVE**:
+
+* braceMold's only source is `rm280.sc:794` (`get: 40`) — Cazaunoux's house, which day 4 shuts.
+  That much the row has right, and it is why the row appears only now.
+* Its only need site is `napoleon.sc` `doVerb: 43` → `showMold`, which **`put: 40`s it at state 4**
+  (`napoleon.sc:838`) and raises flag 256 at state 9 (`:858` — the only non-debug setter).
+* Day 3's `endDay` arm demands `(proc13_0 256)` (`theMapPrint.sc:249-256`).
+
+So day 3 cannot end without having shown the mold, which requires holding it; a day-4 player has
+already spent it, and the site that "still needs" it is the very one that consumed it. Recorded in
+`CONFIRMED_SAFE` with this evidence, and declared in KNOWN_RED — **not** cured by a clause
+([[clause-that-protects-a-known-answer]]).
+
+### ⭐ WHAT IT POINTS AT — a THIRD specimen of one FP class, and it is measurable
+`_flip_live` already refuses a flip whose own precondition demands the item. It misses all three
+of GK1's FPs, and two of them for the SAME reason: **a write branch's cost is its own
+`_own_positive`, never the chained cost of the registers it depends on.** `_own_fixpoint` does
+exactly that propagation for `_inroom_own`; `_wbranch` — the table `_psucc_joint` reads — does not.
+
+| FP | what the flip really demands | where the model loses it |
+|---|---|---|
+| `braceMold@reg123=4` | day 3's arm needs flag 256, and `_wbranch[(498,460,1)]` **already costs `braceMold`** | the day-3 branch of `(257,200,1)` carries `deps={…,498:[1]}` and cost `[wolfPhone, reconVeve]` — it never inherits `value_cost(498,1)` |
+| `sVoodooCode@reg488=1` | writing on the tomb needs both sketches (`rm300.sc:952`) | `_wbranch[(488,302,1)]` cost is **empty**: the demand is at rm300 where the scene is armed, the write is at rm302 inside it, and the cost does not cross the `newRoom` |
+| `reconVeve@reg123=4` | day 3's arm needs reconVeve — but topic 49 ends the day for free | needs the one-shot reading of flag 65 (§1.14), not a cost |
+
+One hop of `_own_fixpoint`'s own composition, applied to the branch table, retires the first.
+The second is the same question asked across a room boundary. Both are cost-model work, and both
+are cheaper than the monotone-latch mechanism §1.14 asks for — which only the third needs.
+
+### R4 is still RED, and its remaining link is now the ONLY one
+With rm280 sealed at day 4, R4's chain is intact in the model except for the carry-up:
+`register_value_strandings`' conjunct 3 sees flag 74's write site (rm50) as reachable, and the
+write is gated by flag 44 (`(178==10) AND (flag 44 OR flag 47)` — measured on the raw guard), whose
+own producer is `178 == 12`, written only at rm280. The reverted carry-up (§1.9) is the right
+shape; the measurement that killed it was the weak half — for a register with no projection it
+asked `reach_avoiding(writer_rooms)` ("could you have skipped it"), which is nearly always true.
+Two things are new since:
+* **flags 44, 47 and 74 are all promoted registers now** (§1.12, the topic-as-move round), so that
+  weak half need not fire for R4's chain at all — the strong `(r, v) in _pstates[T]` reading applies.
+* `_region_writes` must filter the write's VALUE to the accepted set. It does not; for `T = 178`
+  with `acc = {12}` it counts every other topic's write as a live way to produce topic 12.
+
+### Measured (real build, not the simulation)
+**LSL2, KQ4, KQ6, LB2 and KQ5 byte-identical** on the full snapshot surface; the GK1 surface from
+the rebuilt model is identical to the product simulation, so the source derives the same
+restriction. Times: LSL2 38s, KQ4 81s, KQ6 105s, LB2 56s, KQ5 508s, GK1 248s.
+Suite **887 passed / 13 known-red / 0 unexpected / 0 crashed** (2313s) — the +9 over 878 are this
+round's own unit checks (`test_prev_return` Part 4), and the failing set is exactly the declared
+one. GK1's surface delta, in full: `softlock_items` gains `braceMold`; `register_strandings` gains
+twelve rows (six `braceMold`, three `VoodooCode1`/`reconVeve` at day 6, and `reconVeve`'s days 6-7
+lose need-room 340); `edge_specs` `rm200/rm205->rm372` and three `register_write_specs` gain
+`has: 40`. No coverage change: R1 is still caught on the day-5 flip, nothing dropped.

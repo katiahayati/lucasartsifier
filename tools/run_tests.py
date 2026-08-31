@@ -81,17 +81,24 @@ KNOWN_RED = {
     # Unvalidated by play and unruled by the USER -- the rows themselves may move when they rule.
     "test_gk1_ground_truth.py": {
         "no UNEXPECTED unit flagged (suspicion)":
-            "four FALSE POSITIVES: sVoodooCode (register_strandings on flag 246 -- the tomb-"
-            "writing room is reached through the interrogation screen's return edge 50->302 "
-            "without the priced crossing 300->302; a return edge should carry its origin's entry "
-            "cost), knife (fatal_uses -- an on-screen death, not a consumption; USER ruling "
-            "2026-08-27), sLakePatter (dangerous_sinks -- the give is the day-2 gate, flag 231; "
-            "no `has: 31` exists) and reconVeve (register_strandings at the day-4/7 flips -- in "
-            "the model Grace's 'go home' topic 49 can end day 3 because flag 65 is re-raised by "
-            "rm470's cutscenes whose once-only gate, flag 11, does not reach their write "
-            "branches). All four recorded in CONFIRMED_SAFE; cure the detectors, never the list",
+            "five FALSE POSITIVES: knife (fatal_uses -- an on-screen death, not a consumption; "
+            "USER ruling 2026-08-27), sLakePatter (dangerous_sinks -- the give is the day-2 gate, "
+            "flag 231; no `has: 31` exists), and THREE of one class, `_flip_live` missing that "
+            "the flip's own precondition demands the item: reconVeve (day 3's endDay arm needs "
+            "it, but Grace's 'go home' topic 49 ends the day for free because flag 65 is re-"
+            "raised by rm470's cutscenes, whose once-only gate flag 11 does not reach their write "
+            "branches -- needs the one-shot reading, docs GK1 §1.14); braceMold (new 2026-08-30 "
+            "with the return-to-sender pricing: day 3 cannot end without flag 256, whose only "
+            "setter `napoleon.sc:858` runs after the mold is `put:` -- `_wbranch[(498,460,1)]` "
+            "already costs it and the flag-15 day-3 branch never inherits it); sVoodooCode (the "
+            "tomb-writing write at rm302 carries no cost because the `has: 32/33` demand is at "
+            "rm300, where the scene is armed -- the cost does not cross the `newRoom`). ⛔ The "
+            "return-edge cure this entry used to claim for sVoodooCode was MEASURED 2026-08-30 "
+            "and does not retire it: rm302 writes flag 246 itself, so the return may assert "
+            "nothing about it (docs GK1 §1.15). All five in CONFIRMED_SAFE; cure the detectors, "
+            "never the list",
         "a safe item is not flagged":
-            "same four false positives as the row above (the two checks are one defect seen "
+            "same five false positives as the row above (the two checks are one defect seen "
             "from the oracle's two sides)",
         "R2: the confessional deposit (rod + a signal device -> flags 280/281 -> 351) is caught":
             "the point of no return (sHRoom8.sc:71) is an intra-room scene switch inside the "

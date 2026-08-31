@@ -3196,6 +3196,109 @@ def _saturating_matching(left, adj):
     return matchL
 
 
+def _room_writes(em, regset):
+    """room -> {registers that room can write at all}.
+
+    GENEROUS on purpose, and that is the safe direction here: `_return_to_sender` conjoins a
+    requirement only onto registers this says the room CANNOT touch, so over-counting a writer
+    withdraws a restriction rather than inventing one. `_build_product` builds the precise
+    per-value table (`_inroom`, with the debug-gate filter and the write costs); this answers the
+    coarse question "could standing here have changed R at all", and it is asked before that
+    table exists."""
+    out = defaultdict(set)
+    for room, _script, gi, _v, _g in em.handler_writes:
+        if gi in regset:
+            out[room].add(gi)
+    for room, vs in (getattr(em, "init_writes", {}) or {}).items():
+        out[room] |= {gi for gi in vs if gi in regset}
+    for room, seq in (getattr(em, "init_seq", {}) or {}).items():
+        out[room] |= {gi for (gi, _v, _g) in seq if gi in regset}
+    for info in em.machines:
+        for _K, paths in info["states"].items():
+            for (_g, w, _gg, _c, _tr) in paths:
+                out[info["room"]] |= {gi for (gi, _v) in w if gi in regset}
+    return out
+
+
+def _return_to_sender(meta, em, regset, dom, prev):
+    """⭐ A RETURN-TO-SENDER EDGE COSTS WHAT ITS DESTINATION COSTS (2026-08-30).
+
+    GK1 holds its conversations in a room of their own: talking to anyone leaves the map for the
+    interrogation screen (rm50), and a `newRoom: <prevRoom>` puts you back where you were. Read
+    flat, that return is a free edge into every room anyone can be talked to in -- so a day-4
+    player "returns" to Cazaunoux's house, which day 4 shuts (`rm270.sc:200`, and rm270 is the
+    only way in), having never been there. The day-4 seal this project spent two rounds deriving
+    was published on `270->280` and then walked around.
+
+    The reading is forced by the guard itself. An edge `a -> b` whose requirement pins the
+    previous-room register to exactly `{b}` can be taken ONLY by a player who came to `a`
+    directly from `b`. So they satisfied some way into `b` at that moment, and any register
+    neither room can write still holds the value it held then -- and therefore still satisfies
+    whatever EVERY non-return way into `b` demanded of it. Conjoin those demands onto the return.
+
+    Bounded three ways, all derived rather than chosen:
+      * only registers NEITHER ROOM writes, and that no arrival at `b` sets on the way in. The
+        window opens when the player last ENTERED `b`, not when they left it -- they stood in `b`
+        first and in `a` second -- so `b`'s own writes count, its `init` included (that runs
+        after the entry guard was tested). GK1's museum is the specimen: `230->240` needs flag 16
+        clear and rm240 raises flag 16, so the return may carry nothing about it.
+      * only destinations with a NON-RETURN arrival. A room whose only way in is the return
+        asserts nothing about itself, and neither does the start room.
+      * the NECESSARY reading over those arrivals -- a register survives only if every arrival
+        constrains it, and then its allowed values are the union -- the same merge `_merged` and
+        `chain` already apply below.
+
+    Census, whole corpus: LSL2 1 return edge, KQ4 2, KQ6 0, LB2 5, GK1 30. Only GK1's move, and
+    only four of those (`50->240/280/340/720`): the other titles' destinations have no other way
+    in, or their arrivals share no requirement. Measured: LSL2, KQ4, KQ6, LB2 and KQ5 byte-
+    identical on the full snapshot surface."""
+    if prev is None or prev not in regset:
+        return
+    ret = defaultdict(set)
+    for (a, b), ms in meta.items():
+        for i, (req, _sets, _alts) in enumerate(ms):
+            need = req.get(prev)
+            if need is not None and set(need) == {b}:
+                ret[(a, b)].add(i)
+    if not ret:
+        return
+    writes = _room_writes(em, regset)
+    nec = {}
+    for b in {y for (_x, y) in ret}:
+        acc = None
+        for (x, y), ms in meta.items():
+            if y != b:
+                continue
+            per = None
+            for i, (req, _sets, _alts) in enumerate(ms):
+                if i in ret.get((x, y), ()):
+                    continue                   # a return is never someone's FIRST arrival
+                cur = {R: frozenset(v) for R, v in req.items() if v}
+                per = cur if per is None else {R: per[R] | cur[R] for R in per if R in cur}
+            if per is None:
+                continue
+            acc = per if acc is None else {R: acc[R] | per[R] for R in acc if R in per}
+        nec[b] = acc
+    for (a, b), idxs in sorted(ret.items()):
+        need = nec.get(b)
+        if need is None or b == em.cfg.start_room:
+            continue
+        changed = set(writes.get(a, ())) | set(writes.get(b, ()))
+        for (x, y), ms in meta.items():
+            if y == b or (x, y) in ((a, b), (b, a)):
+                for (_rq, sets, _al) in ms:
+                    changed |= set(sets)
+        for i in sorted(idxs):
+            req, sets, alts = meta[(a, b)][i]
+            rq = dict(req)
+            for R, vals in need.items():
+                d = dom.get(R)
+                if R == prev or R in changed or (d and set(vals) >= set(d)):
+                    continue                   # changeable in transit, or constrains nothing
+                rq[R] = (rq[R] & set(vals)) if R in rq else set(vals)
+            meta[(a, b)][i] = (rq, sets, alts)
+
+
 def edge_meta(em, regs):
     """(a,b) -> [(req, sets, alts)] for the discovered gating `regs`.
 
@@ -3346,6 +3449,8 @@ def edge_meta(em, regs):
                         rq[R] = (rq[R] & vals) if R in rq else set(vals)
                     meta[(info["room"], tr[1])].append(
                         (rq, sets, tuple(exit_own | supp_own | a for a in alts)))
+    # ...and last, because it reads the finished table: what a RETURN-TO-SENDER edge costs.
+    _return_to_sender(meta, em, regset, dom, prev)
     return meta
 
 
