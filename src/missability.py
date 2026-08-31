@@ -4283,6 +4283,18 @@ class IrSccReach(SccReach):
             locs |= set(rs)
         regs_wb = regs | locs
         self._wb_regs = regs_wb
+        # ⭐ A HANDLER'S WRITES LAND TOGETHER (2026-08-31). Machine state bodies already record
+        # their co-writes (the third element, applied by `_psucc_joint` so a joint never passes
+        # through a state the game does not have); a handler arm writing two registers under one
+        # guard filed two INDEPENDENT branches, so the joint could take one without the other.
+        # GK1's Grace is the specimen: topic 49 raises the day-end flag and clears flag 65 in the
+        # same arm (`grace.sc:142-143`) -- "go home" SPENDS the flag, and the model could end the
+        # day while keeping it. Grouped exactly as `_cogrants` groups `handler_gets`: by
+        # (room, script, guard spelling), the same-arm reading that table already commits to.
+        handler_cowrites = defaultdict(set)
+        for room, script, gi, v, g in self.em.handler_writes:
+            if gi in regs_wb and not _debug_gated_guard(g, dbg):
+                handler_cowrites[(room, script, str(g))].add((gi, v))
         for room, script, gi, v, g in self.em.handler_writes:
             if gi in regs:
                 d = {S: vs for S, vs in guard_reqs(g, regs).items() if vs}
@@ -4291,8 +4303,9 @@ class IrSccReach(SccReach):
             if gi in regs_wb and not _debug_gated_guard(g, dbg):
                 d0 = {S: set(vs) for S, vs in guard_reqs(g, regs_wb).items() if vs}
                 dd = {S: set(vs) for S, vs in guard_reqs(g, regs_wb, dom).items() if vs}
-                wb[(gi, room, v)].append((d0, frozenset(_own_positive(g)), frozenset()))
-                wbd[(gi, room, v)].append((dd, frozenset(_own_positive(g)), frozenset()))
+                co = frozenset(handler_cowrites[(room, script, str(g))] - {(gi, v)})
+                wb[(gi, room, v)].append((d0, frozenset(_own_positive(g)), co))
+                wbd[(gi, room, v)].append((dd, frozenset(_own_positive(g)), co))
         for room, vs in getattr(self.em, "init_writes", {}).items():
             for gi, v in vs.items():
                 if gi in regs_wb:
