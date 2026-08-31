@@ -3196,6 +3196,60 @@ def _saturating_matching(left, adj):
     return matchL
 
 
+def _value_cost(R, val, own):
+    """Items needed to make R == val: the cheapest write, or free if none writes it.
+
+    Module level so the FOLD (`_own_fixpoint`'s chain loop) and the per-BRANCH reading
+    (`_chain_branch_costs`) cannot drift apart -- they are one composition asked of two tables."""
+    if val == 0:
+        return frozenset()                # registers start at 0; no action needed
+    ways = [own.get(k, frozenset()) for k in own if k[0] == R and k[2] == val]
+    if not ways:
+        return frozenset()                # nothing writes it -> initial value -> free
+    out = ways[0]
+    for w in ways[1:]:
+        out &= w
+    return out
+
+
+def _chain_branch_costs(tables, own):
+    """⭐ A WRITE BRANCH PAYS FOR THE REGISTERS ITS OWN GUARD NAMES (2026-08-30).
+
+    `_own_fixpoint` lets an item requirement flow along a chain of registers into `_inroom_own` --
+    the per-(register, room, value) FOLD. `_wbranch`, the per-BRANCH table `_psucc_joint` reads,
+    kept each branch's own `_own_positive` and never inherited what the registers its guard names
+    cost. Same principle, one table short of applied ([[same-rule-two-places]]).
+
+    GK1 is the specimen: `endDay`'s day-3 arm raises the day-end flag under flag 256, and
+    `_wbranch[(498, 460, 1)]` already prices flag 256 at the bracelet mold (Napoleon takes the
+    mold at his script's state 4 and sets the flag at state 9) -- but the arm's own branch cost
+    stayed `[wolfPhone, reconVeve]`, so the joint walk let a mold-less player end day 3.
+
+    `own` is already the chain's fixpoint, so ONE pass over it is the whole chain; the composition
+    is the conservative one the fold uses -- reaching any allowed value suffices, so intersect
+    over the values, and a value nothing writes is free.
+
+    ⚠️ MEASURED BYTE-IDENTICAL ON ALL SIX TITLES (2026-08-30): LSL2 gains a cost on 4 branches,
+    KQ4 2, KQ6 106, LB2 0, KQ5 50, GK1 37, and no surface moves anywhere. Kept for the principle
+    and because it is a PREREQUISITE that is invisible on its own -- GK1's `braceMold` row needs
+    this AND the once-only reading of flag 65 to retire, and measuring the two together would
+    confound them. Same standing as the conditional-`init` channel in `_build_product`."""
+    for tbl in tables:
+        for (gi, _room, _v), brs in tbl.items():
+            for i, (deps, cost, co) in enumerate(brs):
+                extra = set()
+                for S, vals in deps.items():
+                    if S == gi or not vals:
+                        continue          # a write ordering itself is `_rstep`'s business
+                    costs = [_value_cost(S, v, own) for v in sorted(vals)]
+                    need = costs[0]
+                    for c in costs[1:]:
+                        need &= c
+                    extra |= need
+                if extra - set(cost):
+                    brs[i] = (deps, frozenset(cost) | extra, co)
+
+
 def _room_writes(em, regset):
     """room -> {registers that room can write at all}.
 
@@ -4327,18 +4381,7 @@ class IrSccReach(SccReach):
                                  frozenset((gj, vj) for (gj, vj) in w
                                            if gj in regs_wb and gj != gi)))
 
-        def value_cost(R, val, own):
-            """Items needed to make R == val: the cheapest write, or free if none writes it."""
-            if val == 0:
-                return frozenset()        # registers start at 0; no action needed
-            ways = [own.get(k, frozenset()) for k in own if k[0] == R and k[2] == val]
-            if not ways:
-                return frozenset()        # nothing writes it -> initial value -> free
-            out = ways[0]
-            for w in ways[1:]:
-                out &= w
-            return out
-
+        value_cost = _value_cost
         own = dict(self._inroom_own)
         for _round in range(6):           # chains in practice are 2-3 links; bound the walk
             changed = False
@@ -4359,6 +4402,9 @@ class IrSccReach(SccReach):
             if not changed:
                 break
         self._inroom_own = own
+        # ...and THE SAME COMPOSITION ON THE BRANCH TABLE, which is the fold's twin and
+        # was one table short of applied. See `_chain_branch_costs`.
+        _chain_branch_costs((self._wbranch, self._wbranch_dom), own)
 
     _FREE = ({}, {}, (frozenset(),))
 

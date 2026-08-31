@@ -289,12 +289,52 @@ def test_return_to_sender_pricing():
     check("...and a register only one arrival names is dropped", 7 not in got, repr(got))
 
 
+def test_branch_cost_chaining():
+    """Part 5: `_chain_branch_costs` -- the fold's composition, asked of the per-branch table.
+
+    Not a prev-room fact, but the same round's other half and the same kind of claim: a write
+    branch guarded `S == v` cannot be taken by a player who lacks whatever making `S` equal `v`
+    costs. `_own_fixpoint` said that of `_inroom_own` and never of `_wbranch`."""
+    print("Part 5: _chain_branch_costs -- a branch pays for the registers its own guard names")
+    import missability as M
+    # own: making reg 8 == 1 costs item 40 (one way); reg 9 == 1 costs 41 or 42 depending on room
+    own = {(8, 60, 1): frozenset({40}),
+           (9, 61, 1): frozenset({41}), (9, 62, 1): frozenset({42}),
+           (8, 60, 2): frozenset({43})}
+
+    def _tbl():
+        return {(7, 50, 1): [({8: {1}}, frozenset({99}), frozenset()),      # depends on reg 8
+                             ({9: {1}}, frozenset(), frozenset()),          # ...and one on reg 9
+                             ({7: {0}}, frozenset(), frozenset()),          # self-dep: skipped
+                             ({8: {0}}, frozenset(), frozenset()),          # the START value
+                             ({8: {1, 2}}, frozenset(), frozenset())]}      # either value will do
+    tbl = _tbl()
+    M._chain_branch_costs((tbl,), own)
+    got = [sorted(c) for (_d, c, _co) in tbl[(7, 50, 1)]]
+    check("a branch inherits what its dependency costs, keeping its own",
+          got[0] == [40, 99], repr(got[0]))
+    check("two writers of the demanded value: the CHEAPEST, i.e. their intersection",
+          got[1] == [], repr(got[1]))
+    check("a branch depending on its OWN register pays nothing (that is _rstep's business)",
+          got[2] == [], repr(got[2]))
+    check("the value a register STARTS at is free", got[3] == [], repr(got[3]))
+    check("several allowed values: reaching any one suffices, so intersect over them",
+          got[4] == [], repr(got[4]))
+
+    tbl = _tbl()
+    M._chain_branch_costs((tbl,), {})          # nothing writes anything -> every value is free
+    check("with no writers at all the table is untouched",
+          [sorted(c) for (_d, c, _co) in tbl[(7, 50, 1)]] == [[99], [], [], [], []],
+          repr([sorted(c) for (_d, c, _co) in tbl[(7, 50, 1)]]))
+
+
 def run():
     test_prev_dest_sentinel()
     test_inherited_room_methods()
     test_inherited_scope_no_temp_bleed()
     test_resolve_prev_returns()
     test_return_to_sender_pricing()
+    test_branch_cost_chaining()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     return 0 if not FAIL else 1
 

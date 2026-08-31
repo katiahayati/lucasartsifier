@@ -776,6 +776,15 @@ Two things are new since:
 * `_region_writes` must filter the write's VALUE to the accepted set. It does not; for `T = 178`
   with `acc = {12}` it counts every other topic's write as a live way to produce topic 12.
 
+⚠️ **And R4's PIN needs re-deriving before it is built for** ([[re-derive-a-reds-premise]]). The
+check reads `rows_by_det["register_strandings"]` for a row whose `register` is flag 44 — but in
+that detector `register` is the FLIP, and its rows are about ITEMS, so the check as written asks
+"is some item stranded by flag 44 flipping", which is not R4. R4's mechanism is a register-VALUE
+stranding: `register_value_strandings`, whose rows carry the stranded register as `reg` and the
+flip as `register`. That detector is not in `rows_by_det` at all. ⛔ The VERDICT (R4 is real and
+missed) is ground truth and unaffected; only the mechanism spelling is this project's own, and
+re-pinning it is a bless — it waits for the USER.
+
 ### Measured (real build, not the simulation)
 **LSL2, KQ4, KQ6, LB2 and KQ5 byte-identical** on the full snapshot surface; the GK1 surface from
 the rebuilt model is identical to the product simulation, so the source derives the same
@@ -786,3 +795,60 @@ one. GK1's surface delta, in full: `softlock_items` gains `braceMold`; `register
 twelve rows (six `braceMold`, three `VoodooCode1`/`reconVeve` at day 6, and `reconVeve`'s days 6-7
 lose need-room 340); `edge_specs` `rm200/rm205->rm372` and three `register_write_specs` gain
 `has: 40`. No coverage change: R1 is still caught on the day-5 flip, nothing dropped.
+
+## §1.16 Branch-cost chaining, and the ONE blocker all three GK1 FPs share (2026-08-30)
+
+§1.15 named the cost-model gap and predicted it would retire `braceMold`. **It does not**, and
+the measurement is the useful part: it says all three of GK1's day-counter false positives are
+now blocked by exactly one thing.
+
+### The change: the fold's composition, asked of the per-branch table
+`_own_fixpoint` lets an item requirement flow along a chain of registers into `_inroom_own` — the
+per-(register, room, value) FOLD. `_wbranch`, the per-BRANCH table `_psucc_joint` reads, kept each
+branch's own `_own_positive` and never inherited what the registers its own guard names cost. Same
+principle, one table short of applied ([[same-rule-two-places]]). `_value_cost` and
+`_chain_branch_costs` are now module level so the two readings cannot drift.
+
+It lands exactly where predicted — `endDay`'s day-3 arm goes from
+`[wolfPhone, reconVeve]` to `[wolfPhone, oil, reconVeve, braceMold]`, and the day-4 arm picks up
+five more — and **the GK1 surface does not move at all.** Nor does any other:
+
+| | LSL2 | KQ4 | KQ6 | KQ5 | LB2 | GK1 |
+|---|---|---|---|---|---|---|
+| branches that gain a cost | 4 | 2 | 106 | 50 | 0 | 37 |
+| surface | identical | identical | identical | identical | identical | identical |
+
+Kept anyway, for the principle and because it is a prerequisite that is invisible on its own: the
+`braceMold` row needs this AND the once-only reading of flag 65 to retire, and measuring the two
+together would confound them. Same standing as the conditional-`init` channel in `_build_product`.
+
+### Why the surface does not move, and this is the finding
+With `braceMold` banned, the joint walk still reaches `flag 15 == 1` on day 3 — **at room 50**.
+That is Grace's topic 49: `_wbranch[(257, 50, 1)]`, `deps={178: [2], 307: [1]}`, cost `[]`. The
+free day-end goes around every cost the arms carry. So:
+
+| FP | with §1.15 + §1.16 in place, what is left |
+|---|---|
+| `reconVeve@reg123=4` | the topic-49 route |
+| `braceMold@reg123=4` | the topic-49 route |
+| `sVoodooCode@reg488=1` | the arming cost not crossing `rm300 -> rm302` (unrelated) |
+
+**Two of the three now share ONE blocker**, and it is the one §1.13 proved from the scripts and
+§1.14 named: flag 65 is spent to advance day 1 and can never be re-raised.
+
+### One more thing the model is missing on that very branch
+`_wbranch[(257, 50, 1)]` and `_wbranch[(307, 50, 0)]` carry **the same `deps`** — they are the two
+lines of topic 49 (`grace.sc:142` raises flag 15, `:143` clears flag 65) — and both record
+`co = frozenset()`. `_own_fixpoint` records co-writes only for MACHINE state bodies; a handler
+that writes two registers under one guard files two independent branches. So the model cannot see
+that ending the day this way SPENDS flag 65, which is half of §1.13's proof. That is a small,
+derivable fix, and it is the first half of the once-only mechanism.
+
+### ⛔ MEASURED AND NOT BUILT: the router generalisation
+`_return_to_sender` is the case `p == b` of a wider shape — an edge `a -> b` gated `prev == p` for
+any single `p`, where the same argument prices it by `p`'s entry condition. Censused on GK1:
+53 routed alternatives, 30 of them returns and **23 genuine routers, of which zero constrain
+anything.** `205 -> 470` (the opening cartoon, `prev == 750`) is the one that would have mattered,
+and it fails on the soundness qualifier — rm750 writes the day counter itself. Recorded so it is
+not built speculatively; `p == b` is the case that pays, because `nec[b]` is then about the
+destination itself.
