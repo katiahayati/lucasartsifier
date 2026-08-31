@@ -53,10 +53,12 @@ KNOWN_GAPS = _units({
 
 # Flagging one of these is a FALSE POSITIVE (script evidence, no user ruling yet).
 CONFIRMED_SAFE = {
-    "sLakePatter",  # dangerous_sinks says giving it to the artist (neJackson.sc:1355) strands
+    "sLakePatter",  # dangerous_sinks said giving it to the artist (neJackson.sc:1355) strands
                     # its use at Magentia's (rm290 verb 23). The give is REQUIRED -- it is the
                     # day-2 gate's flag 231 (theMapPrint.sc:237) -- and no `has: 31` exists
-                    # anywhere; the Magentia site is flavour.
+                    # anywhere; the Magentia site is flavour. ✅ NO LONGER FLAGGED since
+                    # 2026-08-31: the travel-movie fan (docs §1.17) removed the phantom rm290
+                    # demand the row rested on. Kept -- it is ground truth, not a suppression.
     "reconVeve",    # register_strandings says the day counter reaching 10 strands it for
                     # rm200/rm205/rm340. It is never consumed (no `put: 38` in the tree) and
                     # every demand is day-3/4 gated (theMapPrint.sc:251, rm340.sc:1151) --

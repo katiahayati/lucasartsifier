@@ -208,7 +208,18 @@ def _curroom_impossible(pc, room):
 
 
 # --- A GLOBAL THAT ONLY EVER HOLDS A ROOM ----------------------------------------------------
-_ROOMVALS = {}      # ir id -> {global index: frozenset(rooms)}; see room_valued_globals
+_ROOMVALS = {}      # id(ir) -> {global index: frozenset(rooms)}; see room_valued_globals.
+#   ⛔ EVERY per-IR memo here keys on id(ir) AND PINS THE IR (2026-08-31, `_IR_PINS`): a
+#   memo entry outlives its IR, id() is only unique among LIVE objects, and a freed IR's
+#   id reused by a new one served the OLD game's answer -- caught the day a test built
+#   one extra synthetic IR and the next test's room-species lookup came back from the
+#   dead one (test_prev_return Part 1b/2). The pin makes the id permanent: an object a
+#   strong reference holds can never be collected, so its id is never reused. Keying on
+#   the object itself was tried first and is WRONG here -- the unit harnesses hand these
+#   derivations SimpleNamespace stand-ins, which define __eq__ without __hash__ (caught
+#   by test_deletion_soundness). The leak is the model cache's own policy: a process
+#   that holds models holds their IRs anyway.
+_IR_PINS = {}       # id(ir) -> ir; the strong pin that makes the id keys above sound
 _ROOMVAL = {}       # ...the one installed for the game being extracted. Keyed by ir like the
 #   other per-game derivations in this module, so `install_vocabulary` can restore it: the
 #   derivation has to run BEFORE `extract()`, and `extract()` re-installs the vocabulary.
@@ -218,7 +229,7 @@ def install_room_valued(ir, m):
     """Publish `room_valued_globals`' answer where `_cmp_atom` will read it."""
     global _ROOMVAL
     _ROOMVAL = {gi: frozenset(v) for gi, v in (m or {}).items()}
-    _ROOMVALS[id(ir)] = _ROOMVAL
+    _ROOMVALS[id(ir)] = _ROOMVAL; _IR_PINS[id(ir)] = ir
     return _ROOMVAL
 
 
@@ -791,8 +802,8 @@ def walk_stream(node, pc, on_leaf, on_loop=None, undecided=None):
         walk_stream(k, pc, on_leaf, on_loop, undecided)
 
 
-_INIT_SELECTORS = {}        # ir id -> selectors that put an object in the cast
-_DELEGATE_SLOTS = {}        # ir id -> property names the game dispatches doVerb through
+_INIT_SELECTORS = {}        # ir -> selectors that put an object in the cast
+_DELEGATE_SLOTS = {}        # ir -> property names the game dispatches doVerb through
 
 
 def init_selectors(ir):
@@ -816,7 +827,7 @@ def init_selectors(ir):
     as a cast site would make the whole rule vacuous. An object contributes only the aliases its
     own ancestry defines, which is the same "resolve through the class table" discipline
     `vocab.Vocabulary` uses for item moves."""
-    key = id(ir)
+    key = id(ir); _IR_PINS[key] = ir
     if key in _INIT_SELECTORS:
         return _INIT_SELECTORS[key]
     classes = {o.species: o for s in ir.scripts.values() for o in s.objects if o.is_class}
@@ -849,7 +860,7 @@ def init_selectors(ir):
     return _INIT_SELECTORS[key]
 
 
-_FEATURE_ADDERS = {}        # ir id -> selectors whose OBJECT ARGUMENTS join the cast
+_FEATURE_ADDERS = {}        # ir -> selectors whose OBJECT ARGUMENTS join the cast
 
 
 def feature_adders(ir):
@@ -888,7 +899,7 @@ def feature_adders(ir):
     declared object); KQ4 derives the selector and has ZERO such sites; LSL2, KQ6 and LB2 derive
     none at all -- SCI1.1 rooms use `addToPic`, which `init_selectors` already reads. All five
     frozen surfaces are byte-identical with this in."""
-    key = id(ir)
+    key = id(ir); _IR_PINS[key] = ir
     if key in _FEATURE_ADDERS:
         return _FEATURE_ADDERS[key]
     classes = {o.species: o for s in ir.scripts.values() for o in s.objects if o.is_class}
@@ -970,7 +981,7 @@ def delegate_slots(ir):
     slot KQ6 has -- every Script forwards through `((client actions:) ...)`-shaped sends. The
     v1.0-lb2 review caught it (§2.1) by re-executing the claim: a census that names some of what
     it found reads exactly like one that named all of it, so the only defence is running it."""
-    key = id(ir)
+    key = id(ir); _IR_PINS[key] = ir
     if key in _DELEGATE_SLOTS:
         return _DELEGATE_SLOTS[key]
     slots = set()
@@ -1509,7 +1520,7 @@ def _conj(pc):
     return pc[0] if len(pc) == 1 else GAnd(list(pc))
 
 
-_ROOM_SPECIES = {}          # ir id -> species number of the Rm/Room base class
+_ROOM_SPECIES = {}          # ir -> species number of the Rm/Room base class
 
 
 def _room_species(ir):
@@ -1520,7 +1531,7 @@ def _room_species(ir):
     so every KQ4 room failed the test and the extractor saw 4 rooms out of 159 scripts -- silently
     analysing almost nothing. Inheritance is the real signal, and it is what the docstring always
     claimed. The name check stays as a fallback."""
-    key = id(ir)
+    key = id(ir); _IR_PINS[key] = ir
     if key in _ROOM_SPECIES:
         return _ROOM_SPECIES[key]
     species = None
@@ -1545,7 +1556,7 @@ def _room_species_closure(ir):
     `AlleyRoom of Rm`, with instances `cityRoom of Stage` / `alleyRas of AlleyRoom` -- is still a
     room. The old one-level `super == Rm` check dropped all of them (and QFG2's whole Raseir
     endgame with it). Same transitive-closure shape `derive_death` uses for Game subclasses."""
-    key = id(ir)
+    key = id(ir); _IR_PINS[key] = ir
     if key in _ROOM_CLOSURE:
         return _ROOM_CLOSURE[key]
     base = _room_species(ir)
@@ -1569,7 +1580,7 @@ def _room_numbers(ir):
     """Script numbers that ARE rooms (have a Room instance). Used to validate the destinations of an
     overland-map `newRoom:[array]`: an array slot is a real exit only if a room script exists for
     that number, which also bounds the table (the first non-zero non-room is past its end)."""
-    key = id(ir)
+    key = id(ir); _IR_PINS[key] = ir
     if key not in _ROOM_NUMS:
         _ROOM_NUMS[key] = {s.number for s in ir.scripts.values()
                            if _room_object(s, ir) is not None}
@@ -1780,7 +1791,7 @@ def prev_room_global(ir):
     It is what a virtual-map room reads to seed its entry cell, so `grid.analyze` gates a grid
     exit on it -- "you can only reach the island if you arrived from the whale" -- and what
     `missability.edge_meta` writes on every edge, since this assignment runs on every transition."""
-    key = id(ir)
+    key = id(ir); _IR_PINS[key] = ir
     if key in _PREV_G:
         return _PREV_G[key]
     _PREV_G[key] = None
@@ -1869,7 +1880,7 @@ _HAS_KIDS = {}
 
 def _leaf_room_class(script, ir, closure):
     """The script's Room-descendant CLASS that no object inherits from, if it has exactly one."""
-    key = id(ir)
+    key = id(ir); _IR_PINS[key] = ir
     if key not in _HAS_KIDS:
         _HAS_KIDS[key] = {o.super for s in ir.scripts.values() for o in s.objects}
     parents = _HAS_KIDS[key]
@@ -3264,7 +3275,7 @@ def script_param_props(ir):
     library from SCI0 to SCI32, and `Rm::setScript` forwards `&rest` into `init:` unchanged. So a
     Script's `register` IS the third `setScript:` argument at whichever site armed it -- engine
     vocabulary, not a name assumed here."""
-    key = id(ir)
+    key = id(ir); _IR_PINS[key] = ir
     if key not in _SCRIPT_PARAM_PROPS:
         out = {}
         cls = ir.find_class("Script")
@@ -3521,6 +3532,48 @@ def var_room_values(ir, room, var):
                         if v is not None and is_room(v):
                             seen.setdefault(v, []).append(None)
         walk_stream(ast, [], on_leaf)
+    # ⭐ A GLOBAL ASSIGNED IN ANOTHER SCRIPT (2026-08-31). The script-local scope above is exact
+    # for a local and was the deliberate narrowing for a global -- and GK1 is the title it
+    # finally cost an exit: the map's first-time travel plays a movie in rm372 and exits
+    # `newRoom: global175`, and global175 is written ONE place in the whole game, rm205's travel
+    # dispatch (`(= global175 register)`, the same value the map machine routes on). The local
+    # scan answered {} and the exit was silently dropped -- every map destination lost its
+    # first-visit edge, and the scalar prevRoom projection called rooms 470/471/750 unreachable
+    # outright (an invented seal: under-approximated movement, the direction that fabricates).
+    #
+    # So a GLOBAL whose local scan is empty falls back to a game-wide assignment scan, one hop
+    # deep: a literal RHS is a destination; an RHS that is a Script's arming property (`register`
+    # -- `is_script_prop_dest`) inherits that script's `_script_prop_values`, the resolver the
+    # routing machine itself is fanned with. Corpus census 2026-08-31: exactly ONE site moves,
+    # GK1's rm372 (7 destinations); every other empty-global site is the engine's own plumbing.
+    #
+    # Two boundaries, both derived:
+    #   * the engine's PENDING and CURRENT room registers are excluded, for the reason the
+    #     PREVIOUS one already is: they are written by the `Game::newRoom` plumbing from every
+    #     room change, so the game-wide scan would fan the engine loop's own dispatch over every
+    #     room ever named -- a hub that exists nowhere. (`prev` never reaches here: it returned
+    #     the PREV_DEST sentinel at the top.)
+    #   * cross-script values carry NO guard. A path condition is a fact about ITS OWN script's
+    #     moment -- rm205's dispatch runs under "flag 449 clear" and raises flag 449 on the very
+    #     path that leads to rm372, so conjoining it onto rm372's exit would seal the edge the
+    #     moment it exists. Permissive is the sound direction for a destination set.
+    if not seen and vtype == "Global" and vindex is not None \
+            and vindex not in (pending_room_global(ir), current_room_global(ir)):
+        for osn, osc in sorted(ir.scripts.items()):
+            for o in osc.objects:
+                for _mn, oast in o.methods.items():
+                    for n in I.walk(oast):
+                        if n.get("t") != "Assignment" or not is_dest(n["kids"][0]):
+                            continue
+                        rhs = n["kids"][1]
+                        v = I.as_int(rhs)
+                        if v is not None:
+                            if is_room(v):
+                                seen.setdefault(v, []).append(None)
+                        elif is_script_prop_dest(ir, rhs):
+                            for v2 in _script_prop_values(ir, osc, rhs):
+                                seen.setdefault(v2, []).append(None)
+        return {v: None for v in seen}
     return {v: (gs[0] if len(gs) == 1 else None) for v, gs in seen.items()}
 
 

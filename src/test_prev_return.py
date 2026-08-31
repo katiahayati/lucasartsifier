@@ -97,6 +97,40 @@ def test_prev_dest_sentinel():
           other == {}, repr(other))
 
 
+def test_global_cross_script_dest():
+    """Part 1b: a GLOBAL destination assigned in ANOTHER script resolves game-wide.
+
+    GK1's rm372 travel movie exits `newRoom: global175`, and global175 is written only by the
+    two map rooms' dispatch -- the script-local scan answered {} and the exit was dropped.
+    The fallback scans every script's assignments; the engine's PENDING and CURRENT registers
+    are excluded (they are written by the `Game::newRoom` plumbing from every room change), and
+    cross-script values carry no guard."""
+    print("Part 1b: var_room_values -- cross-script global fallback, engine registers excluded")
+    import ir as I
+    import extract as X
+    ROOM_SP = 5
+    ir = I.IR({"game": "fake", "selectors": [], "scripts": [
+        _game_loop_main(),                    # derives pending=13, current=11, prev=12
+        _script(994, [_obj("Rm", {}, is_class=True, species=ROOM_SP, super_=0)]),
+        # script 30 exits on Global[40] and never assigns it
+        _script(30, [_obj("rm30", {"doit": [
+            SEND(OBJ("self"), MSG("newRoom", V("Global", 40)))]},
+            species=0, super_=ROOM_SP)]),
+        # script 31 (a room) assigns Global[40] := 31 -- the cross-script writer -- and also
+        # writes the PENDING and CURRENT registers, which must not become destinations
+        _script(31, [_obj("rm31", {"doit": [
+            ASSIGN(V("Global", 40), N(31)),
+            ASSIGN(V("Global", 13), N(31)),
+            ASSIGN(V("Global", 11), N(31))]}, species=0, super_=ROOM_SP)]),
+    ]})
+    got = X.var_room_values(ir, 30, V("Global", 40))
+    check("a global assigned only in another script resolves game-wide, unguarded",
+          got == {31: None}, repr(got))
+    for gi, name in ((13, "PENDING"), (11, "CURRENT")):
+        got = X.var_room_values(ir, 30, V("Global", gi))
+        check(f"the {name} room register is excluded from the fallback", got == {}, repr(got))
+
+
 def test_inherited_room_methods():
     print("Part 2: inherited_room_methods -- un-overridden ancestor methods, universality excluded")
     import ir as I
@@ -330,6 +364,7 @@ def test_branch_cost_chaining():
 
 def run():
     test_prev_dest_sentinel()
+    test_global_cross_script_dest()
     test_inherited_room_methods()
     test_inherited_scope_no_temp_bleed()
     test_resolve_prev_returns()

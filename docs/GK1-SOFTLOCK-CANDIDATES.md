@@ -852,3 +852,87 @@ anything.** `205 -> 470` (the opening cartoon, `prev == 750`) is the one that wo
 and it fails on the soundness qualifier — rm750 writes the day counter itself. Recorded so it is
 not built speculatively; `p == b` is the case that pays, because `nec[b]` is then about the
 destination itself.
+
+## §1.17 The travel movie was severed: a cross-script global destination (2026-08-31)
+
+Chasing the §1.16 blocker turned up a genuine model bug, older than this round and independent
+of it. The once-only simulation kept "re-raising" flag 65 at rm470 on any day, and the trace ran
+through `205->470` — an edge whose only alternatives demand `prev == 750`. Asking how the REAL
+day-1 player enters the crime scene at all exposed the answer: **in the model, they don't.** The
+scalar prevRoom projection had rooms 470, 471 and 750 flatly unreachable — an invented seal, the
+under-approximating direction, the one that fabricates.
+
+### The game
+GK1 travels by map. Each icon's `cue` does `(global2 cue: <room>)`, the map's dispatch
+(`rm205.sc:204-219`, rm200 likewise) either goes directly (`newRoom: register`) or — the FIRST
+time — stores the destination (`(= global175 register)`), raises flag 449 and plays the travel
+movie in **rm372**, whose state 4 exits `(global2 newRoom: global175)`. `global175` is assigned
+nowhere else in the game.
+
+### The gap
+`extract.var_room_values` resolves an indirect destination by scanning THE SITE'S OWN script —
+exact for a local, and a deliberate narrowing for a global. rm372's script never assigns
+global175, so the scan answered `{}` and the exit was silently dropped: every map destination
+lost its first-visit edge. The map machines' own `newRoom: register` fan was fine (that is
+`_script_prop_values`, the arming-parameter flow), which is why the world still LOOKED connected
+— the direct-travel alternatives carried it, mostly under guards no honest first-time player
+satisfies.
+
+### The fix — one rule in `var_room_values`, no sentinel needed
+A GLOBAL whose script-local scan is empty falls back to a game-wide assignment scan, one hop
+deep: a literal RHS is a destination; an RHS that is a Script's arming property (`register`)
+inherits that script's `_script_prop_values` — the very resolver the routing machine itself is
+fanned with. Unlike the `PREV_DEST` case this needs no deferred expansion: assignments are
+static, and the whole IR is in hand at extraction.
+
+Two boundaries, both derived:
+* **The engine's PENDING and CURRENT room registers are excluded**, for the reason the PREVIOUS
+  one already returns a sentinel: they are written by the `Game::newRoom` plumbing from every
+  room change, so the game-wide scan would fan the engine loop's own dispatch over every room
+  ever named.
+* **Cross-script values carry no guard.** A path condition is a fact about its own script's
+  moment — rm205's dispatch runs under "flag 449 clear" and raises flag 449 on the very path
+  that leads to rm372, so carrying it would seal the new edge at birth.
+
+Corpus census (the `newRoom: <Variable>` sweep, all six games): every other empty-global site is
+the engine's pending register in the `Rm` base class; every empty `Parameter`/`Temp` site is a
+`newRoom`-method override passing its argument to `super` — plumbing, correctly edge-free. **One
+site in the corpus resolves: GK1's rm372 — to 19 rooms, not 7**, because BOTH maps write
+global175 (rm200's twelve destinations and rm205's eight, minus overlap). Pinned at unit level in
+`test_prev_return` Part 1b.
+
+### ⛔ AND THE TEST EXPOSED A SECOND BUG: the per-IR memos were keyed on `id(ir)`
+Inserting Part 1b's synthetic IR made Part 2's — a test that had passed for days — fail: every
+per-IR memo in `extract` (`_ROOM_SPECIES`, `_PREV_G`, ten others) was keyed on `id(ir)`, a memo
+entry outlives its IR, and `id()` is only unique among LIVE objects. The freed test IR's id was
+reused by the next test's IR, which was then served the dead game's room species. The same
+hazard sat under any tool that loads IRs serially in one process. All twelve memos now pin the
+IR in a side registry when they mint its key — a pinned object's id can never be reused. (Keying
+on the IR object itself was tried first and is wrong here: the unit harnesses hand these
+derivations `SimpleNamespace` stand-ins, which are unhashable — caught by
+`test_deletion_soundness`.) The leak is the model cache's own policy: a process that holds
+models holds their IRs anyway.
+
+### §1.17 measured (real rebuild, all six games)
+**LSL2, KQ4, KQ6, LB2, KQ5 byte-identical.** GK1 moves, and it is a COVERAGE change in both
+directions:
+
+* **`sLakePatter` LEAVES `softlock_items`** — the declared-FP `dangerous_sinks` row retires,
+  with its market spec and the two REFUSED `rm200/rm50->rm290 (has: 31)` edge specs. Probed:
+  `required[31]` no longer lists rm290 at all — the phantom Magentia demand died with the
+  dishonest wiring. An FP retired by structure, not by a clause.
+* **The ENDGAME becomes analyzable.** The fan includes the airport (750 is a map icon), so the
+  finale region — rm700/710/720/899 — is reachable in the prevRoom projection for the first
+  time (`_pstates[12]` covered none of it before). The guard surface follows: the day-end
+  demands relocate from the rm372 chokepoint (`rm200/205->rm372`, now 19-way) to the real ones
+  (`rm750->rm700` gains `has: 32,38,40,64`; `rm720->rm50` and `rm800->rm899` gain `has: 64`),
+  and the placements move with them (`Hounfour` arm-event, rm720 setscript).
+* **One new row, an FP of the documented flip-precondition class**: `knife@reg12=720 -> [720]`
+  (flip room 50, source rm510). Day 7 cannot end without the knife (`readTheScroll` demands
+  `egoCutHimself`, written only by `cutEgo` via the knife's own verb — `rm540.sc:299-307`,
+  `tile1.sc:497` — and no `put: 64` exists), so the day-9 player at rm720 holds it; the
+  prevRoom projection cannot see the day chain. Declared under knife's existing
+  CONFIRMED_SAFE entry.
+* R1 unmoved: `VoodooCode1@reg123=5` and the whole §1.15/§1.16 row set stand.
+
+Times: LSL2 37s, KQ4 80s, KQ6 99s, LB2 52s, KQ5 633s, GK1 242s.

@@ -81,24 +81,24 @@ KNOWN_RED = {
     # Unvalidated by play and unruled by the USER -- the rows themselves may move when they rule.
     "test_gk1_ground_truth.py": {
         "no UNEXPECTED unit flagged (suspicion)":
-            "five FALSE POSITIVES: knife (fatal_uses -- an on-screen death, not a consumption; "
-            "USER ruling 2026-08-27), sLakePatter (dangerous_sinks -- the give is the day-2 gate, "
-            "flag 231; no `has: 31` exists), and THREE of one class, `_flip_live` missing that "
-            "the flip's own precondition demands the item: reconVeve (day 3's endDay arm needs "
-            "it, but Grace's 'go home' topic 49 ends the day for free because flag 65 is re-"
-            "raised by rm470's cutscenes, whose once-only gate flag 11 does not reach their write "
-            "branches -- needs the one-shot reading, docs GK1 §1.14); braceMold (new 2026-08-30 "
-            "with the return-to-sender pricing: day 3 cannot end without flag 256, whose only "
-            "setter `napoleon.sc:858` runs after the mold is `put:` -- `_wbranch[(498,460,1)]` "
-            "already costs it and the flag-15 day-3 branch never inherits it); sVoodooCode (the "
-            "tomb-writing write at rm302 carries no cost because the `has: 32/33` demand is at "
-            "rm300, where the scene is armed -- the cost does not cross the `newRoom`). ⛔ The "
-            "return-edge cure this entry used to claim for sVoodooCode was MEASURED 2026-08-30 "
-            "and does not retire it: rm302 writes flag 246 itself, so the return may assert "
-            "nothing about it (docs GK1 §1.15). All five in CONFIRMED_SAFE; cure the detectors, "
-            "never the list",
+            "four FALSE POSITIVES: knife (fatal_uses -- an on-screen death, not a consumption; "
+            "USER ruling 2026-08-27 -- plus, since the 2026-08-31 travel-movie fan opened the "
+            "endgame, a `reg12=720` register row of the flip-precondition class: day 7 cannot "
+            "end without the knife, rm540.sc:299-307, and no `put: 64` exists), and THREE of "
+            "one class, `_flip_live` missing that the flip's own precondition demands the item: "
+            "reconVeve (day 3's endDay arm needs it, but Grace's 'go home' topic 49 ends the "
+            "day for free because flag 65 is re-raised by rm470's cutscenes, whose once-only "
+            "gate flag 11 does not reach their write branches -- needs the one-shot reading, "
+            "docs GK1 §1.14); braceMold (day 3 cannot end without flag 256, whose only setter "
+            "`napoleon.sc:858` runs after the mold is `put:`); sVoodooCode (the tomb-writing "
+            "write at rm302 carries no cost because the `has: 32/33` demand is at rm300, where "
+            "the scene is armed -- the cost does not cross the `newRoom`; ⛔ the return-edge "
+            "cure was MEASURED 2026-08-30 and does not retire it, docs GK1 §1.15). "
+            "sLakePatter RETIRED 2026-08-31: the travel-movie fan (§1.17) removed the phantom "
+            "Magentia demand its dangerous_sinks row rested on -- an FP dying of honest wiring. "
+            "All four in CONFIRMED_SAFE; cure the detectors, never the list",
         "a safe item is not flagged":
-            "same five false positives as the row above (the two checks are one defect seen "
+            "same four false positives as the row above (the two checks are one defect seen "
             "from the oracle's two sides)",
         "R2: the confessional deposit (rod + a signal device -> flags 280/281 -> 351) is caught":
             "the point of no return (sHRoom8.sc:71) is an intra-room scene switch inside the "
