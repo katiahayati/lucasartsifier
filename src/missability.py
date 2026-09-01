@@ -3485,8 +3485,13 @@ def edge_meta(em, regs):
                 if tr and tr[0] == "EXIT":
                     exit_own = frozenset(_own_positive(g))
                     alts = eo.get(K) or (frozenset(),)
+                    # ...the writes every route TO this exit performed ride the edge too
+                    # (`compile.acc_entry_writes` -- the interrogation subject written one
+                    # state before the `newRoom`); the exit state's own writes win a conflict.
+                    acc = info.get("acc_writes", {}).get(K, {})
                     sets = sets_of(info["room"],
-                                   {gi: v for (gi, v) in w if gi in regset})
+                                   {**{gi: v for gi, v in acc.items() if gi in regset},
+                                    **{gi: v for (gi, v) in w if gi in regset}})
                     # The exit inherits its ENTRY's register requirements as well as its item
                     # ones. Both must hold, so a register constrained in both places INTERSECTS.
                     rq = reqs(g)

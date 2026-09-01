@@ -1004,3 +1004,50 @@ machines gain armer entry facts, GK1 25, KQ5 16, LB2 8, KQ4 2. Verified at the t
 producible-set fixpoint (the R4 mechanism above) is its intended consumer. `edge_meta`'s own
 `chain` still folds musts only; teaching it `F` is the remaining half of the same rule, parked
 until a measured case needs it ([[same-rule-two-places]], flagged there).
+
+## §1.19 An exit carries the writes its path established (2026-08-31, later)
+
+Following §1.18's prerequisite 2 to its root closed most of it and found the day's FOURTH
+sighting of the walk/table split.
+
+### The recon that shrank the problem
+The "Teller-activation scope" fear was overstated: the interrogation protocol is ALREADY edge
+sets. rm50's dispatch (`interrogation.sc:93-110`) switches on `global178`, and the talk sites
+write the subject before their `newRoom: 50` — 20 of rm50's 24 in-edge alternatives carried
+`sets{178: subject}` (rm280's carries `sets178=12` exactly, which is flag 44's whole activation
+story). The four that did not — rm300/310/380/460 — were one gap in three costumes.
+
+### The gap
+`compile_machine`'s walk ACCUMULATES writes along each path (`nw`) into its cumulative exits —
+and the published per-state rows (`opmodel._machine_info`'s `states`, the table `edge_meta` and
+every detector read) never did. A cutscene that decides early and pays off late shipped its exit
+without its own effects: `interrogateGranny` writes the subject at state 1 (`rm380.sc:587`) and
+exits at state 2 with `writes=[]`.
+
+### The fix — `compile.acc_entry_writes`, one consumer
+A dataflow to a fixpoint over the state graph: IN[K] = the register writes EVERY route to K has
+performed (necessary merge — a value routes disagree on drops; an entry state seeds empty; a
+`(++ G)` kills G; a symbolic write is skipped). Transitions mirror `compile_machine`'s walk.
+⛔ A PARK CLEARS THE ACCUMULATOR — deliberately more conservative than `compile_machine`, which
+keeps `nw` across waits: an arrival value is FORCED on whoever crosses the published edge, so a
+write a wait could have unmade must not ride. The subject writes this exists for ride say-cues,
+which `carry_cues` already turned into ADVANCE.
+
+Stored as `info["acc_writes"]`; consumed ONLY by `edge_meta`'s exit `sets` (exit-state writes
+win a conflict). The states table itself is untouched — other readers unchanged this round.
+
+Measured on the target: rm380→50 now carries `sets178=26`; rm300/310→50 gain subject-carrying
+alternatives (`sets178=32`); **21 of 24 arrivals now carry the subject**. The residue, recorded:
+napoleon's write is at the ARMING SITE (`napoleon.sc:1287`, `(= global178 34)` immediately
+before `setScript: askBartender`) — arming-context writes ride entry LOCALS, not exits — and
+Cemetery keeps one subject-free route. Both permissive, both named.
+
+### §1.19 measured (real rebuild, all six)
+**LSL2, KQ4, KQ6, LB2, KQ5 byte-identical.** GK1 moves and it is the GUARD surface, not a
+verdict: `softlock_items` and every detector row unchanged; the day-end demands land as APPLIED
+edge guards at the map's own exits (`rm370->rm371/372: (has: 32, 38, 40)`, two `rm370
+arm-event` placements) where before two placements failed outright (`no free-running trap write
+found`); and the two write-guards for the sVoodooCode complex (`reg488=1`, `reg492=1`) flip to
+REFUSED — the accumulated sets changed `verify`'s world and the placer now prefers the edge
+form. A patch that lands at the room the player actually leaves beats a write-guard that
+verify distrusts; and both retired placements guarded a declared-FP complex anyway.

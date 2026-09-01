@@ -539,6 +539,86 @@ def step_effects(st):
     return bool(st.writes or st.gets or st.drops or st.moves or st.counters or st.gincs)
 
 
+def acc_entry_writes(steps_by_state, start, entry_states):
+    """{state: {glob: val}} -- the register writes EVERY route to the state has performed.
+
+    ⭐ AN EXIT CARRIES THE WRITES ITS PATH ESTABLISHED (2026-08-31). `compile_machine`'s walk
+    accumulates writes along each path (`nw`) into its cumulative exits -- and the PUBLISHED
+    per-state rows (`opmodel._machine_info`, the table `edge_meta` and every detector read) never
+    did, so a cutscene that decides early and pays off late shipped its exit without its own
+    effects. GK1's interrogation protocol is the specimen: `interrogateGranny` writes the subject
+    register at state 1 (`rm380.sc:587`) and exits `newRoom: 50` at state 2, so the edge's `sets`
+    carried nothing and the conversation screen was enterable with a stale subject -- 20 of
+    rm50's 24 in-edge alternatives carried the subject; the 4 that did not were all this shape.
+    The fourth sighting of the walk/table split in one day ([[same-rule-two-places]]).
+
+    Dataflow to a fixpoint, NECESSARY over routes: IN[K] keeps only the (glob, val) pairs every
+    arriving route agrees on -- an entry state seeds with {} (an arming jumps straight in with
+    nothing established), a `(++ G)` kills G (the value depends on the old one), a symbolic
+    register-valued write is skipped (unresolvable here). Transitions mirror `compile_machine`'s
+    walk -- ADVANCE/JUMP/SETSTATE flow through, absent states fall through, EXIT/DEATH/END stop.
+
+    ⛔ A PARK CLEARS THE ACCUMULATOR, deliberately more conservative than `compile_machine`
+    (which keeps `nw` across waits): a wait hands control back to the player, and a write that
+    rode into the wait may be rewritten by the room before the exit fires. Dropping it is the
+    permissive direction for a `sets` consumer -- an arrival value is FORCED on whoever crosses,
+    so publishing one that a wait could have unmade would invent state the game does not
+    guarantee. The cases this exists for (the interrogation subject writes) ride say-cues, which
+    `carry_cues` has already turned into ADVANCE before this runs."""
+    maxk = max(steps_by_state, default=0)
+
+    def present_from(k):
+        while k not in steps_by_state and k <= maxk:
+            k += 1
+        return k if k in steps_by_state else None
+    IN = {}
+
+    def feed(k, acc):
+        k = present_from(k)
+        if k is None:
+            return False
+        if k not in IN:
+            IN[k] = dict(acc)
+            return True
+        merged = {gi: v for gi, v in IN[k].items() if acc.get(gi) == v}
+        if merged != IN[k]:
+            IN[k] = merged
+            return True
+        return False
+    work = []
+    for k0 in sorted({start} | set(entry_states)):
+        if feed(k0, {}):
+            work.append(present_from(k0))
+    while work:
+        K = work.pop()
+        if K is None or K not in steps_by_state:
+            continue
+        base = IN.get(K, {})
+        for st in steps_by_state[K]:
+            out = dict(base)
+            for (gi, v) in st.writes:
+                if isinstance(v, int):
+                    out[gi] = v
+                else:
+                    out.pop(gi, None)          # symbolic: value unknown here
+            for (gi, _d) in st.gincs:
+                out.pop(gi, None)              # an increment depends on the old value
+            tr = st.trans
+            if tr[0] == "ADVANCE":
+                dst, acc = K + 1, out
+            elif tr[0] == "JUMP":
+                dst, acc = tr[1], out
+            elif tr[0] == "SETSTATE":
+                dst, acc = tr[1] + 1, out
+            elif tr[0] == "PARK":
+                dst, acc = K + 1, {}
+            else:                              # EXIT / DEATH / END: no successor
+                continue
+            if feed(dst, acc):
+                work.append(present_from(dst))
+    return {K: IN.get(K, {}) for K in steps_by_state}
+
+
 def compress_chains(steps_by_state, entry_states, start):
     """Collapse maximal runs of effect-free unconditional ADVANCE states into a single hop.
 

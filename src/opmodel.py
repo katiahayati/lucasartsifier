@@ -771,6 +771,9 @@ class OpEmitter:
                 "local_regs": dict(getattr(m, "local_regs", None) or {}),
                 "restores_control": set(getattr(m, "restores_control", None) or ()),
                 "chase_states": set(getattr(m, "chase_states", None) or ()),
+                # the writes every route to each state has performed -- read by `edge_meta`'s
+                # exit `sets`, so an early write rides its late `newRoom` (see the helper)
+                "acc_writes": C.acc_entry_writes(steps_by_state, m.start, entry_states),
                 "start": m.start, "delivered": delivered, "drops": drops, "moves": moves}
 
     def _resolve_prev_returns(self):
