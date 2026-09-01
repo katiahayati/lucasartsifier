@@ -1011,34 +1011,7 @@ def gating_registers(em):
         _cmp_atoms(g, atoms)
         for (r, op, v, pol) in atoms:
             compared.add(r)
-    written = set()
-    for room, script, gi, v, g in em.handler_writes:
-        written.add(gi)
-    # `init` runs on arrival, so a register it sets is genuinely written -- it was only collected
-    # apart to keep arrival atomic. Omitting it here meant a flag raised ONLY on entering a room
-    # counted as never-written and so was never promoted, however much movement it gated. That is
-    # how KQ6 seals the realm of the dead: rm600's init raises flag 15, nothing clears it, and the
-    # way in demands it clear.
-    for room, vs in getattr(em, "init_writes", {}).items():
-        written.update(vs)
-    # ...and a CONDITIONAL entry write is a write too. `init_writes` keeps only the
-    # unconditional ones (they double as initial values); the guarded ones live in `init_seq`.
-    # GK1's day-end flag 15 is raised in `bookstore::init` under `(== global12 50)` AND the
-    # day's own gate, nowhere unconditionally -- so it was "never written", never promoted, and
-    # the day machine it arms advanced for free: every day-counter flip read as costless and
-    # reconVeve (which day 3 cannot end without) was reported stranded by day 4.
-    for room, seq in getattr(em, "init_seq", {}).items():
-        for (gi, _v, _g) in seq:
-            written.add(gi)
-    # BOTH lists: an always-live scope's writes are real writes -- KQ6's flag 22 (the magic
-    # paint) is written by the inventory `doVerb` and nowhere else, so without this it can never
-    # be promoted and the castle's long door reads as free. See opmodel.global_machines for why
-    # that scope is kept out of `machines` everywhere else.
-    for info in all_machines(em):
-        for K, paths in info["states"].items():
-            for (g, w, gg, c, tr) in paths:
-                for (gi, v) in w:
-                    written.add(gi)
+    written = _written_registers(em)
     # The PREVIOUS-ROOM register is written by no room and by every transition: the Game loop's
     # room switch does `(= <prev> <current>)` before it goes (see extract.prev_room_global), so
     # taking any edge a->b sets it to a. `edge_meta` puts that write on the edge; here it only has
@@ -1058,6 +1031,85 @@ def gating_registers(em):
     # reads gates nothing and only adds walks whose intersections eat findings. The write-chain
     # gate stays a cost-model question (`_own_fixpoint`, `_wbranch`), not a promotion.
     return sorted((compared & written) - _object_valued_globals(em))
+
+
+def _written_registers(em):
+    """Every register some recorded write can set -- the `written` half of promotion, factored
+    so `support_registers` reads the SAME harvest ([[same-rule-two-places]]).
+
+    `init` runs on arrival, so a register it sets is genuinely written -- it was only collected
+    apart to keep arrival atomic. Omitting it meant a flag raised ONLY on entering a room
+    counted as never-written and so was never promoted, however much movement it gated. That is
+    how KQ6 seals the realm of the dead: rm600's init raises flag 15, nothing clears it, and the
+    way in demands it clear. A CONDITIONAL entry write is a write too -- `init_writes` keeps
+    only the unconditional ones (they double as initial values); the guarded ones live in
+    `init_seq`. GK1's day-end flag 15 is raised in `bookstore::init` under `(== global12 50)`
+    AND the day's own gate, nowhere unconditionally. And an always-live scope's writes are real
+    writes: KQ6's flag 22 (the magic paint) is written by the inventory `doVerb` and nowhere
+    else -- see opmodel.global_machines for why that scope is kept out of `machines` elsewhere."""
+    written = set()
+    for room, script, gi, v, g in em.handler_writes:
+        written.add(gi)
+    for room, vs in getattr(em, "init_writes", {}).items():
+        written.update(vs)
+    for room, seq in getattr(em, "init_seq", {}).items():
+        for (gi, _v, _g) in seq:
+            written.add(gi)
+    for info in all_machines(em):
+        for K, paths in info["states"].items():
+            for (g, w, gg, c, tr) in paths:
+                for (gi, v) in w:
+                    written.add(gi)
+    return written
+
+
+def support_registers(em, regs):
+    """Registers whose writes must be PRICED though no movement guard compares them.
+
+    `_chain_branch_costs`' principle -- a write branch pays for the registers its own guard
+    names -- only carries if those registers' own writes are in the cost tables at all. So:
+    a register compared in the GUARD OF A RECORDED WRITE of a priced register, and itself
+    written somewhere, joins the COST model. Never the movement model -- the promotion
+    fixpoint over exactly this relation was measured and REVERTED TWICE (see
+    `gating_registers`): a projection over a register no movement guard reads gates nothing
+    and its walks eat findings through the intersections. The cost tables have no such
+    intersection over REGISTERS, only over WRITERS of one value -- so an added register can
+    only make a value dearer, and only when every way of producing that value is dear.
+
+    GK1 is the specimen: `sEnterFromElevator` writes flag 351 (the ceremony's survival gate)
+    under flags 280 AND 281, the two deposits -- and the deposit write's own guard carries
+    `own(rod)`. No door compares 280/281, so they were nowhere, `351 == 1` folded to free,
+    and the rod's cost never reached the death trap that demands it. Closed to a bounded
+    fixpoint (a support register's write guards may name deeper ones); object-valued globals
+    refused exactly as promotion refuses them."""
+    written = _written_registers(em)
+    objs = _object_valued_globals(em)
+    wguards = defaultdict(list)
+    for room, script, gi, v, g in em.handler_writes:
+        wguards[gi].append(g)
+    for room, seq in getattr(em, "init_seq", {}).items():
+        for (gi, _v, g) in seq:
+            if g is not None:
+                wguards[gi].append(g)
+    for info in all_machines(em):
+        for K, paths in info["states"].items():
+            for (g, w, gg, c, tr) in paths:
+                for (gi, _v) in w:
+                    wguards[gi].append(g)
+    out = set(regs)
+    for _ in range(6):               # chains are 2-3 links deep; growth is monotone
+        new = set()
+        for gi in out:
+            for g in wguards.get(gi, ()):
+                atoms = []
+                _cmp_atoms(g, atoms)
+                for (r, _op, _v, _pol) in atoms:
+                    if r in written and r not in objs and r not in out:
+                        new.add(r)
+        if not new:
+            break
+        out |= new
+    return out - set(regs)
 
 
 def _object_valued_globals(em):
@@ -3657,6 +3709,8 @@ class IrSccReach(SccReach):
         each projection stays permissive and can only remove movement the guards actually forbid."""
         em = self.em
         self.regs = gating_registers(em)
+        # COST-ONLY tier: priced in `_inroom_own`/`_wbranch`/`guards`, never projected.
+        self._cost_regs = sorted(set(self.regs) | support_registers(em, self.regs))
         self._emeta = edge_meta(em, self.regs)
         self._inroom = {R: defaultdict(set) for R in self.regs}
         # OWN requirements on each in-room write. The writes themselves stay PERMISSIVE for
@@ -3667,6 +3721,7 @@ class IrSccReach(SccReach):
         # trap that needs it.
         self._inroom_own = {}
         regset = set(self.regs)
+        costset = set(self._cost_regs)
         dbg = frozenset(em.cfg.debug_globals)
 
         def cheapest(key, cost):
@@ -3690,7 +3745,7 @@ class IrSccReach(SccReach):
         for room_, script_, it_, g_ in getattr(em, "handler_gets", ()):
             gets_by[(room_, script_, str(g_))].add(it_)
         for room, script, gi, v, g in em.handler_writes:
-            if gi in regset:
+            if gi in costset:
                 self._cogrants[(gi, room, v)].append(
                     frozenset(gets_by.get((room, script, str(g)), ())))
         for room, script, gi, v, g in em.handler_writes:
@@ -3703,6 +3758,7 @@ class IrSccReach(SccReach):
             # move it; KQ4 has 12 across 8 registers, among them global100 (night) and global109.
             if gi in regset and not _debug_gated_guard(g, dbg):
                 self._inroom[gi][room].add(v)
+            if gi in costset and not _debug_gated_guard(g, dbg):
                 cheapest((gi, room, v), _own_positive(g))
         # MACHINE writes, with the machine's own entry guard on the SAME register kept as an
         # ordering. KQ4 dispatches Lolotte's conversations with `(switch global109 (1 lotTalk3)
@@ -3730,6 +3786,7 @@ class IrSccReach(SccReach):
             for gi, v in vs.items():
                 if gi in regset:
                     self._inroom[gi][room].add(v)
+                if gi in costset:
                     cheapest((gi, room, v), ())
         # ⭐ ...AND THE CONDITIONAL ONES, WHICH ARE *POSSIBLE* IN-ROOM WRITES.
         #
@@ -3774,6 +3831,7 @@ class IrSccReach(SccReach):
             for (gi, v, g) in seq:
                 if gi in regset and g is not None:
                     self._inroom[gi][room].add(v)
+                if gi in costset and g is not None:
                     cheapest((gi, room, v), _own_positive(g))
         self._rstep = {R: defaultdict(set) for R in self.regs}
         # ...and here, the one consumer an always-live scope is lifted FOR: what its action makes
@@ -3798,7 +3856,7 @@ class IrSccReach(SccReach):
             for K, paths in info["states"].items():
                 for (g, w, gg, c, tr) in paths:
                     for (gi, v) in w:
-                        if gi not in regset:
+                        if gi not in costset:
                             continue
                         # THE WRITE'S OWN PATH CONDITION FIRST. A write reached only under
                         # `R == k` is executed only at `R == k`, so ordering it from there is
@@ -3820,13 +3878,14 @@ class IrSccReach(SccReach):
                         # instead of the six real ones. `structural_reqs` COMPOSES (AND
                         # intersects, OR keeps only what every branch constrains), so a
                         # contradictory branch yields the empty set and orders nothing.
-                        own = structural_reqs(g, (gi,)).get(gi)
-                        need = own or gates.get(gi)
-                        if need:
-                            for frm in need:
-                                self._rstep[gi][info["room"]].add((frm, v))
-                        else:
-                            self._inroom[gi][info["room"]].add(v)
+                        if gi in regset:
+                            own = structural_reqs(g, (gi,)).get(gi)
+                            need = own or gates.get(gi)
+                            if need:
+                                for frm in need:
+                                    self._rstep[gi][info["room"]].add((frm, v))
+                            else:
+                                self._inroom[gi][info["room"]].add(v)
                         # ...and the write's PRECONDITIONS either way. Learning that a write is an
                         # ordered transition says nothing about what it costs, but `_rstep` recorded
                         # only the ordering, so an ordered write became free: KQ6's tapestry sets
@@ -4355,6 +4414,8 @@ class IrSccReach(SccReach):
         # a cutscene decides early and pays off late, so the constraint that matters is usually in
         # an earlier state (KQ6 branches on the scarf at state 8 and sets the flag at 14).
         regs = set(self.regs)
+        # ...and the cost-only tier rides along wherever a table is COST, not movement.
+        cregs = set(getattr(self, "_cost_regs", None) or self.regs)
         guards = {}
         # ⭐ ...AND EVERY BRANCH KEPT APART (2026-08-28): `(R, room, val) -> [(deps, cost,
         # co-writes)]`, one per write site, where `deps` is what the write's guard establishes
@@ -4383,7 +4444,7 @@ class IrSccReach(SccReach):
         for _rn, rs in (getattr(getattr(self.em, "ir", None), "_room_local_resets", None)
                         or {}).items():
             locs |= set(rs)
-        regs_wb = regs | locs
+        regs_wb = cregs | locs
         self._wb_regs = regs_wb
         # ⭐ A HANDLER'S WRITES LAND TOGETHER (2026-08-31). Machine state bodies already record
         # their co-writes (the third element, applied by `_psucc_joint` so a joint never passes
@@ -4398,8 +4459,8 @@ class IrSccReach(SccReach):
             if gi in regs_wb and not _debug_gated_guard(g, dbg):
                 handler_cowrites[(room, script, str(g))].add((gi, v))
         for room, script, gi, v, g in self.em.handler_writes:
-            if gi in regs:
-                d = {S: vs for S, vs in guard_reqs(g, regs).items() if vs}
+            if gi in cregs:
+                d = {S: vs for S, vs in guard_reqs(g, cregs).items() if vs}
                 if d:
                     guards[(gi, room, v)] = d
             if gi in regs_wb and not _debug_gated_guard(g, dbg):
@@ -4515,7 +4576,7 @@ class IrSccReach(SccReach):
                     for (gi, v) in w:
                         if gi not in regs_wb:
                             continue
-                        if gi not in regs or (gi, info["room"], v) not in self._inroom_own:
+                        if gi not in cregs or (gi, info["room"], v) not in self._inroom_own:
                             for tbl, bg, erx, dm in ((wb, by_guard, er, None),
                                                      (wbd, by_guard_d, er_d, dom)):
                                 dd = dict(sm.at(K, g))
@@ -4536,7 +4597,7 @@ class IrSccReach(SccReach):
                         for S, vs in list(inherited.items()) + list(chain.items()):
                             if vs:
                                 d[S] = (d[S] & vs) if S in d else set(vs)
-                        for S, vs in guard_reqs(g, regs).items():
+                        for S, vs in guard_reqs(g, cregs).items():
                             if vs:
                                 d[S] = (d[S] & vs) if S in d else set(vs)
                         if d:

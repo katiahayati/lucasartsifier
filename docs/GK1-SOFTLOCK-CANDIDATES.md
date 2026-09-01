@@ -1304,3 +1304,73 @@ a DIFFERENT room — so the scene-carryin shape does not cover it; its point of 
 same latch (759), but the demand is a FLAG PAIR set elsewhere, not an item held. The R2
 detector is the flag-twin of this one: a death-sorter register (351 at rm899, EndGame:637)
 whose only writers live behind the latch. Same skeleton, register-valued.
+
+## §1.25 The COST-ONLY register tier (2026-09-01, R2 round 2)
+
+The R2 probe found the model already KNOWS everything and prices NONE of it: the rm899 trap
+rows demand `593 ∈ {1}` (flag 351), `sEnterFromElevator`'s write of 593 is guarded
+`522!=0 ∧ 523!=0` (flags 280/281, the deposits), and the 522 deposit's own handler guard
+carries `own(rod)` — yet `_reg_cost(593,{1})` came back EMPTY. Root: 522/523 are compared in
+no movement guard, so `gating_registers` never promotes them, and every cost table is gated
+on the promoted set — their writes never seeded `_inroom_own`, their atoms dropped from every
+`guard_reqs` read, and 351 folded to free.
+
+⛔ The promotion cure was measured and REVERTED TWICE on 2026-08-28 (196 LSL2 golden lines,
+oracle items lost — widened projections eat findings through the intersections); its comment
+already names the verdict: "the write-chain gate stays a cost-model question." So this round
+builds exactly that: `support_registers(em, regs)` — a register compared in the guard of a
+recorded write of a priced register, and itself written, joins the COST tier, to a bounded
+fixpoint; object-valued globals refused as promotion refuses them. The tier
+(`self._cost_regs`) widens ONLY `_inroom_own` seeding, `_cogrants`, the `guards` fold and the
+`_wbranch`/`_wbranch_dom` tables; `_inroom`/`_rstep`/`_emeta`/projections stay on
+`self.regs`. Consumers audited: `_psucc_joint` checks deps only for tuple registers,
+`_gate_joints` filters `S not in regs`, `priced` only grows (conservative). The `!=0`
+spelling carries domain-less because minted flags are BOOL_GLOBALS (`guard_reqs`'s own rule).
+The write-harvest is factored into `_written_registers` so promotion and support cannot
+drift ([[same-rule-two-places]]).
+
+Probe after: GK1 +23 cost-only registers; `_reg_cost(593,{1}) = {rod}`;
+`_wbranch[(593,800,1)]` deps now `{522:{1}, 523:{1}, 593:{0}}` at cost `{rod}`; movement
+tables byte-identical in structure.
+
+⚠️ MEASURED BYTE-IDENTICAL ON ALL SIX TITLES (2026-09-01, worktree @ ca8b98a vs patched
+tree, full snapshot surfaces): LSL2/KQ4/KQ6/KQ5/LB2/GK1 all 0 changed lines — the KQ6 axiom
+holds, and GK1's own surface does not move either, so no existing detector catches R2 from
+pricing alone. Control run per [[instruments-lie-run-the-control]]: the worktree (sharing
+`build/` — safe, the model cache key hashes every non-test source file) answers
+`_reg_cost(593,{1}) = []` with no `_cost_regs`, so the null diff is a real null, not a
+cache-poisoned one. Same standing as `_chain_branch_costs`: a PREREQUISITE invisible on its
+own — R2's detector (the flag-twin of `scene_carryins`) is what will consume the price.
+
+## §1.26 R2's detector, DESIGNED: the register carry-in (2026-09-01)
+
+Why `register_value_strandings` cannot carry R2 as-is, diagnosed to the line:
+  * its causality half (`fix_in_b`) and its freeze conjunct both read `_inroom` + edge sets
+    and NEVER `_rstep` — and 593's write is pinned by its own `¬593` conjunct into `_rstep`
+    (`(0,1)@800`), invisible to both ([[same-rule-two-places]], the write tables split). So
+    the row dies at "never fixable before". Fixing the table-blindness alone then kills it
+    at the freeze instead: the region DOES contain the step, at rm800.
+  * the step is honestly dead post-latch — `sEnterFromElevator` runs only on the 455→800
+    ride — but its armer `('sHRoom6', 0)` is an UNRECORDED Script object, so
+    arming-reachability cannot prove it ([[arming-floor]]: ignorance stays permissive), and
+    dep-satisfiability founders on carried values (the 522-projection permissively reaches
+    (800,1), and the "deposited ⇒ 593 already 1" invariant is a joint fact projections
+    cannot see).
+
+What CAN carry it is R3's own scene-latch argument, inverted to the writer side — the
+register twin the §1.24 tail predicted. All recorded (probed 2026-09-01):
+  * the demand: a `death_traps` row at Y=899 requires `593 ∈ {1}` to survive;
+  * the writers: every writer of 593→1 in the game is a machine of script 806 at X=800;
+  * the seal: script 808's machine at X writes the monotone latch 759 (one recorded value,
+    no steps, in `edge_req_regs[800]`), 808 ≠ 806 — once latched, the sorter scene owns the
+    room and 806's machines never run again;
+  * the crossing: the trap's own in-edge (800→899) pins 759 to the latched value — the seal
+    necessarily precedes the demand.
+Emit: crossing into Y at R∉vals is fatal and frozen — the register carry-in. Value-0 demands
+skip naturally (no writers ⇒ nothing to seal ⇒ initial value, free). Rows land in the SAME
+`scene_carryins` snapshot key (register-shaped formatting), so the five clean games move by
+ZERO further lines and the pending three-golden bless stays exactly one line each.
+
+Build order: (1) the detector branch in `scene_carryins`; (2) the `_rstep` table-blindness
+in `register_value_strandings` is a REAL standalone bug — fix separately, measure separately
+(it can retire OR create rows on the stepped registers of other games; do not confound).
