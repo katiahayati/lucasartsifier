@@ -759,6 +759,21 @@ class OpEmitter:
         # newRoom target the machine cannot walk to needs a flat fallback so the room
         # isn't a false dead-end.
         try:
+            # ⛔ FEEDING THE SHARED (INLINED) STEPS TABLE WAS BUILT AND PARKED 2026-08-31/09-01
+            # (`steps=steps_by_state` -- the machinery stands in compile_machine, measured,
+            # unused). It is the more faithful reading -- the delivery walk then sees exactly
+            # the table the states are published from -- and it moved the KQ6 GOLDEN: the
+            # catacombs map machine (`pullOutMapScr`, its exit a proc-computed
+            # `newRoom: (local8 tpRoom:)`) became honestly delivered, the flat capture
+            # crossings rm340->rm405/rm440 were suppressed-and-composed, and TWO ENFORCED
+            # ORACLE checks went red (the three capture guards collapsed toward the travel
+            # dispatch; test_kq6_ground_truth "ALL FOUR carry-ins strand at the ENTRANCE",
+            # test_toll "the three capture guards"). Those guards are PLAY-CONFIRMED and
+            # INSTALLED; re-deriving that shape is a bless-scale question for the USER, not a
+            # side effect of a plumbing fix. GK1's keeper case does NOT need this line --
+            # its register arms are inline in changeState, so the raw table carries them and
+            # `Machine.unresolved_register` alone restores its delivery. Unpark by passing
+            # `steps=steps_by_state`, with the KQ6 delta from docs GK1 §1.20 in hand.
             exits, _d = C.compile_machine(m, self.is_death)
             delivered = set(r for r, g, w in exits)
         except Exception:
@@ -772,7 +787,16 @@ class OpEmitter:
                 "restores_control": set(getattr(m, "restores_control", None) or ()),
                 "chase_states": set(getattr(m, "chase_states", None) or ()),
                 # the writes every route to each state has performed -- read by `edge_meta`'s
-                # exit `sets`, so an early write rides its late `newRoom` (see the helper)
+                # exit `sets`, so an early write rides its late `newRoom` (see the helper).
+                # ⛔ SEEDING WITH THE ARMING CONTEXT'S WRITES (`Machine.entry_gwrites`) IS
+                # PARKED (2026-09-01): `entry_writes=dict(m.entry_gwrites or {})` closed GK1's
+                # napoleon subject door (460->50 gains sets178=34) AND, alone, moved the KQ6
+                # GOLDEN -- the capture cutscenes' arming contexts write flags that then ride
+                # their exits, verify's world shifts, and the play-confirmed capture guards
+                # relocate toward the travel dispatch (two enforced oracle checks red).
+                # Bisected T1/T2/T3, docs GK1 §1.20: this and the unresolved-register seed are
+                # EACH sufficient to move KQ6, and both-off restores it byte-for-byte. Unpark
+                # together with that seed and the shared-steps feed, as ONE blessed round.
                 "acc_writes": C.acc_entry_writes(steps_by_state, m.start, entry_states),
                 "start": m.start, "delivered": delivered, "drops": drops, "moves": moves}
 

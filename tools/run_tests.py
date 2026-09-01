@@ -155,6 +155,11 @@ KNOWN_RED = {
             "LB2's rm210/rm280 setscript placements left the surface, so the emitted tree "
             "moved; bless via tools/bless_emission.py only after the USER's ruling",
     },
+    # ⛔ NOT DECLARED (2026-09-01): the shared-steps-table feed briefly moved the KQ6 golden
+    # (the capture guards toward the travel dispatch) AND two enforced oracle checks -- it was
+    # PARKED instead of declared, because a play-confirmed guard shape is not a plumbing
+    # side effect. The measurement and the unpark condition live at the parked call
+    # (`opmodel._machine_info`) and docs GK1 §1.20.
     # ⛔ F6 RETIRED 2026-08-20d [USER: "yeah remove the red please. i'm just not sure we're ever
     # going to hit that"]. `test_patch_text.py` held this file's only declared red -- a hold
     # placed inside a host's OWN `init` after `(super init:)` leaves a refused host cast-resident

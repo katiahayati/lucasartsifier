@@ -539,7 +539,7 @@ def step_effects(st):
     return bool(st.writes or st.gets or st.drops or st.moves or st.counters or st.gincs)
 
 
-def acc_entry_writes(steps_by_state, start, entry_states):
+def acc_entry_writes(steps_by_state, start, entry_states, entry_writes=None):
     """{state: {glob: val}} -- the register writes EVERY route to the state has performed.
 
     ⭐ AN EXIT CARRIES THE WRITES ITS PATH ESTABLISHED (2026-08-31). `compile_machine`'s walk
@@ -585,9 +585,12 @@ def acc_entry_writes(steps_by_state, start, entry_states):
             IN[k] = merged
             return True
         return False
+    # An entry seeds with what EVERY arming's context wrote before arming (Machine.entry_gwrites,
+    # necessary-merged over armings by construction) -- napoleon's subject write rides in here.
+    seed = dict(entry_writes or {})
     work = []
     for k0 in sorted({start} | set(entry_states)):
-        if feed(k0, {}):
+        if feed(k0, seed):
             work.append(present_from(k0))
     while work:
         K = work.pop()
@@ -761,6 +764,14 @@ def _ctr_holds(cond, counters, unknown=True):
     _, name, op, val = cond
     if name not in counters:
         cur = 0                          # SCI zero-initialises locals; this is the game's rule
+        # ⛔ A BLANKET REG_KEY EXCEPTION HERE WAS BUILT AND REVERTED THE SAME DAY (2026-08-31):
+        # answering `unknown` for EVERY absent register read KQ6's `pullOutMapScr` -- whose
+        # armings carry no register argument at all, so 0 is the game's own value -- as free on
+        # every `(if register ...)` arm, delivered the whole catacombs fan, and two enforced
+        # oracle checks went red (the three capture crossings collapsed to one). The honest
+        # distinction is recorded where it exists: `Machine.unresolved_register`, seeded into
+        # the walk by `compile_machine` -- unknown only where an arming actually carried a
+        # value we could not read.
     elif counters[name] is UNKNOWN_CTR:
         return unknown                   # written, but with a value we could not evaluate
     else:
@@ -937,9 +948,13 @@ def step_paths(st, gdom, dests=None):
             for (tr, g2) in _fan_exit(st, g, dests)]
 
 
-def compile_machine(machine, is_death):
+def compile_machine(machine, is_death, steps=None):
     """-> (exits, deaths). exits = [(exit_room, guard_tree, {glob: val})], deaths =
-    [guard_tree]. Guards are over EXTERNAL atoms only (counters resolved concretely)."""
+    [guard_tree]. Guards are over EXTERNAL atoms only (counters resolved concretely).
+
+    `steps`: the caller's already-built steps table (inlined, cue-carried, compressed --
+    `opmodel._machine_info`'s). When omitted, derived here from the raw bodies -- see the
+    header note below for why the caller's table is the truth."""
     gdom = getattr(machine, "glob_dom", {}) or {}
     dests = getattr(machine, "var_dests", None) or {}
     lregs = getattr(machine, "local_regs", None) or {}
@@ -948,12 +963,25 @@ def compile_machine(machine, is_death):
     # own place away and ENDS it (see `_ends_script`). Both the enumerator and the interpreter
     # need them, and they must agree -- `_records` decides what `_interp` ever gets to see.
     hosts = frozenset(r for r in (machine.entry_recv or ()) if r is not None)
-    steps = {k: [_interp(p, is_death, state_k=k, prop_dests=prop_dests, hosts=hosts)
-                 for p in _paths_of(body, hosts=hosts)]
-             for k, body in machine.bodies.items()}
-    carry_cues(steps, machine.start)      # SCI cross-state cue carry: PARK -> ADVANCE where covered
-    _entry_states = {k for k, _ in machine.entries} | {k for k, _ in machine.init_entries}
-    compress_chains(steps, _entry_states, machine.start)   # collapse effect-free ADVANCE runs
+    # ⭐ THE CALLER'S STEPS TABLE IS THE TRUTH (2026-08-31). This function used to re-derive its
+    # own steps from the raw bodies -- WITHOUT `opmodel._inline_calls` -- while `_machine_info`
+    # interprets the inlined bodies, so a machine whose transitions live inside a proc published
+    # a table this walk could not reproduce: GK1's `sTalkToKeeper` shows `K=4 JUMP 9 -> EXIT 50`
+    # in its states and DELIVERED NOTHING here, which left the flat cs_edge unsuppressed as a
+    # free, subject-less bypass of the very exit the table gates. The fifth walk/table split of
+    # 2026-08-31 ([[same-rule-two-places]]).
+    # ⛔ ...AND THE FEED IS PARKED (2026-09-01): passing the inlined table made KQ6's catacombs
+    # map machine deliver its whole proc-computed fan, which relocated PLAY-CONFIRMED capture
+    # guards and reddened two enforced oracle checks. The parked call site
+    # (`opmodel._machine_info`) carries the measurement; the keeper case above is covered by
+    # `Machine.unresolved_register` alone (its arms are inline, not proc'd).
+    if steps is None:
+        steps = {k: [_interp(p, is_death, state_k=k, prop_dests=prop_dests, hosts=hosts)
+                     for p in _paths_of(body, hosts=hosts)]
+                 for k, body in machine.bodies.items()}
+        carry_cues(steps, machine.start)  # SCI cross-state cue carry: PARK -> ADVANCE where covered
+        _entry_states = {k for k, _ in machine.entries} | {k for k, _ in machine.init_entries}
+        compress_chains(steps, _entry_states, machine.start)   # collapse effect-free ADVANCE runs
     exits, deaths = [], []
     budget = [PATH_CAP]
 
@@ -1053,13 +1081,27 @@ def compile_machine(machine, is_death):
     # Lowered own-script locals seed at their declared reset value -- the script reloads on room
     # entry, so the reset is the value a walk starts from, exactly as an untracked raw local has
     # always read as 0 here. The arming context's writes (entry_locals) override per entry.
-    walk(machine.start, dict(lregs), [], [], 0, frozenset())
+    # ...and a machine some arming handed a register we could not read WOULD seed REG_KEY as
+    # UNKNOWN_CTR, so its `register == K` arms survive instead of being pruned by the zero
+    # default (Machine.unresolved_register; the revert record in `_ctr_holds`). An entry whose
+    # own arming RESOLVED the register overrides it back to the concrete value via `loc`.
+    # ⛔ PARKED (2026-09-01): `if getattr(machine, "unresolved_register", False)` is the honest
+    # reading and it restores GK1's keeper delivery (sTalkToKeeper, armed `0 param1`, showed
+    # `K=4 JUMP 9 -> EXIT 50` and delivered NOTHING) -- and, alone, it moves the KQ6 GOLDEN:
+    # `stepDown` is armed `0 [local200 (self rockPointer:)]`, honestly unreadable, its new
+    # delivery relocates play-confirmed capture guards and reddens two enforced oracle checks.
+    # Bisected T1/T2/T3 (docs GK1 §1.20): this and the entry_gwrites seed are EACH sufficient;
+    # both-off restores KQ6 byte-for-byte. Unpark together, as ONE blessed round.
+    base = dict(lregs)
+    if False and getattr(machine, "unresolved_register", False):
+        base[REG_KEY] = UNKNOWN_CTR
+    walk(machine.start, dict(base), [], [], 0, frozenset())
     for i, (k, eg) in enumerate(machine.entries):
         # Seed the counters with the locals the arming context wrote (machine.entry_locals, parallel
         # to entries) -- knockDoor entered via the staff-use starts with local1==1 and can reach
         # newRoom:18; entered via "open the door" it starts with local1==0 and parks. See machine.py.
         loc = machine.entry_locals[i] if i < len(machine.entry_locals) else {}
-        walk(k, {**lregs, **loc}, [eg] if eg is not None else [], [], 0, frozenset())
+        walk(k, {**base, **loc}, [eg] if eg is not None else [], [], 0, frozenset())
     return exits, deaths
 
 

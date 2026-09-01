@@ -52,6 +52,17 @@ class Machine:
     states: dict = field(default_factory=dict)     # k -> [Op] in source order (debug view)
     bodies: dict = field(default_factory=dict)     # k -> state body AST (for path compile)
     entries: list = field(default_factory=list)    # [(state, guard)] how it is entered
+    unresolved_register: bool = False   # some arming passed a REGISTER whose value we could not
+    #   read (a parameter). `compile_machine` then seeds its walks with REG_KEY = UNKNOWN_CTR,
+    #   so `register == K` arms survive instead of being pruned by the zero default -- see the
+    #   note in `_scan_setscript` and the revert record in `_ctr_holds`.
+    entry_gwrites: dict = None   # {glob: val} the ARMING CONTEXT wrote before EVERY arming --
+    #   the register twin of `entry_locals`, but per-MACHINE and necessary-merged at append time
+    #   (an entry with no captured writes clears the disagreeing keys, so what survives held on
+    #   every way in). GK1's napoleon is the case: `(= global178 34)` immediately before
+    #   `(setScript: askBartender ...)` (napoleon.sc:1287) is the interrogation subject, and
+    #   askBartender's `newRoom: 50` shipped without it. Read by `opmodel._machine_info`, which
+    #   seeds `compile.acc_entry_writes` with it, so the write rides the machine's exits.
     init_entries: list = field(default_factory=list)  # entries from the room's INIT method only.
     #   These run atomically with room init, so they must be bundled onto ROOM ARRIVAL and
     #   evaluated on the pre-entry state -- else an init write to the guard register (rm79:
@@ -884,6 +895,12 @@ class MachineBuilder:
                     # before lowering. Carried under the synthetic-global index (an int key, so
                     # it can never collide with the (vt,idx) tuples or REG_KEY).
                     events.append(("w", d["index"], I.as_int(ks[1]), list(p)))
+                elif (d and d.get("t") == "Variable" and d.get("vtype") == "Global"
+                        and len(ks) > 1 and I.as_int(ks[1]) is not None):
+                    # ...and a PLAIN global the arming context writes rides the arming the same
+                    # way (Machine.entry_gwrites): GK1's napoleon sets the interrogation subject
+                    # one line before arming the script whose exit is `newRoom: 50`.
+                    events.append(("g", d["index"], I.as_int(ks[1]), list(p)))
             elif t == "Send":
                 _r, msgs = I.send_pairs(n)
                 # ONE spelling of the slot key, shared with `compile._ends_script` -- see
@@ -920,6 +937,17 @@ class MachineBuilder:
                         for v, extra in vals:
                             events.append(("a", list(p) + extra, v, slot))
                     else:
+                        if p2 is not None:
+                            # The arming DID pass a register -- a value we could not read (a
+                            # parameter: GK1's `setScript: sTalkToKeeper 0 param1`, the clicked
+                            # topic). Absent-reads-as-0 is wrong for this machine: 0 prunes every
+                            # `register == K` arm and the keeper delivered NOTHING, leaving its
+                            # flat `newRoom: 50` as a subject-free bypass. Recorded per MACHINE;
+                            # `compile_machine` seeds the walk with UNKNOWN_CTR from it. An
+                            # arming with NO third argument stays absent -- Script::init leaves
+                            # the register 0, and reading THAT as unknown was measured to break
+                            # KQ6's capture oracle (see _ctr_holds).
+                            m.unresolved_register = True
                         events.append(("a", list(p), None, slot))
         # A doVerb that arms this machine with `setScript:` gates it on the item the player used --
         # `(== param1 <item.message>)` -> OWN. verb_param_scope makes `atom` see that inside the
@@ -930,21 +958,35 @@ class MachineBuilder:
             if ev[0] != "a":
                 continue
             apc = ev[1]
-            loc = {}
+            loc, gw = {}, {}
             for e in events[:i]:                  # writes that RAN before this arm, on its path
                 if e[0] == "w" and _pc_covers(e[3], apc):
                     loc[e[1]] = e[2]
+                elif e[0] == "g" and _pc_covers(e[3], apc):
+                    gw[e[1]] = e[2]               # a global the context wrote -- entry_gwrites
             if len(ev) > 2 and ev[2] is not None:
                 loc[X.REG_KEY] = ev[2]            # the `register` this arming selected
             # ...and the arming cannot be freer than the object whose method it sits in: a method
             # of an object the room only conditionally `init:`s only runs under that condition.
             self._add_entry(m, 0, _conj(apc + [owner]), loc, source == "init", armer, source,
-                            recv=(ev[3] if len(ev) > 3 else None))
+                            recv=(ev[3] if len(ev) > 3 else None), gwrites=gw)
             #   are ADDITIONALLY bundled onto room arrival, not instead -- still normal entries too
 
     def _add_entry(self, m, state, guard, locals_, is_init, armer=None, source=None, recv=None,
-                   is_self=False):
-        """Append an entry AND its carried locals, keeping the parallel lists in lockstep."""
+                   is_self=False, gwrites=None):
+        """Append an entry AND its carried locals, keeping the parallel lists in lockstep.
+
+        `gwrites`: the GLOBAL writes this arming's context performed before the arming (see
+        Machine.entry_gwrites). Necessary-merged here rather than kept per entry: an arming
+        that captured none contributes {}, which drops every key -- what survives held on
+        every way in, and the per-machine dict is immune to the entry-filtering passes that
+        would have to keep yet another parallel list in lockstep."""
+        gw = dict(gwrites or {})
+        if m.entry_gwrites is None:
+            m.entry_gwrites = gw
+        else:
+            m.entry_gwrites = {gi: v for gi, v in m.entry_gwrites.items()
+                               if gw.get(gi) == v}
         m.entries.append((state, guard))
         m.entry_locals.append(dict(locals_))
         m.entry_armers.append(armer)

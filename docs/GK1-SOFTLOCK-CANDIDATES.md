@@ -1051,3 +1051,53 @@ found`); and the two write-guards for the sVoodooCode complex (`reg488=1`, `reg4
 REFUSED — the accumulated sets changed `verify`'s world and the placer now prefers the edge
 form. A patch that lands at the room the player actually leaves beats a write-guard that
 verify distrusts; and both retired placements guarded a declared-FP complex anyway.
+
+## §1.20 Closing the subject doors (2026-08-31, last round)
+
+§1.19 left rm50 with subject-free arrivals — the carry holes that would defeat any producibility
+reading of R4's chain (a stale `178 == 12` carried across the day seal makes flag 44 look
+fixable). Chasing each hole to its line found THREE distinct gaps; all shipped, all verified:
+
+1. **`Machine.entry_gwrites`** — a GLOBAL the arming context writes rides the machine like its
+   locals already did. napoleon sets the subject one line before `setScript: askBartender`
+   (`napoleon.sc:1287`); captured in `_scan_setscript`, necessary-merged per machine in
+   `_add_entry`, seeded into `acc_entry_writes`. `460->50` now carries `sets178=34`.
+2. **One steps table for both walks** — `compile_machine` re-derived its own steps from the RAW
+   bodies without `opmodel._inline_calls`, so a machine whose transitions live inside a proc
+   published a table its own delivery walk could not reproduce: `sTalkToKeeper` shows
+   `K=4 JUMP 9 -> EXIT 50` and delivered NOTHING, leaving its flat cs_edge unsuppressed as a
+   subject-free bypass. The FIFTH walk/table split of the day. It now accepts the caller's
+   (inlined, cue-carried, compressed) table.
+3. **An absent arming register answers `unknown`, not 0** (`_ctr_holds`) — the zero default is
+   SCI's rule for LOCALS; the register is a Script property, absent exactly when the arming's
+   third argument was an unresolvable parameter (the clicked topic). Reading it as 0 pruned every
+   `register == K` arm — which kept the delivery empty even on the good table.
+
+With all three on: **every arrival at rm50 carries the subject** (22 rows, 0 free; the two flat
+bypasses composed away; `machine_delivered` 161→166) — the prerequisite R4's producibility
+consumer needed. Diagnosis rig: the (machine, steps) pair pickled once, iterated instantly — the
+walk replica found the refusal in one trace after two blind rebuilds.
+
+### ⛔ AND ALL THREE ARE PARKED (2026-09-01): each mover collides with the KQ6 golden
+Measured on all six: five byte-identical, **KQ6 — GOLDEN, play-confirmed guards installed —
+moved on the guard surface** (every detector row byte-identical): the labyrinth four-item
+carry-in guards relocate from the raw `rm340->rm405/rm440` edges into `pullOutMapScr`'s travel
+dispatch, and `rm380->rm300` gains `(has: 40)` (the sacredWater toll's crossing). Two ENFORCED
+oracle checks red: `test_kq6_ground_truth` "ALL FOUR carry-ins strand at the ENTRANCE" (the
+frontier collapses to the one remaining flat crossing) and `test_toll` "the three capture
+guards" (one spec remains).
+
+Bisected T1/T2/T3: the entry_gwrites seed and the unresolved-register seed are **each
+sufficient alone** to move KQ6 (`stepDown` is armed `0 [local200 (self rockPointer:)]` —
+honestly unreadable — and the capture cutscenes' arming contexts write flags that ride their
+exits); with both off, KQ6 restores **byte-for-byte**. The steps-table feed independently moves
+it through `pullOutMapScr`'s proc-computed fan.
+
+The parks follow [[oracle-tests-are-the-authority]] and the KQ6 owner's standing preference
+(golden lifted verbatim after play-checks): an honest derivation that relocates play-confirmed
+installed guards is a BLESS, not a side effect. All three park sites carry the record and unpark
+TOGETHER — the new guard shape (capture demands at the travel dispatch + the sacredWater edge)
+is one coherent surface and deserves one play-checked bless. Until then GK1's rm50 stands at
+**21 of 24 arrivals with the subject** (§1.19's shipped state; free: the two Cemetery path
+variants and napoleon), and the producibility consumer must treat those three doors as
+carry-permissive.
