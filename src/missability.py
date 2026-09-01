@@ -8056,6 +8056,79 @@ class IrSccReach(SccReach):
                     return True                  # some alternative needs no Y
         return False
 
+    def scene_carryins(self):
+        """Items that must be IN HAND when a room's death-sorting SCENE begins, because their
+        only in-room sources live in a scene the sorter's own latch seals away.
+
+        GK1's hounfour is the room this exists for (docs GK1 §1.24, the R3 oracle row): room
+        800 hosts twelve scenes as `Script`s; the guises are handed out by the STOREROOM
+        scene's handlers (script 807), the death sorter (`sDJKills`) runs in GRACE'S ROOM
+        (script 808), and entering that scene sets `timeForCeremony` -- a register written
+        exactly once in the whole game, never cleared, that gates BOTH of the room's exits.
+        At room granularity source and demand are the same room, which is why no other
+        detector can name the guises; the SCENE structure says the source dies the moment the
+        demand arms.
+
+        Everything is a recorded structure, nothing is play-shaped:
+          * the demand: a `death_traps` row's register, its writers' machines at the room --
+            their SCRIPT is the demand scene; its items come from `_reg_cost`, the same
+            pricing the trap's own consumers use;
+          * the seal: some machine of the demand scene writes a MONOTONE latch (every
+            recorded write is one value, no ordered steps) that appears in an out-edge
+            requirement of the room -- the scene dispatch is latched shut;
+          * the source: the item's in-room HANDLER sources (`handler_gets`) all live in a
+            DIFFERENT script -- the other scene.
+        Fires only where a death-trap row already exists, so a game without an intra-room
+        death sorter cannot move."""
+        out, seen = [], set()
+        traps = death_traps(self.em, self.regs, self._register_dom())
+        edge_req_regs = {a: set() for a in self.edges}
+        for (a, _b), ms in self._emeta.items():
+            for (req, _sets, _alts) in ms:
+                edge_req_regs.setdefault(a, set()).update(req)
+        for room, rows in traps.items():
+            for (req, _alts) in rows:
+                for R, vals in req.items():
+                    writers = [i for i in self.em.machines
+                               if i["room"] == room and any(
+                                   gi == R and v in vals
+                                   for _K, ps in i["states"].items()
+                                   for p in ps for (gi, v) in p[1])]
+                    if not writers:
+                        continue
+                    bscripts = {i.get("script") for i in writers}
+                    latched = False
+                    for i in self.em.machines:
+                        if i["room"] != room or i.get("script") not in bscripts:
+                            continue
+                        for _K, ps in i["states"].items():
+                            for p in ps:
+                                for (L, vL) in p[1]:
+                                    if L == R or L not in self.regs:
+                                        continue
+                                    allw = {v2 for vs in
+                                            self._inroom.get(L, {}).values() for v2 in vs}
+                                    stepped = any(self._rstep.get(L, {}).values())
+                                    if allw == {vL} and not stepped \
+                                            and L in edge_req_regs.get(room, ()):
+                                        latched = True
+                    if not latched:
+                        continue
+                    for it in sorted(self._reg_cost(R, set(vals))):
+                        hsrc = {sc2 for (r2, sc2, it2, _g2) in
+                                getattr(self.em, "handler_gets", ())
+                                if r2 == room and it2 == it}
+                        if hsrc and not (hsrc & bscripts) \
+                                and (it, room) not in seen:
+                            seen.add((it, room))
+                            out.append({"item": it,
+                                        "item_name": self.g.item_name(it),
+                                        "room": room, "reg": R,
+                                        "scene": sorted(bscripts),
+                                        "source_scenes": sorted(hsrc),
+                                        "pattern": "scene-carry-in"})
+        return out
+
     def toll_strandings(self):
         """One-visit-pocket strandings -- the consumed-gate class (softlock class 4).
 

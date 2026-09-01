@@ -166,6 +166,7 @@ def run():
                       ("register_flip", s.register_flip_strandings()),
                       ("fatal_uses", s.fatal_uses()), ("toll", s.toll_strandings()),
                       ("register_strandings", s.register_strandings()),
+                      ("scene_carryins", s.scene_carryins()),
                       ("ownedby_death_folds", s.ownedby_death_folds())):
         rows_by_det[det] = rows
         caught |= {_unit(s.g.item_name(r["item"])) for r in rows}

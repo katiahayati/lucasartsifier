@@ -104,8 +104,6 @@ KNOWN_RED = {
         "R2: the confessional deposit (rod + a signal device -> flags 280/281 -> 351) is caught":
             "the point of no return (sHRoom8.sc:71) is an intra-room scene switch inside the "
             "hounfour (room 800); the model has no scene-level boundary to hang a carry-in on",
-        "R3: the two guises are caught as carry-ins to Grace's room":
-            "same intra-room boundary as R2",
         "R4: flag 44 (Cazaunoux topic 54 -> Crash's 'Voodoo Hounfour') is caught as a stranding":
             "a FLAG stranding: the Teller lowering (2026-08-28) makes Crash's topic 8 a `flag 44` "
             "site and rm270's topic 54 its only writer, but no detector treats a flag value as "
@@ -136,7 +134,7 @@ KNOWN_RED = {
         "mechanism pinned: wireCutters": "gains register_strandings reg123=5->[750] (act-5 carry)",
     },
     "test_watched_surface.py": {
-        "LB2: full surface unchanged (23 keys)  -- 25 row(s) moved":
+        "LB2: full surface unchanged (24 keys)  -- 26 row(s) moved":
             "(gk1 2026-08-28b) +4: `bifocals` and `redHair`'s act-5 joint rows move their "
             "prev-room from rm454 to rm480 (one changed row = one REMOVED + one ADDED). The "
             "PARK cure's delivery half gives LB2 20 more `machine_delivered` pairs -- rm455->454 "
@@ -155,6 +153,22 @@ KNOWN_RED = {
         "emission: dagger matches manifest":
             "LB2's rm210/rm280 setscript placements left the surface, so the emitted tree "
             "moved; bless via tools/bless_emission.py only after the USER's ruling",
+    },
+    # ⭐ scene_carryins JOINED THE FROZEN SURFACE 2026-09-01 (the R3 catcher, docs GK1
+    # §1.24) -- and a detector joins the snapshot unconditionally (the snapshot's own
+    # confession block forbids the `if rows` clause), so every golden gains EXACTLY ONE
+    # line, `"scene_carryins": []`. The 2026-08-14 precedent: re-blessed with the USER's
+    # sign-off after a key-by-key diff. ⛔ Refresh awaits the USER; the diff to present is
+    # one empty line per golden, nothing else.
+    "test_golden.py": {
+        "LSL2: full output surface matches the frozen golden":
+            "gains exactly `\"scene_carryins\": []` -- the new frozen key; bless-refresh "
+            "awaits the USER (the 2026-08-14 one-line precedent)",
+        "KQ4: full output surface matches the frozen golden":
+            "same single empty line; awaits the USER",
+        "KQ6: full output surface matches the frozen golden":
+            "same single empty line; awaits the USER (the KQ6 axiom covers BEHAVIOUR moves; "
+            "an empty key appearing on every game at once is the documented precedent shape)",
     },
     # ⛔ NOT DECLARED (2026-09-01): the shared-steps-table feed briefly moved the KQ6 golden
     # (the capture guards toward the travel dispatch) AND two enforced oracle checks -- it was

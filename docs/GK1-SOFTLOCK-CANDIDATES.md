@@ -1286,3 +1286,21 @@ scene dispatch. Everything from recorded structures; wire it into `snapshot.py` 
 outside the snapshot is not watched) and extend `test_gk1_ground_truth`'s `rows_by_det`.
 Measured risk: fires only where death-trap rows already exist (rare); KQ6/KQ5 trap rooms are
 the axiom-watch set.
+
+### §1.24 BUILT — R3 IS CAUGHT (2026-09-01)
+`scene_carryins` shipped exactly as designed. On GK1 it emits precisely the two rows —
+`BoarGuise@rm800/scene[808]<-[807]`, `WolfGuise@rm800/scene[808]<-[807]` — and **R3 flips
+GREEN**: the two guises are caught as carry-ins to Grace's room. The second real GK1 row
+caught (after R1), the first through scene machinery. Its KNOWN_RED entry is retired (GK1's
+declared reds: 5 → 4; remaining: the FP-set pair, R2, R4).
+
+Measured: five games move by EXACTLY one line each — the new frozen key `"scene_carryins": []`
+(a detector joins the snapshot unconditionally; the confession block forbids the `if rows`
+clause) — and the three goldens' one-line refreshes are DECLARED awaiting the USER's bless,
+the 2026-08-14 precedent shape. GK1 additionally gains its two rows and the two units.
+
+R2's remaining distance after this round: the deposit flags (280/281) are written at rm455 —
+a DIFFERENT room — so the scene-carryin shape does not cover it; its point of no return is the
+same latch (759), but the demand is a FLAG PAIR set elsewhere, not an item held. The R2
+detector is the flag-twin of this one: a death-sorter register (351 at rm899, EndGame:637)
+whose only writers live behind the latch. Same skeleton, register-valued.

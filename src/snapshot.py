@@ -48,6 +48,7 @@ def snapshot(cfg, with_placements=False):
                    | {f["item"] for f in s.fatal_uses()}
                    | {r["item"] for r in s.register_strandings()}
                    | {r["item"] for r in s.ownedby_death_folds()}
+                   | {r["item"] for r in s.scene_carryins()}
                    | {r["item"] for r in s.market_squeezes()})
     # REGISTER-VALUE strandings, unconditional like every other detector -- see the note at the
     # bottom of this comment block for what used to be here and why it went.
@@ -112,6 +113,12 @@ def snapshot(cfg, with_placements=False):
         "register_strandings": sorted(f"{r['item_name']}@reg{r['register']}={r['value']}"
                                       f"->{r['still_needed_at']}"
                                       for r in s.register_strandings()),
+        # Scene carry-ins (2026-09-01): an item the death-sorting SCENE demands whose only
+        # in-room sources the sorter's own latch seals away -- docs GK1 §1.24. Frozen from
+        # birth (a detector outside this file is not watched).
+        "scene_carryins": sorted(f"{r['item_name']}@rm{r['room']}"
+                                 f"/scene{r['scene']}<-{r['source_scenes']}"
+                                 for r in s.scene_carryins()),
         # The owner-value death folds (2026-08-14, the KQ5 build). One frozen row per
         # (item, owner-room, fold site); the context and the full demand disjunction ride
         # along because a fold that changes its arming context or loses a pool member is a
