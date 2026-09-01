@@ -986,9 +986,21 @@ each measured:
 Neither is small. R4 stays a declared RED with, for the first time, its full remaining mechanism
 named end to end: producible-set fixpoint + er-fold chaining + Teller-activation scope.
 
-### Measured
-The armer-chain inheritance (prerequisite 1, as far as it goes today): **all six games
-byte-identical** on the full snapshot surface (LSL2 37s, KQ4 80s, KQ6 98s, LB2 52s, KQ5 626s,
-GK1 144s). Kept on the BCC precedent — the composition is `edge_meta`'s own, one table short of
-applied, and the case that would move it (armers whose day gate lives in their entry reqs) is
-exactly the named er-fold remainder.
+### Measured — and then the er-fold BUILT the same day
+The armer-chain inheritance alone (armer musts only): all six byte-identical — inert on its own
+target case, because `startOfDay5`'s musts are empty; its day-5 fact is entry-side.
+
+**So the er-fold was built** (prerequisite 1 complete): `F(m)` — what every arming of `m`
+necessarily established — to a bounded fixpoint over the armer graph. A direct entry contributes
+its guard's necessary reading; a chained entry contributes the armer's `entry_reqs` at the arming
+state ∧ its `state_musts` there ∧ `F(armer)`; across entries the fold is necessary (one
+unconstrained way in and the fact is gone — `getTheVeve`'s direct flag-73 arming honestly keeps
+the day pin off its branches, the negative control). Census before building: KQ6 22 all-chained
+machines gain armer entry facts, GK1 25, KQ5 16, LB2 8, KQ4 2. Verified at the table: LB2's
+`sORileyComes` write `(418,454,1)` now carries `{123:[5]}` — the act-5 pin through the chain.
+
+**All six games byte-identical again** (LSL2 37s, KQ4 79s, KQ6 61s, LB2 32s, KQ5 627s, GK1
+145s): the enrichment is real at the branch level and no verdict rests on it yet — the
+producible-set fixpoint (the R4 mechanism above) is its intended consumer. `edge_meta`'s own
+`chain` still folds musts only; teaching it `F` is the remaining half of the same rule, parked
+until a measured case needs it ([[same-rule-two-places]], flagged there).

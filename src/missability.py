@@ -4328,29 +4328,75 @@ class IrSccReach(SccReach):
         # "effects AND THEIR COSTS"; a cost that cannot propagate along a chain is not the second
         # half of it. Inert on SCO0 titles, whose items live in script 0 and which therefore have
         # no global machines at all.
-        # ⭐ ...AND WHAT THE ARMER'S OWN PATH ESTABLISHED (2026-08-31). A machine armed from
-        # inside ANOTHER machine's changeState inherits everything every route to that arming
-        # state established -- `edge_meta` composes exactly this (`chain`) onto every EXIT, and
-        # the branch tables did not, so a chain-armed cutscene's writes carried NO dependencies
-        # at all ([[same-rule-two-places]], the third sighting of this one gap in a day: GK1's
-        # day-5 opening arms `getTheVeve`/`getTheDrumBook` from `startOfDay5`, whose entries
-        # carry `day == 5`, and their flag-47 writes reached `_wbranch` dep-free -- which is
-        # what blocked BOTH the once-only mechanism and R4's carry-up from ever resolving a
-        # write chain past them). Same keying, same armer merge (union values across armers,
-        # intersect keys), same intersect-into-the-branch as the entry inheritance below.
-        _sm_by_key = {}
+        # ⭐ ...AND WHAT EVERY ARMING NECESSARILY ESTABLISHED (2026-08-31, twice). A machine
+        # armed from inside ANOTHER machine's changeState inherits what the armer's path
+        # established -- `edge_meta` composes exactly this (`chain`) onto every EXIT, and the
+        # branch tables did not, so a chain-armed cutscene's writes carried NO dependencies at
+        # all ([[same-rule-two-places]], the third sighting of that one gap in a day). And the
+        # armer's MUSTS are only half of what its path established: a cutscene's preconditions
+        # live in its ENTRY guard, which `state_musts` deliberately seeds with nothing -- GK1's
+        # `startOfDay5` has empty musts everywhere and `day == 5` in its entries, so a
+        # musts-only chain measured inert on the very case it was built for.
+        #
+        # So `F(m)`: what EVERY arming of `m` necessarily established, to a bounded fixpoint
+        # over the armer graph. A DIRECT entry contributes its guard's structural (necessary)
+        # reading; a CHAINED entry via (X, K) contributes what X's entries reaching K
+        # established (`entry_reqs`), what X's paths to K established (`state_musts`), and
+        # F(X) itself, ANDed -- all three hold at the arming. Across a machine's entries the
+        # fold is the necessary one (keys intersect, values union): one unconstrained way in
+        # and the fact is gone, which is why GK1's `getTheVeve` -- armed by `startOfDay5` but
+        # ALSO directly under a flag-73 alternative -- honestly keeps no day pin. A machine
+        # with no entries at all gets {} (ignorance is not evidence -- [[arming-floor]]), and
+        # an unresolvable armer contributes {} the same way.
+        #
+        # Corpus census before building (all-chained machines whose armer carries entry-side
+        # facts their musts lack): KQ6 22 (the labyrinth `nextScreenUp` chains gain flag 397),
+        # KQ5 16, GK1 25, LB2 8 (`sORileyComes` gains act 5), KQ4 2.
+        _sm_by_key, _er_by_key = {}, {}
         for _i in all_machines(self.em):
-            _sm_by_key[(_i.get("script"), _i.get("inst"), _i.get("room"))] = \
-                state_musts(_i, self.regs)
+            _k = (_i.get("script"), _i.get("inst"), _i.get("room"))
+            _sm_by_key[_k] = state_musts(_i, self.regs)
+            _er_by_key[_k] = entry_reqs(_i, self.regs)
+
+        def _merge_and(*maps):
+            out = {}
+            for mp in maps:
+                for S, vs in mp.items():
+                    if vs:
+                        out[S] = (out[S] & set(vs)) if S in out else set(vs)
+            return out
+        _F = {k: {} for k in _sm_by_key}
+        for _round in range(4):          # chains are 2-3 armings deep; growth is monotone
+            _changed = False
+            for _i in all_machines(self.em):
+                _k = (_i.get("script"), _i.get("inst"), _i.get("room"))
+                ents = list(_i.get("entries", ()))
+                armers = list(_i.get("entry_armers", ()) or ())
+                armers += [None] * (len(ents) - len(armers))
+                ents += list(_i.get("init_entries", ()))   # direct by construction
+                armers += [None] * (len(ents) - len(armers))
+                facts = None
+                for (K, eg), arm in zip(ents, armers):
+                    if arm:
+                        xk = (_i.get("script"), arm[0], _i.get("room"))
+                        f = _merge_and(_er_by_key[xk].get(arm[1], {}) or {},
+                                       _sm_by_key[xk].get(arm[1], {}) or {},
+                                       _F[xk]) if xk in _sm_by_key else {}
+                    else:
+                        f = {S: set(vs) for S, vs
+                             in structural_reqs(eg, regs).items() if vs}
+                    facts = dict(f) if facts is None else \
+                        {S: facts[S] | f[S] for S in set(facts) & set(f)}
+                facts = facts or {}
+                if facts != _F[_k]:
+                    _F[_k] = facts
+                    _changed = True
+            if not _changed:
+                break
         for info in all_machines(self.em):
-            sm = _sm_by_key[(info.get("script"), info.get("inst"), info.get("room"))]
-            chain = None
-            for armer in info.get("entry_armers", ()) or ():
-                got = _sm_by_key.get((info.get("script"), armer[0], info.get("room")),
-                                     _Musts({})).get(armer[1], {}) if armer else {}
-                chain = dict(got) if chain is None else \
-                    {S: chain[S] | got[S] for S in set(chain) & set(got)}
-            chain = chain or {}
+            _key = (info.get("script"), info.get("inst"), info.get("room"))
+            sm = _sm_by_key[_key]
+            chain = _F[_key]
             # ...and what ARMING the machine established. `state_musts` walks the machine's own
             # transitions and seeds each entry with nothing, so a decision made in the ENTRY GUARD
             # -- which is where a cutscene's preconditions almost always live -- reached no write.
