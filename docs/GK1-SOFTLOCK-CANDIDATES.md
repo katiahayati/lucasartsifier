@@ -1082,7 +1082,8 @@ walk replica found the refusal in one trace after two blind rebuilds.
 Measured on all six: five byte-identical, **KQ6 — GOLDEN, play-confirmed guards installed —
 moved on the guard surface** (every detector row byte-identical): the labyrinth four-item
 carry-in guards relocate from the raw `rm340->rm405/rm440` edges into `pullOutMapScr`'s travel
-dispatch, and `rm380->rm300` gains `(has: 40)` (the sacredWater toll's crossing). Two ENFORCED
+dispatch, and `rm380->rm300` gains `(has: 40)` — ⛔ an FP guard per the USER's 2026-09-01
+ruling (the Oracle GIVES the sacred water; there is no way out without it). Two ENFORCED
 oracle checks red: `test_kq6_ground_truth` "ALL FOUR carry-ins strand at the ENTRANCE" (the
 frontier collapses to the one remaining flat crossing) and `test_toll` "the three capture
 guards" (one spec remains).
@@ -1101,3 +1102,22 @@ is one coherent surface and deserves one play-checked bless. Until then GK1's rm
 **21 of 24 arrivals with the subject** (§1.19's shipped state; free: the two Cemetery path
 variants and napoleon), and the producibility consumer must treat those three doors as
 carry-permissive.
+
+## §1.21 The KQ6 movers, bisected to SINGLE CAUSES (2026-09-01, the USER's 😬)
+
+The USER's ruling reframed §1.20: *"assume anything that moves KQ6 is wrong... it's possible
+there's a bug."* Right on both counts. Per-machine bisection of the parked drivers:
+
+| KQ6 surface change | single mover (bisected) | the fact | verdict |
+|---|---|---|---|
+| `rm380->rm300 (has: 40)` appears | `flyToBeach@380` gwrites `{flag3: 1}` | HONEST — `goodNews` K=30: `(proc913_1 3)` then **`(global0 get: 40)`** then the arming (`rm380.sc`) | **BUG FOUND, cure named**: the toll row it sites was USER-ruled FP (the Oracle GIVES the water), and the crossing's own arming context GRANTS item 40 — arming-context `get:`s must ride like the writes now do (`entry_ggets`, the machine-level `_cogrants`); a guard demanding a co-granted item refuses itself |
+| `rm340->rm405/440` guards relocate to the dispatch | `freeCeleste@441` gwrites `{173: 1}` | HONEST — `minoTrigger.sc`: `(proc913_1 1)` + `(minotaur dispose:)` right before the arming; every freeCeleste exit really does carry "minotaur defeated" | **BUG IS DOWNSTREAM**: an honest fact reaching the guard placer degrades the placement (three play-confirmed sites → dispatch + one). The hunt moves to `guards.py`: why does forcing 173=1 on freeCeleste's exits kill the two edge-guard placements? OPEN |
+| (driver 3) cliffs fan delivers `rm340->300` etc. | script-21 `stepDown` (region stair machine, register honestly unreadable) | the UNKNOWN-register walk over-approximates | **PRINCIPLE FOUND**: `delivered` feeds SUPPRESSION, which needs an UNDER-approximation ("this machine certainly carries this statement") while the unknown-register walk over-approximates — two consumers, opposite soundness needs. Cure: certain-only `delivered` (walk marks exits reached through an unknown counter test), or the deeper redesign — suppression keyed on STATEMENT IDENTITY (via-match), not delivery |
+| (driver 2) `pullOutMapScr` fan delivers | the inlined steps table | its dispatch fan | same certainty audit needed before unparking |
+
+Also surfaced, unaudited: `timerMinotaurKillEgo` gwrites `{409: 152}` — a property-lowered
+synthetic with a non-flag value riding as arming context; A3 shows it moves nothing on KQ6, but
+the capture's appetite for lowered-property writes deserves its own census before any unpark.
+
+⛔ Bisection hygiene, learned twice tonight: an empty snapshot is NOT a diff (capture stderr,
+check size); an inline `# comment` in a replaced call line can swallow the trailing comma.
