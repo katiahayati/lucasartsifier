@@ -1121,3 +1121,32 @@ the capture's appetite for lowered-property writes deserves its own census befor
 
 ⛔ Bisection hygiene, learned twice tonight: an empty snapshot is NOT a diff (capture stderr,
 check size); an inline `# comment` in a replaced call line can swallow the trailing comma.
+
+### §1.21 addendum — the catacombs mechanism PROVEN to one row (2026-09-01, later)
+Seeding ONLY freeCeleste's gwrites changes exactly one emeta row:
+
+    440->340[1]  req={443: [1]}  sets={173: 1, 12: 440}
+
+The seed lands on a composed row whose `req` pins flag 443 (hornSwaggled's spelling of the
+defeat), NOT 173 — so in the **173-projection** the row is a free, unpriced `0 -> 1` flip of
+"minotaur defeated" (443 is another register; per-projection walks cannot see its scarf price,
+which `_reg_cost` carries only for the banned-item reading). Every 173-gated carry-in frontier
+in the catacombs dissolves, and the four-item guards at rm340->rm405/440 VANISH — not relocate;
+the earlier "relocation" reading was wrong (the +dispatch placement belongs to the sacredWater
+mover).
+
+⭐ The principle, stated once: **an effect-set on a row that does not pin the same register in
+its `req` is an unpriced cross-projection flip.** The hole is generic — today's exit-state
+writes ride the same way (`440->409[0] sets={408: 4} req={}` exists in the blessed surface) —
+the gwrites seed merely poured a LOAD-BEARING register into it. Constraint for any unpark:
+either a seeded `sets{R: v}` rides only rows whose `req` pins `R` (null-safe), or edge sets grow
+a cost channel the projections can price (`_inroom_own` for crossings — the same composition
+in-room writes already have).
+
+The cure list after the full hunt, all derived, none KQ6-shaped:
+1. `entry_ggets` — arming-context grants ride; a guard demanding a co-granted item refuses
+   itself (kills the sacredWater FP mover at the root).
+2. Certain-only `delivered` (or statement-identity suppression) — the two-consumer soundness
+   split (kills the cliffs phantom mover).
+3. A cost channel for edge sets — the unpriced-flip principle above (makes the gwrites seed
+   sound; also audits today's pre-existing exit-write sets).
