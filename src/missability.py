@@ -8147,6 +8147,31 @@ class IrSccReach(SccReach):
         for (a, _b), ms in self._emeta.items():
             for (req, _sets, _alts) in ms:
                 edge_req_regs.setdefault(a, set()).update(req)
+        latch_memo = {}
+
+        def _scene_latches(rm):
+            """(L, vL, script) for every MONOTONE latch a machine at `rm` writes -- one
+            recorded value game-wide, no ordered steps, gating some edge out of `rm`.
+            THE one latch test, shared by both branches ([[same-rule-two-places]])."""
+            if rm not in latch_memo:
+                got = []
+                for i2 in self.em.machines:
+                    if i2["room"] != rm:
+                        continue
+                    for _K2, ps2 in i2["states"].items():
+                        for p2 in ps2:
+                            for (L, vL) in p2[1]:
+                                if L not in self.regs:
+                                    continue
+                                allw = {v2 for vs in
+                                        self._inroom.get(L, {}).values() for v2 in vs}
+                                stepped = any(self._rstep.get(L, {}).values())
+                                if allw == {vL} and not stepped \
+                                        and L in edge_req_regs.get(rm, ()):
+                                    got.append((L, vL, i2.get("script")))
+                latch_memo[rm] = got
+            return latch_memo[rm]
+
         for room, rows in traps.items():
             for (req, _alts) in rows:
                 for R, vals in req.items():
@@ -8158,21 +8183,8 @@ class IrSccReach(SccReach):
                     if not writers:
                         continue
                     bscripts = {i.get("script") for i in writers}
-                    latched = False
-                    for i in self.em.machines:
-                        if i["room"] != room or i.get("script") not in bscripts:
-                            continue
-                        for _K, ps in i["states"].items():
-                            for p in ps:
-                                for (L, vL) in p[1]:
-                                    if L == R or L not in self.regs:
-                                        continue
-                                    allw = {v2 for vs in
-                                            self._inroom.get(L, {}).values() for v2 in vs}
-                                    stepped = any(self._rstep.get(L, {}).values())
-                                    if allw == {vL} and not stepped \
-                                            and L in edge_req_regs.get(room, ()):
-                                        latched = True
+                    latched = any(sc in bscripts and L != R
+                                  for (L, vL, sc) in _scene_latches(room))
                     if not latched:
                         continue
                     for it in sorted(self._reg_cost(R, set(vals))):
@@ -8188,6 +8200,77 @@ class IrSccReach(SccReach):
                                         "scene": sorted(bscripts),
                                         "source_scenes": sorted(hsrc),
                                         "pattern": "scene-carry-in"})
+        # ⭐ THE REGISTER BRANCH (2026-09-01, docs GK1 §1.26): the same latch argument on
+        # the WRITER side. A trap row may demand a REGISTER VALUE whose every producer
+        # lives in a scene the latch seals -- GK1's ceremony: surviving rm899 needs flag
+        # 351, written only by script 806's elevator ride at rm800, and script 808's
+        # sorter latches the dispatch (759) that EVERY crossing into the trap presupposes.
+        # The items are the register value's own price (`_reg_cost`, chained through the
+        # cost-only tier); crossing with the price unpaid is fatal and frozen. A value no
+        # write produces is the initial value and skips naturally; an init-written or
+        # script-less producer cannot be scene-sealed and blocks the claim.
+        wsites = defaultdict(set)
+        for i2 in all_machines(self.em):
+            for _K2, ps2 in i2["states"].items():
+                for p2 in ps2:
+                    for (gi2, v2) in p2[1]:
+                        wsites[(gi2, v2)].add((i2["room"], i2.get("script")))
+        for (r2, sc2, gi2, v2, _g2) in self.em.handler_writes:
+            wsites[(gi2, v2)].add((r2, sc2))
+        for r2, seq in getattr(self.em, "init_seq", {}).items():
+            for (gi2, v2, _g2) in seq:
+                wsites[(gi2, v2)].add((r2, None))
+        for r2, vs in getattr(self.em, "init_writes", {}).items():
+            for gi2, v2 in vs.items():
+                wsites[(gi2, v2)].add((r2, None))
+        preds = defaultdict(set)
+        for a2, bs in self.edges.items():
+            for b2 in bs:
+                preds[b2].add(a2)
+        for room, rows in traps.items():
+            for (req, _alts) in rows:
+                for R, vals in req.items():
+                    sites = set()
+                    for v in vals:
+                        sites |= wsites.get((R, v), set())
+                    if not sites or any(sc3 is None for (_x, sc3) in sites):
+                        continue
+                    wscripts, lscripts, wrooms, sealed_all = set(), set(), set(), True
+                    for (X, wsc) in sites:
+                        seal = None
+                        for (L, vL, lsc) in _scene_latches(X):
+                            if lsc == wsc:
+                                continue          # the latch scene's own writes stay live
+                            # EVERY way into the trap room presupposes the latch: all
+                            # metas of all in-edges pin L to exactly the latched value.
+                            pin = bool(preds.get(room))
+                            for a2 in preds.get(room, ()):
+                                for (rq, _s3, _a4) in self._emeta.get(
+                                        (a2, room), (self._FREE,)):
+                                    if set(rq.get(L) or ()) != {vL}:
+                                        pin = False
+                            if pin:
+                                seal = (L, vL, lsc)
+                                break
+                        if seal is None:
+                            sealed_all = False
+                            break
+                        wscripts.add(wsc)
+                        lscripts.add(seal[2])
+                        wrooms.add(X)
+                    if not sealed_all:
+                        continue
+                    for it in sorted(self._reg_cost(R, set(vals))):
+                        if (it, room) in seen:
+                            continue
+                        seen.add((it, room))
+                        out.append({"item": it,
+                                    "item_name": self.g.item_name(it),
+                                    "room": room, "reg": R,
+                                    "scene": sorted(lscripts),
+                                    "source_scenes": sorted(wscripts),
+                                    "writer_rooms": sorted(wrooms),
+                                    "pattern": "register-carry-in"})
         return out
 
     def toll_strandings(self):

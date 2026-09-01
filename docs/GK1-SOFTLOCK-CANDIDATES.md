@@ -1374,3 +1374,32 @@ ZERO further lines and the pending three-golden bless stays exactly one line eac
 Build order: (1) the detector branch in `scene_carryins`; (2) the `_rstep` table-blindness
 in `register_value_strandings` is a REAL standalone bug — fix separately, measure separately
 (it can retire OR create rows on the stepped registers of other games; do not confound).
+
+### §1.26 BUILT — the rod half of R2 (2026-09-01)
+The register branch shipped as designed, with the latch test factored into ONE closure both
+branches share. GK1 emits exactly one new row — `rod@rm899/scene[808]<-[806]`
+(`register-carry-in`, writer_rooms=[800]) — and the two R3 rows are byte-identical. The five
+clean games all stay `[]`. Ground truth: 8/4, the SAME four declared reds, and the rod row
+adds no unexpected unit (the rod was already caught by the §1.23 elevator guard, wrong
+mechanism; this row is the RIGHT mechanism). R2's check stays red on its device half alone:
+`_reg_cost(593,{1})` prices the rod through 522, but 523's write guard reads `opaque()`
+where the device `put:` sits — a VARIABLE item argument, and GK1 has zero recorded
+`item_menus`, so the pair {signalDev, signalDev2} has no recorded structure yet.
+
+The device half, DIAGNOSED TO THE WORD (2026-09-01): `bench1::doVerb`'s 281-write sits
+under `Switch(param1) → Case 60 → If flag272`, and case 60 is the devices' shared
+`message` property (`signalDev.message = 60 = signalDev2.message`; `rod.message = 76` —
+case 76 is the rod's deposit, whose literal `put: 60` is where `own(rod)` comes from).
+`vocab.doverb_item_messages` already lowers exactly this shape — "using item X as the
+verb" — but keeps only messages that UNIQUELY identify one item, so the shared 60 is
+dropped and the case guard stays opaque. Two rounds remain, measured separately:
+  * ROUND B — shared messages become GROUPS: `doverb_item_messages` returns
+    message → tuple-of-indices; the extract consumer lowers `== param1 msg` to an
+    OR-of-own over the group (the verb-icon exclusion unchanged). KQ6's spaces don't
+    overlap (its own docstring), but measure all six.
+  * ROUND C — the register branch learns GROUP rows: walk one recorded dep hop from the
+    sealed writer (`_wbranch` deps: 593←{522,523}); per dep, singles from `_reg_cost`
+    and or-own GROUPS read from the dep's writers' guards. Emit `item_group` rows; the
+    snapshot string and the ground-truth caught-builder gain the group spelling
+    (the oracle's pair unit is `frozenset({signalDev, signalDev2})`). The cost model's
+    flat frozensets stay untouched — alternatives live in the ROW, not in `cheapest`.
