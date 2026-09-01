@@ -1261,3 +1261,28 @@ Declared: `talisman` → CONFIRMED_SAFE with this proof; the rod's appearance in
 is FOR THE WRONG MECHANISM and R2's pin (the deposit + the signal-device pair) remains the
 authority. The applied 455→800 guard guards two items every player necessarily holds —
 harmless, pointless, and accounted.
+
+## §1.24 R3's last mile, DESIGNED: scene carry-ins (not yet built)
+
+Every input is now modeled; what remains is one detector. The facts, all recorded structures:
+
+* the DEMAND: the §1.23 trap row at rm800 (`607/608 ∈ {1}`), whose writer machines
+  (`sPutOnRobe`/`sMoselyPutOnRobe`) arm into slot `('O','sHRoom8')` — the demand SCENE is
+  script 808 — and whose `_reg_cost` names the guises;
+* the SOURCES: the guises are HANDLER gets scoped from script 807 (the storeroom scene's
+  doVerb handlers; its machines are honest effect-free shells) — the source SCENE is 807;
+* the SEPARATION, and this is the piece that closed tonight: `sHRoom8`'s own modeled write —
+  reg 759 (`timeForCeremony`, property-lowered), set at scene entry and NEVER cleared — is a
+  monotone latch that shuts the hub: the Hounfour dispatch cond (`Hounfour.sc:176`) routes to
+  the ceremony (899) whenever it is set, before ever reaching the scene ladder. Once the
+  demand scene runs, no path re-offers the source scene. (The arming-closure check agrees:
+  from `sHRoom8`, the recorded graph reaches only `{sEnter, sMoselyShowsUp}`.)
+
+V1 (`scene_carryins`): for each death-trap row whose survival registers' writers arm into a
+scene slot S of script B, and whose value-cost items have in-room HANDLER sources in a
+different script A — emit a carry-in unit for each such item when the demand scene latches a
+monotone register (written at B's entry, never cleared game-wide) that gates the room's own
+scene dispatch. Everything from recorded structures; wire it into `snapshot.py` (a detector
+outside the snapshot is not watched) and extend `test_gk1_ground_truth`'s `rows_by_det`.
+Measured risk: fires only where death-trap rows already exist (rare); KQ6/KQ5 trap rooms are
+the axiom-watch set.
