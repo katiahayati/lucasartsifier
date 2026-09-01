@@ -4328,8 +4328,29 @@ class IrSccReach(SccReach):
         # "effects AND THEIR COSTS"; a cost that cannot propagate along a chain is not the second
         # half of it. Inert on SCO0 titles, whose items live in script 0 and which therefore have
         # no global machines at all.
+        # ⭐ ...AND WHAT THE ARMER'S OWN PATH ESTABLISHED (2026-08-31). A machine armed from
+        # inside ANOTHER machine's changeState inherits everything every route to that arming
+        # state established -- `edge_meta` composes exactly this (`chain`) onto every EXIT, and
+        # the branch tables did not, so a chain-armed cutscene's writes carried NO dependencies
+        # at all ([[same-rule-two-places]], the third sighting of this one gap in a day: GK1's
+        # day-5 opening arms `getTheVeve`/`getTheDrumBook` from `startOfDay5`, whose entries
+        # carry `day == 5`, and their flag-47 writes reached `_wbranch` dep-free -- which is
+        # what blocked BOTH the once-only mechanism and R4's carry-up from ever resolving a
+        # write chain past them). Same keying, same armer merge (union values across armers,
+        # intersect keys), same intersect-into-the-branch as the entry inheritance below.
+        _sm_by_key = {}
+        for _i in all_machines(self.em):
+            _sm_by_key[(_i.get("script"), _i.get("inst"), _i.get("room"))] = \
+                state_musts(_i, self.regs)
         for info in all_machines(self.em):
-            sm = state_musts(info, self.regs)
+            sm = _sm_by_key[(info.get("script"), info.get("inst"), info.get("room"))]
+            chain = None
+            for armer in info.get("entry_armers", ()) or ():
+                got = _sm_by_key.get((info.get("script"), armer[0], info.get("room")),
+                                     _Musts({})).get(armer[1], {}) if armer else {}
+                chain = dict(got) if chain is None else \
+                    {S: chain[S] | got[S] for S in set(chain) & set(got)}
+            chain = chain or {}
             # ...and what ARMING the machine established. `state_musts` walks the machine's own
             # transitions and seeds each entry with nothing, so a decision made in the ENTRY GUARD
             # -- which is where a cutscene's preconditions almost always live -- reached no write.
@@ -4351,7 +4372,7 @@ class IrSccReach(SccReach):
                                                      (wbd, by_guard_d, er_d, dom)):
                                 dd = dict(sm.at(K, g))
                                 inh_d = bg(K, g) if bg else erx.get(K, {})
-                                for S, vs in list(inh_d.items()):
+                                for S, vs in list(inh_d.items()) + list(chain.items()):
                                     if vs:
                                         dd[S] = (dd[S] & set(vs)) if S in dd else set(vs)
                                 for S, vs in guard_reqs(g, regs_wb, dm).items():
@@ -4364,7 +4385,7 @@ class IrSccReach(SccReach):
                             continue
                         d = dict(sm.at(K, g))
                         inherited = by_guard(K, g) if by_guard else er.get(K, {})
-                        for S, vs in list(inherited.items()):
+                        for S, vs in list(inherited.items()) + list(chain.items()):
                             if vs:
                                 d[S] = (d[S] & vs) if S in d else set(vs)
                         for S, vs in guard_reqs(g, regs).items():
@@ -4383,7 +4404,7 @@ class IrSccReach(SccReach):
                                                  (wbd, by_guard_d, er_d, dom)):
                             dd = dict(sm.at(K, g))
                             inh_d = bg(K, g) if bg else erx.get(K, {})
-                            for S, vs in list(inh_d.items()):
+                            for S, vs in list(inh_d.items()) + list(chain.items()):
                                 if vs:
                                     dd[S] = (dd[S] & set(vs)) if S in dd else set(vs)
                             for S, vs in guard_reqs(g, regs_wb, dm).items():

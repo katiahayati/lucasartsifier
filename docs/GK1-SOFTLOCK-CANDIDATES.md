@@ -936,3 +936,59 @@ directions:
 * R1 unmoved: `VoodooCode1@reg123=5` and the whole §1.15/§1.16 row set stand.
 
 Times: LSL2 37s, KQ4 80s, KQ6 99s, LB2 52s, KQ5 633s, GK1 242s.
+
+## §1.18 The carry-up re-measured, and R4 diagnosed to a CYCLE (2026-08-31, later)
+
+The narrowed carry-up — the two fixes §1.15 named: STRONG-ONLY (a carry onto a register with no
+projection is refused; every register in R4's chain is promoted now) and the VALUE FILTER in
+`_region_writes` — was rebuilt as a product simulation and measured on GK1.
+
+### ⛔ The revert's verdict stands, more decisively than before
+**9,740 rows.** The strong half does not tame the shape: prevRoom "seals" dominate (every room
+crossing seeds a flip; `reg12=210` alone carries 291 rows), and the long tail is day-8/9 endgame
+seals stranding cutscene armings — true statements about missable CONTENT, not item softlocks.
+The 2026-08-28 conclusion ("the FP shape is the design, not an accident") survives its second
+measurement with both named fixes applied. Do not rebuild this detector shape a third time.
+
+One row in the flood is genuinely interesting — `seal reg257=0: reg123 must be [4] for
+sTraceTattoo@rm450 carried-from reg564` — the day-advance itself as the seal, carrying one hop of
+R4's chain (the trace's arming flag 322 is producible only at day 4).
+
+### ⭐ R4's remaining gap, diagnosed exactly: a CYCLIC day-gate
+The flag-44 row still does not form, and chasing the last blocker bottomed out the whole chain:
+
+* flag 74's write needs `178==10 AND (flag 44 OR flag 47)` (the OR split lands per-branch);
+* flag 44 is dead post-flip (its write needs `178==12`, produced only at rm280, sealed);
+* **flag 47 is NOT dead post-flip — it is the day-5 opening.** Its writers run after day 4 ends;
+  day 4 ends only with the trace (`has: 26`); the trace needs flag 74. **74 → 47 → day 5 → the
+  trace → 74.** An acyclic chase (the carry-up's `_carry_up`, any depth) can never see a freeze
+  that holds only around a cycle; each link individually looks fixable.
+
+The mechanism that CAN see it: a least-fixpoint PRODUCIBLE-SET over the branch tables within the
+sealed region — seed with what the flip can carry, iterate region write branches whose deps are
+already producible, and read "flag 74 never enters the set". Two prerequisites surfaced today,
+each measured:
+
+1. **Armer-chain inheritance in the branch tables** (`_own_fixpoint`, shipped this round): a
+   machine armed from another machine's changeState inherits the armer's musts at the arming
+   state — `edge_meta` composes exactly this (`chain`) onto exits, the branch tables did not.
+   Measured on the target case: NOT sufficient alone — `startOfDay5`'s own musts are empty (its
+   day-5 fact lives in its ENTRY reqs, which the chain does not fold in), and `getTheVeve` also
+   has a DIRECT arming (flag-73/own(9)-gated), so the necessary reading over its entries honestly
+   drops the day pin. The er-fold (armer entry reqs folded necessarily over the armer's own
+   entries, recursively) is the named remainder.
+2. **The 178-carry**: `(370, 178==12)` is permissively reachable, so a producible-set seeded from
+   carried values would call flag 44 fixable. The real fact is Teller-script SCOPE — script 1055's
+   handlers run at rm50 only while the Cazaunoux Teller is ACTIVE, and activation happens at
+   rm280 — the same scope family as [[inventory-script-scope-gap]]. Without it, any post-flip
+   producibility reading of flag 44 is permissive-open.
+
+Neither is small. R4 stays a declared RED with, for the first time, its full remaining mechanism
+named end to end: producible-set fixpoint + er-fold chaining + Teller-activation scope.
+
+### Measured
+The armer-chain inheritance (prerequisite 1, as far as it goes today): **all six games
+byte-identical** on the full snapshot surface (LSL2 37s, KQ4 80s, KQ6 98s, LB2 52s, KQ5 626s,
+GK1 144s). Kept on the BCC precedent — the composition is `edge_meta`'s own, one table short of
+applied, and the case that would move it (armers whose day gate lives in their entry reqs) is
+exactly the named er-fold remainder.
