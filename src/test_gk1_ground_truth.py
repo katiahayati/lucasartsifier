@@ -96,6 +96,22 @@ CONFIRMED_SAFE.add("sVoodooCode")
 # already costs braceMold, and the day-3 branch of the flag-15 write never inherits it.
 CONFIRMED_SAFE.add("braceMold")
 
+# talisman (69): the case-(c) trap round's `[rod, talisman]` carry-in row at rm455->rm800 --
+# PROVED FP FROM THE SCRIPTS, 2026-09-01, both halves the forced class:
+#   * the talisman is granted by BOTH Africa-exit cutscenes (`get: 69` immediately before
+#     `newRoom: 216` -- rm720.sc:1040, :1285) and Africa (700<->710<->720, +death) has no other
+#     exit, so day 10 cannot arrive without it;
+#   * the rod is required to LEAVE Africa at all: `keyWorks` -- the only opener of the wall
+#     into rm720 -- is armed exclusively from `rodCode`'s success arm (rm710.sc:2303-2328), and
+#     rodCode answers only the rod's verb 76; no `put: 60` exists before the 455 deposit
+#     itself.
+# The row's guard (has: 60/69 at the elevator) therefore guards two items every player holds.
+# ⛔ NOTE: this row puts `rod` in the caught set FOR THE WRONG MECHANISM -- R2's pin (rod AND
+# the signal-device pair, the DEPOSIT) stays authoritative; the elevator return is open while
+# flag 351 is clear (sHRoom6.sc:395-400 refuses verb 8 only under 351), so the deposit stays
+# fixable until Grace's room, exactly as R2 records.
+CONFIRMED_SAFE.add("talisman")
+
 ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS
 
 # Item ids ARE the inventory `add:` order (GKInvItem.sc:93). Pinned because the tool got all 81

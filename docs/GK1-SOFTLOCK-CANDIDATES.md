@@ -1242,8 +1242,22 @@ row `[rod, talisman]` with an APPLIED guard `rm455->rm800: (has: 60) (has: 69)` 
 setscript placement). The facts: `required[rod] = {455, 710}` — 455 IS the confessional
 deposit, R2's own demand, already in the model; `required[talisman] = {800, 899}` — the robing
 and the throw; both sourced in Africa (rod 710, talisman 720 + the EndGame re-grant at 899).
-The row claims the elevator crossing (455→800) strands them — but the Hounfour's
-`BackToElevator` branch returns to 455, so whether the crossing truly seals is a GAME question:
-⛔ ask the USER (can you ride down without the talisman? can you come back up before the
-ceremony?), do not verdict from the armchair. Until ruled, both ride the declared-red FP
-checks with OPEN VERDICT noted.
+**SETTLED FROM THE SCRIPTS the same day (the USER: "can you figure that out from the
+scripts?" — yes): the whole row is an FP, both halves the FORCED class.**
+* The descent is gated on story flags 273∧271 (`sExitElevator`, `rm455.sc:117`), not items.
+* The return (`sHRoom6` verb 8) is refused only under flag 351 — deposits-made-and-descended —
+  and `timeForCeremony` (set in Grace's-room init, `sHRoom8.sc:71`, never cleared) takes
+  dispatch precedence thereafter. So the deposit stays fixable until Grace's room: R2's pin
+  stands verbatim.
+* The TALISMAN cannot be absent on day 10: BOTH Africa-exit cutscenes grant it (`get: 69`
+  immediately before `newRoom: 216` — `rm720.sc:1040`, `:1285`) and Africa (700↔710↔720,
+  + the death room) has no other exit.
+* The ROD cannot be absent either: `keyWorks` — the only opener of the wall into rm720 — is
+  armed exclusively from `rodCode`'s success arm (`rm710.sc:2303-2328`), and `rodCode` answers
+  only the rod's verb 76. You cannot reach the wolf, hence cannot leave Africa, without having
+  taken the rod; and nothing puts it before the 455 deposit itself (`put: 60` = the deposit,
+  verb 76 on the bench, `rm455.sc:826`).
+Declared: `talisman` → CONFIRMED_SAFE with this proof; the rod's appearance in the caught set
+is FOR THE WRONG MECHANISM and R2's pin (the deposit + the signal-device pair) remains the
+authority. The applied 455→800 guard guards two items every player necessarily holds —
+harmless, pointless, and accounted.
