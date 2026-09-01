@@ -2164,6 +2164,45 @@ def _survivable(info, unavoidable, handoff, start=None, preempt=frozenset()):
 _NEAR_OPS = {"Lt": 0, "Le": 1}          # `< n` bounds the distance by n, `<= n` by n+1
 
 
+def _eval_guard(g, asg):
+    """Evaluate a guard tree under a TOTAL register assignment -- True / False / None(unknown).
+
+    Built for `death_traps` case (c): the arms there are pre-checked opaque-free and
+    register-only, so every CMP either resolves against `asg` or the whole evaluation honestly
+    answers None (an atom kind this cannot read -- CTR tuples, list-guards from other spellings
+    -- must never silently count as false: None poisons upward, and the caller treats a
+    non-False as "may fire", the permissive direction)."""
+    if g is None:
+        return True                       # an absent guard always holds
+    if isinstance(g, list):
+        vals = [_eval_guard(k, asg) for k in g]
+        if any(v is False for v in vals):
+            return False
+        return None if any(v is None for v in vals) else True
+    if isinstance(g, GAnd):
+        vals = [_eval_guard(k, asg) for k in g.kids]
+        if any(v is False for v in vals):
+            return False
+        return None if any(v is None for v in vals) else True
+    if isinstance(g, GOr):
+        vals = [_eval_guard(k, asg) for k in g.kids]
+        if any(v is True for v in vals):
+            return True
+        return None if any(v is None for v in vals) else False
+    if isinstance(g, GNot):
+        v = _eval_guard(g.kid, asg)
+        return None if v is None else (not v)
+    if isinstance(g, Pred) and g.kind == "CMP" and g.var in asg:
+        try:
+            val = int(g.value)
+        except (TypeError, ValueError):
+            return None
+        cur = asg[g.var]
+        return {"==": cur == val, "!=": cur != val, ">": cur > val,
+                ">=": cur >= val, "<": cur < val, "<=": cur <= val}.get(g.op)
+    return None
+
+
 def _negate(g):
     """De Morgan, COLLAPSING the double negation -- there is no canonical negation in guard_ast.
 
@@ -3051,6 +3090,64 @@ def death_traps(em, regs, dom):
                     d = dom.get(R)
                     if vs and d and set(vs) < set(d):
                         rows.append(({R: set(d) - set(vs)}, (frozenset(),)))
+            elif ents and all(g is not None and not _has_opaque(g)
+                              and not _own_positive(g) and not _own_negative(g)
+                              for _k, g in ents):
+                # (c) SEVERAL armings, every one fully modelled over REGISTERS alone -- a
+                #     multi-arm death SORTER (2026-09-01). GK1's `sDJKills` is the specimen:
+                #     four arms partitioning (Gabriel-robed, Mosely-robed, Mosely-present),
+                #     every combination but the properly-robed ones dying (`sHRoom8.sc`, the
+                #     R3 oracle row). The death fires iff SOME arm holds, so a survivable
+                #     state is an ASSIGNMENT falsifying every arm: enumerate the (bounded)
+                #     product of the named registers' domains and keep the survivors.
+                #
+                #     ⭐ THE CLOCK RULE, BY PROJECTION. Case (b) refuses complement rows on
+                #     registers the room's own machines write (the whale's sneeze timer is
+                #     not an escape lever) -- but GK1's robing flags are written by the
+                #     room's own `sPutOnRobe`, armed by a doVerb: the player's own hands ARE
+                #     the escape. The derived split: a register written here is an ESCAPE
+                #     LEVER when some writer's arming is player-sourced, a CLOCK otherwise.
+                #     Surviving assignments are then PROJECTED onto the lever registers: a
+                #     projection survives only if it survives at EVERY clock combination
+                #     (clock-independent survival), so a row can never pin a clock value --
+                #     an all-clock sorter projects to the free alternative, i.e. no demand,
+                #     which is exactly "refusing to model it" above.
+                named = set()
+                for _k, g in ents:
+                    atoms = []
+                    _cmp_atoms(g, atoms)
+                    named |= {r for (r, _op, _v, _pol) in atoms}
+                doms = {R: sorted(dom.get(R) or ()) for R in named}
+                size = 1
+                for R in named:
+                    size *= max(1, len(doms[R]))
+                if named and all(doms[R] for R in named) and size <= 64:
+                    import itertools
+                    order = sorted(named)
+                    survivors = []
+                    for combo in itertools.product(*(doms[R] for R in order)):
+                        asg = dict(zip(order, combo))
+                        ev = [_eval_guard(g, asg) for _k, g in ents]
+                        if all(v is False for v in ev):
+                            survivors.append(asg)
+                    if survivors:
+                        levers = set()
+                        for i2 in infos:
+                            if any(src in ("doVerb", "handleEvent")
+                                   for src in (i2.get("entry_sources") or ())):
+                                levers |= {gi for _K, paths in i2["states"].items()
+                                           for p in paths for (gi, _v) in p[1]}
+                        lev = sorted(named & levers)
+                        clk = sorted(named - levers)
+                        clk_all = list(itertools.product(*(doms[R] for R in clk))) or [()]
+                        by_lev = {}
+                        for asg in survivors:
+                            key = tuple(asg[R] for R in lev)
+                            by_lev.setdefault(key, set()).add(tuple(asg[R] for R in clk))
+                        for key, clks in by_lev.items():
+                            if len(clks) == len(clk_all):
+                                rows.append(({R: {v} for R, v in zip(lev, key)},
+                                             (frozenset(),)))
         if rows:
             out[room] = rows
     return out

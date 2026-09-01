@@ -95,7 +95,7 @@ KNOWN_RED = {
             "write at rm302 carries no cost because the `has: 32/33` demand is at rm300, where "
             "the scene is armed -- the cost does not cross the `newRoom`; ⛔ the return-edge "
             "cure was MEASURED 2026-08-30 and does not retire it, docs GK1 §1.15). "
-            "sLakePatter RETIRED 2026-08-31: the travel-movie fan (§1.17) removed the phantom "
+            "PLUS, verdicts OPEN (2026-09-01, the case-(c) trap round, docs GK1 §1.23): `talisman` joins the units via a rod+talisman carry-in row at rm455->rm800 -- rod's demand is the confessional deposit at 455 (R2's own item!), talisman's the robing at 800, both sourced in Africa; whether the elevator crossing truly seals (the Hounfour's BackToElevator returns to 455) needs the game answer -- ASK THE USER, do not verdict from the armchair. sLakePatter RETIRED 2026-08-31: the travel-movie fan (§1.17) removed the phantom "
             "Magentia demand its dangerous_sinks row rested on -- an FP dying of honest wiring. "
             "All four in CONFIRMED_SAFE; cure the detectors, never the list",
         "a safe item is not flagged":

@@ -1185,3 +1185,65 @@ moves by exactly two accounted lines: `knife@reg759=1 -> [899]` and its REFUSED 
 the forced-knife FP class (declared under knife's CONFIRMED_SAFE). R1 and every §1.15-§1.19 row
 unmoved; rm800's representation gain (18 → 31 machines, the guise sources) lives below the
 frozen surface, waiting for the detector round.
+
+## §1.23 R3's detector, DESIGNED: the multi-arm death sorter (case (c)) — not yet built
+
+With the hounfour represented (§1.22), R3's whole chain is in the model:
+* `sDJKills` (rm800) is FATAL and SLOT-ARMED with **four** guarded armings — the kill
+  partition over `608` (flag 366, Gabriel robed), `607` (flag 365, Mosely robed) and `593`
+  (Mosely present): every combination except the properly-robed ones dies (`sHRoom8.sc`).
+* `_reg_cost(608,{1}) = {talisman, WolfGuise}` and `_reg_cost(607,{1}) = {talisman,
+  BoarGuise}` — the robing already prices the guises through `sPutOnRobe`'s arming.
+
+`death_traps` misses it by CASE SHAPE: its rows fire only for (a) an unconditional arming
+(escape rows) or (b) exactly ONE fully-modelled arming (negation rows). A readable
+MULTI-ARM sorter — several armings, none unconditional, none opaque — falls through.
+
+### Case (c), derived
+When EVERY arming is present and opaque-free: the death fires iff some arm holds, so a
+survivable state is an ASSIGNMENT over the arms' named registers falsifying every arm.
+Enumerate the (bounded) product of those registers' domains, evaluate each arm (a small
+total evaluator over GAnd/GOr/GNot/CMP; any unevaluable atom ⇒ bail, the KQ4-ogre rule),
+and emit one `({R: {v}, ...}, (frozenset(),))` row per surviving combination — the same row
+shape case (b)'s register complements already use, priced by `_reg_cost` downstream.
+
+### ⛔ The delicate half: the clock rule vs the player's own hands
+Case (b) excludes registers the trap room's OWN machines write (the whale's sneeze timer —
+a self-advancing clock must not read as an escape lever). For R3 that exclusion is wrong in
+the other direction: `sPutOnRobe` writes 608 and it IS the escape — armed by the WolfGuise
+verb, a PLAYER action. The derived discriminator: a register write is a CLOCK when its
+machine's arming chain is cue/armer-driven; it is an ESCAPE LEVER when some arming traces to
+a player source (`entry_sources`: doVerb/handleEvent). Must be derived against the whale
+(KQ4) before shipping — resurrecting that FP is the named risk.
+
+### Measured risk, stated before building
+Case (c) fires wherever a multi-arm readable sorter exists — KQ5/KQ6 death rooms may gain
+rows, and under the 2026-09-01 axiom ANY KQ6 movement is a bug to chase before shipping.
+
+### §1.23 BUILT and measured — surgical (2026-09-01)
+`_eval_guard` + case (c) shipped. Measured at the detector: **LSL2/KQ4 stay empty, KQ6's eight
+and KQ5's five trap rooms byte-unchanged, GK1 gains exactly rm800 with
+`req={607:{1}, 608:{1}}`** — "leave the hounfour only properly robed", priced at
+{talisman, WolfGuise} / {talisman, BoarGuise} through `_reg_cost`. The clock projection held:
+593 (Mosely present, cue-driven) never pins a row; the whale games gained nothing.
+
+**R3 remains RED, and the remaining distance is now exactly one thing.** The trap prices the
+guises for every banned walk out of rm800 — but the oracle wants the GUISES named, and no
+room-level detector can: their sources (the storeroom scene) and the demand (Grace's-room
+scene switch) are the SAME room. Scene boundaries — the original R2/R3 diagnosis — are the
+one remaining gap, with everything beneath them (the scenes exist, the sorter is modeled,
+the survival is priced) now in place. R2 likewise: `timeForCeremony` at `sHRoom8.sc:71` is
+an intra-room switch; its deposit demand (flags 280/281 ← rm455) crosses ROOMS and may be
+catchable sooner — the trap-adjacent window machinery over 455→800 is the nearer target.
+
+### §1.23 surface delta — TWO VERDICTS OPEN (for the USER)
+Five games byte-identical. GK1: `talisman` joins `softlock_items` via a new edge_strandings
+row `[rod, talisman]` with an APPLIED guard `rm455->rm800: (has: 60) (has: 69)` (+ rm455
+setscript placement). The facts: `required[rod] = {455, 710}` — 455 IS the confessional
+deposit, R2's own demand, already in the model; `required[talisman] = {800, 899}` — the robing
+and the throw; both sourced in Africa (rod 710, talisman 720 + the EndGame re-grant at 899).
+The row claims the elevator crossing (455→800) strands them — but the Hounfour's
+`BackToElevator` branch returns to 455, so whether the crossing truly seals is a GAME question:
+⛔ ask the USER (can you ride down without the talisman? can you come back up before the
+ceremony?), do not verdict from the armchair. Until ruled, both ride the declared-red FP
+checks with OPEN VERDICT noted.
