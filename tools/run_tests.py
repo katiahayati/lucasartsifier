@@ -82,8 +82,9 @@ KNOWN_RED = {
     "test_gk1_ground_truth.py": {
         "no UNEXPECTED unit flagged (suspicion)":
             "four FALSE POSITIVES: knife (fatal_uses -- an on-screen death, not a consumption; "
-            "USER ruling 2026-08-27 -- plus, since the 2026-08-31 travel-movie fan opened the "
-            "endgame, a `reg12=720` register row of the flip-precondition class: day 7 cannot "
+            "USER ruling 2026-08-27 -- plus two register rows of the flip-precondition class, "
+            "`reg12=720` since the travel-movie fan and `reg759=1` since the hounfour scene "
+            "fan (reg 759 = a lowered script-808 register, sHRoom8 state 0): day 7 cannot "
             "end without the knife, rm540.sc:299-307, and no `put: 64` exists), and THREE of "
             "one class, `_flip_live` missing that the flip's own precondition demands the item: "
             "reconVeve (day 3's endDay arm needs it, but Grace's 'go home' topic 49 ends the "

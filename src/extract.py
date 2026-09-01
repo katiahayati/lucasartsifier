@@ -2265,17 +2265,34 @@ class Extractor:
             else:
                 continue
             bodies = list(sc.procs.values()) + [b for o in sc.objects for b in o.methods.values()]
+
+            # ⭐ A VARIABLE ScriptID IS A FAN (2026-09-01) -- see `var_script_values`. GK1's
+            # hounfour dispatches its twelve scenes with `(self setScript: (ScriptID local1 0)
+            # self local0)`, and `as_int` returning None DROPPED the whole load: scripts
+            # 806-808 (the confessional deposit, the storeroom, Grace's room -- R2 and R3 of
+            # the GK1 oracle) never scoped into room 800. The per-value guard drops to None on
+            # the multi-site rule; the export object cannot be named for a computed load, so
+            # the scope is the whole script (`None`).
+            def _tgt_fan(n, _sc=sc):
+                ks = n.get("kids") or []
+                if not ks:
+                    return []
+                tgt = I.as_int(ks[0])
+                if tgt is not None:
+                    return [tgt]
+                return sorted(var_script_values(self.ir, _sc, ks[0]))
             for b in bodies:
                 def leaf(n, pc, _rooms=rooms):
                     if n.get("t") != "KernelCall" or n.get("name") != "ScriptID":
                         return
-                    ks = n.get("kids") or []
-                    tgt = I.as_int(ks[0]) if ks else None
-                    if tgt is None:
+                    fan = _tgt_fan(n)
+                    if not fan:
                         return
-                    hit = self.ir.script_id_target(n)
-                    for room in _rooms:
-                        sites[(tgt, room)].append((hit[1] if hit else None, _conj(list(pc))))
+                    hit = self.ir.script_id_target(n) if len(fan) == 1 else None
+                    for tgt in fan:
+                        for room in _rooms:
+                            sites[(tgt, room)].append((hit[1] if hit else None,
+                                                       _conj(list(pc))))
                 walk_stream(b, [], leaf)
                 # EXISTENCE, separately: walk_stream does not reach every branch, and under the
                 # export-aware scope a reference it misses is an object we would never walk.
@@ -2283,13 +2300,13 @@ class Extractor:
                     if not (isinstance(n, dict) and n.get("t") == "KernelCall"
                             and n.get("name") == "ScriptID"):
                         continue
-                    ks = n.get("kids") or []
-                    tgt = I.as_int(ks[0]) if ks else None
-                    if tgt is None:
+                    fan = _tgt_fan(n)
+                    if not fan:
                         continue
-                    hit = self.ir.script_id_target(n)
-                    for room in rooms:
-                        present[(tgt, room)].add(hit[1] if hit else None)
+                    hit = self.ir.script_id_target(n) if len(fan) == 1 else None
+                    for tgt in fan:
+                        for room in rooms:
+                            present[(tgt, room)].add(hit[1] if hit else None)
         out = []
         for (tgt, room), rows in sites.items():    # first-touch order, as the old `seen` had
             sc = self.ir.scripts.get(tgt)
@@ -3415,6 +3432,38 @@ def _script_prop_values(ir, s, var):
                         if sel == mname and len(params) >= pidx:
                             note(I.as_int(params[pidx - 1]), None)
     return {v: (gs[0] if len(gs) == 1 else None) for v, gs in seen.items()}
+
+
+def var_script_values(ir, sc, var):
+    """Script numbers a variable can hold, from its literal assignments IN THIS SCRIPT --
+    the `var_room_values` discipline pointed at SCRIPTS instead of rooms.
+
+    ⭐ A VARIABLE ScriptID IS A FAN (2026-09-01). GK1's hounfour dispatches its twelve scenes
+    with `(self setScript: (ScriptID local1 0) self local0)` -- `local1` is assigned the scene
+    script number in a selection ladder (801..810 and friends, `Hounfour.sc:651-900`) -- and
+    every literal-only reader dropped the load whole: scripts 806-808 (the confessional
+    deposit, the storeroom, Grace's room -- R2 and R3 of the GK1 oracle) neither scoped into
+    room 800 nor produced a single machine. Shared by `Extractor.scriptid_refs` (the scope
+    fan) and the machine layer's arming scans ([[same-rule-two-places]] -- one resolver, every
+    reader), filtered to numbers that name a real script."""
+    if not (isinstance(var, dict) and var.get("t") == "Variable"
+            and var.get("vtype") in ("Local", "Temp", "Global")):
+        return set()
+    got = set()
+    for o in sc.objects:
+        for ast in o.methods.values():
+            for n2 in I.walk(ast):
+                if n2.get("t") != "Assignment":
+                    continue
+                k2 = n2.get("kids") or []
+                if (len(k2) == 2 and isinstance(k2[0], dict)
+                        and k2[0].get("t") == "Variable"
+                        and k2[0].get("vtype") == var.get("vtype")
+                        and k2[0].get("index") == var.get("index")):
+                    v2 = I.as_int(k2[1])
+                    if v2 is not None and v2 in ir.scripts:
+                        got.add(v2)
+    return got
 
 
 PREV_DEST = "PREV"     # var_room_values' answer for a prevRoom destination: "return to

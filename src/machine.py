@@ -351,6 +351,19 @@ class MachineBuilder:
                         tgt = _setscript_target(params[0], ir)
                         if tgt and tgt[0] is not None and tgt[0] != rn:
                             self.arms.setdefault(tgt, []).append((rn, _oname, mn, body))
+                        elif (tgt is None and isinstance(params[0], dict)
+                              and params[0].get("t") == "KernelCall"
+                              and params[0].get("name") == "ScriptID"
+                              and (params[0].get("kids") or [None])[0] is not None):
+                            # `(setScript: (ScriptID <var> 0) ...)` -- the hounfour's scene
+                            # dispatch. One fanned arming record per script the variable can
+                            # hold (`extract.var_script_values`); export 0, the interpreter's
+                            # own reading of a computed load.
+                            for v in X.var_script_values(ir, s, params[0]["kids"][0]):
+                                got = ir.export_target(v)
+                                if got and got[0] is not None and got[0] != rn:
+                                    self.arms.setdefault(got, []).append(
+                                        (rn, _oname, mn, body))
         # ...AND AN OBJECT IS OFTEN PUT ON SCREEN BY A SCRIPT THAT DOES NOT DECLARE IT:
         # `((ScriptID 550 3) init:)`, SCI's dynamic load addressed by EXPORT INDEX.
         # `cast_conditions` collects only the init sites written in the object's own script, so
@@ -609,7 +622,7 @@ class MachineBuilder:
                             continue
                         self._scan_setscript(c["kids"][1], [], m, source=mn,
                                              armer=(other.name, k), owner=owner,
-                                             selfobj=other.name)
+                                             selfobj=other.name, home=script)
                     continue
                 # An arming inside another MACHINE's doit/cue is a continuation of that machine
                 # exactly as a changeState-case arming is, so it carries the same armer link and
@@ -622,13 +635,13 @@ class MachineBuilder:
                 armer = ((other.name, None)
                          if other.name != m.inst and "changeState" in other.methods else None)
                 self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn),
-                                     owner=owner, armer=armer, selfobj=other.name)
+                                     owner=owner, armer=armer, selfobj=other.name, home=script)
         # ...and this script's own PROCEDURES, which were never scanned at all. A machine armed
         # from a proc in its own script had no entry whatever: KQ6's realm cutscene is armed by
         # `proc344_1`, and the item-state test guarding it went with it.
         for pname, pbody in script.procs.items():
             self._scan_setscript(pbody, [], m, source="proc",
-                                 owner=X.any_guard(self.proc_calls.get(pname)))
+                                 owner=X.any_guard(self.proc_calls.get(pname)), home=script)
         # ...and the same scan over the OTHER scripts that arm this machine by `(ScriptID s n)`.
         # Deduplicated per body: one method can arm the same machine on several branches, and
         # _scan_setscript already records one entry per arming site within a body.
@@ -641,7 +654,7 @@ class MachineBuilder:
             s2 = self.ir.scripts.get(arm_script)
             self._scan_setscript(body, [], m, source=("init" if mn == "init" else mn),
                                  owner=(X.cast_guard(self._cast(s2), oname) if s2 else None),
-                                 selfobj=oname)
+                                 selfobj=oname, home=s2)
         self._drop_continuation_entries(m)
         self._floor_self_redirects(m)
         self._inherit_local_continuations(m, script)
@@ -787,16 +800,31 @@ class MachineBuilder:
         remap = {old: new for new, old in enumerate(keep)}
         m.init_entry_idx = [remap.get(i, -1) for i in m.init_entry_idx]
 
-    def _targets(self, param, m):
+    def _targets(self, param, m, home=None):
         """Does this `setScript:` argument name machine `m`? An Object reference is scoped to the
         script it appears in, so only the name is compared; a `(ScriptID s n)` carries its own
         script and must match m's too, or two same-named Scripts in different scripts would be
-        conflated."""
+        conflated.
+
+        `home`: the SCRIPT OBJECT whose body holds the send -- needed only for the variable
+        spelling `(ScriptID <var> k)` (GK1's hounfour scene dispatch), where the variable's
+        literal assignments live in that script and nothing else can resolve them
+        (`extract.var_script_values`). Export 0 is assumed for a computed load, matching the
+        interpreter's own `setScript: N` delegation."""
         tgt = _setscript_target(param, self.ir)
-        if not tgt:
-            return False
-        s, name = tgt
-        return name == m.inst and (s is None or s == m.script)
+        if tgt:
+            s, name = tgt
+            return name == m.inst and (s is None or s == m.script)
+        if (home is not None and isinstance(param, dict)
+                and param.get("t") == "KernelCall" and param.get("name") == "ScriptID"
+                and (param.get("kids") or [None])[0] is not None):
+            for v in X.var_script_values(self.ir, home, param["kids"][0]):
+                if v != m.script:
+                    continue
+                got = self.ir.export_target(v)
+                if got and got[1] == m.inst:
+                    return True
+        return False
 
     def prime(self):
         """Resolve the casts/entries mutual recursion by iterating it, twice.
@@ -871,7 +899,8 @@ class MachineBuilder:
                 foreign_inits=self.foreign_inits.get(script.number))
         return c
 
-    def _scan_setscript(self, node, pc, m, source, armer=None, owner=None, selfobj=None):
+    def _scan_setscript(self, node, pc, m, source, armer=None, owner=None, selfobj=None,
+                        home=None):
         """Find `(x setScript: <ref>)` where <ref> is m, record an entry to m at state 0 with the
         path condition, AND carry the LOCAL WRITES the arming context made before the setScript. A
         machine reads its own script's locals, so a local the arming branch set gates the machine's
@@ -910,7 +939,8 @@ class MachineBuilder:
                 # sLauraDies)` under `global12 == 420 AND global123 == 5`).
                 slot = X.script_slot(_r, selfobj)
                 for sel, params in msgs:
-                    if sel != "setScript" or not params or not self._targets(params[0], m):
+                    if sel != "setScript" or not params \
+                            or not self._targets(params[0], m, home):
                         continue
                     # `setScript: <script> <caller> <register>` -- the third argument tells the
                     # Script WHICH job it is doing, and its body branches on it. Carried like a

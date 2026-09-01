@@ -71,6 +71,10 @@ CONFIRMED_SAFE = {
 # -> 770). KQ6's skull was ruled IN because throwing it WASTES it for later ("the problem with
 # the skull is you waste it for later"); the knife is not consumed -- the stab is a death you
 # restore from, preventable on its own screen. A plain on-screen death: a false positive here.
+# ...and the register rows that later joined it (reg12=720 with the travel-movie fan,
+# reg759=1 with the hounfour scene fan) are the forced-knife class: day 7 cannot end without
+# the knife (rm540.sc:299-307, tile1.sc:497) and no `put: 64` exists, so the post-flip player
+# holds it wherever the flip lands them.
 CONFIRMED_SAFE.add("knife")
 
 # sVoodooCode (33): register_strandings on synthetic flag 246 (formerly 247; the tomb-writing

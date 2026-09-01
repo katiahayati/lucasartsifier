@@ -1150,3 +1150,38 @@ The cure list after the full hunt, all derived, none KQ6-shaped:
    split (kills the cliffs phantom mover).
 3. A cost channel for edge sets — the unpriced-flip principle above (makes the gwrites seed
    sound; also audits today's pre-existing exit-write sets).
+
+## §1.22 The hounfour exists now: a variable ScriptID is a fan (2026-09-01, R2/R3 round 1)
+
+R2/R3's first gap was not scene boundaries — it was ABSENCE. The hounfour dispatches its twelve
+scenes with `(self setScript: (ScriptID local1 0) self local0)` (`Hounfour.sc:163`), `local1`
+assigned the scene script number in a selection ladder (`:651-900`), and every literal-only
+ScriptID reader dropped the load whole: scripts 801-812 neither scoped into room 800 nor
+produced one machine. `sHRoom8` — R2's point of no return and R3's killer — did not exist.
+
+**`extract.var_script_values`** (the `var_room_values` discipline pointed at scripts) resolves
+the ladder; consumed by THREE readers, one resolver ([[same-rule-two-places]]):
+* `Extractor.scriptid_refs` — the scope fan (scripts 801-812 now walk into room 800; the
+  guises' `get: 78/79` in the storeroom finally give BoarGuise/WolfGuise sources: `[800]`);
+* the machine layer's `arms` collection — the cross-script arming records (export 0, the
+  interpreter's own reading of a computed load);
+* `_targets` (threaded a `home` script through `_scan_setscript`'s five call sites) — so the
+  fanned arming matches the scene machine and becomes its ENTRY.
+
+Result: rm800 goes 18 → **31 machines**, `sHRoom8`'s whole cast among them (`sDJKills` with its
+four armings — R3's mechanism is REPRESENTED for the first time). Scripts 805/807/809-812 build
+no machines and that is HONEST — their scenes are effect-free shells (verified against the
+`has_effect` gate; the storeroom's items ride the handler scope, not the scene bodies).
+
+R2/R3 remain RED — representation is not detection; the room-level walks do not yet cross scene
+boundaries. New rows to verdict: `knife@reg759=1 -> [899]` (reg 759 = a lowered script-808
+register written by `sHRoom8` state 0) and knife joining two edge rows (`800->899`, `750->700`)
+— all three the forced-knife class on their face (day 7 cannot end without it, `rm540.sc:299`),
+pending the measured round.
+
+### §1.22 measured (real rebuild, all six)
+**LSL2, KQ4, KQ6, LB2, KQ5 byte-identical** — the fan is corpus-clean under the KQ6 axiom. GK1
+moves by exactly two accounted lines: `knife@reg759=1 -> [899]` and its REFUSED write spec —
+the forced-knife FP class (declared under knife's CONFIRMED_SAFE). R1 and every §1.15-§1.19 row
+unmoved; rm800's representation gain (18 → 31 machines, the guise sources) lives below the
+frozen surface, waiting for the detector round.
