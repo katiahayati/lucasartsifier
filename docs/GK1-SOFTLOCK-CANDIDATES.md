@@ -1418,6 +1418,23 @@ And the phantom flights: the airport icon's presence flag 269 IS recorded (`(511
 the travel agent's topic 44) but with no captured topic condition, so carrying icon
 presence would gate Germany on a flag producible any day — the day-9 rows and R4's
 unfired arm both wait on whatever ties the travel agent's topic to its day.
+
+FOUND (2026-09-02h): topic 44 is offered under `(if (gEgo has: 71))` — an If-VALUED
+condition `atom()` has no case for (opaque), and item 71 is the MASTER CARD, Gabriel's
+credit card, held from the opening — for which the model records NO source (the opening
+grant is uncaptured). Two small gaps in series: the If-value lowering (apply_ifvalue.py,
+drafted) and the initial-inventory grant; until the second lands, the first would SEAL the
+airport (own(71) never satisfiable). Order: initial inventory → If-value → icon presence →
+then the flights carry `own(master card)`, which is free — so the day tie must come from
+elsewhere still. Recorded; not built.
+
+The master card's grant: `wallet::cue` in script 24 — the INVENTORY script, an always-live
+scope — hands over item 71 when the wallet is examined; `cue` is not a handler selector the
+harvest walks, so the card has no source. Once captured it is free from the opening, so
+`own(master card)` ties the flights to no day: the Germany/Africa day tie is NOT in the
+airport topic. Every rm750 entrance tests flag 470 (reg 712), whose only writers sit in
+rm93 (`doTheRestart`), so in play it stays 0 and the `712 == 0` alternatives are the open
+ones. Where the game keeps Germany off the day-4 map remains to be found in the scripts.
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
