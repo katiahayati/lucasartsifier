@@ -759,22 +759,14 @@ class OpEmitter:
         # newRoom target the machine cannot walk to needs a flat fallback so the room
         # isn't a false dead-end.
         try:
-            # ⛔ FEEDING THE SHARED (INLINED) STEPS TABLE WAS BUILT AND PARKED 2026-08-31/09-01
-            # (`steps=steps_by_state` -- the machinery stands in compile_machine, measured,
-            # unused). It is the more faithful reading -- the delivery walk then sees exactly
-            # the table the states are published from -- and it moved the KQ6 GOLDEN: the
-            # catacombs map machine (`pullOutMapScr`, its exit a proc-computed
-            # `newRoom: (local8 tpRoom:)`) became honestly delivered, the flat capture
-            # crossings rm340->rm405/rm440 were suppressed-and-composed, and TWO ENFORCED
-            # ORACLE checks went red (the three capture guards collapsed toward the travel
-            # dispatch; test_kq6_ground_truth "ALL FOUR carry-ins strand at the ENTRANCE",
-            # test_toll "the three capture guards"). Those guards are PLAY-CONFIRMED and
-            # INSTALLED; re-deriving that shape is a bless-scale question for the USER, not a
-            # side effect of a plumbing fix. GK1's keeper case does NOT need this line --
-            # its register arms are inline in changeState, so the raw table carries them and
-            # `Machine.unresolved_register` alone restores its delivery. Unpark by passing
-            # `steps=steps_by_state`, with the KQ6 delta from docs GK1 §1.20 in hand.
-            exits, _d = C.compile_machine(m, self.is_death)
+            # ⭐ UNPARKED 2026-09-02 (parked 2026-08-31/09-01): the delivery walk sees the
+            # SAME inlined table the states are published from. The park record said this
+            # moved the KQ6 golden (pullOutMapScr's proc-computed exit becoming delivered
+            # collapsed the play-confirmed capture guards); re-measured against today's
+            # code the toggle moves NOTHING on KQ6 -- that mover died to interim work
+            # (the ScriptID/proc-fan rounds). Kept under the golden tier's watch: any
+            # movement now fails four frozen surfaces.
+            exits, _d = C.compile_machine(m, self.is_death, steps=steps_by_state)
             delivered = set(r for r, g, w in exits)
         except Exception:
             delivered = set()

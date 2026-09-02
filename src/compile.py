@@ -1085,15 +1085,14 @@ def compile_machine(machine, is_death, steps=None):
     # UNKNOWN_CTR, so its `register == K` arms survive instead of being pruned by the zero
     # default (Machine.unresolved_register; the revert record in `_ctr_holds`). An entry whose
     # own arming RESOLVED the register overrides it back to the concrete value via `loc`.
-    # ⛔ PARKED (2026-09-01): `if getattr(machine, "unresolved_register", False)` is the honest
-    # reading and it restores GK1's keeper delivery (sTalkToKeeper, armed `0 param1`, showed
-    # `K=4 JUMP 9 -> EXIT 50` and delivered NOTHING) -- and, alone, it moves the KQ6 GOLDEN:
-    # `stepDown` is armed `0 [local200 (self rockPointer:)]`, honestly unreadable, its new
-    # delivery relocates play-confirmed capture guards and reddens two enforced oracle checks.
-    # Bisected T1/T2/T3 (docs GK1 §1.20): this and the entry_gwrites seed are EACH sufficient;
-    # both-off restores KQ6 byte-for-byte. Unpark together, as ONE blessed round.
+    # ⭐ UNPARKED 2026-09-02 (parked 2026-09-01): the honest reading, and it restores GK1's
+    # keeper delivery (sTalkToKeeper, armed `0 param1`, showed `K=4 JUMP 9 -> EXIT 50` and
+    # delivered NOTHING). The park record said this alone moved the KQ6 golden (stepDown's
+    # honestly-unreadable arming relocating play-confirmed capture guards); re-measured
+    # against today's code the toggle moves NOTHING on KQ6 -- that mover died to interim
+    # work. Kept under the golden tier's watch: any movement now fails four frozen surfaces.
     base = dict(lregs)
-    if False and getattr(machine, "unresolved_register", False):
+    if getattr(machine, "unresolved_register", False):
         base[REG_KEY] = UNKNOWN_CTR
     walk(machine.start, dict(base), [], [], 0, frozenset())
     for i, (k, eg) in enumerate(machine.entries):
