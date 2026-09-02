@@ -56,6 +56,11 @@ class Machine:
     #   read (a parameter). `compile_machine` then seeds its walks with REG_KEY = UNKNOWN_CTR,
     #   so `register == K` arms survive instead of being pruned by the zero default -- see the
     #   note in `_scan_setscript` and the revert record in `_ctr_holds`.
+    entry_ggets: frozenset = None   # items EVERY arming context GRANTED (`gEgo get:`) before
+    #   arming -- the grant twin of entry_gwrites (docs GK1 §1.21 cure 1): KQ6's goodNews does
+    #   `(global0 get: 40)` before arming the beach exit, so a toll demanding item 40 on that
+    #   crossing is asking for what the crossing itself hands over. Necessary-merged like the
+    #   writes: an arming that granted nothing drops everything.
     entry_gwrites: dict = None   # {glob: val} the ARMING CONTEXT wrote before EVERY arming --
     #   the register twin of `entry_locals`, but per-MACHINE and necessary-merged at append time
     #   (an entry with no captured writes clears the disagreeing keys, so what survives held on
@@ -979,6 +984,15 @@ class MachineBuilder:
                             # KQ6's capture oracle (see _ctr_holds).
                             m.unresolved_register = True
                         events.append(("a", list(p), None, slot))
+                # ...and the GRANTS the context performs (Machine.entry_ggets): the same
+                # recogniser the state reader uses -- "these two walkers must not drift".
+                # Definite single items only; a menu grant is not a definite grant.
+                for sel, params in msgs:
+                    if sel == "setScript":
+                        continue
+                    for tr in X.item_transfers(_r, sel, params):
+                        if tr[1] == EGO and isinstance(tr[0], int):
+                            events.append(("i", tr[0], list(p)))
         # A doVerb that arms this machine with `setScript:` gates it on the item the player used --
         # `(== param1 <item.message>)` -> OWN. verb_param_scope makes `atom` see that inside the
         # arming path condition (the machine lift shares extract.atom but does not set the context).
@@ -988,22 +1002,24 @@ class MachineBuilder:
             if ev[0] != "a":
                 continue
             apc = ev[1]
-            loc, gw = {}, {}
+            loc, gw, gg = {}, {}, set()
             for e in events[:i]:                  # writes that RAN before this arm, on its path
                 if e[0] == "w" and _pc_covers(e[3], apc):
                     loc[e[1]] = e[2]
                 elif e[0] == "g" and _pc_covers(e[3], apc):
                     gw[e[1]] = e[2]               # a global the context wrote -- entry_gwrites
+                elif e[0] == "i" and _pc_covers(e[2], apc):
+                    gg.add(e[1])                  # an item the context granted -- entry_ggets
             if len(ev) > 2 and ev[2] is not None:
                 loc[X.REG_KEY] = ev[2]            # the `register` this arming selected
             # ...and the arming cannot be freer than the object whose method it sits in: a method
             # of an object the room only conditionally `init:`s only runs under that condition.
             self._add_entry(m, 0, _conj(apc + [owner]), loc, source == "init", armer, source,
-                            recv=(ev[3] if len(ev) > 3 else None), gwrites=gw)
+                            recv=(ev[3] if len(ev) > 3 else None), gwrites=gw, ggets=gg)
             #   are ADDITIONALLY bundled onto room arrival, not instead -- still normal entries too
 
     def _add_entry(self, m, state, guard, locals_, is_init, armer=None, source=None, recv=None,
-                   is_self=False, gwrites=None):
+                   is_self=False, gwrites=None, ggets=None):
         """Append an entry AND its carried locals, keeping the parallel lists in lockstep.
 
         `gwrites`: the GLOBAL writes this arming's context performed before the arming (see
@@ -1017,6 +1033,8 @@ class MachineBuilder:
         else:
             m.entry_gwrites = {gi: v for gi, v in m.entry_gwrites.items()
                                if gw.get(gi) == v}
+        gs = frozenset(ggets or ())
+        m.entry_ggets = gs if m.entry_ggets is None else (m.entry_ggets & gs)
         m.entries.append((state, guard))
         m.entry_locals.append(dict(locals_))
         m.entry_armers.append(armer)

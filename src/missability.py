@@ -8750,6 +8750,19 @@ class IrSccReach(SccReach):
         placed = getattr(self.em.ts, "placed", {})
         start = self.em.cfg.start_room
         full = self.reach_rooms
+        # What each machine-delivered crossing HANDS OVER on the way through: the arming
+        # context's grants (Machine.entry_ggets -- docs GK1 §1.21 cure 1). KQ6's goodNews
+        # does `(global0 get: 40)` before arming the beach exit, so a toll row demanding
+        # the sacred water on that crossing would demand what the crossing itself gives
+        # (the USER-ruled FP: "if you go see the oracle she gives you the sacred water").
+        # Intersected over delivering machines -- the refusal must hold on EVERY way across.
+        edge_ggets = {}
+        for i2 in self.em.machines:
+            gg2 = i2.get("entry_ggets") or frozenset()
+            for b2 in i2.get("delivered", ()):
+                k2 = (i2["room"], b2)
+                edge_ggets[k2] = (edge_ggets[k2] & gg2) if k2 in edge_ggets \
+                    else frozenset(gg2)
         out, seen = [], set()
         for (a, b), metas in sorted(self._emeta.items()):
             if a not in full:
@@ -8826,6 +8839,8 @@ class IrSccReach(SccReach):
                     srcs = self.sources.get(Y, set())
                     if not srcs or (srcs & pocket):
                         continue                 # no source, or obtainable INSIDE -> fetch it there
+                    if Y in edge_ggets.get((a, b), ()):
+                        continue                 # the crossing itself hands it over (entry_ggets)
                     if Y in self.edge_demands(a, b):
                         continue                 # the crossing itself demands it -> forced, not
                                                  # missable (the mirror of `_pocket_leavable`)

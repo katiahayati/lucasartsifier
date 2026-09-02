@@ -783,6 +783,7 @@ class OpEmitter:
                 "entry_locals": m.entry_locals, "init_entry_locals": m.init_entry_locals,
                 "entry_armers": m.entry_armers, "entry_recv": m.entry_recv,
                 "entry_sources": m.entry_sources, "entry_site": m.entry_site,
+                "entry_ggets": frozenset(getattr(m, "entry_ggets", None) or ()),
                 "local_regs": dict(getattr(m, "local_regs", None) or {}),
                 "restores_control": set(getattr(m, "restores_control", None) or ()),
                 "chase_states": set(getattr(m, "chase_states", None) or ()),
