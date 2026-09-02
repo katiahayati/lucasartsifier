@@ -1151,6 +1151,71 @@ The cure list after the full hunt, all derived, none KQ6-shaped:
 3. A cost channel for edge sets — the unpriced-flip principle above (makes the gwrites seed
    sound; also audits today's pre-existing exit-write sets).
 
+## §1.28 UNPARKING THE DOOR-CLOSER ROUND (2026-09-02, the USER's "almost surely buggy")
+
+The USER: *"the parked KQ6-moving round almost surely is buggy, so please diagnose and
+fix."* Re-ran §1.20's T1/T2/T3 bisections against TODAY's code (worktree toggles diffed
+against the KQ6 golden):
+
+  * **T2 (honest `unresolved_register` seed): MOVES NOTHING.** The stepDown mover died to
+    interim work. Unparked 2026-09-02 — and it restores the keeper's delivery, which is
+    R4's `300/310→50` record fix.
+  * **T3 (shared steps feed): MOVES NOTHING.** The pullOutMapScr mover died too (the
+    ScriptID/proc-fan rounds). Unparked 2026-09-02.
+  * **T1 (entry_gwrites seed): still moves KQ6, in exactly its two known ways** — the
+    sacredWater FP toll (+`rm380→rm300 has:40`) and the rm340 capture guards VANISHING
+    (the unpriced 173-flip; the cost-only tier did NOT close it — `_reg_cost(443,{1})` and
+    `_reg_cost(173,{1})` both price the scarf, so the mover is a FLIP-side walk treating
+    the edge-set 173-write as a new free flip point, not a costing gap).
+
+**Cure 1 SHIPPED @ `87fd3de`** (`entry_ggets`): the arming context's `gEgo get:`s ride
+the arming (same walk, same recogniser as the state reader), necessary-merged; the toll
+carry-in branch refuses an item every delivering machine of the crossing co-grants.
+KQ6's capture is exactly `{flyToBeach@380 → sacredWater}`; suite 885/14/0/0, inert until
+the seed lands — which is the point: the FP never gets to exist.
+
+CORRECTED BY MEASUREMENT (2026-09-02): the T1 re-toggle with cure 1 in place STILL grew
+the `has:40` spec — the refusal sat in the wrong pew. The actual row (probed, not
+guessed): toll `one-visit-toll-pocket`, toll = FLAG 175 on `370→380`, pocket = {380}
+itself, the water sourced INSIDE at 380 — the **carry-OUT** branch, whose "leavable
+without taking it" conjunct (`_pocket_leavable`) counted the beach flight as a Y-free way
+out. But `flyToBeach`'s arming does `(global0 get: 40)` — leaving via that exit you leave
+HOLDING the water, which is the USER's ruling verbatim ("no way to get out without it").
+Fix: `_edge_ggets_map` promoted to a shared memoized method; `_pocket_leavable` skips an
+exit that hands Y over. The carry-in refusal stays (it guards the mirror case).
+
+CURE 3, LANDED IN TWO HALVES (2026-09-02, after three instrument-poisoned rounds — the
+probe scripts' `git checkout` restores were wiping the uncommitted info-dict key, so the
+req composition ran STARVED and its "failures" were the instrument's):
+  * **an arming-context write is an exit INVARIANT, not an exit effect**: `edge_meta`
+    conjoins `entry_gwrites` onto every exit's `req` (registers the machine's own states
+    never write). The context performed the write before the machine ran; every exit
+    presupposes the value.
+  * **a value the crossing presupposes is not a value it produces**: `_reg_cost`'s
+    edge-set index skips a `sets{R:v}` whose row's `req` pins R to exactly v. Priced as a
+    producer, freeCeleste's free-alts exit intersected "minotaur defeated" down to FREE,
+    scarf-banned walks sailed through every 173-gated door, and the catacombs strandings
+    collapsed from three edges to one (`edge_strandings` bisection: 340→370/405/440 →
+    340→370). With the skip, seeded == seedless == golden minus the blessed-pending
+    sacredWater line, measured both ways.
+The SEED IS ON PERMANENTLY (opmodel); the diagnosis verdict on the park: the seed was
+honest all along, and its three KQ6 movers were two consumer bugs (the grant-blind toll,
+the presupposition-blind pricing) plus two already-dead drivers (T2/T3).
+
+FULL-ROUND MEASUREMENT (six games): LSL2/KQ4/KQ5/LB2 byte-identical; KQ6 = the
+blessed-pending sacredWater line only; GK1 = ONE spec, `rm455→rm800` growing from
+`(has:60 ∧ has:69)` to five items (+VoodooCode1 +reconVeve +braceMold). ⚠️ REPORTED
+LOUDLY: the growth is the reconVeve FP FAMILY — the three sketches' need sites are all
+day-3/4 rooms (240/260/300, 50/200/205/340, 460), DEAD ERAS at the day-10 descent; they
+count as "still needed past the edge" only because `edge_strandings`' `need & fwd_rooms`
+walks the FLAT graph back out of the endgame. The named cure — NEED-LIVENESS AT THE EDGE
+ERA (`_need_live`'s reading, applied to the carry-out test) — is its own future measured
+round and would retire the reconVeve/braceMold declared FPs with it. Play-wise the wider
+guard never bites (a day-10 player necessarily holds all five); it ships DECLARED, not
+silent. R4 note: the record is now fully closed (every `→50` in-edge rewrites the
+subject) yet the closure arm still emits nothing — the frozen-286 crosser finds another
+road; next diagnosis round continues at the day-4 stage probe.
+
 ## §1.22 The hounfour exists now: a variable ScriptID is a fan (2026-09-01, R2/R3 round 1)
 
 R2/R3's first gap was not scene boundaries — it was ABSENCE. The hounfour dispatches its twelve

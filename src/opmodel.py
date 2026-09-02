@@ -776,21 +776,23 @@ class OpEmitter:
                 "entry_armers": m.entry_armers, "entry_recv": m.entry_recv,
                 "entry_sources": m.entry_sources, "entry_site": m.entry_site,
                 "entry_ggets": frozenset(getattr(m, "entry_ggets", None) or ()),
+                "entry_gwrites": dict(m.entry_gwrites or {}),
                 "local_regs": dict(getattr(m, "local_regs", None) or {}),
                 "restores_control": set(getattr(m, "restores_control", None) or ()),
                 "chase_states": set(getattr(m, "chase_states", None) or ()),
                 # the writes every route to each state has performed -- read by `edge_meta`'s
                 # exit `sets`, so an early write rides its late `newRoom` (see the helper).
-                # ⛔ SEEDING WITH THE ARMING CONTEXT'S WRITES (`Machine.entry_gwrites`) IS
-                # PARKED (2026-09-01): `entry_writes=dict(m.entry_gwrites or {})` closed GK1's
-                # napoleon subject door (460->50 gains sets178=34) AND, alone, moved the KQ6
-                # GOLDEN -- the capture cutscenes' arming contexts write flags that then ride
-                # their exits, verify's world shifts, and the play-confirmed capture guards
-                # relocate toward the travel dispatch (two enforced oracle checks red).
-                # Bisected T1/T2/T3, docs GK1 §1.20: this and the unresolved-register seed are
-                # EACH sufficient to move KQ6, and both-off restores it byte-for-byte. Unpark
-                # together with that seed and the shared-steps feed, as ONE blessed round.
-                "acc_writes": C.acc_entry_writes(steps_by_state, m.start, entry_states),
+                # ⭐ UNPARKED 2026-09-02 (parked 2026-09-01): the arming context's writes seed
+                # the accumulator, so GK1's napoleon subject door closes (460->50 gains
+                # sets178=34). The park record blamed this seed for moving the KQ6 golden;
+                # the diagnosis (docs GK1 §1.28) found the seed HONEST and two consumers
+                # wrong: the sacredWater toll ignored what the crossing GRANTS
+                # (entry_ggets, cure 1), and `_reg_cost`'s edge-set index priced a value
+                # the crossing PRESUPPOSES as one it produces (the req-invariant
+                # composition + the presupposition skip, cure 3). With both cured, seeding
+                # is byte-identical on KQ6 -- held by four frozen goldens now, not by hand.
+                "acc_writes": C.acc_entry_writes(steps_by_state, m.start, entry_states,
+                                                 entry_writes=dict(m.entry_gwrites or {})),
                 "start": m.start, "delivered": delivered, "drops": drops, "moves": moves}
 
     def _resolve_prev_returns(self):

@@ -168,8 +168,13 @@ KNOWN_RED = {
         "KQ4: full output surface matches the frozen golden":
             "same single empty line; awaits the USER",
         "KQ6: full output surface matches the frozen golden":
-            "same single empty line; awaits the USER (the KQ6 axiom covers BEHAVIOUR moves; "
-            "an empty key appearing on every game at once is the documented precedent shape)",
+            "TWO awaited moves: the scene_carryins empty line (every game at once, the "
+            "documented precedent shape) AND -- 2026-09-02 -- the sacredWater toll row "
+            "retiring (`sacredWater@one-visit-toll-pocket/rm370->rm380`): the USER ruled it "
+            "FP on 2026-09-01 ('if you go see the oracle she gives you the sacred water, no "
+            "way to get out without it'), and `_pocket_leavable` now reads exactly that -- "
+            "flyToBeach's arming does `(global0 get: 40)`, so the exit is not a water-free "
+            "way out. Both refreshes await the USER's bless.",
     },
     # ⛔ NOT DECLARED (2026-09-01): the shared-steps-table feed briefly moved the KQ6 golden
     # (the capture guards toward the travel dispatch) AND two enforced oracle checks -- it was

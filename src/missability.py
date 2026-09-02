@@ -3653,6 +3653,19 @@ def edge_meta(em, regs):
         eo = entry_alts(info)
         er = entry_reqs(info, regs, dom)
         sm = _musts_of(info)
+        # ⭐ AN ARMING-CONTEXT WRITE IS AN EXIT INVARIANT, NOT AN EXIT EFFECT (cure 3, docs
+        # GK1 §1.28): the context performed it BEFORE the machine ever ran, so every exit
+        # PRESUPPOSES the value -- it rides the edge as REQ. Read as a free `sets` instead
+        # (the parked acc seeding), KQ6's freeCeleste exits became an unpriced 0->1 flip of
+        # "minotaur defeated" in the 173-projection and the catacombs carry-in frontier
+        # collapsed onto rm340->rm370. Composed only for registers the machine's own states
+        # never write -- a later path write may change the value, and those ride through
+        # `acc_writes` as sets, which is their honest side.
+        egw = {gi: v for gi, v in (info.get("entry_gwrites") or {}).items() if gi in regset}
+        if egw:
+            _ow = {gi for _K2, ps2 in info["states"].items()
+                   for p2 in ps2 for (gi, _v2) in p2[1]}
+            egw = {gi: v for gi, v in egw.items() if gi not in _ow}
         # What EVERY arming of this machine had already established.
         chain = None
         for armer in info.get("entry_armers", ()) or ():
@@ -3685,7 +3698,8 @@ def edge_meta(em, regs):
                     # the path condition of the flat edge this EXIT suppressed (see `suppressed`).
                     supp_rq, supp_own = _merged((info["room"], tr[1], info.get("inst")))
                     for R, vals in (list(sm.at(K, g).items()) + list(chain.items())
-                                    + list(inherited.items()) + list(supp_rq.items())):
+                                    + list(inherited.items()) + list(supp_rq.items())
+                                    + [(R2, {v2}) for R2, v2 in egw.items()]):
                         rq[R] = (rq[R] & vals) if R in rq else set(vals)
                     meta[(info["room"], tr[1])].append(
                         (rq, sets, tuple(exit_own | supp_own | a for a in alts)))
@@ -4385,9 +4399,19 @@ class IrSccReach(SccReach):
             # be there. Same composition as the writes: the cheapest crossing, intersected.
             regs = set(self.regs)
             for (_a, _b), metas in self._emeta.items():
-                for (_req, sets, alts) in metas:
+                for (rq_, sets, alts) in metas:
                     for Rk, vk in sets.items():
                         if Rk not in regs:
+                            continue
+                        # ⭐ A VALUE THE CROSSING PRESUPPOSES IS NOT A VALUE IT PRODUCES
+                        # (2026-09-02, cure 3's last piece): an arming-context write rides
+                        # its exit as req AND sets -- the edge happens AT R==v, it does not
+                        # create it. Priced as a producer, KQ6's freeCeleste exit (free
+                        # alts, req 173==1, sets 173:=1) intersected "minotaur defeated"
+                        # down to FREE, the scarf-banned walks sailed through every
+                        # 173-gated door, and the catacombs strandings collapsed onto one
+                        # edge. docs GK1 §1.28.
+                        if set(rq_.get(Rk, ())) == {vk}:
                             continue
                         cost = frozenset()
                         if alts:
@@ -8502,13 +8526,36 @@ class IrSccReach(SccReach):
                 return f"it moves {self.g.item_name(it)}, which is needed outside"
         return None
 
+    def _edge_ggets_map(self):
+        """(a, b) -> items EVERY delivering machine of that crossing co-grants
+        (Machine.entry_ggets, intersected -- the fact must hold on every way across).
+        KQ6's beach flight: `flyToBeach@380`'s arming does `(global0 get: 40)`, so
+        crossing 380->300 hands the sacred water over. Read by both toll branches."""
+        got = getattr(self, "_edge_ggets_memo", None)
+        if got is not None:
+            return got
+        out = {}
+        for i2 in self.em.machines:
+            gg2 = i2.get("entry_ggets") or frozenset()
+            for b2 in i2.get("delivered", ()):
+                k2 = (i2["room"], b2)
+                out[k2] = (out[k2] & gg2) if k2 in out else frozenset(gg2)
+        self._edge_ggets_memo = out
+        return out
+
     def _pocket_leavable(self, pocket, Y):
         """Can you exit `pocket` to an outside room WITHOUT owning Y? False only if every
-        pocket-exit edge REQUIRES Y in all its alternatives (Y forced, so not missable)."""
+        pocket-exit edge REQUIRES Y in all its alternatives (Y forced, so not missable) --
+        or HANDS Y OVER as you cross (`entry_ggets`): leaving via an exit whose own arming
+        grants Y, you leave holding it, which is the USER's sacredWater ruling ("no way to
+        get out without it")."""
+        gg = self._edge_ggets_map() if hasattr(self, "_edge_ggets_map") else {}
         for p in pocket:
             for q in self.edges.get(p, set()):
                 if q in pocket:
                     continue
+                if Y in gg.get((p, q), ()):
+                    continue                 # this exit hands Y over: not a Y-free way out
                 metas = self._emeta.get((p, q))
                 if not metas:
                     return True                  # ungated exit -> leavable
@@ -8750,19 +8797,11 @@ class IrSccReach(SccReach):
         placed = getattr(self.em.ts, "placed", {})
         start = self.em.cfg.start_room
         full = self.reach_rooms
-        # What each machine-delivered crossing HANDS OVER on the way through: the arming
-        # context's grants (Machine.entry_ggets -- docs GK1 §1.21 cure 1). KQ6's goodNews
-        # does `(global0 get: 40)` before arming the beach exit, so a toll row demanding
-        # the sacred water on that crossing would demand what the crossing itself gives
-        # (the USER-ruled FP: "if you go see the oracle she gives you the sacred water").
-        # Intersected over delivering machines -- the refusal must hold on EVERY way across.
-        edge_ggets = {}
-        for i2 in self.em.machines:
-            gg2 = i2.get("entry_ggets") or frozenset()
-            for b2 in i2.get("delivered", ()):
-                k2 = (i2["room"], b2)
-                edge_ggets[k2] = (edge_ggets[k2] & gg2) if k2 in edge_ggets \
-                    else frozenset(gg2)
+        # What each machine-delivered crossing HANDS OVER on the way through
+        # (Machine.entry_ggets, docs GK1 §1.21 cure 1) -- read by the carry-in refusal
+        # below AND by `_pocket_leavable`'s carry-out reading, one map for both.
+        # (hasattr: test_toll drives this method on a SimpleNamespace fake.)
+        edge_ggets = self._edge_ggets_map() if hasattr(self, "_edge_ggets_map") else {}
         out, seen = [], set()
         for (a, b), metas in sorted(self._emeta.items()):
             if a not in full:
