@@ -1381,6 +1381,43 @@ CHAINED entry (guard None) as always armable — it now carries its chain's ROOT
 an entry with `is_self` — which is no way IN: the closure skips self-redirects. neco(1→2)
 = `{307:0, 253:1}` derives correctly throughout.
 
+## §1.37 The §1.31 payoff, simulated: the proof holds, the payoffs meet two older gaps (2026-09-02)
+
+Simulated in the loaded model with the whole bundle (doomed arming, chain roots, self-redirects
+skipped, the fixed staged PRE, the windows applied to the branch tables and `_rstep` and
+`_emeta`, projections re-walked):
+  * **the once-only proof stands**: `PRE_3[65] = {0}`, `window(65==1) = {0,1}`, and the go-home
+    branch's deps read `{178:[2], 307:[1], 123:[0,1]}` — Grace's "go home" ends a day on days
+    0-1 only, derived from recorded structures alone;
+  * **R4 does NOT fire in the closure arm** — the flag-44-less crosser still reaches the goal,
+    through rm750's `(= day 9)` clamp (`showAMovie` state 3, `prev == 500`): the Africa flight
+    from Germany's hub, reachable at day 4 because the travel map's AIRPORT icon (flag 269,
+    raised by the travel agent — a RECORDED writer) is treated as always present (§1.35's
+    resolver gap). Icon presence, with an ignorance floor (carry the condition only when the
+    flag has a recorded writer; the bayou's 268 has none), places both flights honestly;
+  * **the day-3/4 FP rows retire as predicted** (reconVeve/braceMold at day 4 gone), but
+    every day-flip row moved to day 9 — the same phantom flight — and **R1's day-5 row is
+    GONE**: with go-home dead at day 4, the record's only day-4 ending is endDay's arm, whose
+    flag 248 comes from `sFullShow@290` (Magentia's full show) — armed by using ANY not-yet-
+    shown sketch (`_own_required` = ∅), but `entry_musts` reads it FLAT (all five sketches,
+    the reading kept deliberately since 2026-08-15 for KQ6's holeInTheWall), so day 4 costs
+    VoodooCode1 and the day-5 flip cannot strand it. Whether day 4 can truly end without the
+    first tomb sketch is R1's premise — USER-enumerated ground truth, to be asked, not flipped.
+
+SETTLED FROM THE SCRIPTS (2026-09-02h): `sFullShow@290` state 4 raises flag 248 ONLY under
+`register == 40`, and message 40 is VoodooCode1 (`doverb_item_messages`; 48/24/16 are
+policeVeve/veveCopy/reconVeve, which raise 450/451/452 instead). Flag 248's only other
+setter is `proc99_1` — `debugHandler`'s jump-to-day catch-up (script 99: debugHandler,
+dInvD, ourPlane), called from nowhere in play. Both day-4 endings (theMapPrint's arm and
+the bookstore re-check) require 248. So day 4 cannot end without SHOWING VoodooCode1 to
+Magentia; every day-5 player holds it; the day-5 flip strands nothing. **R1's row dying
+under the bundle is the model becoming right** — but R1 is enumerated ground truth, and
+the ruling is the USER's. The 2026-08-28 catch stood on the go-home leak.
+
+And the phantom flights: the airport icon's presence flag 269 IS recorded (`(511, 220, 1)`,
+the travel agent's topic 44) but with no captured topic condition, so carrying icon
+presence would gate Germany on a flag producible any day — the day-9 rows and R4's
+unfired arm both wait on whatever ties the travel agent's topic to its day.
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
