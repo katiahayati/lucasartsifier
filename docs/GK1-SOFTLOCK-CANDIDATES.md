@@ -1151,6 +1151,25 @@ The cure list after the full hunt, all derived, none KQ6-shaped:
 3. A cost channel for edge sets — the unpriced-flip principle above (makes the gwrites seed
    sound; also audits today's pre-existing exit-write sets).
 
+## §1.29 R4's TRUE WALL: once-only flag 65, third consumer (2026-09-02)
+
+With the record closed (§1.28) the closure arm still emitted nothing, and the emust round
+(arming costs required ⊆ items — a genuine soundness fix: without it the day-end/day-5/
+flag-47/flag-74/trace cycle closed permissively) narrowed it to one strand. The
+why-satisfiable tracer over the day-4 demand web ({689, 490, 278, 469} + flag 15) then
+proved every producer HONEST for the deposit-less crosser — wolfPhone-priced 689,
+CTR-permissive 490, Mosely-interrogation 278, reconVeve-priced 469 — except the one that
+breaks R4: **`257:=1 @rm50` under `178==2 ∧ flag65(307)`, with NO day gate — the go-home
+day-ender.** A crosser who never spent flag 65 carries it into day 4 and ends the day
+without the trace, in the record as written. The truth is ONCE-ONLY: the go-home handler's
+recorded co-write (raise 15 / clear 65, the 5db647a landing) spends the flag — but the
+closure's accumulate-only value sets cannot count spends, and the old once-only round
+(designed 2026-08-31, BLOCKED: the day-window spelling died to the witness trace; the
+honest wall was a 5-wide joint) now has its THIRD consumer after the reconVeve and
+braceMold FPs. R4 rests exactly there — one mechanism, three payoffs, waiting on a
+counting-capable spelling (multiset closure, or a spent-flag refinement with the co-write
+as its record).
+
 ## §1.28 UNPARKING THE DOOR-CLOSER ROUND (2026-09-02, the USER's "almost surely buggy")
 
 The USER: *"the parked KQ6-moving round almost surely is buggy, so please diagnose and

@@ -7119,21 +7119,28 @@ class IrSccReach(SccReach):
         dbg = frozenset(self.em.cfg.debug_globals)
         for (r2, _sc2, gi2, v2, g2) in self.em.handler_writes:
             if not _debug_gated_guard(g2, dbg):    # a cheat write is not availability
-                writes.append((gi2, v2, r2, g2, None))
+                writes.append((gi2, v2, r2, g2, None, frozenset()))
         for r2, seq in getattr(self.em, "init_seq", {}).items():
             for (gi2, v2, g2) in seq:
                 if not _debug_gated_guard(g2, dbg):
-                    writes.append((gi2, v2, r2, g2, None))
+                    writes.append((gi2, v2, r2, g2, None, frozenset()))
         for i2 in all_machines(self.em):
             ents = [eg for (_K2, eg) in list(i2.get("entries", ()))
                     + list(i2.get("init_entries", ()))]
-            for _K2, ps2 in i2["states"].items():
+            # ...and what ARMING the machine costs in ITEMS (`entry_musts`): a write whose
+            # cutscene cannot be armed without the tattoo trace is not producible without
+            # it. Necessary conditions read against the over-approximated item set stay
+            # sound -- and without this, GK1's day-end/day-5/flag-47/flag-74/trace CYCLE
+            # closed permissively through the emust-blind gap and R4 never fired.
+            emu = entry_musts(i2)
+            for K2, ps2 in i2["states"].items():
+                mu = frozenset(emu.get(K2, ()))
                 for (g2, w2, gg2, _c2, _tr2) in ps2:
                     for (gi2, v2) in w2:
-                        writes.append((gi2, v2, i2["room"], g2, ents))
+                        writes.append((gi2, v2, i2["room"], g2, ents, mu))
                     for x2 in (gg2 or ()):
                         it2 = x2 if isinstance(x2, int) else x2[0]
-                        grants.append((it2, i2["room"], g2, ents))
+                        grants.append((it2, i2["room"], g2, ents, mu))
         for (r2, _sc2, it2, g2) in getattr(self.em, "handler_gets", ()):
             gets.append((it2, r2, g2))
         edges = []
@@ -7146,11 +7153,11 @@ class IrSccReach(SccReach):
         # arm skips it outright instead of running two closures to learn nothing.
         gate_regs = set()
         atoms = []
-        for (_gi2, _v2, _r2, g2, ents2) in writes:
+        for (_gi2, _v2, _r2, g2, ents2, _mu2) in writes:
             _cmp_atoms(g2, atoms)
             for e2 in (ents2 or ()):
                 _cmp_atoms(e2, atoms)
-        for (_it2, _r2, g2, ents2) in grants:
+        for (_it2, _r2, g2, ents2, _mu2) in grants:
             _cmp_atoms(g2, atoms)
             for e2 in (ents2 or ()):
                 _cmp_atoms(e2, atoms)
@@ -7336,13 +7343,13 @@ class IrSccReach(SccReach):
                 if room in rooms:
                     for gi2, v2 in ivs.items():
                         land(gi2, v2)
-            for (gi2, v2, r2, g2, ents) in writes:
-                if r2 in rooms and sat(g2, True, r2) and (
+            for (gi2, v2, r2, g2, ents, mu2) in writes:
+                if r2 in rooms and mu2 <= items and sat(g2, True, r2) and (
                         ents is None or not ents
                         or any(sat(e, True, r2) for e in ents)):
                     land(gi2, v2)
-            for (it2, r2, g2, ents) in grants:
-                if r2 in rooms and sat(g2, True, r2) and (
+            for (it2, r2, g2, ents, mu2) in grants:
+                if r2 in rooms and mu2 <= items and sat(g2, True, r2) and (
                         not ents or any(sat(e, True, r2) for e in ents)):
                     items.add(it2)
             for (it2, r2, g2) in gets:

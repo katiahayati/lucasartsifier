@@ -106,10 +106,16 @@ KNOWN_RED = {
         # read `own(19) OR own(20)` out of the deposit's doVerb case, and the group row
         # carries the pair as ONE alternatives unit.
         "R4: flag 44 (Cazaunoux topic 54 -> Crash's 'Voodoo Hounfour') is caught as a stranding":
-            "a FLAG stranding: the Teller lowering (2026-08-28) makes Crash's topic 8 a `flag 44` "
-            "site and rm270's topic 54 its only writer, but no detector treats a flag value as "
-            "the strandable resource (register_strandings strands ITEMS); the topic-said array "
-            "global182 (proc50_5..8) is also still unmodelled",
+            "REBLOCKED ON ONCE-ONLY FLAG 65 (2026-09-02, docs GK1 1.29). The old reasons are "
+            "gone: the producible closure treats flags as strandable, the record's every ->50 "
+            "in-edge rewrites the subject, and the closure correctly freezes flag 44 for the "
+            "deposit-less day-4 crosser. The why-satisfiable tracer then proved every other "
+            "link in the day-4 demand web honestly producible EXCEPT the last: `257:=1 @rm50` "
+            "under `178==2 AND flag65` with NO day gate -- the go-home day-ender. A crosser "
+            "carrying flag 65 from day 1 ends day 4 without the trace IN THE RECORD, and the "
+            "closure's accumulate-only value sets cannot express that go-home SPENDS the flag "
+            "(the raise-15/clear-65 co-write is recorded; counting is not). Third consumer of "
+            "the once-only mechanism, after the reconVeve and braceMold FPs.",
     },
     "test_lb2_ground_truth.py": {
         "mechanism pinned: pressPass":
