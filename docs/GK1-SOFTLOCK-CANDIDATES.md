@@ -1342,6 +1342,62 @@ pricing alone. Control run per [[instruments-lie-run-the-control]]: the worktree
 cache-poisoned one. Same standing as `_chain_branch_costs`: a PREREQUISITE invisible on its
 own — R2's detector (the flag-twin of `scene_carryins`) is what will consume the price.
 
+### §1.27 BUILT — the closure stands; R4's last mile is the PARKED round (2026-09-01)
+`_pclose` + the producible-dead-end arm shipped in `register_value_strandings` (counter
+flips only; b0 only where PRE-confinement is sound). Three closure bugs found and fixed
+in-flight, each a lesson worth its comment:
+  * edge SETS only landed when the target room was NEW — PV[prevRoom] kept a handful of
+    first-arrival values and every `prev == N` band (GK1's rm500 fan → the goal) stayed
+    shut;
+  * POST carried the FLIP register's pre-flip values — `270→280`'s day gate satisfied
+    after the day-4 flip; cured by confining R to its FORWARD-reachable values (a counter
+    may not be wound backwards — `_counters`' own rule);
+  * a carried scratch value survived to any use site — `178 == 12` (Cazaunoux's subject)
+    satisfied the flag-44 write at rm50 post-flip; cured by the restricted-projection
+    refinement: a (room, value) pair is usable only if reachable within the CLOSURE'S
+    rooms in that register's own projection (over-approx preserved: the closure's rooms
+    over-approximate). Debug-gated writes are excluded from the tables outright.
+With these, the GOOD-side closure reaches the goal (rooms#55, exactly the sealed band
+missing) — the arm is live end to end.
+
+⚠️ COST, learned the hard way: the first full-detector run OOM-killed at 4.2GB on the 5GB
+WSL2 box (the QFG2 lesson — run bounded). The fix went through three shapes before the
+structural one: the killer was not any single walk (`MemoryError` on 77-pair sets was the
+tell) but ~50 rooms-growth generations × ~130 registers of regenerate-and-free churn
+fragmenting the heap. The closure is now TWO-PASS — pass 1 unrefined, pass 2 with every
+restricted walk computed ONCE against pass 1's frozen rooms (a superset of the refined
+result, so the walks stay over-approximations) — plus: the S-candidate loop skips
+registers nothing in the tables compares (`gate_regs`); walks that would still be huge
+fall back to no-refinement, loudly; and a cross-closure walk cache rides on the model.
+
+⭐ AND ONE REAL SOUNDNESS CATCH from the same round: a PRE (holdings) closure must NEVER
+be refined. Refinement only removes, and removing from the seed of what the crossing
+player may hold UNDER-approximates the player — the unsound direction for every claim
+built on top. `refine=False` is mandatory there, and doubles as the fast early verdict
+on the POST side (pass 1 is a superset: a goal missing from it is missing, full stop).
+Five games' snapshots survived the arm unchanged and byte-identical (LB2's act counter
+and KQ6's 162 both ran it: zero rows).
+
+⭐ THE ARM'S FIRST ROW WAS AN FP, AND ITS CURE IS THE RECORD'S OWN DISTINCTION. The first
+complete GK1 run emitted `reg514==[0]@seal123=10->[680]` — flag 272 (the confessional
+key-scene gate) claimed stranded at the day-10 flip. Per-seed bisection: from rm205 and
+rm750 (the real day-9→10 ends) the 272-less crosser provably still wins; the only failing
+witness was rm800 — whose "step into 10" is the ceremony's own `(= day 10)`, an UNORDERED
+clamp the may-not-wind-back rule fans into steps from every value. A forced write is not
+a point of player choice: the projections fabricate a player standing at the clamp with
+state the game never lets them carry there. Cure: `_build_product` now records the fanned
+pairs (`_clamp_steps`) at the moment it synthesizes them, and the closure arm refuses
+clamp rooms as flip witnesses. No thresholds — the synthesis site itself is the marker. R4 still does not fire, and the remaining leak is
+the RECORD, not the closure: three in-edges of rm50 lack the subject-set —
+`300→50`/`310→50` carry a set-less FLAT meta beside the machine edge (the edges are NOT
+machine_delivered though `sTalkToKeeper` K=9 exits there writing 178:=32 — the
+certain-only-delivered gap), and `460→50` is delivered but `askBartender`'s exit writes
+nothing (the subject write sits in its ARMING HANDLER — the entry-writes composition).
+Both are ⛔ THE PARKED DOOR-CLOSER ROUND (§1.21: entry_ggets / certain-only delivered /
+edge-set costs — the three KQ6 movers, each diagnosed as a FIX). The park's own terms are
+met — something real hangs on it — so R4 now WAITS ON THE USER'S BLESS to unpark that
+round; the closure emits zero rows until then, measured.
+
 ## §1.26 R2's detector, DESIGNED: the register carry-in (2026-09-01)
 
 Why `register_value_strandings` cannot carry R2 as-is, diagnosed to the line:
@@ -1403,6 +1459,40 @@ dropped and the case guard stays opaque. Two rounds remain, measured separately:
     snapshot string and the ground-truth caught-builder gain the group spelling
     (the oracle's pair unit is `frozenset({signalDev, signalDev2})`). The cost model's
     flat frozensets stay untouched — alternatives live in the ROW, not in `cheapest`.
+
+## §1.27 R4's detector, DESIGNED: the post-flip producible closure (2026-09-01)
+
+Re-probed after §1.25/§1.26 shipped, the R4 chain is now FULLY RECORDED — the two links
+§1.10.4 called open have both closed under other rounds' work:
+  * the return edge `50→280` IS priced: `emeta[(50,280)].req = {12:[280], 178:[...],
+    123:[0..3]}` (return-to-sender, 2026-08-30) — and the 123-projection reaches rm280
+    at days 0–3 ONLY. Cazaunoux's house is provably sealed at day 4 in the model as it is.
+  * flag 74's write guard carries the topic gate — `… ∧ (286!=0 ∨ 289!=0)` (the Teller
+    band lowering) — invisible to `guard_reqs` only because an OR honestly constrains
+    nothing. Flag 44's write needs `178==12` (written only at rm280); flag 47's needs
+    `123==5` (day 5 — circular: day 5 needs day 4 to end, which needs the trace ← 74).
+  * the demand end is recorded too: flag 15's day-4 arms cost items {…, 26=tatooTrace, …}
+    and deps {689/490/278/469: [1]} — exactly §0's day-4 flag set.
+
+What is missing is ONE construction, and it is not a joint (the docs' old verdict stands —
+this is a CHAIN): the **post-flip producible closure**. For a flip (R, w) and a carried
+value S==b: over-approximate what the crossing player can ever produce, as a mutual
+fixpoint of rooms × (register, value) pairs × items over the recorded write branches:
+  * PV0 = each register's values attainable at the flip room in its own projection
+    (S restricted to b); Rooms0 = the flip room;
+  * a write (S2, room, v2) joins PV when room ∈ Rooms and every MUST-dep has an allowed
+    value in PV; an item joins when some source's room ∈ Rooms and its guard's deps ⊆ PV
+    and its cost items ⊆ items; a room joins Rooms when some in-edge's req reads PV-allowed
+    values and its alts are item-satisfiable.
+Monotone and over-approximating, so an UNPRODUCIBLE verdict is sound. Bounded: cost-tier
+registers × small domains × ~80 rooms. The detector conjunct: the crossing at S==b is a
+DEAD END (no goal room enters the closure) while the S∈acc crossing reaches the goal
+(the existing flip-side conjunct), and the fix existed pre-flip (existing causality half).
+For R4: 286==1 never enters the closure (rm280 outside Rooms), 289==1 never (needs 123==5,
+which needs the 4→5 step, whose gate 15==1@day4 costs item 26, whose source guard needs
+74, which needs 286∨289 — the cycle the fixpoint never closes), so the trace, the day-end,
+day 5's rooms and every goal fall out — the row names flag 44 at the day flip, which is
+exactly the oracle's ask (`register==286` among register-stranding rows).
 
 ### §1.26 SHIPPED — R2 IS CAUGHT, rounds B+C (2026-09-01)
 Round B (shared messages → groups) measured alone first and EXPOSED A FLAT FOLD: the two

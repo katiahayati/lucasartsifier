@@ -3963,6 +3963,12 @@ class IrSccReach(SccReach):
         # `<= v`, not `< v`: a write of the value it already holds is a harmless self-write, and
         # refusing it would be a second unevidenced claim.
         self._counters = set()
+        # ...remembering WHICH steps this synthesis invented: a fanned unordered write is
+        # the room FORCING the value (GK1's ceremony does `(= day 10)` on arrival), not a
+        # transition the player times. `register_value_strandings`' closure arm must not
+        # seed a flip witness there -- the projections would fabricate a player who stands
+        # at the forced write with state the game never lets them carry to it.
+        self._clamp_steps = set()
         for gi in list(self._rstep):
             steps = {st for room in self._rstep[gi].values() for st in room}
             vals = ({v for st in steps for v in st}
@@ -3974,6 +3980,7 @@ class IrSccReach(SccReach):
                 for v in sorted(wr):
                     self._rstep[gi][room] |= {(u, v) for u in vals if u <= v}
                     wr.discard(v)
+                    self._clamp_steps.add((gi, room, v))
         self._joints = []
         self._apply_hazard_gates()
         self._apply_death_traps()
@@ -7075,6 +7082,278 @@ class IrSccReach(SccReach):
             out[room].sort()
         return out
 
+    def _closure_tables(self):
+        """The raw material of `_pclose`, harvested once: every recorded WRITE, GRANT and
+        EDGE with its ORIGINAL guard tree. The branch tables (`_wbranch`) are the wrong
+        source here: `guard_reqs` honestly drops an atom inside an OR, and the closure's
+        whole point is a disjunctive gate (GK1's flag-74 write under `flag44 OR flag47`),
+        so satisfiability is asked of the guard TREE (`_sat_under`), not of a deps map."""
+        got = getattr(self, "_pclose_tables", None)
+        if got is not None:
+            return got
+        writes, grants, gets = [], [], []
+        dbg = frozenset(self.em.cfg.debug_globals)
+        for (r2, _sc2, gi2, v2, g2) in self.em.handler_writes:
+            if not _debug_gated_guard(g2, dbg):    # a cheat write is not availability
+                writes.append((gi2, v2, r2, g2, None))
+        for r2, seq in getattr(self.em, "init_seq", {}).items():
+            for (gi2, v2, g2) in seq:
+                if not _debug_gated_guard(g2, dbg):
+                    writes.append((gi2, v2, r2, g2, None))
+        for i2 in all_machines(self.em):
+            ents = [eg for (_K2, eg) in list(i2.get("entries", ()))
+                    + list(i2.get("init_entries", ()))]
+            for _K2, ps2 in i2["states"].items():
+                for (g2, w2, gg2, _c2, _tr2) in ps2:
+                    for (gi2, v2) in w2:
+                        writes.append((gi2, v2, i2["room"], g2, ents))
+                    for x2 in (gg2 or ()):
+                        it2 = x2 if isinstance(x2, int) else x2[0]
+                        grants.append((it2, i2["room"], g2, ents))
+        for (r2, _sc2, it2, g2) in getattr(self.em, "handler_gets", ()):
+            gets.append((it2, r2, g2))
+        edges = []
+        for a2, bs2 in self.edges.items():
+            for b2 in bs2:
+                for (rq2, st2, al2) in self._emeta.get((a2, b2), (self._FREE,)):
+                    edges.append((a2, b2, rq2, st2, al2))
+        # ...and the registers any of it actually READS: a register no guard, entry or
+        # edge requirement compares can never change a closure's verdict, so the dead-end
+        # arm skips it outright instead of running two closures to learn nothing.
+        gate_regs = set()
+        atoms = []
+        for (_gi2, _v2, _r2, g2, ents2) in writes:
+            _cmp_atoms(g2, atoms)
+            for e2 in (ents2 or ()):
+                _cmp_atoms(e2, atoms)
+        for (_it2, _r2, g2, ents2) in grants:
+            _cmp_atoms(g2, atoms)
+            for e2 in (ents2 or ()):
+                _cmp_atoms(e2, atoms)
+        for (_it2, _r2, g2) in gets:
+            _cmp_atoms(g2, atoms)
+        gate_regs = {r3 for (r3, _op3, _v3, _p3) in atoms}
+        for (_a2, _b2, rq2, _st2, _al2) in edges:
+            gate_regs |= set(rq2)
+        self._pclose_tables = (writes, grants, gets, edges, gate_regs)
+        return self._pclose_tables
+
+    def _pclose(self, rooms0, pv0, items0, confine, refine=True):
+        """The PRODUCIBLE CLOSURE (docs GK1 §1.27): everything a player seeded at `rooms0`
+        with holdings `pv0`/`items0` can EVER produce, as one mutual fixpoint of rooms x
+        (register, value) pairs x items over the recorded writes, grants and edges.
+
+        PERMISSIVE in every unreadable place -- an opaque conjunct satisfies, an untracked
+        register satisfies, an unguarded write fires -- and `confine` caps a register's
+        value set (values outside it neither satisfy an atom nor land from a write). So
+        the closure OVER-approximates, and the only claims it supports are UNPRODUCIBILITY
+        ones: a room or value outside the closure is one no story lets this player reach.
+
+        TWO PASSES (2026-09-01c, the OOM lesson): pass 1 runs with no restricted-
+        projection refinement; pass 2 re-runs with every restricted walk computed ONCE
+        against pass 1's FINAL rooms -- a frozen superset of the refined result's rooms,
+        so the walks stay over-approximations. The first spelling regenerated every walk
+        at every rooms-growth generation, and ~50 generations x ~130 registers of
+        allocate-and-free churn ratcheted the 5GB box to death by fragmentation (the
+        tell: MemoryError on 77-pair sets).
+
+        `refine=False` runs pass 1 alone. That is MANDATORY for a PRE (holdings) closure:
+        refinement only removes, and removing from a holdings seed under-approximates the
+        player -- the unsound direction for every claim built on top. It is also the fast
+        early verdict for a POST closure: pass 1 is a superset, so a goal missing from it
+        is missing from the refined result too."""
+        r1, p1, i1 = self._pclose_pass(rooms0, pv0, items0, confine, None)
+        if not refine:
+            return r1, p1, i1
+        return self._pclose_pass(rooms0, pv0, items0, confine, frozenset(r1))
+
+    def _pclose_pass(self, rooms0, pv0, items0, confine, rp_rooms):
+        writes, grants, gets, edges, _gr = self._closure_tables()
+        pv = {k: set(vs) for k, vs in pv0.items()}
+        items = set(items0)
+        rooms = set(rooms0)
+        rooms_init = set(rooms0)
+        tracked = set(getattr(self, "_cost_regs", None) or self.regs)
+
+        def allowed(reg):
+            base = pv.get(reg, {0})
+            c = confine.get(reg)
+            return base & c if c is not None else base
+
+        # ⭐ A CARRIED VALUE MUST SURVIVE THE WALK TO ITS USE. PV is value-accumulative,
+        # so "178 once held 12" would satisfy `178 == 12` at the interrogation screen
+        # forever -- but re-ARMING Cazaunoux's interrogation post-flip needs the crossing
+        # 280->50, and rm280 is outside this player's world. For a register with its own
+        # PROJECTION, the pair (room, value) is checkable: reachable within the CLOSURE'S
+        # rooms, in that register's own projection. The closure's rooms over-approximate,
+        # so the restricted walk over-approximates too, and refuting an atom on it is
+        # sound. Recomputed as rooms grow (monotone upward with them).
+        rp_memo = {}
+
+        def _rp(X):
+            if rp_rooms is None:
+                return None                    # pass 1: no refinement
+            key = X
+            if key in rp_memo:
+                return rp_memo[key]
+            # ...and ACROSS closures: within one flip's S-loop the refined room set is
+            # usually identical closure to closure, so the walk is shared on the model.
+            xk = (X, rp_rooms, frozenset(pv0.get(X, ())), frozenset(rooms_init))
+            xc = getattr(self, "_rp_xcache", None)
+            if xc is not None and xk in xc:
+                rp_memo[key] = xc[xk]
+                return xc[xk]
+            # OVERFLOW -> NO REFINEMENT, which is the permissive (sound) fallback: a walk
+            # too big to run refutes nothing. GK1's message-valued registers carry
+            # hundreds of values, and one such walk was a MemoryError on the 5GB box.
+            if (len(self.em.reg_vals.get(X, ())) + 1) * len(rp_rooms) > 50000:
+                rp_memo[key] = None
+                return None
+            iw = self._inroom.get(X, {})
+            rs = self._rstep.get(X, {})
+            # Seeds: the carried values are in hand AT the seed rooms; the initial value
+            # (0, or the room's own unconditional init write) is available everywhere the
+            # closure stands. Over-approximations both, which is this walk's contract.
+            try:
+                seen = {(q0, v0) for q0 in rooms_init
+                        for v0 in set(pv0.get(X, ())) | {0}}
+                for q0 in rp_rooms:
+                    seen.add((q0, self.em.init_writes.get(q0, {}).get(X, 0)))
+                q = list(seen)
+                cap = 200000
+                while q:
+                    (q0, v0) = q.pop()
+                    if len(seen) > cap:
+                        raise MemoryError("rp cap")
+                    for v1 in iw.get(q0, ()):
+                        if (q0, v1) not in seen:
+                            seen.add((q0, v1))
+                            q.append((q0, v1))
+                    for (f1, t1) in rs.get(q0, ()):
+                        if f1 == v0 and (q0, t1) not in seen:
+                            seen.add((q0, t1))
+                            q.append((q0, t1))
+                    for b1 in self.edges.get(q0, ()):
+                        if b1 not in rp_rooms:
+                            continue
+                        for (rq1, st1, _al1) in self._emeta.get((q0, b1),
+                                                                (self._FREE,)):
+                            want = rq1.get(X)
+                            if want is not None and v0 not in want:
+                                continue
+                            v1 = st1.get(X, v0)
+                            if (b1, v1) not in seen:
+                                seen.add((b1, v1))
+                                q.append((b1, v1))
+            except MemoryError:
+                # Too big to run refutes nothing: permissive fallback, and NAME the
+                # register so the cost is a diagnosis, not a mystery.
+                try:
+                    n3 = len(seen)
+                except NameError:
+                    n3 = -1
+                seen = q = None
+                import sys as _sys
+                print(f"  [rp-overflow] reg {X} at {n3} pairs, rooms={len(rp_rooms)}",
+                      file=_sys.stderr)
+                rp_memo[key] = None
+                return None
+            rp_memo[key] = seen
+            if xc is not None:
+                xc[xk] = seen
+            return seen
+
+        proj_scalar = {X for X in self.proj if not isinstance(X, tuple)}
+
+        def sat(g, pol=True, at=None):
+            if g is None:
+                return True
+            if isinstance(g, list):
+                return all(sat(x, pol, at) for x in g) if pol else \
+                    any(sat(x, pol, at) for x in g)
+            if isinstance(g, GAnd):
+                return all(sat(k, pol, at) for k in g.kids) if pol else \
+                    any(sat(k, pol, at) for k in g.kids)
+            if isinstance(g, GOr):
+                return any(sat(k, pol, at) for k in g.kids) if pol else \
+                    all(sat(k, pol, at) for k in g.kids)
+            if isinstance(g, GNot):
+                return sat(g.kid, not pol, at)
+            if isinstance(g, Pred):
+                if g.kind == "OWN":
+                    return (g.var in items) if pol else True
+                if g.kind == "CMP" and g.var in tracked:
+                    try:
+                        v = int(g.value)
+                    except (TypeError, ValueError):
+                        return True
+                    av = allowed(g.var)
+                    if at is not None and g.var in proj_scalar:
+                        rp = _rp(g.var)
+                        if rp is not None:
+                            av = {v2 for v2 in av if (at, v2) in rp}
+                    if g.op == "==":
+                        return (v in av) if pol else bool(av - {v})
+                    if g.op == "!=":
+                        return bool(av - {v}) if pol else (v in av)
+                    return True              # relational: permissive
+                return True                  # OPAQUE / SAID / IPROP / untracked
+            return True                      # CTR / POS tuples: permissive
+
+        def land(reg, v):
+            c = confine.get(reg)
+            if c is not None and v not in c:
+                return
+            pv.setdefault(reg, {0}).add(v)
+
+        for _ in range(64):
+            n0 = (len(rooms), sum(len(v) for v in pv.values()), len(items))
+            for room, ivs in self.em.init_writes.items():
+                if room in rooms:
+                    for gi2, v2 in ivs.items():
+                        land(gi2, v2)
+            for (gi2, v2, r2, g2, ents) in writes:
+                if r2 in rooms and sat(g2, True, r2) and (
+                        ents is None or not ents
+                        or any(sat(e, True, r2) for e in ents)):
+                    land(gi2, v2)
+            for (it2, r2, g2, ents) in grants:
+                if r2 in rooms and sat(g2, True, r2) and (
+                        not ents or any(sat(e, True, r2) for e in ents)):
+                    items.add(it2)
+            for (it2, r2, g2) in gets:
+                if r2 in rooms and sat(g2, True, r2):
+                    items.add(it2)
+            for (a2, b2, rq2, st2, al2) in edges:
+                # NOT `or b2 in rooms`: an edge into an already-present room still LANDS
+                # its sets -- above all prevRoom, which every crossing writes. Skipping
+                # them left PV[prev] with a handful of first-arrival values and every
+                # `prev == N`-gated band (GK1's rm500 fan) permanently shut.
+                if a2 not in rooms:
+                    continue
+                bad2 = False
+                for reg2, vs2 in rq2.items():
+                    if reg2 not in tracked:
+                        continue
+                    av2 = allowed(reg2)
+                    if reg2 in proj_scalar:
+                        rp2 = _rp(reg2)
+                        if rp2 is not None:
+                            av2 = {v3 for v3 in av2 if (a2, v3) in rp2}
+                    if not (set(vs2) & av2):
+                        bad2 = True
+                        break
+                if bad2:
+                    continue
+                if al2 and not any(set(x2) <= items for x2 in al2):
+                    continue
+                rooms.add(b2)
+                for reg2, v2 in st2.items():
+                    land(reg2, v2)
+            if (len(rooms), sum(len(v) for v in pv.values()), len(items)) == n0:
+                break
+        return rooms, pv, items
+
     def register_value_strandings(self):
         """Crossing a SEAL while a register holds a value the far side rejects -- the REGISTER
         twin of `register_strandings`' item rows, built on the same flips and the same walks.
@@ -7183,6 +7462,94 @@ class IrSccReach(SccReach):
                                                                   if writes.get(q, set()) & acc),
                                             "flip_rooms": [r],
                                             "_sealed": frozenset(a)})
+                # ⭐ THE PRODUCIBLE-CLOSURE ARM (docs GK1 §1.27). The conjuncts above need
+                # a machine whose ARMING demands S -- a demand the record can miss when it
+                # sits one write further up (GK1's flag 44 gates flag 74's WRITE, inside an
+                # OR; nothing arms on 44 itself). This arm asks the question end to end
+                # instead: can the player who crosses this seal carrying S == b0 still
+                # PRODUCE a winning story? `_pclose` over-approximates everything that
+                # player can ever make true; if the GOAL never enters their closure while
+                # the unconstrained crosser's closure reaches it, the carried value is the
+                # difference, and the flip at S == b0 is a dead end. COUNTER flips only --
+                # the monotone point-of-no-return shape (`_counters`, the same qualifier
+                # `_gate_joints` measured as load-bearing); b0 only where PRE-confinement
+                # is sound (no recorded write produces b0, so holding b0 at the crossing
+                # means having held it always).
+                if not isinstance(R, tuple) and R in getattr(self, "_counters", ()):
+                    wb_prod = getattr(self, "_pv_produced", None)
+                    if wb_prod is None:
+                        wb_prod = defaultdict(set)
+                        for (S3, _r3, v3) in self._wbranch:
+                            wb_prod[S3].add(v3)
+                        self._pv_produced = wb_prod
+                    domR = set(self.em.reg_vals.get(R, ())) | {w}
+                    # A counter may not be wound backwards (the `_counters` rule), so the
+                    # crossing player's R is confined POST-flip to the values FORWARD-
+                    # reachable from w: without this, PRE's carried 123 in {0..3}
+                    # satisfied GK1's `270->280` day gate AFTER the day-4 flip and the
+                    # whole seal evaporated. Ordered steps walk forward; an unordered
+                    # write is settable any time and stays in.
+                    fwd = {w}
+                    grew = True
+                    while grew:
+                        grew = False
+                        for _r3, sts3 in self._rstep.get(R, {}).items():
+                            for (f3, t3) in sts3:
+                                if f3 in fwd and t3 not in fwd:
+                                    fwd.add(t3)
+                                    grew = True
+                    for vs3 in self._inroom.get(R, {}).values():
+                        fwd |= set(vs3)
+                    for r in sorted(seed_rooms):
+                        if (R, r, w) in getattr(self, "_clamp_steps", ()):
+                            continue    # a forced write, not a crossing the player times
+                        a, bwalk = _flip_at(r)
+                        if bwalk is None or (goal and not (goal & a)):
+                            continue
+                        self._rp_xcache = {}
+                        pre_g = self._pclose({self.em.cfg.start_room}, {}, set(),
+                                             {R: domR - {w}}, refine=False)
+                        pvw = dict(pre_g[1])
+                        pvw[R] = set(pvw.get(R, {0})) | {w}
+                        post_g = self._pclose({r}, pvw, pre_g[2], {R: set(fwd)})
+                        if goal and not (goal & post_g[0]):
+                            continue          # the flip dooms everyone: not S's fault
+                        gate_regs = self._closure_tables()[4]
+                        for S in sorted(self.regs):
+                            if S in comps or S == prev or S not in gate_regs:
+                                continue
+                            sst = self._pstates.get(S, set())
+                            for b0 in sorted({v for (r3, v) in sst if r3 == r}
+                                             - wb_prod.get(S, set())):
+                                if not (set(pre_g[1].get(S, {0})) - {b0}):
+                                    continue  # S == b0 is universal, not a choice
+                                pre_b = self._pclose(
+                                    {self.em.cfg.start_room}, {}, set(),
+                                    {R: domR - {w}, S: {b0}}, refine=False)
+                                pvb = dict(pre_b[1])
+                                pvb[R] = set(pvb.get(R, {0})) | {w}
+                                # S is NOT confined here: whether the crossing player can
+                                # still fix S is exactly what the closure must decide.
+                                # Pass 1 first -- its rooms are a SUPERSET of the refined
+                                # result's, so a goal missing there is missing, full stop;
+                                # the refined pass runs only to double-check a pass-1 leak.
+                                post_b = self._pclose({r}, pvb, pre_b[2],
+                                                      {R: set(fwd)}, refine=False)
+                                if goal and (goal & post_b[0]):
+                                    post_b = self._pclose({r}, pvb, pre_b[2],
+                                                          {R: set(fwd)})
+                                if goal and not (goal & post_b[0]):
+                                    out.append({
+                                        "pattern": "producible-dead-end",
+                                        "register": R, "value": w,
+                                        "reg": S, "bad": [b0],
+                                        "accepted": sorted(
+                                            set(pre_g[1].get(S, {0})) - {b0}),
+                                        "demanded_at": sorted(goal),
+                                        "via": "producible-closure",
+                                        "raise_rooms": [],
+                                        "flip_rooms": [r],
+                                        "_sealed": frozenset(post_b[0])})
         return self._collapse_value_flips(out)
 
     @staticmethod
