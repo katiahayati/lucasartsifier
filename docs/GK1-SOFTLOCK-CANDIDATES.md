@@ -1403,3 +1403,27 @@ dropped and the case guard stays opaque. Two rounds remain, measured separately:
     snapshot string and the ground-truth caught-builder gain the group spelling
     (the oracle's pair unit is `frozenset({signalDev, signalDev2})`). The cost model's
     flat frozensets stay untouched — alternatives live in the ROW, not in `cheapest`.
+
+### §1.26 SHIPPED — R2 IS CAUGHT, rounds B+C (2026-09-01)
+Round B (shared messages → groups) measured alone first and EXPOSED A FLAT FOLD: the two
+devices surfaced as SEPARATE singleton rows, because the cost channel seeds `_own_positive`
+— the flat reading — so `own(19) OR own(20)` priced as two necessary singles (the whale's
+flat-reading lesson, in the cost channel). Census of the two readings at cost sites:
+LSL2 0, KQ4 341, KQ6 8, KQ5 25, LB2 8, GK1 30 — so the ROOT fix (cost sites →
+`_own_required`) is a future measured round of its own; recorded as a known gap beside
+`register_value_strandings`' `_rstep` blindness.
+
+Round C therefore prices the register rows STRUCTURALLY and locally: `_chain_price` in the
+branch — any writer suffices (intersect over writers and values), a writer pays its guard's
+NECESSARY owns (`_own_required`) plus its recorded deps' price (`guard_reqs` over the cost
+tier, bounded depth 3, memoized, cycle-guarded), and a pure OR-of-OWN (`_or_own_groups`,
+positive polarity only) is an ALTERNATIVES GROUP — one `item_group` row for the set, never
+per-member singles. KQ5's 42-item message-4 group never arises: the class-default exclusion
+(Round B) kills it at the map.
+
+MEASURED (worktree @ cc73660, B+C together): five surfaces 0 changed lines, GK1 exactly ONE
+— `signalDev|signalDev2@rm899/scene[808]<-[806]` joins `scene_carryins`; the items-union
+is UNCHANGED (group members are not individually claimed). Ground truth 9/3 — **R2 GREEN**
+(`rod` + the pair as one alternatives unit), R2's KNOWN_RED entry retired (gk1 declared
+reds 4 → 3: the FP-set pair and R4). KQ6: zero shared messages (census) and 0 diff lines —
+the axiom holds structurally and by measurement.

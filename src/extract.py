@@ -583,7 +583,16 @@ def _cmp_atom(n, tp):
         for x, y in ((a, b), (b, a)):
             if (isinstance(x, dict) and x.get("t") == "Variable" and x.get("vtype") == "Parameter"
                     and x.get("index") == _VERB_PARAM and I.as_int(y) in _ITEM_MSG):
-                return Pred("OWN", var=_ITEM_MSG[I.as_int(y)]) if op == "==" else None
+                if op != "==":
+                    return None
+                ids = _ITEM_MSG[I.as_int(y)]
+                # A SHARED message is "using ONE OF them" -- GK1's signal devices both carry
+                # message 60, so the case is answered by holding either. `atom()` already
+                # returns GOr nodes, so the group is an ordinary guard downstream:
+                # `_own_positive` correctly finds nothing NECESSARY in it, and the register
+                # branch of `scene_carryins` is what reads the group out (docs GK1 §1.26 C).
+                return (Pred("OWN", var=ids[0]) if len(ids) == 1
+                        else GOr([Pred("OWN", var=i2) for i2 in ids]))
     # property / onControl / distance compares -> opaque (control-map / undecidable)
     return Pred("OPAQUE")
 

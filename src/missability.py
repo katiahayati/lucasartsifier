@@ -58,6 +58,38 @@ def _own_positive(guard):
     return out
 
 
+def _or_own_groups(guard):
+    """Pure OR-of-OWN subtrees under positive polarity -> {frozenset(items)}: the guard's
+    ALTERNATIVE item demands. GK1's device deposit is the case: `own(19) OR own(20)` means
+    "using EITHER signal device", so neither item is required and the PAIR is the claim.
+    Only the pure shape counts (every kid an own()); a mixed OR decides nothing here -- the
+    permissive reading. The flat `_own_positive` reads the same subtree as two necessary
+    singles, which is the over-claim the register carry-in rows must not repeat."""
+    out = set()
+
+    def walk(g, pol):
+        if g is None:
+            return
+        if isinstance(g, list):
+            for x in g:
+                walk(x, pol)
+        elif isinstance(g, GOr):
+            if pol and g.kids and all(isinstance(k, Pred) and k.kind == "OWN"
+                                      for k in g.kids):
+                if len({k.var for k in g.kids}) > 1:
+                    out.add(frozenset(k.var for k in g.kids))
+            else:
+                for k in g.kids:
+                    walk(k, pol)
+        elif isinstance(g, GAnd):
+            for k in g.kids:
+                walk(k, pol)
+        elif isinstance(g, GNot):
+            walk(g.kid, not pol)
+    walk(guard, True)
+    return out
+
+
 def _own_required(guard):
     """Items NECESSARILY held whenever `guard` is true -- the REQUIREMENT semantics, stricter than
     `_own_positive`. An item inside an OR-branch is NOT required (another branch may satisfy the
@@ -8209,20 +8241,66 @@ class IrSccReach(SccReach):
         # cost-only tier); crossing with the price unpaid is fatal and frozen. A value no
         # write produces is the initial value and skips naturally; an init-written or
         # script-less producer cannot be scene-sealed and blocks the claim.
-        wsites = defaultdict(set)
+        wsites = defaultdict(list)         # (R, v) -> [(room, script, guard)]
         for i2 in all_machines(self.em):
             for _K2, ps2 in i2["states"].items():
                 for p2 in ps2:
                     for (gi2, v2) in p2[1]:
-                        wsites[(gi2, v2)].add((i2["room"], i2.get("script")))
-        for (r2, sc2, gi2, v2, _g2) in self.em.handler_writes:
-            wsites[(gi2, v2)].add((r2, sc2))
+                        wsites[(gi2, v2)].append((i2["room"], i2.get("script"), p2[0]))
+        for (r2, sc2, gi2, v2, g2) in self.em.handler_writes:
+            wsites[(gi2, v2)].append((r2, sc2, g2))
         for r2, seq in getattr(self.em, "init_seq", {}).items():
-            for (gi2, v2, _g2) in seq:
-                wsites[(gi2, v2)].add((r2, None))
+            for (gi2, v2, g2) in seq:
+                wsites[(gi2, v2)].append((r2, None, g2))
         for r2, vs in getattr(self.em, "init_writes", {}).items():
             for gi2, v2 in vs.items():
-                wsites[(gi2, v2)].add((r2, None))
+                wsites[(gi2, v2)].append((r2, None, None))
+        # ⭐ REQUIREMENT-semantics pricing for the register rows (2026-09-01, docs GK1
+        # §1.26 C). `_reg_cost` folds `_own_positive` -- the FLAT reading -- so an
+        # OR-of-own guard prices every alternative as a necessary single (the whale's
+        # flat-reading lesson, in the cost channel; corpus census: 341 KQ4 sites, 8 KQ6,
+        # 30 GK1 differ between the readings, so the ROOT stays as it is until its own
+        # measured round). These rows claim "this must be IN HAND at the crossing", so
+        # they price their own chain: any writer suffices (intersect over writers, over
+        # values), a writer pays its guard's NECESSARY owns plus its recorded deps'
+        # price, and a pure OR-of-OWN is an ALTERNATIVES GROUP, one row for the set.
+        creg = set(getattr(self, "_cost_regs", None) or self.regs)
+        price_memo = {}
+
+        def _chain_price(R0, vals0, depth, stack):
+            key0 = (R0, frozenset(vals0))
+            if key0 in price_memo:
+                return price_memo[key0]
+            if depth <= 0 or R0 in stack:
+                return (frozenset(), frozenset())
+            per_val = []
+            for v in sorted(vals0):
+                ws = wsites.get((R0, v), ())
+                if not ws:
+                    per_val.append((frozenset(), frozenset()))   # initial value: free
+                    continue
+                s_acc = g_acc = None
+                for (_x3, _sc3, g3) in ws:
+                    singles = set(_own_required(g3)) if g3 is not None else set()
+                    groups = set(_or_own_groups(g3)) if g3 is not None else set()
+                    if g3 is not None:
+                        for S2, V2 in guard_reqs(g3, creg).items():
+                            if S2 == R0 or not V2:
+                                continue
+                            s2, g2s = _chain_price(S2, frozenset(V2), depth - 1,
+                                                   stack | {R0})
+                            singles |= s2
+                            groups |= g2s
+                    s_acc = singles if s_acc is None else (s_acc & singles)
+                    g_acc = groups if g_acc is None else (g_acc & groups)
+                per_val.append((frozenset(s_acc or ()), frozenset(g_acc or ())))
+            s_out = per_val[0][0]
+            g_out = per_val[0][1]
+            for (s2, g2s) in per_val[1:]:
+                s_out &= s2
+                g_out &= g2s
+            price_memo[key0] = (s_out, g_out)
+            return price_memo[key0]
         preds = defaultdict(set)
         for a2, bs in self.edges.items():
             for b2 in bs:
@@ -8230,9 +8308,8 @@ class IrSccReach(SccReach):
         for room, rows in traps.items():
             for (req, _alts) in rows:
                 for R, vals in req.items():
-                    sites = set()
-                    for v in vals:
-                        sites |= wsites.get((R, v), set())
+                    sites = {(x, sc3) for v in vals
+                             for (x, sc3, _g3) in wsites.get((R, v), ())}
                     if not sites or any(sc3 is None for (_x, sc3) in sites):
                         continue
                     wscripts, lscripts, wrooms, sealed_all = set(), set(), set(), True
@@ -8260,12 +8337,26 @@ class IrSccReach(SccReach):
                         wrooms.add(X)
                     if not sealed_all:
                         continue
-                    for it in sorted(self._reg_cost(R, set(vals))):
+                    singles, groups = _chain_price(R, frozenset(vals), 3, frozenset())
+                    for it in sorted(singles):
                         if (it, room) in seen:
                             continue
                         seen.add((it, room))
                         out.append({"item": it,
                                     "item_name": self.g.item_name(it),
+                                    "room": room, "reg": R,
+                                    "scene": sorted(lscripts),
+                                    "source_scenes": sorted(wscripts),
+                                    "writer_rooms": sorted(wrooms),
+                                    "pattern": "register-carry-in"})
+                    for grp in sorted(groups, key=sorted):
+                        gk = (tuple(sorted(grp)), room)
+                        if gk in seen:
+                            continue
+                        seen.add(gk)
+                        out.append({"item_group": tuple(sorted(grp)),
+                                    "item_name": "|".join(self.g.item_name(i3)
+                                                          for i3 in sorted(grp)),
                                     "room": room, "reg": R,
                                     "scene": sorted(lscripts),
                                     "source_scenes": sorted(wscripts),

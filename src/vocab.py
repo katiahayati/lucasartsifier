@@ -3761,10 +3761,20 @@ def doverb_item_messages(ir):
     room puzzles express "use item X"; the guard was going OPAQUE (param1 is a method Parameter), so
     every such requirement was invisible.
 
-    Returns message -> inventory index (the OWN key, = item_names declaration order). Only messages
-    that UNIQUELY identify one inventory item and are NOT also a base-verb-icon message are kept, so a
-    verb is never misread as an item (the two spaces do not overlap in KQ6, but the exclusion makes
-    that a checked fact rather than an assumption). Empty on SCO0 -- no icon bar, items carry no
+    Returns message -> TUPLE of inventory indices (the OWN keys, = item_names declaration order).
+    A singleton tuple is "using THAT item"; a longer one is "using ONE OF them" -- GK1's two
+    signal devices share message 60 and its two robes share 122, and a doVerb case on such a
+    message is answered by holding ANY member (the consumer lowers it to an OR of OWNs). Three
+    exclusions, each a claim about what a message can be trusted to mean:
+      * a BASE-VERB-icon message is a verb, so it is never misread as an item (the two spaces
+        do not overlap in KQ6, but the exclusion makes that a checked fact);
+      * a message some CLASS declares is a TEMPLATE VALUE, never an instance identity -- KQ5's
+        `InvI`/`KQInvItem` declare `message 4` and 42 items inherit it, so reading it as a
+        42-way group would spell "holds any inventory item" into every KQ5 doVerb case;
+        every other corpus title's item classes declare 0 (measured 2026-09-01);
+      * (dropped 2026-09-01) the old UNIQUENESS filter -- it was the blunt form of the
+        class-default exclusion above, and it also dropped the honest two-item groups.
+    Empty on SCO0 -- no icon bar, items carry no
     `message` -- so the whole mechanism is inert on LSL2/KQ4/KQ5 (verified: 0 messages mapped)."""
     voc = Vocabulary.from_ir(ir)
     if voc is None:
@@ -3795,23 +3805,26 @@ def doverb_item_messages(ir):
     # place off -- `placeHoleScr` demanded the handkerchief instead of the hole-in-the-wall, and
     # `giveDagger` the old coins instead of the dagger.
     by_name = {nm: i for i, nm in item_names(ir).items()}
-    base_verbs, counts, msg_idx = set(), {}, {}
+    base_verbs, class_msgs, msg_idx = set(), set(), {}
     for sn in sorted(ir.scripts):
         for o in ir.scripts[sn].objects:
             if o.is_class:
+                m = o.props.get("message")
+                if m is not None and m != 65535:
+                    class_msgs.add(m)
                 continue
             cls = _instance_class_species(o)
             if cls in invfam:
                 m = o.props.get("message")
                 i = by_name.get(re.sub(r"[^0-9A-Za-z]+", "_", o.name).strip("_"))
                 if m is not None and i is not None:
-                    counts[m] = counts.get(m, 0) + 1
-                    msg_idx.setdefault(m, i)
+                    msg_idx.setdefault(m, []).append(i)
             elif cls in iconfam:
                 m = o.props.get("message")
                 if m is not None and m != 65535:
                     base_verbs.add(m)
-    return {m: i for m, i in msg_idx.items() if counts[m] == 1 and m not in base_verbs}
+    return {m: tuple(ids) for m, ids in msg_idx.items()
+            if m not in base_verbs and m not in class_msgs}
 
 
 def lower_property_case_labels(ir):

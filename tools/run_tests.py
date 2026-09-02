@@ -101,9 +101,10 @@ KNOWN_RED = {
         "a safe item is not flagged":
             "same four false positives as the row above (the two checks are one defect seen "
             "from the oracle's two sides)",
-        "R2: the confessional deposit (rod + a signal device -> flags 280/281 -> 351) is caught":
-            "the point of no return (sHRoom8.sc:71) is an intra-room scene switch inside the "
-            "hounfour (room 800); the model has no scene-level boundary to hang a carry-in on",
+        # R2 RETIRED 2026-09-01: the register carry-in (docs GK1 §1.26) names the rod AND the
+        # device pair -- the cost-only tier prices flag 351's chain, the shared-message groups
+        # read `own(19) OR own(20)` out of the deposit's doVerb case, and the group row
+        # carries the pair as ONE alternatives unit.
         "R4: flag 44 (Cazaunoux topic 54 -> Crash's 'Voodoo Hounfour') is caught as a stranding":
             "a FLAG stranding: the Teller lowering (2026-08-28) makes Crash's topic 8 a `flag 44` "
             "site and rm270's topic 54 its only writer, but no detector treats a flag value as "

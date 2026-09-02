@@ -169,14 +169,19 @@ def run():
                       ("scene_carryins", s.scene_carryins()),
                       ("ownedby_death_folds", s.ownedby_death_folds())):
         rows_by_det[det] = rows
-        caught |= {_unit(s.g.item_name(r["item"])) for r in rows}
+        for r in rows:
+            if "item_group" in r:      # an ALTERNATIVES row: the set is the unit
+                caught.add(frozenset(s.g.item_name(i) for i in r["item_group"]))
+            else:
+                caught.add(_unit(s.g.item_name(r["item"])))
     caught_names = _names(caught)
     print("  -- attribution: every detector row, by item --")
     for det, rows in rows_by_det.items():
         for r in rows:
             extra = {k: r[k] for k in ("register", "value", "pattern", "room", "at_room",
                                       "need_room", "still_needed_at") if k in r}
-            print(f"     {det:22s} {s.g.item_name(r['item']):14s} {extra}")
+            nm_ = s.g.item_name(r["item"]) if "item" in r else r["item_name"]
+            print(f"     {det:22s} {nm_:14s} {extra}")
     for e in s.edge_strandings():
         print(f"     {'edge':22s} {[s.g.item_name(i) for i in e['items']]} "
               f"{[[s.g.item_name(i) for i in g] for g in e['groups']]}")

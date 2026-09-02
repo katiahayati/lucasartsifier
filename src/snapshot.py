@@ -48,7 +48,7 @@ def snapshot(cfg, with_placements=False):
                    | {f["item"] for f in s.fatal_uses()}
                    | {r["item"] for r in s.register_strandings()}
                    | {r["item"] for r in s.ownedby_death_folds()}
-                   | {r["item"] for r in s.scene_carryins()}
+                   | {r["item"] for r in s.scene_carryins() if "item" in r}
                    | {r["item"] for r in s.market_squeezes()})
     # REGISTER-VALUE strandings, unconditional like every other detector -- see the note at the
     # bottom of this comment block for what used to be here and why it went.
