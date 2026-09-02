@@ -1239,6 +1239,8 @@ def _must_hold(guard, out=None):
     required at all, and claiming it would BLOCK movement the game allows. So this walks only the
     conjuncts that must hold, stopping at any negation or disjunction."""
     out = set() if out is None else out
+    while isinstance(guard, GNot) and isinstance(guard.kid, GNot):
+        guard = guard.kid.kid            # (not (not x)) IS x -- see _must_equal
     if isinstance(guard, list):
         for g in guard:
             _must_hold(g, out)
@@ -1285,6 +1287,10 @@ def _must_equal(guard, out=None):
     required and claiming it would let a caller delete something the game allows. The one negation
     it does descend is `(not (!= x v))`, whose flip is computable because the operand is a leaf."""
     out = set() if out is None else out
+    while isinstance(guard, GNot) and isinstance(guard.kid, GNot):
+        guard = guard.kid.kid            # (not (not x)) IS x -- the Teller/act lowering
+        #   spells `act == 2` that way, and stopping at the outer negation read a
+        #   REQUIRED equality as no constraint at all (LB2's sMeetSteve, 2026-09-02)
     if isinstance(guard, list):
         for g in guard:
             _must_equal(g, out)
@@ -3771,6 +3777,14 @@ class IrSccReach(SccReach):
         dbg = frozenset(em.cfg.debug_globals)
 
         def cheapest(key, cost):
+            # ⭐ THE NECESSARY READING (2026-09-02, docs GK1 §1.33): every cost site hands
+            # this `_own_required`, not the flat `_own_positive`. A write guarded
+            # `(or has:a has:b)` demands EITHER item; flat, it priced both as necessary,
+            # so a ban on `a` alone blocked a write `b` would have unlocked -- the whale/
+            # scarab lesson, in the cost channel (KQ4's nightfall guard alone put 341 such
+            # sites in the tables). Exact for a single-item ban; the permissive side for a
+            # group ban (a DNF cost would be exact for both -- `blocked()` has the shape).
+            # MEASURED byte-identical on all six titles, toggle-confirmed, before shipping.
             """Record what this write costs, keeping the CHEAPEST route when a room has several.
 
             Same composition `_reg_cost`/`value_cost` already apply across rooms -- you may make
@@ -3805,7 +3819,7 @@ class IrSccReach(SccReach):
             if gi in regset and not _debug_gated_guard(g, dbg):
                 self._inroom[gi][room].add(v)
             if gi in costset and not _debug_gated_guard(g, dbg):
-                cheapest((gi, room, v), _own_positive(g))
+                cheapest((gi, room, v), _own_required(g))
         # MACHINE writes, with the machine's own entry guard on the SAME register kept as an
         # ordering. KQ4 dispatches Lolotte's conversations with `(switch global109 (1 lotTalk3)
         # (2 lotTalk4) (3 lotTalk5))`, and each writes the next value -- so lotTalk4 is a
@@ -3878,7 +3892,7 @@ class IrSccReach(SccReach):
                 if gi in regset and g is not None:
                     self._inroom[gi][room].add(v)
                 if gi in costset and g is not None:
-                    cheapest((gi, room, v), _own_positive(g))
+                    cheapest((gi, room, v), _own_required(g))
         self._rstep = {R: defaultdict(set) for R in self.regs}
         # ...and here, the one consumer an always-live scope is lifted FOR: what its action makes
         # true, and what that costs. `cheapest` below is where "mixing the paint costs the Styx
@@ -3944,7 +3958,7 @@ class IrSccReach(SccReach):
                         # usually empty, the decision having been made where the machine was
                         # started, so reading only that made every cutscene effect free.
                         cheapest((gi, info["room"], v),
-                                 _own_positive(g) | emust.get(K, frozenset()))
+                                 _own_required(g) | emust.get(K, frozenset()))
                         # ...and what the same state HANDS OVER (`gg`): GK1's gift certificate
                         # is `(global0 get: 5 getPoints: 122 1)` inside a bookstore cutscene.
                         self._cogrants[(gi, info["room"], v)].append(
@@ -4530,8 +4544,8 @@ class IrSccReach(SccReach):
                 d0 = {S: set(vs) for S, vs in guard_reqs(g, regs_wb).items() if vs}
                 dd = {S: set(vs) for S, vs in guard_reqs(g, regs_wb, dom).items() if vs}
                 co = frozenset(handler_cowrites[(room, script, str(g))] - {(gi, v)})
-                wb[(gi, room, v)].append((d0, frozenset(_own_positive(g)), co))
-                wbd[(gi, room, v)].append((dd, frozenset(_own_positive(g)), co))
+                wb[(gi, room, v)].append((d0, frozenset(_own_required(g)), co))
+                wbd[(gi, room, v)].append((dd, frozenset(_own_required(g)), co))
         for room, vs in getattr(self.em, "init_writes", {}).items():
             for gi, v in vs.items():
                 if gi in regs_wb:
@@ -4542,8 +4556,8 @@ class IrSccReach(SccReach):
                 if gi in regs_wb and g is not None:
                     d0 = {S: set(vs) for S, vs in structural_reqs(g, regs_wb).items() if vs}
                     d = {S: set(vs) for S, vs in structural_reqs(g, regs_wb, dom).items() if vs}
-                    wb[(gi, room, v)].append((d0, frozenset(_own_positive(g)), frozenset()))
-                    wbd[(gi, room, v)].append((d, frozenset(_own_positive(g)), frozenset()))
+                    wb[(gi, room, v)].append((d0, frozenset(_own_required(g)), frozenset()))
+                    wbd[(gi, room, v)].append((d, frozenset(_own_required(g)), frozenset()))
         # ...and the ALWAYS-LIVE scopes, exactly as `_build_product` iterates them. A machine the
         # icon bar dispatches records its own cost through `cheapest` up there but was never a
         # source of register-chain DEPENDENCIES down here, so half of what that scope contributes
@@ -4651,7 +4665,7 @@ class IrSccReach(SccReach):
                                     if vs:
                                         dd[S] = (dd[S] & set(vs)) if S in dd else set(vs)
                                 tbl[(gi, info["room"], v)].append(
-                                    (dd, frozenset(_own_positive(g)) | emust.get(K, frozenset()),
+                                    (dd, frozenset(_own_required(g)) | emust.get(K, frozenset()),
                                      frozenset((gj, vj) for (gj, vj) in w
                                                if gj in regs_wb and gj != gi)))
                             continue
@@ -4683,7 +4697,7 @@ class IrSccReach(SccReach):
                                 if vs:
                                     dd[S] = (dd[S] & set(vs)) if S in dd else set(vs)
                             tbl[(gi, info["room"], v)].append(
-                                (dd, frozenset(_own_positive(g)) | emust.get(K, frozenset()),
+                                (dd, frozenset(_own_required(g)) | emust.get(K, frozenset()),
                                  frozenset((gj, vj) for (gj, vj) in w
                                            if gj in regs_wb and gj != gi)))
 
@@ -7419,6 +7433,10 @@ class IrSccReach(SccReach):
         goal = self.goal_rooms_set()
         demand_cache = {}
         prev = prev_room_reg(self.em)
+        ents_by = {}                      # (room, inst) -> entry guards, for the liveness test
+        for i_ in self.em.machines:
+            ents_by.setdefault((i_["room"], i_.get("inst")), []).extend(
+                [g for _K, g in list(i_.get("entries", ())) + list(i_.get("init_entries", ()))])
         for R in self.proj:
             states = self._pstates[R]
             vals = {v for (_r, v) in states}
@@ -7434,11 +7452,13 @@ class IrSccReach(SccReach):
 
                 def _flip_at(r, R=R, w=w, states=states, per_room=per_room):
                     if r not in per_room:
-                        a = {q for (q, _v) in self._walk(R, frozenset(), starts={(r, w)})}
+                        a_st = self._walk(R, frozenset(), starts={(r, w)})
+                        a = {q for (q, _v) in a_st}
                         b0 = {(r2, v) for (r2, v) in states if r2 == r and v != w}
                         b = ({q for (q, _v) in self._walk(R, frozenset(), starts=b0)}
                              if b0 else None)          # None: no pre-flip player -> an arrival
                         per_room[r] = (a, b)
+                        per_room[("states", r)] = a_st
                     return per_room[r]
 
                 for S in sorted(self.regs):
@@ -7452,6 +7472,15 @@ class IrSccReach(SccReach):
                     sst = self._pstates.get(S, set())
                     dom = frozenset(self.em.reg_vals.get(S, ())) | {v for (_r, v) in sst}
                     writes = {r2: set(v2) for r2, v2 in self._inroom.get(S, {}).items()}
+                    # ...AND THE ORDERED WRITES (2026-09-02): a write pinned by its own
+                    # from-value lives in `_rstep`, not `_inroom` -- GK1's flag 351 is
+                    # `(0,1)@800` -- and both the freeze conjunct and the causality half
+                    # below read `_inroom` alone, so a stepped register was invisible to
+                    # each ([[same-rule-two-places]]). A step is a write for both questions:
+                    # it un-freezes the sealed region exactly as an unordered write does,
+                    # and a pre-flip step into an accepted value is a fix that existed.
+                    for r2, sts in self._rstep.get(S, {}).items():
+                        writes.setdefault(r2, set()).update(t for (_f, t) in sts)
                     esets = [(x, m[1].get(S)) for (x, _y), ms in self._emeta.items()
                              for m in ms if m[1].get(S) is not None]
                     for r in sorted(seed_rooms):
@@ -7462,6 +7491,38 @@ class IrSccReach(SccReach):
                             continue                   # a dead end, not a softlock
                         for room_d in sorted(set(sites) & a):
                             for inst, acc in sites[room_d]:
+                                # THE DEMAND MUST BE LIVE AT THE FLIP (2026-09-02): the
+                                # demanding machine's arming carries musts of its own
+                                # over the flip's registers, and a demand only an act-2
+                                # arming makes is not faced by an act-5 crosser. LB2's
+                                # sMeetSteve (rm350, `act == 2`) surfaced as a counter
+                                # carried into act 5 the moment stepped writes counted as
+                                # fixes. Same reading as `_need_live`: a site with no
+                                # guard, or no musts over these registers, stays live.
+                                gs_ = ents_by.get((room_d, inst))
+                                if gs_:
+                                    hit_ = [v for (q, v) in per_room[("states", r)]
+                                            if q == room_d]
+                                    live_ = False
+                                    for g_ in gs_:
+                                        if g_ is None:
+                                            live_ = True
+                                            break
+                                        mu_ = self._site_musts(g_, comps)
+                                        if not mu_:
+                                            live_ = True
+                                            break
+                                        for v in hit_:
+                                            vals_ = (dict(zip(R, v)) if isinstance(R, tuple)
+                                                     else {R: v})
+                                            if all(vals_[x] in al for x, al in mu_.items()
+                                                   if x in vals_):
+                                                live_ = True
+                                                break
+                                        if live_:
+                                            break
+                                    if not live_:
+                                        continue
                                 bad = dom - acc
                                 # attainable at THIS flip: S can hold a rejected value here
                                 bad_here = {v for v in bad if (r, v) in sst}

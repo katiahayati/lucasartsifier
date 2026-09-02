@@ -1151,6 +1151,251 @@ The cure list after the full hunt, all derived, none KQ6-shaped:
 3. A cost channel for edge sets — the unpriced-flip principle above (makes the gwrites seed
    sound; also audits today's pre-existing exit-write sets).
 
+## §1.36 A PARK that arms a fatal machine is a DEATH (2026-09-02, designed)
+
+`_trap_graph` has always had the word — DOOMED, an arming from which the death is certain —
+for the ESCAPE question. The armer's own walk never applied it: `(gEgo setScript: killGabe)`
+inside `roomScript@480` state 5 leaves that state PARKED (no cue, no cycles), and the
+2026-08-28c rule "a PARK is a WAIT" resumes the walk at state 6 — so the maskless visitor's
+path reaches state 81 and ends the day dead. Likewise state 9 (mask, no drums). The exact
+cases only: a PARK path whose guard is the arming's guard atom-for-atom, or an unconditional
+arming, becomes DEATH; FATAL means every path from the target's start terminates in DEATH
+(an EXIT/END/PARK terminal disqualifies). Consequence on GK1: state 81's musts become
+`{216: {1}, 299: {1}}`, so the ritual's day step is priced at the croc mask and pinned to the
+tattoo flag — which is what §1.31's windows can then place on day 7. SIMULATED IN THE LOADED
+MODEL (no source touched): GK1 has exactly ten fatal machines (killGabe, deathScript@770,
+the hounfour beatings, sDJKills, the ceremony deaths), the pass flips exactly two paths
+(roomScript@480 states 5 and 9), and state 81's musts become `{216:{1}, 299:{1}}`. Apply
+script ready; measured after the rvs+§1.33 commit.
+
+## §1.35 Why §1.34 fires a day early: a phantom bayou visit (2026-09-02)
+
+Traced to the room: the new day-3→4 step fires at rm480 = `bayouRitual` (the day-7 night
+ceremony), reached from rm490 = `bayouMaze` (the tracker maze), reached from the travel movie
+rm372, whose destination fan (§1.17) names the bayou through the day map's `bayou` icon —
+"the icon that was clicked is the player's choice, not a state". The CHOICE is free; the
+icon's PRESENCE is not: it exists only under the map's init condition (a flag raised when the
+bayou becomes known, day 7). The resolver conflated the two, so the model can visit the bayou
+on day 1. Harmless while the ritual wrote nothing; §1.34 made it write the day.
+
+Two further facts, both recorded and both permissive today:
+  * `roomScript@480` state 5: without flag 216 (set only by using the MASK, item 21, in the
+    maze) it arms `killGabe` on the ego — recognised as DEATH (`death_signal (241,1)`), armed
+    from roomScript states 5 and 9 — and the room script's own path is read as a PARK-and-
+    wait, so the walk continues past a certain death to state 81 and increments the day.
+    A path that arms a fatal machine and waits is DOOMED (the `_trap_graph` word), and the
+    honest transition for it is DEATH.
+  * `letsGo@490` reaches `newRoom: 480` with or without the mask (state 0's else-branch
+    skips to 7); flag 299 only picks views. So the maze always ends at the ritual clearing,
+    and the day-3 gate is entirely the icon's presence condition.
+
+CONFIRMED in `rm205::init`: `(if (proc13_0 268) (greaterMap add: bayou))` — and likewise
+the lake (flag 64), grandma (101), the airport (269): each icon is ADDED to the map's
+container under a flag. `cast_conditions` reads `init:` sends and misses the `add:` idiom,
+so every icon reads as always present.
+
+The cure is a BUNDLE, none of it GK1-shaped: (i) an icon-derived destination carries the
+icon's PRESENCE condition — `cast_conditions` learns the container-`add:` idiom, and
+`_script_prop_values` conjoins `cast_guard(icon)` onto the destination (the owner rule the
+lifter already applies to handlers); (ii) §1.31's consumer windows, extended to EDGE reqs and to pruning `_rstep`
+steps whose branch deps pin a windowed value (the scalar day projection cannot see a flag,
+but it can see "this flag is never in hand before day 7"); (iii) doomed arming ⇒ DEATH.
+§1.34 stays UNCOMMITTED until the bundle restores R1 at day 5.
+
+MEASURED WITH THE SUITE: 884/14/1 unexpected — R1 red, as predicted. §1.34 REVERTED from
+the tree (hunk kept as a patch). And one more gap under the bundle: flag 268's ONLY raise
+is `PhraseDisplay::checkPhrases` in script 815 — a UI script's method (the code-phrase
+puzzle), a class of write the model has never lifted (flag 101's is in `proc99_1`, the
+day-start proc, under `day > 1`). Carrying the icon's presence condition BEFORE that
+writer is captured would seal the bayou outright — the invented-seal direction. Bundle
+order: doomed arming ⇒ DEATH (soundness, alone); §1.31 windows (+edge reqs, +_rstep
+pruning); the UI-script/proc write capture for 268/101; icon presence; then §1.34 again.
+
+Script 815 is the DRUM puzzle (`drumInset`, `Drum`, `Drummer`, `PhraseDisplay`): flag 268 is
+raised in `PhraseDisplay::checkPhrases`, reached from `drumInset::dispose` and from
+`addPhrase`/`deletePhrase` — two METHOD SENDS deep from any handler the harvest walks
+(the walker follows proc calls, never self/object method sends). A capture class of its
+own: bounded method-send following within a scoped script.
+
+## §1.34 The day increments the model never had: `(++ day)` in a script that never compares it (2026-09-02)
+
+Found by the §1.31 census: the record's ONLY live producer of the day-end flag on days 6 and
+7 is go-home, so the windows would have made days 7-8 unreachable — and the reason is a
+capture gap, not the game. An IR scan of every write to the day register lists 19 sites; the
+model carries rm370's four increments (fanned into the steps 1→2 … 7→8 under the endDay
+arms' `day == k`) and the 750/800 clamps, but NOT the increments in `roomScript@480`,
+`leaveGermany@500` and `doTheDream@550` — Germany's and Africa's day advances. `_fan_globals`
+fans `(++ G)` over `machine.glob_dom`, the literals the machine's OWN script compares G
+against, and drops the write when that set is empty ("unknown domain -> never guess"). Those
+three scripts never compare the day, so days 6→7→8→9 vanished, and the endgame stayed
+reachable only through rm750's clamps. Consequence today: the (123, 6)/(123, 7) rows in
+`register_strandings` stand on go-home's phantom day-ends.
+
+Cure: fall back to the GAME-WIDE literal RANGE (every integer between the smallest and
+largest literal the game compares or assigns for the register) when the script-local one is empty — the same "read the literals the code tests
+against" rule, one scope wider; each fanned branch stays an ORDERED step `k → k+1` (the
+permissive direction is an ordered step, never a free write). STATIC BLAST RADIUS (IR-only census of incremented globals with an empty local domain):
+LSL2 9 sites (scores 104/105/108/115 …), KQ4 9 (113 the shovel-hole counter, range {5};
+186; …), KQ6 1 (script 913, global 153, range 0..5), KQ5 8 (314/315 fan; 322/353/359 have
+ranges of 122-201 values), LB2 10 (150 the SNAKE OIL, range 0..4 — its `(-- 150)` shakes
+at 520/610 now fan as ordered steps; 111 at 630; 369), GK1 3 (the day). So the goldens
+WILL very likely move, and every moved line must be traced to its site and judged
+(a genuine missing step → a bless with the diagnosis; anything else → a bug). The fan is
+BOUNDED at 64 domain values (the joints' cap precedent — a resource bound, not a game
+rule; past it the increment is dropped exactly as before): KQ5's 322/353/359 stay out.
+Prerequisite for §1.31's windows to be honest on GK1.
+
+MEASURED (main, vs d76e757; rvs and §1.33 proven inert alone): LSL2/KQ4/KQ6/KQ5/LB2
+byte-identical — the shovel counter, the snake oil, the scores, KQ6's 153 all inert.
+GK1: exactly its three day-flip rows, each ONE DAY EARLIER (VoodooCode1 5→4, braceMold and
+reconVeve 4→3). ⛔ NOT SHIPPABLE AS-IS: R1's true point of no return is the day-5 flip (the
+oracle check pins value 5) and "stranded at day 4" is false. Diagnosed: rm480's new
+`(++ day)` fires at day 3 because the model can fly to Germany on ANY day — rm490 (arrival)
+is entered from the travel-movie room 372 with no day condition, the movie's destination
+coming through §1.17's cross-script global fallback, which carries no guard by design. So
+§1.34 EXPOSES a pre-existing over-approximation (Germany enterable any day) that was harmless
+while Germany wrote nothing. The cure is on the entrance, not the increment: either the
+travel destination's own guard (the map's assignment condition — a REGISTER fact that
+persists for a counter/latch) rides the movie edge as req, or §1.31's consumer windows,
+extended to EDGE reqs, window the flight by the day its enabling flag can be in hand.
+§1.34 and §1.31 therefore ship TOGETHER, or not at all.
+
+## §1.33 The cost channel's flat fold: probe was NULL, re-measuring (2026-09-02)
+
+The nine cost sites (`cheapest` ×3, the `_wbranch`/`_wbranch_dom` costs ×6) fold
+`_own_positive` — the FLAT reading — so an OR-of-own write prices every branch as necessary
+(census of flat≠required at cost sites: LSL2 0, KQ4 341, KQ6 8, KQ5 25, LB2 8, GK1 30).
+The candidate cure is `_own_required`: exact for single-item bans, permissive for group bans
+(the DNF cost is exact for both; `blocked()` has the shape — a future round).
+
+⛔ INSTRUMENT CONFESSION: the first blast-radius probe reported "byte-identical on all six"
+— and its toggle had never applied (a substitution pattern asserted a count of 3 where the
+file holds 1; the heredoc died, the script had no `set -e`, and six untoggled snapshots
+diffed clean against themselves). Caught by cross-checking the pattern counts in both trees
+before applying to main. The corrected probe (five patterns, counts 2/1/2/2/2) is chained
+behind the rvs re-measurement; NOTHING about the cost fold is known until it reports, and
+its monitor now prints the toggle confirmation line first.
+
+RE-MEASURED, TOGGLE CONFIRMED (`toggled 9 cost sites` in the log): **all six surfaces
+byte-identical** vs d76e757. The over-claims never reached a surface; shipped for the
+principle — the `_chain_branch_costs` standing. (The probe's own restore step then crashed
+and left the worktree toggled; caught and restored by checkout — the worktree holds no
+uncommitted work, which is the one case where checkout IS the right restore.)
+
+## §1.32 The rvs `_rstep` blindness, and the FP it uncovered (2026-09-02)
+
+`register_value_strandings`' freeze conjunct and causality half read `_inroom` alone; a write
+pinned by its own from-value lives in `_rstep` (GK1's flag 351 is `(0,1)@800`), so a stepped
+register was invisible to both. Fixed: a step is a write for both questions. MEASURED (vs
+d76e757): four goldens + GK1 byte-identical; **LB2 +1 row** —
+`reg128==[0]@seal(12,123)=(26,5)->[350] via sMeetSteve`. Examined, not declared: register
+128 is a 15-step counter at rm340, and `sMeetSteve`'s arming that demands it ALSO requires
+`act == 2` — a demand an act-5 crosser never faces. Latent in conjunct 2 (`_reg_entry_demands`
+records the presupposition without the arming's other musts), exposed the moment pre-flip
+steps counted as a fix. Two cures, both principles: (1) the demand must be LIVE at the flip —
+the demanding machine's arming musts over the flip's registers must admit a post-flip state
+(the `_need_live` reading, applied to rvs); (2) `(not (not x))` IS `x` — `_must_equal` and
+`_must_hold` stopped at the outer negation and read the Teller/act lowering's `¬¬(act==2)`
+as no constraint. RE-MEASURED (vs d76e757): all six byte-identical — the LB2 row is gone and
+nothing else moves; the round is inert on every surface, kept for the two principles.
+
+## §1.31 ONCE-ONLY, DESIGNED AGAIN: the staged closure with necessary co-effects (2026-09-02)
+
+§1.14 pointed at MONOTONE LATCHES and §1.16 at the co-write; the producible closure (§1.27) is
+the machine that can compose them. Everything below is a recorded structure:
+
+  * **the unique day-1 producer**: every writer of flag 15 is day-pinned (arms for days 2-5 at
+    rm200/205/210) except Grace's go-home (`_wbranch[(257,50,1)]`, deps `{178:[2], 307:[1]}`),
+    so the counter step 1→2 (deps `{257:[1], 123:[1]}`) has exactly ONE live producer at day 1;
+  * **its recorded co-effect**: the go-home branch's `co` carries `(307, 0)` — the spend
+    (the 5db647a handler co-writes);
+  * **the raisers' recorded co-effect**: every branch of `(307, *, 1)` carries `(253, 1)` in
+    its `co` (theOpeningCartoon / rm470's day-1 cutscenes each raise flag 11 too);
+  * **the latch**: 253 is written to exactly one value game-wide and never back — the
+    `scene_carryins` monotone test, verbatim.
+
+THE RULE — necessary co-effects of a counter step: neco(k→k+1) = ⋂ over the step's dep-value
+producers LIVE at day k (a producer whose deps admit no 123==k is excluded; one with no day
+dep is included — the permissive direction) of [its `co` ∪ neco of ITS deps' producers],
+bounded depth. neco(1→2) = {307:=0, 253:=1}. A neco fact on a MONOTONE latch persists
+forever (confinement `{v}` for every later stage); a neco CLEAR on an ordinary register is a
+seed override (the value at the step is 0; later raises may re-raise only if producible).
+
+THE STAGED CLOSURE: PRE_k = closure confined 123 ≤ k, seeded from PRE_{k-1}'s PV with
+neco(k-1→k) applied (monotone → confine; clear → seed {0}). With 253 confined to {1},
+`470->471` (req 253:[0]) is dead, `(470, prev=471)` is unreachable under the restricted-
+projection refinement, the cartoon's `¬253` arming is dead — so PV_k[307] = {0} for all
+k ≥ 2. Sound: an over-approximation at every stage, narrowed only by facts that are necessary
+consequences of steps the counter provably took.
+
+TWO PAYOFFS FROM ONE PROOF:
+  1. **R4 fires in the closure arm** (PRE seeded from the staged PRE_3): go-home is dead on
+     day 4, the day-4 arm needs the trace, the trace needs 74, 74 needs 44 (frozen) or 47
+     (day 5 — the emust-locked cycle) ⇒ no goal ⇒ the row names flag 44 at the day-4 flip.
+  2. **Derived CONSUMER windows for the projections**: window(S==v) = {k : v ∈ PV_k[S]}.
+     For 307==1 that is {0, 1}; every `_wbranch` branch whose deps pin 307∈{1} (the go-home
+     257:=1) gains deps `{123: [0,1]}`. NOT the §1.16 spelling: that windowed the RAISE
+     branches and admitted raise-spend-raise within day 1; a window on the CONSUMER, proved by
+     the staged closure, is exactly "go-home only while 65 can be set". The joint (123, 257)
+     then cannot end day 3 through Grace, the day-3 arm's cost (reconVeve, and braceMold via
+     §1.16) prices the flip, `_flip_live` refuses the banned witness, and BOTH FPs retire.
+
+FACT-CHECKED IN THE MODEL (2026-09-02c), with two refinements the facts demanded:
+  * (b) ✓ go-home's branch: deps `{178:[2], 307:[1]}`, co `[(307, 0)]`;
+  * (d) ✓ day 1's only live 257:=1 producer is go-home (every other branch is day-pinned
+    to 2-5);
+  * (a) flag 11 (253) is raised as the STEP `0→1` at rm470 and in-room at 470/471, never
+    written to 0 — so "monotone" must read the written-value set over BOTH tables
+    (`_inroom` ∪ `_rstep` targets, a singleton), not "no steps";
+  * (c) twelve of the fourteen 307:=1 branches co-write `(253, 1)`; the other two co-write
+    854 (NOT monotone — written to 0 at 470) but carry deps `{12: [471]}`, and rm471's sole
+    entrance is `470→471` (req `253:[0]`) while `init_writes[471] = {253: 1}` unconditional.
+    So `prev == 471 ⇒ 253 == 1` — a co-effect of the PREVIOUS-ROOM register's producers:
+    `prev == p` means p's init ran, so p's unconditional init writes of monotone latches are
+    necessary facts. neco(307==1) = {253:=1} over all fourteen.
+CENSUS (2026-09-02c, step-necos = counter steps whose live dep-producers all co-write):
+  * LSL2 none (no counters); KQ4 none (counter 116, no co-writes);
+  * **KQ6**: counter 162, steps 0→1/1→2/2→3 each via `233==1`, three producers, all
+    co-writing `(212, 1)` — the staged closure WILL act on KQ6 (golden: movement = bug);
+  * **KQ5**: counter 331, step 5→6 via `332==6`, 42 producers, neco `{(331,2), (333,0)}` —
+    a clear (seed override) and, oddly, a write of the counter itself (ignored: a
+    co-effect on the counter is the step's own business);
+  * **LB2**: counter 111, step 14→15 via `632==0`, five producers, neco = eleven clears
+    (631..642 := 0) — seed overrides only;
+  * **GK1**: 123 steps 1→2, 6→7, 7→8 via `257==1` with go-home the ONLY live producer —
+    days 6 and 7 have NO endDay arm in the record. After the 307 window ({0,1}) the steps
+    6→7 and 7→8 die at rm370 (the endgame stays reachable through rm750's clamps to 9/10).
+    ⚠️ Either honest (those days end by a route the model lacks — a capture gap the windows
+    EXPOSE, to be found in the scripts) or the rows at day 6/7 in `register_strandings`
+    move; examine every GK1 line the measurement shows.
+The census's monotone test was the OLD one (no steps) and lacked the prev-room rule, so
+its GK1 necos read `{307:0}` alone; the refined draft yields `{307:0, 253:1}`.
+
+SIMULATED IN THE LOADED MODEL (2026-09-02f), three faults found and fixed in the draft before
+any measurement: (1) a stage must be seeded at the rooms the STEP LANDS in, not everywhere
+the previous stage stood (values are carried, places are not) — and with positions reset
+the restricted-projection refinement is sound for PRE too; (2) the closure treated a
+CHAINED entry (guard None) as always armable — it now carries its chain's ROOT guards
+(takeTheBody ← afterTheCloseUp ← `prev == 471`); (3) every cutscene also carries a
+`(self changeState: 99)` from its own `handleEvent` — the Esc-to-skip redirect, recorded as
+an entry with `is_self` — which is no way IN: the closure skips self-redirects. neco(1→2)
+= `{307:0, 253:1}` derives correctly throughout.
+
+## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
+
+Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
+(reconVeve's live site at rm50 needs `178==2`, whose only producer is rm340 — dead in the
+post-crossing day walk), and `crossing_retires_need` never consults the day projection
+because the descent's own req touches only flags 271/273/850 — and NEITHER flag's writers
+presuppose the day (271 ← 273 at rm455, 273 ← a free flag at rm450). The record ties the
+descent to day 10 only through a COST: 271's write prices the rod, obtainable on day 9. No
+projection carries that; the flat `reob` is room-level (455 at day 2 can reach the source,
+800 never can), so the witness the row needs — a day-10 crosser lacking the sketch — is
+fabricated by coarseness. The honest cure is a STATE-LEVEL CROSSING WITNESS (does an
+item-less player reach the crossing state at all, with its costs composed?), which is
+`_pclose`'s question, not the projections' — a named future round. Not need-liveness;
+the §1.28 note calling it that was wrong.
+
 ## §1.29 R4's TRUE WALL: once-only flag 65, third consumer (2026-09-02)
 
 With the record closed (§1.28) the closure arm still emitted nothing, and the emust round
