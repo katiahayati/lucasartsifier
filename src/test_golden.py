@@ -1,5 +1,5 @@
-"""Golden-snapshot lock on the FULL analysis output surface for the VALIDATED games: LSL2, KQ4
-and KQ6.
+"""Golden-snapshot lock on the FULL analysis output surface for the VALIDATED games: LSL2, KQ4,
+KQ6 and KQ5.
 
 The v1.0-lsl2 tag's behaviour on LSL2 is a CORRECT ORACLE -- 16 softlocks, four dangerous sinks,
 its guard specs -- validated by playing the patched game to the ending. This test freezes that whole
@@ -80,8 +80,17 @@ def _diff(golden, got):
 
 
 def run():
-    print("=== test_golden: the full analysis surface is frozen (LSL2, KQ4, KQ6) ===")
-    for name, cfg in (("LSL2", config.LSL2), ("KQ4", config.KQ4), ("KQ6", config.KQ6)):
+    print("=== test_golden: the full analysis surface is frozen (LSL2, KQ4, KQ6, KQ5) ===")
+    # ⭐ KQ5 JOINED 2026-09-01 [user rulings, same hour: "if KQ6 or any of the goldens moved
+    # (other than an empty line or whatever), it's wrong and you gotta fix it" — "also KQ5
+    # please" — "verify also that there have been no changes to kq5 since the release tag"].
+    # VERIFIED against v3.1-kq5 (28d0732, on main) before freezing: zero shared keys moved,
+    # zero keys lost, exactly one key added since the release (`"scene_carryins": []`, the
+    # declared empty-line kind). The golden is that verified surface, frozen via the
+    # documented regeneration one-liner. KQ5's config comes from the sweep
+    # (`config.by_name`), not a module constant — same GameConfig, same apparatus.
+    for name, cfg in (("LSL2", config.LSL2), ("KQ4", config.KQ4), ("KQ6", config.KQ6),
+                      ("KQ5", config.by_name("kq5"))):
         path = os.path.join(_HERE, "testdata", f"{name.lower()}.golden.json")
         # ⛔ THIS FILE NEVER SKIPS [user ruling, 2026-08-09: "test_golden shouldn't skip anything
         # ever"]. Exactly ONE check is emitted per golden game, on every run, whatever the state of

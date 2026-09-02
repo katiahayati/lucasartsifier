@@ -1,0 +1,173 @@
+{
+  "action_specs": [
+    "Rope@rm30: (not (gEgo has: 20))"
+  ],
+  "dangerous": [
+    "Fish@rm6->1 rooms",
+    "Leg_of_Lamb@rm33->1 rooms",
+    "Pie@rm1->1 rooms",
+    "Pie@rm34->1 rooms"
+  ],
+  "death_signal": [
+    401,
+    1
+  ],
+  "debug_globals": [],
+  "edge_specs": [
+    "rm18->rm214: (and (gEgo has: 6) (gEgo has: 11))",
+    "rm32->rm33: (and (gEgo has: 2) (gEgo has: 10) (gEgo has: 18) (gEgo has: 22) (or (gEgo has: 2) (gEgo has: 19)) (or (gEgo has: 19) (== ((gInv at: 19) owner:) 34)))",
+    "rm36->rm35: (== ((gInv at: 2) owner:) 36) [REFUSED]",
+    "rm40->rm41: (and (gEgo has: 21) (== ((gInv at: 19) owner:) 34))",
+    "rm42->rm43: (gEgo has: 25)",
+    "rm44->rm113: (and (gEgo has: 30) (gEgo has: 31))",
+    "rm45->rm113: (and (gEgo has: 30) (gEgo has: 31))",
+    "rm46->rm113: (and (gEgo has: 30) (gEgo has: 31))",
+    "rm46->rm661: (and (gEgo has: 30) (gEgo has: 31))",
+    "rm49->rm48: (or (proc0_12 54) (and (gEgo has: 23) (gEgo has: 31)))",
+    "rm54->rm55: (gEgo has: 37)",
+    "rm54->rm59: (gEgo has: 37)",
+    "rm54->rm67: (gEgo has: 37)",
+    "rm660->rm663: (and (gEgo has: 30) (gEgo has: 31))",
+    "rm85->rm86: (and (gEgo has: 22) (or (== ((gInv at: 5) owner:) 6) (== ((gInv at: 8) owner:) 6) (== ((gInv at: 16) owner:) 6) (== ((gInv at: 19) owner:) 6)))"
+  ],
+  "exhaustion": [
+    "Bag_of_Peas@54->[57, 58, 59, 60, 61, 63, 64, 67]",
+    "Bag_of_Peas@57->[58, 59, 60, 61, 63, 64, 67]",
+    "Bag_of_Peas@58->[57, 59, 60, 61, 63, 64, 67]",
+    "Bag_of_Peas@59->[57, 58, 60, 61, 63, 64, 67]",
+    "Bag_of_Peas@60->[57, 58, 59, 61, 63, 64, 67]",
+    "Bag_of_Peas@61->[57, 58, 59, 60, 63, 64, 67]",
+    "Bag_of_Peas@62->[57, 58, 59, 60, 61, 63, 64, 67]",
+    "Bag_of_Peas@63->[57, 58, 59, 60, 61, 64, 67]",
+    "Bag_of_Peas@64->[57, 58, 59, 60, 61, 63, 67]",
+    "Bag_of_Peas@65->[57, 58, 59, 60, 61, 63, 64, 67]",
+    "Bag_of_Peas@66->[57, 58, 59, 60, 61, 63, 64, 67]",
+    "Bag_of_Peas@67->[57, 58, 59, 60, 61, 63, 64]",
+    "Bag_of_Peas@683->[57, 58, 59, 60, 61, 63, 64, 67]"
+  ],
+  "fatal_uses": [
+    "Rope@rm30/ropeOnBranch"
+  ],
+  "gate_specs": [],
+  "goal_rooms": [
+    119,
+    673
+  ],
+  "groups": [
+    "Pie or Leg_of_Lamb@34"
+  ],
+  "joint": [],
+  "market": [
+    "Gold_Coin@rm206/206->starves rm[5, 9, 13]",
+    "Gold_Coin@rm5/204->starves rm[5, 9, 13]",
+    "Golden_Needle@rm206/206->starves rm[5, 9, 13]",
+    "Golden_Needle@rm5/204->starves rm[5, 9, 13]",
+    "Heart@rm206/206->starves rm[9]",
+    "Heart@rm5/203->starves rm[9]",
+    "Heart@rm5/204->starves rm[9]",
+    "Leg_of_Lamb@rm0/0->starves rm[42]",
+    "Leg_of_Lamb@rm12/12->starves rm[42]",
+    "Leg_of_Lamb@rm6/6->starves rm[42]",
+    "Pie@rm0/0->starves rm[35, 36]",
+    "Pie@rm34/34->starves rm[35, 36]"
+  ],
+  "market_specs": [
+    "Fish@script6/handler",
+    "Gold_Coin@script204/getSled",
+    "Gold_Coin@script206/getPie",
+    "Golden_Needle@script204/getSled",
+    "Golden_Needle@script206/getPie",
+    "Heart@script203/soldCloak",
+    "Heart@script204/getSled",
+    "Heart@script206/getPie",
+    "Leg_of_Lamb@script12/handler",
+    "Leg_of_Lamb@script6/handler",
+    "Pie@script34/handler"
+  ],
+  "ownedby_death_folds": [
+    "Fish@rm86/yourStuck->owner6 ctx=[(12, 85)]",
+    "Leg_of_Lamb@rm42/hatch->owner34 ctx=[]",
+    "Leg_of_Lamb@rm86/yourStuck->owner6 ctx=[(12, 85)]",
+    "Locket@rm67/henchCaught->owner57 ctx=[(498, 0)]",
+    "Pie@rm35/killEgo->owner36 ctx=[(12, 36)]",
+    "Shoe@rm86/yourStuck->owner6 ctx=[(12, 85)]",
+    "Stick@rm86/yourStuck->owner6 ctx=[(12, 85)]"
+  ],
+  "placements": [
+    "Main/Leg_of_Lamb: applied=True kind=None",
+    "Main/Pie: applied=True kind=None",
+    "bakeShop/Gold_Coin: applied=True kind=market-case sites=1",
+    "bakeShop/Golden_Needle: applied=True kind=market-case sites=1",
+    "bakeShop/Heart: applied=True kind=market-case sites=1",
+    "boatRegion: applied=True kind=setscript sites=2",
+    "boatRegion: applied=True kind=setscript sites=2",
+    "boatRegion: applied=True kind=setscript sites=3",
+    "castle: applied=True kind=arm-event sites=0",
+    "castle: applied=True kind=arm-event sites=1",
+    "castle: applied=True kind=capture-arm sites=1",
+    "castle: applied=True kind=fuse-arm sites=1",
+    "rm006/Fish: applied=True kind=market-case sites=2",
+    "rm006/Leg_of_Lamb: applied=True kind=market-case sites=1",
+    "rm006: applied=True kind=window sites=2",
+    "rm012/Leg_of_Lamb: applied=True kind=market-case sites=1",
+    "rm018: applied=True kind=direct sites=1",
+    "rm030/Rope: applied=True kind=setscript sites=1",
+    "rm032: applied=True kind=direct sites=3",
+    "rm034/Pie: applied=True kind=market-case sites=1",
+    "rm040: applied=True kind=arm-clause sites=1",
+    "rm042: applied=True kind=hold-advance sites=1",
+    "rm046: applied=True kind=setscript sites=1",
+    "rm049: applied=True kind=direct sites=2",
+    "rm054: applied=True kind=setscript sites=1",
+    "rm085: applied=True kind=arm-clause sites=1",
+    "rm660->rm663: applied=True kind=entry-deferral-PARTIAL sites=2 entry_sites=2",
+    "tailorShop/Heart: applied=True kind=market-case sites=2",
+    "toyShop/Gold_Coin: applied=True kind=market-case sites=1",
+    "toyShop/Golden_Needle: applied=True kind=market-case sites=2",
+    "toyShop/Heart: applied=True kind=market-case sites=2"
+  ],
+  "register_strandings": [
+    "Fishhook@reg456=1->[67]",
+    "Hammer@reg12=85->[86]",
+    "Shell@reg456=1->[46]"
+  ],
+  "register_value_strandings": [],
+  "register_write_specs": [
+    "reg12=85: (gEgo has: 22) [REFUSED]",
+    "reg456=1: (and (gEgo has: 23) (gEgo has: 31)) [REFUSED]"
+  ],
+  "scene_carryins": [],
+  "sinks": [
+    "Leg_of_Lamb@rm0 dest=1 refused=False",
+    "Pie@rm0 dest=1 refused=False"
+  ],
+  "softlock_items": [
+    "Pie",
+    "Golden_Needle",
+    "Fish",
+    "Brass_Bottle",
+    "Shoe",
+    "Heart",
+    "Harp",
+    "Gold_Coin",
+    "Stick",
+    "Beeswax",
+    "Leg_of_Lamb",
+    "Rope",
+    "Crystal",
+    "Hammer",
+    "Shell",
+    "Locket",
+    "Iron_Bar",
+    "Fishhook",
+    "Cat_Fish"
+  ],
+  "start_room": 99,
+  "tolls": [
+    "Brass_Bottle@one-visit-toll-pocket/rm214->rm18",
+    "Gold_Coin@one-visit-toll-pocket/rm214->rm18"
+  ],
+  "window_specs": [
+    "rm86<-[5, 8, 16, 19]: (or (== ((gInv at: 5) owner:) 6) (== ((gInv at: 8) owner:) 6) (== ((gInv at: 16) owner:) 6) (== ((gInv at: 19) owner:) 6)) holds=[(485, 1)] self_resetting=[565]"
+  ]
+}
