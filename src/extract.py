@@ -3659,6 +3659,84 @@ def _one_of(pcs):
 
 _NEVER = object()           # _select_permits: no path permits -- the element is never cued
 
+_GAME_GWRITES = {}          # id(ir) -> {global index written by ANY script}
+
+
+def _game_global_writes(ir):
+    key = id(ir)
+    got = _GAME_GWRITES.get(key)
+    if got is None:
+        _IR_PINS[key] = ir
+        got = _GAME_GWRITES[key] = set()
+        for sn in ir.scripts:
+            got |= _script_global_writes(ir, sn)
+    return got
+
+
+def _true_at_zero(core):
+    """Does a register atom hold when its register is 0 (SCI's zero-init)? None = unknown."""
+    if not (isinstance(core, Pred) and core.kind in ("CMP", "FLAG")):
+        return None
+    try:
+        v = int(core.value)
+    except (TypeError, ValueError):
+        return None
+    return {"==": 0 == v, "!=": 0 != v, "<": 0 < v, "<=": 0 <= v, ">": 0 > v, ">=": 0 >= v}.get(core.op)
+
+
+def _floor(ir, g):
+    """The IGNORANCE FLOOR: drop every atom a register NO SCRIPT WRITES cannot satisfy at its
+    zero-init. Such an atom is not a condition the game imposes -- it is the model's own gap
+    (a writer it could not read), and carried as a requirement it would seal the destination
+    for good: the invented-seal direction (GK1 docs §1.35 -- the bayou icon's flag 268 before
+    its writer was captured). An unwritten register's atom that holds at 0 is kept (harmless).
+    Only register atoms of a plain conjunction are judged; anything else passes through."""
+    if g is None:
+        return None
+    ws = _game_global_writes(ir)
+    keep = []
+    for a in (g.kids if isinstance(g, GAnd) else [g]):
+        core = a.kid if isinstance(a, GNot) else a
+        if isinstance(core, Pred) and core.kind in ("CMP", "FLAG") \
+                and isinstance(core.var, int) and core.var not in ws:
+            t0 = _true_at_zero(core)
+            if t0 is not None and (t0 if isinstance(a, GNot) else not t0):
+                continue                        # unsatisfiable by an unwritten register: drop
+        keep.append(a)
+    return _conj(keep)
+
+
+_PRESENCE = {}              # (id(ir), script, object) -> guard | None
+
+
+def _presence_guard(ir, sc, obj):
+    """Under what condition is `obj` PUT INTO its container -- the path condition of the
+    `(C add: obj)` site(s) in this script. GK1's day map adds the bayou icon under flag 268,
+    the airport under 269, grandma under 101, the lake under 64 (`rm205::init`): "the icon
+    clicked is the player's choice" (docs §1.17) was right about the CLICK and wrong about the
+    icon's EXISTENCE, which is a state (§1.35: the model could visit the bayou on day 1).
+    Several sites: the one condition they agree on, else None (permissive). Floored."""
+    key = (id(ir), sc.number, obj.name)
+    if key in _PRESENCE:
+        return _PRESENCE[key]
+    pcs = []
+    for o in sc.objects:
+        for _mn, ast in o.methods.items():
+            def leaf(n, pc):
+                if n.get("t") != "Send":
+                    return
+                recv, msgs = _pairs(n)
+                if recv is None:
+                    return
+                for sel, params in msgs:
+                    if sel == "add" and any(isinstance(p, dict) and p.get("t") == "Object"
+                                            and p.get("name") == obj.name for p in params):
+                        pcs.append(list(pc))
+            walk_stream(ast, [], leaf)
+    got = _floor(ir, _one_of(pcs)) if pcs else None
+    _PRESENCE[key] = got
+    return got
+
 
 def _select_permits(ir, sc, obj, gate_sel):
     """Under what condition does `obj`'s gate method let the container reach its gated method?
@@ -3840,7 +3918,7 @@ def _script_prop_values(ir, s, var):
                             act = _select_permits(ir, s, o, gate[0])
                             if act is _NEVER:
                                 continue
-                            g = _conj([act, g])
+                            g = _conj([_presence_guard(ir, s, o), act, g])
                         note(v, g)
     return {v: (gs[0] if len(gs) == 1 else None) for v, gs in seen.items()}
 

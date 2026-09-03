@@ -1637,6 +1637,49 @@ GK1 2 (rm410, the hounfour's script 900), KQ6 1, LB2 26 (its close-up insets) �
 harvest scope grows; the watched surface decides whether any row moves. The cast_refs scan
 in `opmodel` now reads both spellings. Measuring again.
 
+## §1.41 Icon presence, floored: the bayou exists only under flag 268 (2026-09-03)
+
+§1.35's item (i), unparked by §1.40's capture. `_script_prop_values` conjoins a third
+condition onto an icon-derived destination: the icon's PRESENCE, the path condition of the
+`(container add: icon)` site(s) in the script (`_presence_guard`; several sites → the one
+condition they agree on, else permissive). `rm205::init` adds grandma under flag 101, the
+lake under 64, the bayou under 268, the airport under 269, gedde under 24, tulane under 14,
+the French Quarter unconditionally; `rm200::init` adds the cemetery under 77, the police
+lobby under 63, Cazaunoux under 266, the moonbeam house under 267, the rest in one
+unconditional `add:`. The condition RIDES the movie hop like the day did (`_rides`: every
+one of these flags is written by some other script).
+
+**The floor (`_floor`).** A presence atom is only ever carried if the game can satisfy it:
+an atom on a register NO SCRIPT WRITES (`_game_global_writes`, the IR-level census) that is
+false at SCI's zero-init is dropped — carried, it would seal the destination for good, and
+that is the model's ignorance (a writer it could not read), not a condition of the game.
+Before §1.40 flag 268 was exactly that case at the MODEL level (an IR writer existed, deep in
+the inset); the IR-level floor is the safety net for the next such flag, and `g181` (never
+written, tested negatively by grandma and the voodoo shop) shows the harmless half: `¬181`
+holds at 0 and is kept.
+
+Pinned in `test_icon_select_gate.py` (the presence atoms on every gated icon, the ride on
+rm372, and the floor on a synthetic atom). Measuring: GK1 rebuild, then the six-game suite
+on the §1.40+§1.41 tree, then the GK1 row diff against `2fb8a30`.
+
+**What presence does NOT buy, read ahead for §1.34.** The bayou now exists under flag 268,
+and 268 is raisable at rm410 (and the hounfour) under the puzzle's condition — which is
+OPAQUE to the model: `local0 == 2`, `count == 3`, the three `oneOf` phrase tests on the
+inset's own locals. In the flat register model an opaque-guarded write is producible
+anywhere its room is, so the bayou opens on day 1 there, exactly as before presence; rm480's
+`(++ day)` (§1.34) would still fire on day 1. The game's own tie, read from the scripts:
+`tom::doVerb` arms `sGoToDrum` on verb 18 = the DRUM BOOK's `message` (GKInvItem.sc:999) —
+"use the drum book on the drummer" — and the book (item 14) is handed over at the start of
+day 4 or 5 under flag 73 (startOfDay4.sc:422-487, startOfDay5.sc:602). So the honest window
+is "day ≥ 4 with the book", two days early for a day-6 ritual, and the last two days live in
+the phrases (message data, not structure). Two things follow: (a) the arming site's path
+condition (`param1 == 18` → OWN(14) under the doVerb scope, then the machine's arm) is NOT
+carried onto the armed script's handlers today — `armed_rooms` holds rooms, not guards, and
+`_scriptid_scope`'s guards feed extract, not the harvest; carrying it is a general fix
+(an armed script's handlers run under the arming condition) worth its own round; (b) even
+with it, §1.34 cannot ship honestly: the bayou's day is in the puzzle's answer. §1.34 stays
+PARKED, now for the right reason.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED

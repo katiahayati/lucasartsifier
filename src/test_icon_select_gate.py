@@ -91,22 +91,39 @@ def main():
 
     # -- rm205, the greater New Orleans map --------------------------------------------------
     r205 = X._script_prop_values(ir, sc205, _register_var(sc205))
+    F = (lambda f: f"{base + f}!=0") if base is not None else (lambda f: "?")
     check("rm205 -> 750 (the plane): the airport icon boards on day 7 ONLY, via the say:-caller "
-          "cue-back on the day-7 branch (both branches return 0)",
-          _leaves(r205.get(750)) == {("neg", "123!=7")}, f"got {r205.get(750)!r}")
-    check("rm205 -> 380 (grandma): select permits under !g181; cue refuses days >= 7 (early "
-          "return read as a path condition)",
-          _leaves(r205.get(380)) == {("neg", "181!=0"), ("neg", "123>=7")}, f"got {r205.get(380)!r}")
-    for dst in (490, 470, 200, 330, 350):
-        check(f"rm205 -> {dst}: an icon with the inherited `(return 1)` select stays unguarded",
-              dst in r205 and r205[dst] is None, f"got {r205.get(dst)!r}")
+          "cue-back on the day-7 branch (both branches return 0) -- and exists under flag 269 "
+          "(the travel agent's grant, its `add:` site)",
+          _leaves(r205.get(750)) == {("neg", "123!=7"), ("pos", F(269))}, f"got {r205.get(750)!r}")
+    check("rm205 -> 380 (grandma): present under flag 101; select permits under !g181; cue "
+          "refuses days >= 7 (early return read as a path condition)",
+          _leaves(r205.get(380)) == {("pos", F(101)), ("neg", "181!=0"), ("neg", "123>=7")},
+          f"got {r205.get(380)!r}")
+    check("rm205 -> 490 (the bayou): present under flag 268 -- the drum puzzle's flag, whose "
+          "writer test_method_send_following captures; carried, not floored away",
+          _leaves(r205.get(490)) == {("pos", F(268))}, f"got {r205.get(490)!r}")
+    check("rm205 -> 470 (the lake): present under flag 64",
+          _leaves(r205.get(470)) == {("pos", F(64))}, f"got {r205.get(470)!r}")
+    check("rm205 -> 350 (gedde): present under flag 24", _leaves(r205.get(350)) == {("pos", F(24))},
+          f"got {r205.get(350)!r}")
+    check("rm205 -> 330 (tulane): present under flag 14", _leaves(r205.get(330)) == {("pos", F(14))},
+          f"got {r205.get(330)!r}")
+    check("rm205 -> 200 (the French Quarter): added unconditionally, inherited select: unguarded",
+          200 in r205 and r205[200] is None, f"got {r205.get(200)!r}")
 
     # -- rm200, the city map ---------------------------------------------------------------
     r200 = X._script_prop_values(ir, sc200, _register_var(sc200))
     check("rm200 -> 250 (voodoo shop): open while day <= 6, and its cue needs !g181",
           _leaves(r200.get(250)) == {("neg", "123>6"), ("neg", "181!=0")}, f"got {r200.get(250)!r}")
-    check("rm200 -> 290 (moonbeam): open while day < 5",
-          _leaves(r200.get(290)) == {("neg", "123>=5")}, f"got {r200.get(290)!r}")
+    check("rm200 -> 290 (moonbeam): present under flag 267, open while day < 5",
+          _leaves(r200.get(290)) == {("pos", F(267)), ("neg", "123>=5")}, f"got {r200.get(290)!r}")
+    check("rm200 -> 300 (the cemetery): present under flag 77",
+          _leaves(r200.get(300)) == {("pos", F(77))}, f"got {r200.get(300)!r}")
+    check("rm200 -> 230 (the police lobby): present under flag 63",
+          _leaves(r200.get(230)) == {("pos", F(63))}, f"got {r200.get(230)!r}")
+    check("rm200 -> 270 (Cazaunoux): present under flag 266",
+          _leaves(r200.get(270)) == {("pos", F(266))}, f"got {r200.get(270)!r}")
     l260 = _leaves(r200.get(260))
     check("rm200 -> 260 (museum): the three refusals negated, day <= 6 among them",
           ("neg", "123>6") in l260 and len(l260) == 3
@@ -114,19 +131,33 @@ def main():
           f"got {r200.get(260)!r}")
     check("rm200 -> 205: TWO icons name it (greatNO1/greatNO2), so the value drops its guard",
           205 in r200 and r200[205] is None, f"got {r200.get(205)!r}")
-    for dst in (210, 230, 300, 430):
-        check(f"rm200 -> {dst}: inherited select, unguarded", dst in r200 and r200[dst] is None,
-              f"got {r200.get(dst)!r}")
+    for dst in (210, 430):
+        check(f"rm200 -> {dst}: added unconditionally, inherited select: unguarded",
+              dst in r200 and r200[dst] is None, f"got {r200.get(dst)!r}")
 
     # -- the second hop: the first-visit movie inherits the value's guard ----------------------
     v175 = _exit_var(sc372, 175)
     check("rm372 exits on global175", v175 is not None)
     r372 = X.var_room_values(ir, 372, v175) if v175 is not None else {}
-    check("rm372 -> 750 rides the day-7 gate: the day register is written by neither script",
-          _leaves(r372.get(750)) == {("neg", "123!=7")}, f"got {r372.get(750)!r}")
-    check("rm372 -> 380 rides grandma's gate",
-          _leaves(r372.get(380)) == {("neg", "181!=0"), ("neg", "123>=7")}, f"got {r372.get(380)!r}")
+    check("rm372 -> 750 rides the day-7 gate and the airport's presence flag: neither register "
+          "is written by either script",
+          _leaves(r372.get(750)) == {("neg", "123!=7"), ("pos", F(269))}, f"got {r372.get(750)!r}")
+    check("rm372 -> 380 rides grandma's gate and presence",
+          _leaves(r372.get(380)) == {("pos", F(101)), ("neg", "181!=0"), ("neg", "123>=7")},
+          f"got {r372.get(380)!r}")
+    check("rm372 -> 490 rides the bayou's presence flag 268 (written by script 815, not 205/372)",
+          _leaves(r372.get(490)) == {("pos", F(268))}, f"got {r372.get(490)!r}")
     check("rm372 -> 200 (an unguarded icon) stays free", 200 in r372 and r372[200] is None)
+    # the floor: a positive atom on a register NO script writes would be an invented seal
+    unwritten = sorted(set(range(1, 60)) - X._game_global_writes(ir))[:1]
+    check("the floor drops a positive atom on an unwritten register and keeps a negative one",
+          bool(unwritten) and X._floor(ir, GAnd([Pred("CMP", var=unwritten[0], op="!=", value="0"),
+                                                  GNot(Pred("CMP", var=unwritten[0], op="!=", value="0")),
+                                                  Pred("CMP", var=123, op="==", value="7")])).__class__.__name__
+          in ("GAnd",) and len(X._floor(ir, GAnd([Pred("CMP", var=unwritten[0], op="!=", value="0"),
+                                                    GNot(Pred("CMP", var=unwritten[0], op="!=", value="0")),
+                                                    Pred("CMP", var=123, op="==", value="7")])).kids) == 2,
+          f"unwritten sample = {unwritten}")
     if base is not None:
         f449 = f"{base + 449}"
         check("no rm372 guard names flag 449 -- rm205's dispatch raises it on the very path to "
