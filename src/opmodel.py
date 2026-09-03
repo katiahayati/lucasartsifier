@@ -209,6 +209,7 @@ class OpEmitter:
         # "where does this script's code run", which is a scope question.
         cast_refs = {}
         isel = X.init_selectors(ir)
+        armers = X.client_arming_selectors(ir)
         for rn, sc in ir.scripts.items():
             for o in sc.objects:
                 for _mn, body in o.methods.items():
@@ -219,6 +220,18 @@ class OpEmitter:
                             recv, msgs = I.send_pairs(n)
                         except Exception:                      # noqa: BLE001
                             continue
+                        # THE ARGUMENT-SIDE SPELLING: `(gRoom setInset: (ScriptID 815 0) self
+                        # gRoom)` arms script 815's inset here -- the receiver's class method
+                        # inits its ARGUMENT with itself as client (`client_arming_selectors`,
+                        # derived: setScript/setInset, never setCursor). The receiver-side
+                        # spelling `(<ScriptID obj> init:)` is the scan below. GK1 §1.40.
+                        for sel, params in msgs:
+                            k = armers.get(sel)
+                            if k is None or len(params) < k:
+                                continue
+                            atgt = ir.script_id_target(params[k - 1])
+                            if atgt and atgt[0] != rn and ir.scripts.get(atgt[0]) is not None:
+                                cast_refs.setdefault(atgt[0], set()).add(rn)
                         tgt = ir.script_id_target(recv)
                         if not tgt or tgt[0] == rn:
                             continue                           # same script: not a cross-script home
@@ -508,7 +521,8 @@ class OpEmitter:
                         # that kills the minotaur as UNGUARDED, so the escape from the catacombs
                         # needs no red scarf and the whole carry-IN class cannot strand.
                         with verb_param_scope(mn):
-                            self._hwalk(room, rn, body, [] if og is None else [og], set())
+                            self._hwalk(room, rn, body, [] if og is None else [og], set(),
+                                        owner=o)
                 # ...AND A PROCEDURE IS NOT A HANDLER. The engine dispatches METHODS -- `doit`,
                 # `handleEvent`, `doVerb`, `changeState`; nothing ever dispatches a script-level
                 # procedure, which runs only where something CALLS it. `_hwalk` (and the machine
@@ -1158,9 +1172,9 @@ class OpEmitter:
             if body is None:
                 continue
             for room in rooms:
-                self._hwalk(room, MAIN_SCRIPT, body, [], set())
+                self._hwalk(room, MAIN_SCRIPT, body, [], set(), owner=o)
 
-    def _hwalk(self, room, script, node, pc, seen):
+    def _hwalk(self, room, script, node, pc, seen, owner=None):
         """Path-condition walk of a handler; record global + local writes + item transfers,
         FOLLOWING PublicCall/LocalCall into their procedures (across scripts).
 
@@ -1188,9 +1202,9 @@ class OpEmitter:
                 if isinstance(d, dict) and I.is_global(d))
         for gi in decs:
             self.handler_decs.add((room, script, gi))
-        walk_stream(node, pc, lambda n, p: self._heffect(room, script, n, p, seen))
+        walk_stream(node, pc, lambda n, p: self._heffect(room, script, n, p, seen, owner))
 
-    def _heffect(self, room, script, node, pc, seen):
+    def _heffect(self, room, script, node, pc, seen, owner=None):
         """What one statement MEANS to the handler model. The part that is ours, not shared."""
         tp = node["t"]
         if tp == "Assignment":
@@ -1238,10 +1252,58 @@ class OpEmitter:
                         self.handler_gets.append((room, script, it, g))
                     else:
                         self.handler_drops.append((room, script, it, g, dest))
+            self._follow_send(room, script, recv, msgs, pc, seen, owner)
         elif tp in ("PublicCall", "LocalCall"):
-            self._follow_call(room, script, node, pc, seen)
+            self._follow_call(room, script, node, pc, seen, owner)
 
-    def _follow_call(self, room, script, node, pc, seen):
+    _SEND_DEPTH = 3
+
+    def _follow_send(self, room, script, recv, msgs, pc, seen, owner):
+        """A handler's SAME-SCRIPT METHOD SEND is a call: the callee runs under the handler's
+        condition, so its writes are the handler's writes (2026-09-03, GK1 docs §1.40).
+
+        The harvest followed `PublicCall`/`LocalCall` into procedures and never a method send.
+        GK1's flag 268 -- the bayou icon's presence on the day map -- is raised in exactly one
+        place, the drum-code puzzle's `PhraseDisplay::checkPhrases` (script 815), reached only as
+        `drumInset::dispose` -> `(PhraseDisplay checkPhrases:)`: `dispose` IS walked here (the
+        inset is scoped into the drummers' room by `setInset:`, and the system `Inset::
+        handleEvent` disposes it on the player's close click), but the send hid the write, so the
+        flag had NO recorded writer at all and the icon's presence condition could not be carried
+        without sealing the bayou (§1.35's invented-seal direction).
+
+        Bounded, and derived from the record rather than a selector list: the receiver must be
+        `self` (the handler's own object -- `owner`) or an object/class DEFINED IN THIS SCRIPT,
+        and the selector one of ITS OWN methods; `init` and `changeState` are never followed
+        (the cast conditions own the one, the machines the other); depth 3, no recursion (the
+        `seen` key). The callee walks under ITS method's verb-param scope, so a `doVerb`'s
+        `param1 == N` reading does not leak into a callee whose `param1` is something else.
+        Static census 2026-09-03 (same-script own-method sends with a global write in the
+        callee, depth 3): LSL2 15, KQ4 20, KQ6 48, KQ5 21, LB2 90, GK1 37 -- mostly system
+        plumbing (`Game::doit/newRoom`, `Dialog`, cursors) outside any scope; the scoped ones
+        are measured by the six-game suite, goldens byte-identical."""
+        if recv is None or sum(1 for k in seen if isinstance(k, tuple) and k[0] == "m") >= self._SEND_DEPTH:
+            return
+        sc = self.ir.scripts.get(script)
+        if sc is None:
+            return
+        if recv.get("t") == "Self":
+            tgt = owner
+        elif recv.get("t") == "Object":
+            tgt = sc.by_name.get(recv.get("name"))
+        else:
+            return
+        if tgt is None:
+            return
+        for sel, _params in msgs:
+            if sel in ("init", "changeState") or sel not in tgt.methods:
+                continue
+            key = ("m", script, tgt.name, sel)
+            if key in seen:
+                continue
+            with verb_param_scope(sel):
+                self._hwalk(room, script, tgt.methods[sel], pc, seen | {key}, owner=tgt)
+
+    def _follow_call(self, room, script, node, pc, seen, owner=None):
         # PublicCall carries its script; Local = same. `proc_ref` resolves a local proc's
         # REGISTRY key from the call's offset -- see ir.proc_ref.
         tgt_script, name = I.proc_ref(self.ir, node, script)
@@ -1250,7 +1312,7 @@ class OpEmitter:
         body = self.procs_by.get((tgt_script, name))
         if body is None or name in seen:
             return
-        self._hwalk(room, tgt_script, body, pc, seen | {name})
+        self._hwalk(room, tgt_script, body, pc, seen | {name}, owner=owner)
 
     def _init_writes(self, room, script):
         # `by_name["rm<N>"]` -- the LSL2 decompiler naming convention, for the FOURTH time. KQ4

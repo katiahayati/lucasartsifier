@@ -1583,6 +1583,60 @@ and the 09-02 handoff said 9 — a simulated state that never shipped). The delt
   * R4 does NOT fire: the day-7 tie closes the phantom flights, but the day-4 crosser is still
     blocked on once-only flag 65 (§1.29) — the next round, now unblocked on its prerequisite.
 
+## §1.40 A handler's method send is a call: flag 268's writer captured (2026-09-03)
+
+§1.35 named the capture class that parks icon presence and, behind it, §1.34: flag 268 (the
+bayou icon) is raised only in `PhraseDisplay::checkPhrases` (drumInset.sc, script 815),
+"two method sends deep from any handler the harvest walks". Re-read with the lifecycle in
+hand, it is ONE send deep: `sGoToDrum@410` state 2 does `(global2 setInset: (ScriptID 815 0)
+self global2)`, so script 815 is ScriptID-scoped into rm410 (`_scriptid_scope`: drumInset,
+turnLeft/Right, the page prints — guard None) and the harvest already walks `drumInset::
+dispose` as a handler (every own method but `init`/`changeState`); the system `Inset::
+handleEvent` disposes the inset on the player's close click (Inset.sc:141-153), so `dispose`
+is player-driven. What hid the write is that `dispose` reaches it as `(PhraseDisplay
+checkPhrases:)` — a SEND to a class defined in the same script — and `_heffect` followed
+`PublicCall`/`LocalCall` only. The model's probe: flag 268 = reg 510 had NO handler write,
+no `reg_vals`, no `reg_dom` — the one presence flag in that state (101, 269 have handler
+writers; 64/24/14/224 machine values).
+
+**The rule (`opmodel._follow_send`).** A handler's same-script method send is a call: the
+callee runs under the handler's path condition, so its writes are the handler's. Bounded and
+derived: receiver `self` (the handler's own object, now threaded through `_hwalk`/
+`_follow_call` as `owner`) or an object/class DEFINED IN THIS SCRIPT; selector one of the
+target's OWN methods; never `init` (cast conditions) or `changeState` (machines); depth 3;
+no recursion; the callee walks under ITS method's verb-param scope.
+
+**Simulated first (monkeypatched `_heffect`, the cached model, no src touched):** re-walking
+the inset's scoped handlers followed exactly `PhraseDisplay::checkPhrases`, `turnLeft::
+dispose`, `turnRight::dispose` and produced 16 handler writes at rm410/815: **flag 268 := 1
+under `¬opaque ∧ opaque⁴ ∧ ¬268`** (local0 == 2, count == 3, the three `oneOf` phrase tests
+— the puzzle, honestly opaque), the score flag 388, the drum flags 346-349/469, and flag
+220's cursor toggles. Static census of the class (same-script own-method sends whose callee
+writes a global, depth 3): LSL2 15 / KQ4 20 / KQ6 48 / KQ5 21 / LB2 90 / GK1 37 — mostly
+`Game::doit/newRoom`, `Dialog`, cursor plumbing in system scripts outside any scope; KQ6's
+scoped hits (`PuzzleInset::doButton` → g110, `spellBookScr::dispose` → g5/10/32/72, Main's
+save/restore → g19) write NO modeled register (`reg_dom` None for all six). LB2's largest
+hit is `debugHandler`, already excluded.
+
+`src/test_method_send_following.py` pins the writer (4 red before).
+
+**And the rebuild stayed RED — the sim had bypassed the scope.** No handler row from script
+815 existed at all, not even `dispose`'s own flag-220 toggle: the harvest never walks the
+inset's methods. `_scriptid_scope` (extract's fourth scope) has 815 in rm410, but the
+HARVEST's fourth scope is `armed_rooms`, built from two spellings only — `(x setScript:
+(ScriptID s n))` (`mb.arms`) and `(<ScriptID obj> init:)` through `init_selectors` — and
+`(gRoom setInset: (ScriptID 815 0) self gRoom)` is neither: the ScriptID is the ARGUMENT,
+and it is `Inset::setInset`'s body that inits it. A THIRD arming spelling, derived from the
+class table the way `init_selectors` is (`extract.client_arming_selectors`): a class method
+that sends `init:` to one of its PARAMETERS passing `self` as the client. Census (KQ6/LB2/
+GK1, every class): `Script/Game/Prop/Rgn/Conversation::setScript` `(param1 init: self
+&rest)`, `Inset/Rm/Room::setInset` `(param1 init: caller self register)` — and `Game/GK/
+Kq6::setCursor` `(param1 init:)` with NO client, which is the discriminator: a cursor is not
+armed on anyone's behalf and the rule never names it. ScriptID sites through `setInset:`:
+GK1 2 (rm410, the hounfour's script 900), KQ6 1, LB2 26 (its close-up insets) — so LB2's
+harvest scope grows; the watched surface decides whether any row moves. The cast_refs scan
+in `opmodel` now reads both spellings. Measuring again.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED

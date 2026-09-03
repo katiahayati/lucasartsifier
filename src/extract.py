@@ -812,6 +812,47 @@ def walk_stream(node, pc, on_leaf, on_loop=None, undecided=None):
 
 
 _INIT_SELECTORS = {}        # ir -> selectors that put an object in the cast
+_CLIENT_ARMERS = {}         # ir -> {selector: 1-based parameter index it arms}
+
+
+def client_arming_selectors(ir):
+    """`selector -> parameter index`: the class methods that ARM their argument on behalf of
+    the receiver -- the body sends `init:` to a PARAMETER and passes `self` as its client.
+
+    Derived from the class table, never listed. Every game's `Script::setScript`, `Game::
+    setScript`, `Prop::setScript`, `Rgn::setScript` spell `(param1 init: self &rest)`; SCI1.1's
+    and SCI32's `Inset::setInset` / `Rm::setInset` / `Room::setInset` spell `(param1 init:
+    caller self register)`; and `Game::setCursor` spells `(param1 init:)` -- an init with NO
+    client, which is why a cursor is not armed anywhere and this rule does not name it
+    (census 2026-09-03, KQ6/LB2/GK1: exactly those three families). `setScript:` was already
+    known to the machine layer (`mb.arms`); `setInset:` was not known to anyone: GK1's drum-
+    code puzzle (script 815) is armed only by `(gRoom setInset: (ScriptID 815 0) self gRoom)`
+    from the drummers' room, so its handlers -- and the ONLY raise of the bayou icon's flag 268
+    -- had no home (GK1 docs §1.40). Consumed by `opmodel`'s cast_refs scan alongside
+    `init_selectors`, which covers the receiver-side spelling `(<ScriptID obj> init:)`."""
+    key = id(ir); _IR_PINS[key] = ir
+    if key in _CLIENT_ARMERS:
+        return _CLIENT_ARMERS[key]
+    out = {}
+    for sc in ir.scripts.values():
+        for o in sc.objects:
+            if not o.is_class:
+                continue
+            for mn, body in o.methods.items():
+                for n in I.walk(body):
+                    if n.get("t") != "Send":
+                        continue
+                    recv, msgs = _pairs(n)
+                    if not (isinstance(recv, dict) and recv.get("t") == "Variable"
+                            and recv.get("vtype") == "Parameter"):
+                        continue
+                    for sel, params in msgs:
+                        if sel == "init" and any(isinstance(p, dict) and p.get("t") == "Self"
+                                                 for p in params):
+                            out[mn] = recv.get("index")
+    _CLIENT_ARMERS[key] = out
+    return out
+
 _DELEGATE_SLOTS = {}        # ir -> property names the game dispatches doVerb through
 
 
