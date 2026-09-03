@@ -1801,6 +1801,70 @@ rm480's increment is unmodelled), not a crossing question. Built as `_step_live`
 `_staged_pre(require_steps=True)`, pinned by `test_crossing_producible.py`; measuring with the
 rvs probe and the suite.
 
+## §1.45 A counter step's own co-writes are necessary co-effects (2026-09-03, simulating)
+
+Probed after §1.44: every branch of GK1's day step at rm370 (`graceComeOut` states 5/101,
+`phoneCall`, `day5MaliaCall`) co-writes `(257, 0)` — `(proc13_2 15)`, the day-end flag
+cleared before `(++ day)` — and `_step_neco(123, k, k+1)` returns `{}` for every k ≥ 2: it
+intersects the co-writes of the DEP producers (the arms that raise flag 15 co-write nothing
+in common) and never reads the step's own. So flag 15, once raised, stays in the staged PV
+forever, and every later day ends "for free": §1.29's accumulate-only phantom, one register
+short of where §1.31 stopped (flag 65's spend IS read — through go-home's co — because
+go-home is a dep producer). The same reading applied to the flip the seal arm takes by hand
+(`R := w` with no co-effects) lets the far side keep the flag it just spent.
+
+**The rule.** neco(k→k+1) also includes the intersection over the step's live branches of
+THEIR co-writes (a branch that lacks a write does not make it necessary), and the seal arm
+applies neco(w−1→w) to the crosser's PV and confinement at the by-hand flip (`_apply_neco`),
+exactly as `_staged_pre` does between stages. Expected on GK1: day k's end must be produced
+anew at every stage — by that day's `endDay` arm — so the day-4 crosser without flag 44's
+chain cannot end day 4 (R4 fires in the closure arm), and days 6/7, whose endings the record
+lacks (§1.34), refuse every crosser (the airport row retires as "nobody crosses"). Measured
+first on LB2's act counter (the user-ruled snake-oil row must survive) and the goldens.
+
+**SIMULATED — and the first cut deadlocked itself.** With flag 15 cleared between stages,
+the day-2 stage could not even WRITE the counter (`(++ day)` runs under flag 15, the gate
+the step just spent), so nothing gated on "day > 1" fired — the drummers' flags 231/232 that
+day 2's ending demands — and the staged PRE died at day 2 for every crosser, confined or
+not. The step's PRIMARY effect must be seeded too: `pv[C] |= {j+1}` at the stage boundary,
+the crosser took the step (the seal arm already does this for the flip by hand). With that,
+the stages run through every day: 2, 3, 4, 5 end through their `endDay` arms with flag 15
+re-produced each day — and 6 and 7 end too, which the next trace examines (the record's only
+day-6/7 endings were go-home's phantom and the bookstore's arms).
+
+## §1.46 R4's chain, traced to the bottom: the murder photo has no source (2026-09-03)
+
+With §1.45's honest day endings, the seal arm's UNCONFINED day-4 crosser cannot reach the goal
+either, so the record cannot produce day 4's ending at all. Traced link by link with the
+tracer (`sim_why.py`, over `_wbranch` in the staged closure): day 4's `endDay` arm costs the
+tattoo trace (item 26); the trace is granted by `sTraceTattoo@450` under flags 74 and 322;
+flag 74 is Crash's topic (crash.sc:82); Crash's topic is a follow-up of flag 44's chain;
+flag 44 is Cazaunoux's topic 54 (hartridge.sc:257), a follow-up arm reached only through
+asked-bits 240 → 262 → 263 (visible since §1.42); bit 240 is set in NPC 40's interrogation
+(rm340 sets 178 := 40) under flag 42; flag 42 is raised at the voodoo shop by showing the
+MURDER PHOTO (item 1); and the murder photo is granted by OPENING ITS ENVELOPE —
+`phoEnvelope::doVerb 6` says its line with `self` as caller, and `cue` does `put: 0`, `get: 2`,
+`get: 1` (GKInvItem.sc:1337-1357). Two general gaps stood in the way:
+
+1. **`inventory_scripts` kept the plurality holder.** GK1 declares 52 items in `tile1.sc`
+   (24) and 30 in `GKInvItem.sc` (15 — the `Inv` instance and the item class), so script 15
+   was homed nowhere (`armed_rooms[15] = None`, 0 handler rows) and thirty items' handlers were
+   never walked. Every non-room script that declares items is the scope now; the stray-item
+   worry is the room test. Census: every other game declares all its items in one non-room
+   script — unchanged by construction.
+2. **The icon bar's gets are placeless conversions.** The scope's doctrine refused every item
+   transfer as a room fact ("the icon bar has no place"), which is right for drops and for
+   requirement evidence and wrong for a GET whose only cost is the container: opening the
+   envelope hands over the photo wherever the player stands. Recorded as `inventory_gets`
+   (script, item, guard), reached also through the doVerb's self-callback into its own `cue`
+   (`_follow_self_cue`, gets only — the KQ6 lamp lesson keeps writes out), and taken by the
+   closure anywhere (`gets` rows with room None). The flat `sources` are NOT fed (a later,
+   separately measured step). The wallet's master card (71, §1.37's parked grant) is the same
+   class and lands with it. Census of the class: KQ6 `clothes::doVerb get 4`, `ribbon::doVerb
+   get 16` (closure sources it did not have; the golden decides), KQ5 `Pouch::doVerb get 14`,
+   GK1 the envelope's two photos and the wallet's card; LSL2/KQ4 declare in Main and are
+   untouched.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED

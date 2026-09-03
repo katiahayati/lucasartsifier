@@ -7285,6 +7285,25 @@ class IrSccReach(SccReach):
             for R, v in got.items():
                 if out.get(R, v) == v:
                     out[R] = v
+        # ⭐ THE STEP'S OWN CO-WRITES ARE NECESSARY TOO (2026-09-03, GK1 docs §1.45). Every branch
+        # of GK1's day step at rm370 clears the day-end flag before `(++ day)` -- `(proc13_2 15)`,
+        # recorded as `(257, 0)` in its `co` -- and only the DEP producers' co-writes were read,
+        # so flag 15 accumulated across stages and every later day ended for free: the once-only
+        # proof reached flag 65 and stopped one register short. The intersection over the step's
+        # live branches (a branch missing a write does not make it necessary), ordered after the
+        # dep co-effects so a conflict keeps the first reading.
+        own = None
+        for (Ck, _room, tk), brs in wb.items():
+            if Ck != C or tk != t:
+                continue
+            for (d, _c, co) in brs:
+                if f not in d.get(C, {f}):
+                    continue
+                cs = {R: v for (R, v) in co if R != C}
+                own = cs if own is None else {R: v for R, v in own.items() if cs.get(R) == v}
+        for R, v in (own or {}).items():
+            if out.get(R, v) == v:
+                out[R] = v
         return out
 
     def _value_neco(self, S, vs, C, f, depth, stack):
@@ -7328,6 +7347,18 @@ class IrSccReach(SccReach):
             acc = facts if acc is None else {R: v for R, v in acc.items()
                                             if facts.get(R) == v}
         return acc or {}
+
+    def _apply_neco(self, C, w, pv, confine):
+        """Apply the step (w-1 -> w)'s necessary co-effects to a crosser's PV IN PLACE and return
+        the confinement with the monotone facts added -- exactly what `_staged_pre` does between
+        stages, for the flip the seal arm takes by hand (docs GK1 §1.45)."""
+        mono = self._monotone_latches()
+        confine = dict(confine)
+        for R2, v2 in self._step_neco(C, w - 1, w).items():
+            if R2 in mono and mono[R2] == v2:
+                confine[R2] = {v2}
+            pv[R2] = {v2}
+        return confine
 
     def _step_live(self, C, j, rooms, pv, confine):
         """Is the counter step j -> j+1 PRODUCIBLE in a stage's closure: a `_wbranch` branch
@@ -7390,6 +7421,11 @@ class IrSccReach(SccReach):
                     pv[R] = {v}
                 else:
                     pv[R] = {v}                   # the value AT the step; may regrow
+            # ...AND THE STEP'S OWN EFFECT: the crosser took it, so C == j+1 is in hand at the
+            # next stage. Left to the closure, the counter write needs the very gate the step
+            # just spent (GK1: `(++ day)` under flag 15, which it clears) and the next stage
+            # could not advance the day, so nothing gated on "day > j" ever fired (§1.45).
+            pv[C] = set(pv.get(C, {0})) | {j + 1}
             land = {r for r, sts in self._rstep.get(C, {}).items() if (j, j + 1) in sts}
             rooms = land or rooms
         confine[C] = {v for v in dom if v <= k}
@@ -7911,6 +7947,10 @@ class IrSccReach(SccReach):
                             continue        # nobody can take this flip at all: not a seal
                         pvw = dict(pre_g[1])
                         pvw[R] = set(pvw.get(R, {0})) | {w}
+                        # THE FLIP'S OWN CO-EFFECTS HOLD POST-FLIP (§1.45): the by-hand step
+                        # applies the same neco every staged step does -- GK1's day flip
+                        # clears the day-end flag, so the far side must END its day anew.
+                        conf_g = self._apply_neco(R, w, pvw, conf_g)
                         post_g = self._pclose({r}, pvw, pre_g[2],
                                               {**{k2: v2 for k2, v2 in conf_g.items()
                                                  if k2 != R}, R: set(fwd)})
@@ -7931,6 +7971,7 @@ class IrSccReach(SccReach):
                                     continue    # carrying S == b0, this player never crosses
                                 pvb = dict(pre_b[1])
                                 pvb[R] = set(pvb.get(R, {0})) | {w}
+                                conf_b = self._apply_neco(R, w, pvb, conf_b)
                                 conf_post = {k2: v2 for k2, v2 in conf_b.items()
                                              if k2 not in (R, S)}
                                 conf_post[R] = set(fwd)
