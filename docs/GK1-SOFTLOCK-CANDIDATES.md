@@ -1432,7 +1432,31 @@ The master card's grant: `wallet::cue` in script 24 — the INVENTORY script, an
 scope — hands over item 71 when the wallet is examined; `cue` is not a handler selector the
 harvest walks, so the card has no source. Once captured it is free from the opening, so
 `own(master card)` ties the flights to no day: the Germany/Africa day tie is NOT in the
-airport topic. Every rm750 entrance tests flag 470 (reg 712), whose only writers sit in
+airport topic. HOW the wallet grants it (2026-09-02k): `wallet::doVerb` verb 6 ends
+`(gMessager say: 108 6 26 0 self)` — `self` in the CALLER slot, SCI's "cue me when this
+dismisses" — and `wallet::cue` does the `get: 71`. A general idiom: an object passed as a
+send's callback target has its `cue` run as the handler's continuation, under the handler's
+path condition. Censused: the idiom with an effectful `cue` exists on GK1 alone (wallet,
+keyEnvelope, phoEnvelope, veil) — inert elsewhere by construction. PARKED, deliberately:
+the inventory scope walks only `doVerb` and REFUSES icon-bar item transfers as sources —
+"an item transfer is a fact about a place, and the icon bar has no place" (the KQ6
+collapse) — so even a walked `cue` would not source the card; and the card gates nothing
+day-related (§1.37). The known limit stands as written in `opmodel._heffect`.
+
+THE FLIGHTS' DAY TIE, FOUND (2026-09-02l): it is not a flag — it is the map icon's own
+click handler. `rm205 airport::select` tests `(!= gDay 7)`: on any other day it says the
+flight is not available and returns 0; only on day 7 does the icon's `cue` (→ rm750, the
+plane) proceed. `select` is a handler selector the model never walks (only doVerb/
+handleEvent), so the travel fan's `372→750` and `205→750` carried no day at all — the
+phantom Germany/Africa flights, the day-9 rows and R4's unfired arm all trace to this one
+method. The protocol, read from the classes: `IconMap::select` selects an icon only if the
+icon's own `select` returns nonzero (the `IconI` default returns 1); `airport::select`
+returns 0 on BOTH branches, refusing the map's selection and handling the click itself —
+message 6 on days ≠ 7, message 4 on day 7 — so which branch boards the plane is not
+structurally decidable (the messages would say; a play-check or the message resource
+settles it). The honest capture, once settled: an icon-derived destination carries the
+boarding branch's path condition (`gDay == 7`), which the day projection can read
+directly — no window needed. Not built; recorded with its one open question. Every rm750 entrance tests flag 470 (reg 712), whose only writers sit in
 rm93 (`doTheRestart`), so in play it stays 0 and the `712 == 0` alternatives are the open
 ones. Where the game keeps Germany off the day-4 map remains to be found in the scripts.
 
@@ -1462,6 +1486,17 @@ truth: `has: 21` lets a mask-holder who has not used it through, to die. The exa
 flag 216; a "doomed arrival" reading of `death_traps` (a room whose init-armed script dies
 unless a register is set) would say so directly. R5 joins the oracle as EXPECTED_CAUGHT with
 this pin.
+
+THE EXACT GUARD, DERIVED (2026-09-02k, simulated then measuring): two readings in
+`death_traps`, neither GK1-shaped. (1) A CHAINED arming of a fatal machine carries its
+armer's `state_musts` at the arming state as atoms — killGabe's second entry, armed from
+roomScript state 9 "unconditionally", is really `flag216 ∧ ¬flag299` (state 9 is reached
+only there); read as None it made the death certain (case (a), no escape). (2) Case (c)'s
+lever/clock split now matches case (b)'s: a register the room's machinery never WRITES is
+PLOT state — the arrival's, demandable — not a clock that must survive at every value;
+before, the survivor `{216:1, 299:1}` projected onto nothing and was lost. Simulated: exactly
+one new trap row, `rm480: req {216:[1], 299:[1]}` — survive the clearing iff the mask was
+used AND the tattoo done — and no other room moves on GK1.
 
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 

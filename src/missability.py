@@ -3146,6 +3146,25 @@ def death_traps(em, regs, dom):
             # warning: the ogre's `grabbed` is gated on opaques, and negating its readable half
             # demanded the Axe to walk out of four ordinary rooms. Two cases are decidable:
             ents = list(info["entries"])
+            # ...each CHAINED arming composed with what its armer had established at the
+            # arming state (`state_musts`), as register atoms: killGabe@480 is armed from
+            # roomScript state 9 unconditionally -- and state 9 is reached only under
+            # `flag216 AND NOT flag299`. Read as None that arming made the death certain;
+            # read with its musts it is one more readable arm for case (c) to sort.
+            _arms = list(info.get("entry_armers", ()) or ())
+            _arms += [None] * (len(ents) - len(_arms))
+            _byi = {i2["inst"]: i2 for i2 in infos}
+            _ents2 = []
+            for (k_, g_), a_ in zip(ents, _arms):
+                if a_ and a_[0] in _byi:
+                    mu_ = state_musts(_byi[a_[0]], regs, dom).get(a_[1], {}) or {}
+                    atoms_ = [(GOr([Pred("CMP", var=R_, op="==", value=str(v_)) for v_ in sorted(vs_)])
+                               if len(vs_) > 1 else Pred("CMP", var=R_, op="==", value=str(next(iter(vs_)))))
+                              for R_, vs_ in mu_.items() if vs_]
+                    if atoms_:
+                        g_ = GAnd([x for x in ([g_] + atoms_) if x is not None])
+                _ents2.append((k_, g_))
+            ents = _ents2
             if any(g is None for _k, g in ents):
                 #  (a) some arming is UNCONDITIONAL, so the death is certain and only an escape
                 #      helps. KQ6's ceiling: `walkIn` state 9 arms `sqwishEm` with no guard.
@@ -3227,8 +3246,15 @@ def death_traps(em, regs, dom):
                                    for src in (i2.get("entry_sources") or ())):
                                 levers |= {gi for _K, paths in i2["states"].items()
                                            for p in paths for (gi, _v) in p[1]}
-                        lev = sorted(named & levers)
-                        clk = sorted(named - levers)
+                        # A register the room's machinery never WRITES is PLOT STATE --
+                        # the arrival's, demandable -- exactly as case (b) reads it. It
+                        # was a CLOCK here (must survive at every value), so GK1's ritual
+                        # -- survivor {216:1, 299:1}, neither flag written at rm480 --
+                        # projected onto nothing and the row was lost (docs GK1 1.38).
+                        written_here = {gi for i2 in infos for _K, paths in i2["states"].items()
+                                        for p in paths for (gi, _v) in p[1]}
+                        lev = sorted((named & levers) | (named - written_here))
+                        clk = sorted((named & written_here) - levers)
                         clk_all = list(itertools.product(*(doms[R] for R in clk))) or [()]
                         by_lev = {}
                         for asg in survivors:
