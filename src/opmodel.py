@@ -527,6 +527,15 @@ class OpEmitter:
                 #
                 # Nothing here is a debug-detection rule -- it never asks what a script is FOR.
                 # `whereTo`'s own methods still walk these procs, in room 29, where they belong.
+        # ⭐ A PARK THAT ARMS A FATAL MACHINE IS A DEATH (docs GK1 §1.36). `_trap_graph` has
+        # always known the word for it -- DOOMED: an arming from which the death is certain.
+        # The armer's own walk never did: `(gEgo setScript: killGabe)` inside a room script's
+        # state left that state PARKED (no cue, no cycles -- a wait), and "a PARK is a WAIT"
+        # (2026-08-28c) lets the walk resume at the next state. GK1's bayou ritual: without
+        # the croc mask, state 5 arms killGabe and waits -- for the death -- and the walk
+        # went on to state 81 and ENDED THE DAY for a corpse. Exact cases only: the PARK
+        # path's guard is the arming's guard (same atoms), or the arming is unconditional.
+        self._doom_parks()
         self._walk_game_newroom(ir)
         for room, script, gi, v, g in self.handler_writes:
             self.reg_vals.setdefault(gi, {0}).add(v)
@@ -776,6 +785,7 @@ class OpEmitter:
                 "entry_armers": m.entry_armers, "entry_recv": m.entry_recv,
                 "entry_sources": m.entry_sources, "entry_site": m.entry_site,
                 "entry_ggets": frozenset(getattr(m, "entry_ggets", None) or ()),
+                "entry_self": list(getattr(m, "entry_self", None) or []),
                 "entry_gwrites": dict(m.entry_gwrites or {}),
                 "local_regs": dict(getattr(m, "local_regs", None) or {}),
                 "restores_control": set(getattr(m, "restores_control", None) or ()),
@@ -794,6 +804,68 @@ class OpEmitter:
                 "acc_writes": C.acc_entry_writes(steps_by_state, m.start, entry_states,
                                                  entry_writes=dict(m.entry_gwrites or {})),
                 "start": m.start, "delivered": delivered, "drops": drops, "moves": moves}
+
+    def _doom_parks(self):
+        """See the call site. FATAL = every path from the machine's start terminates in
+        DEATH (JUMP/ADVANCE/SETSTATE followed; an EXIT, END or PARK terminal disqualifies --
+        a machine you can survive is not fatal)."""
+        by_key = {(i["room"], i["inst"]): i for i in self.machines}
+
+        def _atoms(g):
+            if g is None:
+                return None
+            if isinstance(g, list):
+                return sorted(str(x) for x in g)
+            kids = getattr(g, "kids", None)
+            if kids is not None and type(g).__name__ == "GAnd":
+                return sorted(str(x) for x in kids)
+            return [str(g)]
+
+        def _fatal(info):
+            states = info["states"]
+            start = info.get("start", 0)
+            seen, stack = set(), [start]
+            saw_death = False
+            while stack:
+                K = stack.pop()
+                if K in seen:
+                    continue
+                seen.add(K)
+                paths = states.get(K)
+                if not paths:
+                    return False                     # falls off the table: not certain
+                for (_g, _w, _gg, _c, tr) in paths:
+                    kind = tr[0] if tr else None
+                    if kind == "DEATH":
+                        saw_death = True
+                    elif kind == "ADVANCE":
+                        stack.append(K + 1)
+                    elif kind in ("JUMP", "SETSTATE"):
+                        stack.append(tr[1])
+                    else:
+                        return False                 # EXIT / END / PARK / unknown: survivable
+            return saw_death
+
+        for tinfo in self.machines:
+            if not _fatal(tinfo):
+                continue
+            ents = list(tinfo.get("entries", ()))
+            armers = list(tinfo.get("entry_armers", ()) or ())
+            for (K_e, g_e), arm in zip(ents, armers):
+                if not arm:
+                    continue
+                minfo = by_key.get((tinfo["room"], arm[0]))
+                if minfo is None:
+                    continue
+                paths = minfo["states"].get(arm[1])
+                if not paths:
+                    continue
+                want = _atoms(g_e)
+                for i, (g, w, gg, c, tr) in enumerate(paths):
+                    if not tr or tr[0] != "PARK":
+                        continue
+                    if want is None or _atoms(g) == want:
+                        paths[i] = (g, w, gg, c, ("DEATH",))
 
     def _resolve_prev_returns(self):
         """Expand `extract.PREV_DEST` -- the `newRoom: <prevRoom>` sentinel -- into RETURN

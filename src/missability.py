@@ -4013,6 +4013,8 @@ class IrSccReach(SccReach):
         self._apply_hazard_gates()
         self._apply_death_traps()
         self._own_fixpoint()
+        # ⭐ CONSUMER WINDOWS (docs GK1 §1.31): before `_pstates` walks the projections.
+        self._apply_consumer_windows()
         # ...PLUS the joints a counter asks for when its advance is gated by a flag whose own
         # write is conditioned on the counter -- see `_gate_joints`.
         for J in self._gate_joints(self._register_dom()):
@@ -7138,9 +7140,45 @@ class IrSccReach(SccReach):
             for (gi2, v2, g2) in seq:
                 if not _debug_gated_guard(g2, dbg):
                     writes.append((gi2, v2, r2, g2, None, frozenset()))
+        # A CHAINED entry (armed from another machine's state) carries its chain's ROOT
+        # guards: the armer had to run for the arming to happen. Recorded as None it was
+        # "always armable", and GK1's day-1 cutscenes -- chained from afterTheCloseUp,
+        # whose own entry is `prev == 471` -- re-raised flag 65 in every stage of the
+        # staged closure however sealed rm471 was. Bounded, cycle-guarded; an
+        # unresolvable armer stays None (ignorance is not evidence -- [[arming-floor]]).
+        _mby = {(i3["room"], i3.get("inst")): i3 for i3 in all_machines(self.em)}
+        _rootmemo = {}
+
+        def _root_ents(i3, depth=0, stack=frozenset()):
+            key3 = (i3["room"], i3.get("inst"))
+            if key3 in _rootmemo:
+                return _rootmemo[key3]
+            if depth > 6 or key3 in stack:
+                return [None]
+            ents3 = list(i3.get("entries", ()))
+            arm3 = list(i3.get("entry_armers", ()) or ())
+            arm3 += [None] * (len(ents3) - len(arm3))
+            out3 = []
+            self3 = list(i3.get("entry_self", ()) or [])
+            self3 += [False] * (len(ents3) - len(self3))
+            for (_K3, eg3), a3, sf3 in zip(ents3, arm3, self3):
+                if sf3:
+                    continue      # a self-REDIRECT of a running script is no way IN
+                if a3 and (i3["room"], a3[0]) in _mby:
+                    for rg in _root_ents(_mby[(i3["room"], a3[0])], depth + 1,
+                                         stack | {key3}):
+                        out3.append(GAnd([x for x in (rg, eg3) if x is not None])
+                                    if (rg is not None or eg3 is not None) else None)
+                else:
+                    out3.append(eg3)
+            out3 += [eg for (_K3, eg) in i3.get("init_entries", ())]
+            if not out3:                  # only redirects: keep the record (permissive)
+                out3 = [eg for (_K3, eg) in ents3]
+            _rootmemo[key3] = out3
+            return out3
+
         for i2 in all_machines(self.em):
-            ents = [eg for (_K2, eg) in list(i2.get("entries", ()))
-                    + list(i2.get("init_entries", ()))]
+            ents = _root_ents(i2)
             # ...and what ARMING the machine costs in ITEMS (`entry_musts`): a write whose
             # cutscene cannot be armed without the tattoo trace is not producible without
             # it. Necessary conditions read against the over-approximated item set stay
@@ -7182,6 +7220,207 @@ class IrSccReach(SccReach):
             gate_regs |= set(rq2)
         self._pclose_tables = (writes, grants, gets, edges, gate_regs)
         return self._pclose_tables
+
+    def _monotone_latches(self):
+        """Registers every recorded write of which lands ONE value -- in-room writes AND
+        ordered steps alike (GK1's flag 11 is raised as the step `0->1`, and never written
+        back). A neco fact on such a register persists for the rest of the story."""
+        got = getattr(self, "_mono_memo", None)
+        if got is not None:
+            return got
+        out = {}
+        for R in set(self._cost_regs) | set(self.regs):
+            vals = {v for vs in self._inroom.get(R, {}).values() for v in vs}
+            vals |= {t for sts in self._rstep.get(R, {}).values() for (_f, t) in sts}
+            if len(vals) == 1:
+                out[R] = next(iter(vals))
+        self._mono_memo = out
+        return out
+
+    def _step_neco(self, C, f, t, depth=3):
+        """NECESSARY CO-EFFECTS of the counter step f->t (docs GK1 §1.31): the intersection,
+        over every producer of each dep value that is LIVE at C==f, of that producer's
+        recorded co-writes plus (recursively) the co-effects of ITS deps' producers.
+        A producer with no C-dep is live at every value (permissive: included, so the
+        intersection can only shrink). Returns {reg: val}. Empty = nothing necessary."""
+        wb = self._wbranch
+        deps = {}
+        for (Ck, _room, tk), brs in wb.items():
+            if Ck != C or tk != t:
+                continue
+            for (d, _c, _co) in brs:
+                if f in d.get(C, {f}):
+                    for S, vs in d.items():
+                        if S != C:
+                            deps.setdefault(S, set()).update(vs)
+        out = {}
+        for S, vs in deps.items():
+            got = self._value_neco(S, vs, C, f, depth, frozenset())
+            for R, v in got.items():
+                if out.get(R, v) == v:
+                    out[R] = v
+        return out
+
+    def _value_neco(self, S, vs, C, f, depth, stack):
+        """What EVERY live producer of S in vs necessarily co-writes. The PREVIOUS-ROOM
+        register is produced by crossings, not writes: `prev == p` means p's `init` ran, so
+        p's UNCONDITIONAL init writes of MONOTONE latches are its co-effects (GK1: two of
+        flag 65's fourteen raise branches reach flag 11 only this way -- `prev == 471`, and
+        rm471's init raises it)."""
+        if depth <= 0 or S in stack:
+            return {}
+        prev = prev_room_reg(self.em)
+        if S == prev:
+            mono = self._monotone_latches()
+            acc = None
+            for p_ in vs:
+                iw = self.em.init_writes.get(p_, {})
+                facts = {R: v for R, v in iw.items() if mono.get(R) == v}
+                acc = facts if acc is None else {R: v for R, v in acc.items()
+                                                if facts.get(R) == v}
+            return acc or {}
+        prods = []
+        for (Sk, _room, vk), brs in self._wbranch.items():
+            if Sk != S or vk not in vs:
+                continue
+            for (d, _c, co) in brs:
+                cd = d.get(C)
+                if cd is not None and f not in cd:
+                    continue                      # not live at C==f
+                prods.append((d, co))
+        if not prods:
+            return {}
+        acc = None
+        for (d, co) in prods:
+            facts = {gi: v for (gi, v) in co}
+            for S2, vs2 in d.items():
+                if S2 in (S, C):
+                    continue
+                for R, v in self._value_neco(S2, set(vs2), C, f, depth - 1,
+                                             stack | {S}).items():
+                    facts.setdefault(R, v)
+            acc = facts if acc is None else {R: v for R, v in acc.items()
+                                            if facts.get(R) == v}
+        return acc or {}
+
+    def _staged_pre(self, C, k, confine_extra):
+        """PRE closure for a crosser standing at C==k: stage j=0..k-1, each stage a closure
+        confined C<=j (plus confine_extra), seeded from the previous stage's PV with the
+        step's necessary co-effects applied -- a MONOTONE latch fact becomes a confinement
+        (it persists), a clear becomes a seed override. Over-approximating at every stage.
+
+        POSITIONS RESET AT EVERY STEP: a stage is seeded at the rooms where the step LANDS
+        (`_rstep[C]`'s (j-1, j) rooms), not everywhere the previous stage stood -- values
+        are carried in hand, places are not. Seeding the previous rooms kept "standing in
+        rm470 having come from rm471" alive past the latch that seals 471, and flag 65
+        re-raised. With positions reset the restricted-projection refinement (`_rp`) is
+        sound here -- carried values are seeded at the landing rooms and walk from there --
+        and it is what refuses `prev == 471` once 471 cannot be entered."""
+        mono = self._monotone_latches()
+        dom = set(self.em.reg_vals.get(C, ())) | {0}
+        confine = dict(confine_extra)
+        pv, items = {}, set()
+        rooms = {self.em.cfg.start_room}
+        for j in range(0, k):
+            confine[C] = {v for v in dom if v <= j}
+            rooms, pv, items = self._pclose(rooms, pv, items, confine, refine=True)
+            neco = self._step_neco(C, j, j + 1)
+            for R, v in neco.items():
+                if R in mono and mono[R] == v:
+                    confine[R] = {v}              # persists: confine every later stage
+                    pv[R] = {v}
+                else:
+                    pv[R] = {v}                   # the value AT the step; may regrow
+            land = {r for r, sts in self._rstep.get(C, {}).items() if (j, j + 1) in sts}
+            rooms = land or rooms
+        confine[C] = {v for v in dom if v <= k}
+        return self._pclose(rooms, pv, items, confine, refine=True), confine
+
+    def _consumer_windows(self):
+        """{(S, v): set of counter values at which S==v can be IN HAND} for every dep value
+        the branch tables name, from the staged closure -- docs GK1 §1.31 payoff 2. Keyed
+        per counter: {C: {(S, v): W}}. A value with no stage admitting it gets no entry
+        (unproducible outright -- left to the tables as they are: the permissive side)."""
+        got = getattr(self, "_cwin_memo", None)
+        if got is not None:
+            return got
+        out = {}
+        counters = sorted(getattr(self, "_counters", ()))
+        for C in counters:
+            dom = sorted(set(self.em.reg_vals.get(C, ())) | {0})
+            want = set()
+            for tbl in (self._wbranch, self._wbranch_dom):
+                for (_gi, _room, _v), brs in tbl.items():
+                    for (d, _c, _co) in brs:
+                        for S, vs in d.items():
+                            if S != C:
+                                want.update((S, v) for v in vs)
+            if not want:
+                continue
+            win = {}
+            for k in dom:
+                try:
+                    (_rooms, pv, _items), _conf = self._staged_pre(C, k, {})
+                except Exception:            # noqa: BLE001 -- a closure that cannot run
+                    win = None               #   windows nothing (permissive)
+                    break
+                for (S, v) in want:
+                    if v in pv.get(S, {0}):
+                        win.setdefault((S, v), set()).add(k)
+            if win:
+                out[C] = win
+        self._cwin_memo = out
+        return out
+
+    def _apply_consumer_windows(self):
+        """Narrow every branch whose deps pin a windowed value to the counter values the
+        window admits: `deps[C] &= W`. Only where EVERY pinned value of that register is
+        windowed and the union is a proper subset of the domain -- an unwindowed value
+        (never producible in any stage) leaves the branch alone, the permissive side."""
+        wins = self._consumer_windows()
+        if not wins:
+            return
+        for C, win in wins.items():
+            dom = set(self.em.reg_vals.get(C, ())) | {0}
+            for tbl in (self._wbranch, self._wbranch_dom):
+                for key, brs in tbl.items():
+                    if key[0] == C:
+                        continue                  # the counter's own steps are not consumers
+                    for i, (d, c, co) in enumerate(brs):
+                        narrowed = None
+                        for S, vs in d.items():
+                            if S == C or not vs:
+                                continue
+                            if not all((S, v) in win for v in vs):
+                                continue
+                            W = set().union(*(win[(S, v)] for v in vs))
+                            if W and not (dom <= W):
+                                narrowed = W if narrowed is None else (narrowed & W)
+                        if narrowed is not None:
+                            d2 = dict(d)
+                            d2[C] = (set(d2[C]) & narrowed) if C in d2 else set(narrowed)
+                            brs[i] = (d2, c, co)
+            # ...the SCALAR walks read `_rstep`/`_emeta`, not the branch tables: prune a
+            # step (f, t) of C at a room when EVERY branch that writes (C, room, t) now
+            # pins C away from f, and window an EDGE req the same way its branches were.
+            for room, sts in self._rstep.get(C, {}).items():
+                for (f, t) in sorted(sts):
+                    brs = self._wbranch.get((C, room, t))
+                    if brs and all(C in d and f not in d[C] for (d, _c, _co) in brs):
+                        sts.discard((f, t))
+            for (a, b), metas in self._emeta.items():
+                for j, (rq, st, al) in enumerate(metas):
+                    narrowed = None
+                    for S, vs in rq.items():
+                        if S == C or not vs or not all((S, v) in win for v in vs):
+                            continue
+                        W = set().union(*(win[(S, v)] for v in vs))
+                        if W and not (dom <= W):
+                            narrowed = W if narrowed is None else (narrowed & W)
+                    if narrowed is not None:
+                        rq2 = dict(rq)
+                        rq2[C] = (set(rq2[C]) & narrowed) if C in rq2 else set(narrowed)
+                        metas[j] = (rq2, st, al)
 
     def _pclose(self, rooms0, pv0, items0, confine, refine=True):
         """The PRODUCIBLE CLOSURE (docs GK1 §1.27): everything a player seeded at `rooms0`
@@ -7308,7 +7547,7 @@ class IrSccReach(SccReach):
                 xc[xk] = seen
             return seen
 
-        proj_scalar = {X for X in self.proj if not isinstance(X, tuple)}
+        proj_scalar = {X for X in getattr(self, "proj", ()) if not isinstance(X, tuple)}
 
         def sat(g, pol=True, at=None):
             if g is None:
@@ -7575,6 +7814,8 @@ class IrSccReach(SccReach):
                             wb_prod[S3].add(v3)
                         self._pv_produced = wb_prod
                     domR = set(self.em.reg_vals.get(R, ())) | {w}
+                    if w <= 0:
+                        continue          # no stage below the floor
                     # A counter may not be wound backwards (the `_counters` rule), so the
                     # crossing player's R is confined POST-flip to the values FORWARD-
                     # reachable from w: without this, PRE's carried 123 in {0..3}
@@ -7599,11 +7840,15 @@ class IrSccReach(SccReach):
                         if bwalk is None or (goal and not (goal & a)):
                             continue
                         self._rp_xcache = {}
-                        pre_g = self._pclose({self.em.cfg.start_room}, {}, set(),
-                                             {R: domR - {w}}, refine=False)
+                        # STAGED PRE (docs GK1 §1.31): the crosser stands at w, so
+                        # every step below w was taken and its necessary co-effects
+                        # hold; the stage's monotone confinements ride into POST.
+                        pre_g, conf_g = self._staged_pre(R, w - 1, {})
                         pvw = dict(pre_g[1])
                         pvw[R] = set(pvw.get(R, {0})) | {w}
-                        post_g = self._pclose({r}, pvw, pre_g[2], {R: set(fwd)})
+                        post_g = self._pclose({r}, pvw, pre_g[2],
+                                              {**{k2: v2 for k2, v2 in conf_g.items()
+                                                 if k2 != R}, R: set(fwd)})
                         if goal and not (goal & post_g[0]):
                             continue          # the flip dooms everyone: not S's fault
                         gate_regs = self._closure_tables()[4]
@@ -7615,21 +7860,22 @@ class IrSccReach(SccReach):
                                              - wb_prod.get(S, set())):
                                 if not (set(pre_g[1].get(S, {0})) - {b0}):
                                     continue  # S == b0 is universal, not a choice
-                                pre_b = self._pclose(
-                                    {self.em.cfg.start_room}, {}, set(),
-                                    {R: domR - {w}, S: {b0}}, refine=False)
+                                pre_b, conf_b = self._staged_pre(R, w - 1, {S: {b0}})
                                 pvb = dict(pre_b[1])
                                 pvb[R] = set(pvb.get(R, {0})) | {w}
+                                conf_post = {k2: v2 for k2, v2 in conf_b.items()
+                                             if k2 not in (R, S)}
+                                conf_post[R] = set(fwd)
                                 # S is NOT confined here: whether the crossing player can
                                 # still fix S is exactly what the closure must decide.
                                 # Pass 1 first -- its rooms are a SUPERSET of the refined
                                 # result's, so a goal missing there is missing, full stop;
                                 # the refined pass runs only to double-check a pass-1 leak.
                                 post_b = self._pclose({r}, pvb, pre_b[2],
-                                                      {R: set(fwd)}, refine=False)
+                                                      conf_post, refine=False)
                                 if goal and (goal & post_b[0]):
                                     post_b = self._pclose({r}, pvb, pre_b[2],
-                                                          {R: set(fwd)})
+                                                          conf_post)
                                 if goal and not (goal & post_b[0]):
                                     out.append({
                                         "pattern": "producible-dead-end",

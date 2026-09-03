@@ -105,6 +105,12 @@ KNOWN_RED = {
         # device pair -- the cost-only tier prices flag 351's chain, the shared-message groups
         # read `own(19) OR own(20)` out of the deposit's doVerb case, and the group row
         # carries the pair as ONE alternatives unit.
+        "R1 (retired): VoodooCode1 is NOT reported at any day flip -- day 4 cannot end without it":
+            "the sketch's day-5 row is GONE (right: Magentia's full show, day 4, demands it -- docs "
+            "GK1 1.37), but a row reappears at DAY 9: the record lets the player fly to Germany/"
+            "Africa on any day (the airport is booked by paying with the master card, held from "
+            "the opening; no captured tie to a day), and rm750's `(= day 9)` clamp is then a flip "
+            "from day 4. The flights' day tie is unfound in the scripts (1.37 end).",
         "R4: flag 44 (Cazaunoux topic 54 -> Crash's 'Voodoo Hounfour') is caught as a stranding":
             "REBLOCKED ON ONCE-ONLY FLAG 65 (2026-09-02, docs GK1 1.29). The old reasons are "
             "gone: the producible closure treats flags as strandable, the record's every ->50 "

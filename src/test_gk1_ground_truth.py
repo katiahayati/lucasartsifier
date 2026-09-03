@@ -8,8 +8,9 @@ autonomous run). See docs/GK1-SOFTLOCK-CANDIDATES.md for the derivations, file:l
 
 What GK1 adds to the corpus: a DAY-structured game (`global123`, 1..10) whose point of no return is
 the day counter itself, not a room edge. Its four real dead ends are all "the day advanced past the
-only window" or "you walked into the finale without X". R1 (the day-5 window) is CAUGHT since
-2026-08-28; the reds below name the remaining gaps; `tools/run_tests.py` KNOWN_RED carries the reasons.
+only window" or "you walked into the finale without X". R1 (the day-5 window) was RETIRED on
+2026-09-02 as this oracle's own false positive (see EXPECTED_CAUGHT); R2 and R3 are caught; the
+reds below name the remaining gaps; `tools/run_tests.py` KNOWN_RED carries the reasons.
 """
 import os
 import sys
@@ -30,14 +31,16 @@ def _names(units):
     return {n for u in units for n in u}
 
 
-# REAL, and the tool catches it. VoodooCode1 CAUGHT 2026-08-28 (round 3): `register_strandings`
-# on the DAY COUNTER at 5 -- the joint (123, flag 15) projection, the object-local `theInView.view`
-# store and the room-local source liveness together (docs/GK1-SOFTLOCK-CANDIDATES.md §1.8).
-EXPECTED_CAUGHT = _units({
-    "VoodooCode1",          # R1: the first tomb-marking sketch; source only while day < 5
-                            # (rm300.sc:121), demanded from day 5 to write on the tomb
-                            # (rm300.sc:952), without which the day-6 ritual is a forced death.
-})
+# ⛔ R1 RETIRED 2026-09-02 (docs GK1 §1.37): VoodooCode1's "day-5 window" was a FALSE POSITIVE
+# of this oracle, derived 2026-08-27 on the premise "no day-2/3/4 gate names item 32" -- a
+# `grep "has: 32"` that missed a demand spelled as a doVerb MESSAGE. Both day-4 endings
+# (theMapPrint's day-4 arm, the bookstore re-check) require flag 248; flag 248 is raised in
+# play only by Magentia's full show (`sFullShow@290` state 4) in the arm `register == 40`, and
+# 40 is VoodooCode1's message -- SHOWING HER THE TOMB SKETCH. The other setter is
+# `debugHandler`'s jump-to-day catch-up (script 99), called from nowhere. So day 4 cannot end
+# without the sketch; every day-5 player holds it; the day-5 flip strands nothing. The 2026-08-28
+# "catch" stood on Grace's go-home ending day 4 for free -- the leak the once-only proof closes.
+EXPECTED_CAUGHT = _units(set())
 
 # REAL per the scripts, MISSED by the tool. Each is a declared RED below with its mechanism.
 KNOWN_GAPS = _units({
@@ -53,6 +56,7 @@ KNOWN_GAPS = _units({
 
 # Flagging one of these is a FALSE POSITIVE (script evidence, no user ruling yet).
 CONFIRMED_SAFE = {
+    "VoodooCode1",          # R1 retired (above): necessarily held by day 5
     "sLakePatter",  # dangerous_sinks said giving it to the artist (neJackson.sc:1355) strands
                     # its use at Magentia's (rm290 verb 23). The give is REQUIRED -- it is the
                     # day-2 gate's flag 231 (theMapPrint.sc:237) -- and no `has: 31` exists
@@ -208,8 +212,9 @@ def run():
     # pickup inside the inset live, because its `(== view 3022)` is object-property state.
     r1 = [r for r in rows_by_det["register_strandings"]
           if s.g.item_name(r["item"]) == "VoodooCode1" and r.get("register") == 123]
-    check("R1: VoodooCode1 is caught as a day-window stranding (source closes at day 5)",
-          bool(r1) and any(r.get("value") == 5 for r in r1),
+    # R1 RETIRED (see EXPECTED_CAUGHT): the correct answer is NO day-flip row for the sketch.
+    check("R1 (retired): VoodooCode1 is NOT reported at any day flip -- day 4 cannot end without it",
+          not r1,
           f"register_strandings rows for VoodooCode1: "
           f"{[(r.get('register'), r.get('value')) for r in rows_by_det['register_strandings'] if s.g.item_name(r['item']) == 'VoodooCode1']} "
           f"-- none on the day counter at 5; the inset's `theInView` site (rm300.sc:1368, "
