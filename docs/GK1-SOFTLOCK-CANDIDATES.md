@@ -1698,6 +1698,44 @@ carried onto the armed script's handlers today — `armed_rooms` holds rooms, no
 with it, §1.34 cannot ship honestly: the bayou's day is in the puzzle's answer. §1.34 stays
 PARKED, now for the right reason.
 
+## §1.42 The topic-said array is a second flag store, and it is lowered now (2026-09-03)
+
+The ten closure-arm rows §1.41 exposed (`register_value_strandings`, pattern
+`producible-dead-end`: the day flips 2/6/8 with presence flag 63/64/66 at 0, flip 8 with 269)
+trace, in the model's own guards, to DAY-1 CONVERSATIONS: flag 63 (the police lobby icon) is
+raised by Grace's murder topic at rm50 under `178 == 2`; flag 66 by the sergeant's topic under
+`178 == 6 ∧ ¬253 ∧ day ∈ {0,1}`; flag 64 (the lake) by the radio at rm430 on day 1 with 66
+set; 269 by the travel agent's topic 44. Whether day 1 can END without them is decided by
+Grace's topic list — the Teller dispatch — and its gates read through a store the model
+never lowered. (`proc99_1`, which also raises 63/64/66/101, is the DEBUG day-jump in script
+99 = `debugHandler`, correctly excluded.)
+
+**The store.** `interrogation.sc` keeps the TOPIC-SAID array in the exact idiom of the game's
+flags — a word array `global182`, bit `(>> $8000 (mod n 16))`: `proc50_5` tests, `proc50_6`
+tests-and-sets (returns what it found), `proc50_7` tests-and-clears, `proc50_8` tests the
+negation. 435 literal sites: every "second time you ask" (`(if (proc50_6 13) (++ iconValue))`,
+215 sites as an `if` test) and every topic offered "iff not yet asked" (`showCases` pairs, 42
+`proc50_8` arguments). `derive_flags` already saw it — its docstring names proc50_1/2 — and
+kept only the MOST COMMON base, so the whole array read as opaque: R4's wall ("the topic-said
+array ... not modelled") and the once-only go-home's third consumer.
+
+**The rule.** `derive_flags` returns every store (`_classify_flag_store` per base; the primary
+keeps `flag_synth_base`, the others come back as `extra`), and the build lowers each extra store
+to its own synthetic block (`ir.extra_flag_stores`, rendered back through its own test proc).
+Census over six games: LSL2/KQ4 none, KQ6/KQ5/LB2 ONE store each, GK1 TWO — so by
+construction this moves nothing but GK1. The read-back writer is REWRITTEN EXACTLY where its
+value is used (`_lower_tset_sites`): as an `if`/`cond`-arm test the test reads the OLD bit and
+`(= g 1)` heads every arm that runs after that test (for a `cond`, this arm and all later ones
+and the else — added when missing); as a bare statement it is the set; the 2 sites nested in
+an `or` lower as plain sets (the write matters; the read stays opaque there).
+
+**The declared red.** Every game's PRIMARY set proc returns the bit too, and the games use it:
+set/clear calls in test position — KQ6 22 as an `if` test (24 with the two under an
+`and`; `(if (not (proc913_1 5)) ...)`, "first time only"), LB2 8, GK1 3, KQ5 0. Under the plain reading those tests are opaque and the write
+inside them invisible (a test is never walked). The same rewrite would capture them, and
+capturing them moves the play-validated KQ6/LB2 surfaces — a bless. Gated to the extra stores;
+`test_topic_store.py` keeps the red, KNOWN_RED names it.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED

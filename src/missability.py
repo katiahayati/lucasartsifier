@@ -9527,6 +9527,20 @@ def _build(cfg, ir_path):
         # holds the closer flag's raise (`(proc0_9 83)`) until the demand is banked, and the
         # proc that performs a raise is a fact the derivation already named.
         ir.flag_set_proc = next((n for n, op in flags[1].items() if op == "set"), None)
+        # EVERY OTHER bit-array store the same derivation found (GK1's topic-said array, base
+        # 182 -- docs §1.42), lowered to its OWN synthetic block after the primary one, and
+        # recorded for the renderer under its own test/set procs. `record=False` keeps
+        # `ir.flag_indices` the PRIMARY store's; the extra store's indices ride its record.
+        ir.extra_flag_stores = []
+        for (b2, procs2) in (flags[3] if len(flags) > 3 else []):
+            sb2, low2, skip2, idx2 = V.lower_flags(ir, b2, procs2, None, record=False)
+            ir.extra_flag_stores.append({
+                "global": b2, "base": sb2, "indices": idx2,
+                "test": next((n for n, op in procs2.items() if op == "test"), None),
+                "set": next((n for n, op in procs2.items() if op in ("set", "tset")), None),
+                "ops": dict(procs2), "lowered": low2, "skipped": skip2})
+            print("  [lowered] bit-array store on global %d: %d site(s), %d skipped, block at %d"
+                  % (b2, low2, skip2, sb2), file=_sys.stderr)
     # SECOND flag store: the same bit-in-a-word abstraction kept in an object's PROPERTY words
     # instead of a global array (SCI1.1 regions do this). Lowered to the same synthetic globals,
     # after lower_flags so the two synthetic blocks cannot overlap. Games without it are

@@ -1129,6 +1129,15 @@ def render_register(s, R, value):
             return None
         test = f"((ScriptID {sn} {ex}) {tsel}: {word} {1 << bit})"
         return test if value else f"(not {test})"
+    # A SECOND bit-array store (GK1's topic-said array) renders through ITS test proc, and is
+    # checked before the primary block for the same reason the stores above are: the primary
+    # block's bound is its own indices, and an extra store's register would otherwise be refused
+    # or, worse, spelled as a flag of the wrong array.
+    for st in (getattr(ir, "extra_flag_stores", None) or ()) if ir is not None else ():
+        n2 = R - st["base"]
+        if n2 >= 0 and n2 in st["indices"] and st.get("test"):
+            test = f"({st['test']} {n2})"
+            return test if value else f"(not {test})"
     base = getattr(ir, "flag_synth_base", None)
     proc = getattr(ir, "flag_test_proc", None)
     if base is None or proc is None or R < base:

@@ -1204,24 +1204,15 @@ def _localproc_offset(name):
     return None
 
 
-def derive_flags(ir):
-    """The game's boolean-flag store: (base_global, {proc_name: op}) with op in
-    test/set/clear/toggle, or None if the game keeps no bit-array flags (LSL2/KQ4).
-
-    `proc_name` is a proc whose calls carry flag NUMBERS as arguments -- a standalone test/set/clear
-    proc, or a public wrapper over an op-dispatched accessor. The caller (`lower_flags`) rewrites
-    those calls into synthetic per-flag globals so the register machinery models each flag as an
-    ordinary gating register, with no notion of 'flags' anywhere downstream."""
-    acc = {}
-    for s in ir.scripts.values():
-        for name, body in s.procs.items():
-            tr = _proc_touches_flags(body, s.number)
-            if tr:
-                acc[name] = (tr, body, s.number)
-    if not acc:
-        return None
-    from collections import Counter
-    base = Counter(v[0][0] for v in acc.values()).most_common(1)[0][0]
+def _classify_flag_store(ir, acc, base, readback=True):
+    """`{proc name: op}` for the accessor procs of ONE bit-array store (`base`), from
+    `_proc_touches_flags`' verdicts: test / ntest / set / clear / toggle, the op-dispatched
+    accessor's wrappers -- and the two READ-BACK writers, `tset` / `tclear`: a single-op writer
+    whose body RETURNS the bit it read first (`(= temp (proc_test param)) (|= word bit) (return
+    temp)`), i.e. "was it set? -- and now it is". GK1's topic-said array spells its set that way
+    and uses it as a TEST 233 times (`(if (proc50_6 13) (++ iconValue))` -- "asked before? then
+    the second answer"); lowered as a plain set inside a test it would have hidden the write and
+    read as opaque. `lower_flags` rewrites those sites exactly (`_lower_tset_sites`)."""
     procs, dispatchers = {}, {}
     for name, ((b, wops, reads), body, sn) in acc.items():
         if b != base:
@@ -1249,6 +1240,61 @@ def derive_flags(ir):
                 a = calls[0].get("kids") or []
                 if a and I.as_int(a[0]) in sm:
                     procs[name] = sm[I.as_int(a[0])]
+    # ⛔ THE PRIMARY STORE KEEPS ITS PLAIN set/clear READING, and that is a declared, measured
+    # gap, not a rule: every game's primary set proc returns the bit it read, and the games USE
+    # that -- census 2026-09-03 of set/clear calls in TEST position: KQ6 22 (`(if (not (proc913_1
+    # 5)) ...)`, "first time only"), LB2 8, GK1 3, KQ5 0. Under the plain reading those tests are
+    # opaque and their WRITE is invisible (a test is never walked). The exact rewrite exists and
+    # runs on the extra stores; switching it on for the primary store changes the KQ6 and LB2
+    # models by genuine captures, which moves play-validated surfaces -- a bless, so it waits
+    # (`test_topic_store.py` keeps the red for it; docs GK1 §1.42).
+    tests = {n for n, op in procs.items() if op == "test"}
+    for name, op in list(procs.items()):
+        if not readback or op not in ("set", "clear") or name not in acc:
+            continue
+        body = acc[name][1]
+        returns = any(n.get("t") == "Return" and n.get("kids") for n in I.walk(body))
+        reads_back = any(n.get("t") in ("PublicCall", "LocalCall") and n.get("name") in tests
+                         for n in I.walk(body)) or acc[name][0][2]
+        if returns and reads_back:
+            procs[name] = "t" + op
+    return procs
+
+
+def derive_flags(ir):
+    """The game's boolean-flag store: (base_global, {proc_name: op}) with op in
+    test/set/clear/toggle, or None if the game keeps no bit-array flags (LSL2/KQ4).
+
+    `proc_name` is a proc whose calls carry flag NUMBERS as arguments -- a standalone test/set/clear
+    proc, or a public wrapper over an op-dispatched accessor. The caller (`lower_flags`) rewrites
+    those calls into synthetic per-flag globals so the register machinery models each flag as an
+    ordinary gating register, with no notion of 'flags' anywhere downstream."""
+    acc = {}
+    for s in ir.scripts.values():
+        for name, body in s.procs.items():
+            tr = _proc_touches_flags(body, s.number)
+            if tr:
+                acc[name] = (tr, body, s.number)
+    if not acc:
+        return None
+    from collections import Counter
+    base = Counter(v[0][0] for v in acc.values()).most_common(1)[0][0]
+    procs = _classify_flag_store(ir, acc, base, readback=False)
+    # ⭐ EVERY STORE, NOT THE MOST COMMON ONE (2026-09-03, GK1 docs §1.42). A game can keep TWO
+    # bit-arrays in this idiom, and GK1 does: base 127 is its flags (proc13_0/1/2 and the script-50
+    # wrappers, 1,845 literal sites) and base 182 is the TOPIC-SAID array of the conversation
+    # system (`proc50_5` test, `proc50_6` test-and-set, `proc50_7` test-and-clear, `proc50_8`
+    # not-test; 435 literal sites) -- every Teller's "second time you ask" and every topic
+    # offered "iff not yet asked" reads through it, and it was opaque, which is where R4's wall
+    # and the once-only go-home phantom both live. The primary store keeps its place (the
+    # renderer's `flag_synth_base`); the others come back as `extra`, each lowered to its own
+    # synthetic block. Census: LSL2/KQ4 none, KQ6 one, KQ5 one, LB2 one, GK1 TWO -- so this can
+    # move nothing but GK1.
+    extra = []
+    for b2 in sorted({v[0][0] for v in acc.values()} - {base}):
+        procs2 = _classify_flag_store(ir, acc, b2)
+        if procs2:
+            extra.append((b2, procs2))
     # METHOD wrappers: a class method that hands one of its own parameters to a flag proc.
     # GK1's `GKEgo::getPoints` is `(if (!= param1 -999) (proc13_1 param1))` -- every score
     # award `(gEgo getPoints: N pts)` ALSO raises flag N, and 92 sites award that way. Measured
@@ -1267,10 +1313,10 @@ def derive_flags(ir):
                         if (a and a[0].get("t") == "Variable"
                                 and a[0].get("vtype") == "Parameter"):
                             wrappers[mn] = (procs[n["name"]], a[0]["index"])
-    return base, procs, wrappers
+    return base, procs, wrappers, extra
 
 
-def lower_flags(ir, base_global, flag_procs, wrappers=None):
+def lower_flags(ir, base_global, flag_procs, wrappers=None, record=True):
     """Rewrite every call to a test/set/clear flag proc with LITERAL flag arguments into a
     synthetic per-flag global read or write, IN PLACE, so a flag becomes an ordinary global the
     gating-register machinery already promotes. Flag N maps to `synth_base + N`, one contiguous
@@ -1280,23 +1326,28 @@ def lower_flags(ir, base_global, flag_procs, wrappers=None):
 
     Toggle calls and non-literal flag arguments are left unlowered -- a bounded, SOUND gap: an
     unmodelled write cannot invent a stranding, only miss one. Returns (synth_base, lowered, skipped)."""
-    max_gi, calls, wsends = 0, [], []
+    # The synthetic base is fixed BEFORE any rewrite: `_lower_tset_sites` plants globals of this
+    # block, and a base derived after that scan would step past its own registers.
+    max_gi = 0
+    for s in ir.scripts.values():
+        for body in [m for o in s.objects for m in o.methods.values()] + list(s.procs.values()):
+            for node in I.walk(body):
+                if I.is_global(node):
+                    max_gi = max(max_gi, node["index"])
+    synth_base = _synth_base(ir, max_gi)
+    lowered, skipped, seen_flags = _lower_tset_sites(ir, flag_procs, synth_base)
+    calls, wsends = [], []
     for s in ir.scripts.values():
         bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
         for body in bodies:
             for node in I.walk(body):
-                if I.is_global(node):
-                    max_gi = max(max_gi, node["index"])
-                elif node.get("t") in ("PublicCall", "LocalCall") and node.get("name") in flag_procs:
+                if node.get("t") in ("PublicCall", "LocalCall") and node.get("name") in flag_procs:
                     calls.append(node)
                 elif wrappers and node.get("t") == "Send":
                     ks = node.get("kids") or []
                     if any(m.get("t") == "SendMessage" and (m.get("kids") or [{}])[0].get("name")
                            in wrappers for m in ks[1:]):
                         wsends.append(node)
-    synth_base = _synth_base(ir, max_gi)
-    lowered = skipped = 0
-    seen_flags = set()
     # Wrapper sends: `(gEgo getPoints: N pts)` -> `(= gSYNTH_N 1)`, keeping every OTHER message
     # of a multi-message send (`(gEgo view: 254 getPoints: -999 2 get: 21 put: 30)` hands over
     # the mask -- the item transfer must survive). A non-literal or negative flag argument
@@ -1336,6 +1387,11 @@ def lower_flags(ir, base_global, flag_procs, wrappers=None):
         if op == "toggle" or not flags:
             skipped += 1
             continue
+        if op in ("tset", "tclear"):
+            # a read-back writer the pre-pass did not place (a nested expression): the WRITE is
+            # what matters to the register model, so it lowers as the plain set/clear it always
+            # did; only its returned bit stays unread there (the pre-existing reading).
+            op = op[1:]
         seen_flags.update(flags)
         BOOL_GLOBALS.update(synth_base + f for f in flags)
         if op == "test":
@@ -1360,14 +1416,125 @@ def lower_flags(ir, base_global, flag_procs, wrappers=None):
     # outside the game's array entirely (measured on KQ6: register 555 spelled `(proc913_0 383)`
     # where the highest real flag is 163). Recording the set makes the test exact rather than a
     # range guess, and it is free: these are the literals the lowering just consumed.
-    try:
-        ir.flag_indices = frozenset(seen_flags)
-    except Exception:                                       # noqa: BLE001
-        pass
+    if record:
+        try:
+            ir.flag_indices = frozenset(seen_flags)
+        except Exception:                                   # noqa: BLE001
+            pass
     # The block runs `synth_base + flag_number`, so the ground it takes reaches the HIGHEST
     # flag the game mentions -- not the count of them (the numbers are sparse).
     _synth_taken(ir, synth_base + (max(seen_flags) + 1 if seen_flags else 0))
-    return synth_base, lowered, skipped
+    return synth_base, lowered, skipped, frozenset(seen_flags)
+
+
+def _lower_tset_sites(ir, flag_procs, synth_base):
+    """The READ-BACK writers (`tset`/`tclear`), rewritten where their value is USED: as the test
+    of an `if` or a `cond` arm (bare or under one `not`), and as a bare statement.
+
+        (if (proc50_6 13) A else B)   ->   (if g13 (List (= g13 1) A) else (List (= g13 1) B))
+        (cond ((proc50_6 N) A) (C B) (else E))   ->   the test reads g_N; `(= g_N 1)` heads A, B
+                                                       and E -- every arm that runs AFTER the test
+        (proc50_6 N)  as a statement   ->   (= g_N 1)
+
+    The test reads the OLD bit (the proc returns what it found), and the write happens whenever
+    the test was evaluated -- in a `cond` that is every arm from this one on, including the
+    else (one is added when missing). Exact for those shapes, which are 233 + 77 of GK1's 312
+    sites; a call nested deeper in an expression (`(or x (proc50_6 N))`, 2 sites) is left as it
+    is and counted as skipped by the caller -- an unmodelled write can miss a stranding, never
+    invent one. Returns (lowered, skipped, seen_flags); `skipped` is 0 here (the caller counts)."""
+    rb = {n for n, op in flag_procs.items() if op in ("tset", "tclear")}
+    if not rb:
+        return 0, 0, set()
+    seen, lowered = set(), 0
+
+    def call_of(n):
+        """(flag, op) if `n` is a read-back call with a literal flag, else None."""
+        if isinstance(n, dict) and n.get("t") in ("PublicCall", "LocalCall") and n.get("name") in rb:
+            f = I.as_int((n.get("kids") or [None])[0])
+            if f is not None and f >= 0:
+                return f, flag_procs[n["name"]]
+        return None
+
+    def gread(f):
+        return {"t": "Variable", "vtype": "Global", "index": synth_base + f}
+
+    def gset(f, op):
+        return {"t": "Assignment", "kids": [gread(f), {"t": "Number", "value": 1 if op == "tset" else 0}]}
+
+    def head(body, assign):
+        if body is None:
+            return {"t": "List", "kids": [assign]}
+        if isinstance(body, dict) and body.get("t") == "List":
+            return {"t": "List", "kids": [assign] + list(body.get("kids") or [])}
+        return {"t": "List", "kids": [assign, body]}
+
+    def rewrite_test(test):
+        """-> (new test node, (flag, op)) if `test` is a read-back call or `(not <call>)`."""
+        c = call_of(test)
+        if c:
+            return gread(c[0]), c
+        if isinstance(test, dict) and test.get("t") == "Not":
+            k = (test.get("kids") or [None])[0]
+            c = call_of(k)
+            if c:
+                return {"t": "Not", "kids": [gread(c[0])]}, c
+        return None, None
+
+    for s in ir.scripts.values():
+        bodies = [m for o in s.objects for m in o.methods.values()] + list(s.procs.values())
+        for body in bodies:
+            for node in I.walk(body):
+                t = node.get("t")
+                ks = node.get("kids") or []
+                if t == "If" and ks:
+                    new, c = rewrite_test(ks[0])
+                    if c is None:
+                        continue
+                    f, op = c
+                    seen.add(f); BOOL_GLOBALS.add(synth_base + f); lowered += 1
+                    arms = [head(ks[1] if len(ks) > 1 else None, gset(f, op)),
+                            head(ks[2] if len(ks) > 2 else None, gset(f, op))]
+                    node["kids"] = [new] + arms
+                elif t == "Cond":
+                    cases = [c_ for c_ in ks if isinstance(c_, dict) and c_.get("t") == "Case"]
+                    pending = []                     # sets owed to every LATER arm
+                    changed = False
+                    for c_ in ks:
+                        if not isinstance(c_, dict):
+                            continue
+                        ck = c_.get("kids") or []
+                        if c_.get("t") == "Case" and ck:
+                            new, c = rewrite_test(ck[0])
+                            if c is not None:
+                                f, op = c
+                                seen.add(f); BOOL_GLOBALS.add(synth_base + f); lowered += 1
+                                pending.append(gset(f, op)); changed = True
+                                ck = [new] + ck[1:]
+                            if pending:
+                                bodyk = ck[1] if len(ck) > 1 else None
+                                for a in reversed(pending):
+                                    bodyk = head(bodyk, dict(a))
+                                ck = [ck[0], bodyk]
+                            c_["kids"] = ck
+                        elif c_.get("t") == "Else" and pending:
+                            bodyk = ck[0] if ck else None
+                            for a in reversed(pending):
+                                bodyk = head(bodyk, dict(a))
+                            c_["kids"] = [bodyk]
+                    if changed and pending and not any(isinstance(c_, dict) and c_.get("t") == "Else"
+                                                      for c_ in ks):
+                        bodyk = None
+                        for a in reversed(pending):
+                            bodyk = head(bodyk, dict(a))
+                        node["kids"] = list(ks) + [{"t": "Else", "kids": [bodyk]}]
+                elif t == "List":
+                    for i, k in enumerate(ks):
+                        c = call_of(k)
+                        if c:
+                            f, op = c
+                            seen.add(f); BOOL_GLOBALS.add(synth_base + f); lowered += 1
+                            ks[i] = gset(f, op)
+    return lowered, 0, seen
 
 
 def _dyn_self_prop(node):

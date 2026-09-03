@@ -79,12 +79,25 @@ KNOWN_RED = {
     # joint, the object-local property store, room-local source liveness). Each red names the
     # modelling gap; none of them is a limitation to pin green ([[commit-rule-and-red-tests]]).
     # Unvalidated by play and unruled by the USER -- the rows themselves may move when they rule.
+    # ⛔ BLESS-GATED (2026-09-03, docs GK1 §1.42): every game's primary flag-set proc RETURNS the
+    # bit it read, and the games use that as a test -- KQ6 22 sites (`(if (not (proc913_1 5))`,
+    # "first time only"), LB2 8, GK1 3. Under the plain set reading those tests are opaque and
+    # the write inside them is invisible. The exact read-back rewrite exists and runs on the
+    # EXTRA stores (GK1's topic-said array); switching it on for the primary store captures
+    # those hidden writes and moves the play-validated KQ6/LB2 surfaces -- the USER's bless.
+    "test_topic_store.py": {
+        "KQ6's primary-store set/clear calls in test position are read as test-and-set "
+        "(the exact rewrite is ON for the primary store)":
+            "the read-back rewrite is gated to the extra stores; enabling it for the primary "
+            "store is a genuine capture that moves KQ6 (22 sites) and LB2 (8) -- bless-gated",
+    },
     "test_gk1_ground_truth.py": {
         "no UNEXPECTED unit flagged (suspicion)":
             "four FALSE POSITIVES: knife (fatal_uses -- an on-screen death, not a consumption; "
             "USER ruling 2026-08-27 -- plus two register rows of the flip-precondition class, "
-            "`reg12=720` since the travel-movie fan and `reg759=1` since the hounfour scene "
-            "fan (reg 759 = a lowered script-808 register, sHRoom8 state 0): day 7 cannot "
+            "`reg12=720` since the travel-movie fan and the sHRoom8-state-0 row since the hounfour "
+            "scene fan (a lowered script-808 register whose NUMBER moves with the synthetic "
+            "allocation -- 759 before the topic store, 1116 after): day 7 cannot "
             "end without the knife, rm540.sc:299-307, and no `put: 64` exists), and THREE of "
             "one class, `_flip_live` missing that the flip's own precondition demands the item: "
             "reconVeve (day 3's endDay arm needs it, but Grace's 'go home' topic 49 ends the "

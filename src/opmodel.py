@@ -276,7 +276,9 @@ class OpEmitter:
                         grew = True
             if not grew:
                 break
-        flag_procs = set((vocab.derive_flags(ir) or (None, {}))[1])
+        _fl = vocab.derive_flags(ir)
+        flag_procs = set(_fl[1]) | {p for (_b, ps) in (_fl[3] if _fl and len(_fl) > 3 else [])
+                                    for p in ps} if _fl else set()
         for sn, sc in ir.scripts.items():
             if sn in self.ts.rooms or sn in self.region_rooms or not sc.procs:
                 continue
