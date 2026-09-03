@@ -253,8 +253,9 @@ def run():
     check("R4: flag 44 (Cazaunoux topic 54 -> Crash's 'Voodoo Hounfour') is caught as a stranding",
           flag44 is not None and any(r == flag44 for (r, _v) in regs),
           f"register_strandings registers = {sorted(regs, key=str)}; flag44 synthetic = {flag44}. The "
-          f"Teller/Interrogation topic dispatch (GKTeller.sc, interrogation.sc) and the "
-          f"topic-said array (global182, proc50_5..8) are not modelled")
+          f"Teller topic dispatch is lowered (vocab.lower_teller_cases) and the topic-said array "
+          f"(global182, proc50_5..8) is a lowered store since 848ec35 (docs GK1 1.42); the flat arm "
+          f"still cannot see that go-home SPENDS flag 65 (1.29) -- the closure arm can")
 
     print(f"\n  {len(PASS)} passed, {len(FAIL)} failed")
     return not FAIL

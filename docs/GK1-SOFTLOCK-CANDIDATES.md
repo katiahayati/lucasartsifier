@@ -1736,6 +1736,28 @@ inside them invisible (a test is never walked). The same rewrite would capture t
 capturing them moves the play-validated KQ6/LB2 surfaces — a bless. Gated to the extra stores;
 `test_topic_store.py` keeps the red, KNOWN_RED names it.
 
+## §1.43 R4's flat arm: the triple the joint chooser skips (2026-09-03, designed, not measured)
+
+With the topic store lowered, Grace's "go home" (49) is still offered on `(proc50_2 65)` alone
+— flag 65, the main store — and the topic-said array never clears (one `proc50_7 95` in the
+game), so §1.42 does not touch R4's flat-arm wall (§1.29): in the day counter's projections
+go-home ends any day, because the projection that sees the day-end flag (the joint `(123,
+257)`) does not see flag 65 (reg 307), whose value "1" is reachable once and stays reachable
+forever in an accumulate-only set. `_gate_joints` KNOWS the tuple — its docstring names
+`(123, 15, 65)` as "the tuple that sees the day end exactly" — but its loop `continue`s when
+the pair closes the cycle (flag 15's arms are day-conditioned, so `(123, 257)` closes it) and
+never reaches the third register. The 2026-08-28 note that justified it ("triples beside a
+closing pair are redundant") predates the handler co-writes (5db647a) that record go-home's
+`307 := 0` — the spend the triple would carry: day 1 raises 307 (rm470's day-gated cutscenes),
+go-home clears it with the day-end, no raise is live on day ≥ 2, so days 2-5 must end through
+`endDay`'s evidence arms and the day-4 flip becomes the point of no return R4 claims.
+
+Design: keep the pair, and ALSO add `(A, B, C)` when B's write depends on C and C's write
+depends on A — bounded by the same product size (here 9 × 2 × 2) and the cap of eight. Risk
+named before measuring: KQ5's counting flag 331 "filled the cap with eight permutations of
+four registers, 550s of walks for no row" under the unqualified rule; the qualified triple
+may re-open some of that, so it is measured on all six (`sim_triple.py` first, per game, in
+the loaded models; the rvs probe must finish first — one model at a time).
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
