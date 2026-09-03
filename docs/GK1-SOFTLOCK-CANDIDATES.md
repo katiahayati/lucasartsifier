@@ -1635,7 +1635,25 @@ Kq6::setCursor` `(param1 init:)` with NO client, which is the discriminator: a c
 armed on anyone's behalf and the rule never names it. ScriptID sites through `setInset:`:
 GK1 2 (rm410, the hounfour's script 900), KQ6 1, LB2 26 (its close-up insets) — so LB2's
 harvest scope grows; the watched surface decides whether any row moves. The cast_refs scan
-in `opmodel` now reads both spellings. Measuring again.
+in `opmodel` now reads both spellings. Measured: 7/7, the writer at rm410 AND rm800 (the
+hounfour's ceremonial-room script arms the same inset); committed `94c126a`.
+
+**AND KQ6 MOVED — caught by reading the golden diff, not by the runner (2026-09-03).** The
+suite agreed with KNOWN_RED by check NAME, but KQ6's golden diff carried a THIRD line beyond
+the two declared: `dangerous: huntersLamp@rm240 -> 74 rooms` (was 3). Diagnosed with a
+before/after harvest dump (2fb8a30's cache vs now): +214 handler writes on KQ6, 172 of them
+ONE register (bit 2 of `global161`, the lamp's state mask) at script 907 = `KqInv`, the
+INVENTORY — in all 86 rooms, under `own(huntersLamp) ∧ own(sacredWater)`: "use the sacred
+water on the lamp" is a doVerb forwarded between two inventory items, so the follow re-
+recorded the lamp's own write under BOTH item guards, and `real_uses` (which reads every
+own()-guarded gating write as "the item is USED here") counted the lamp as used everywhere.
+The icon-bar doctrine already says it: the scope is homed to every room, "keep the EFFECT,
+drop the CLAIM", and the claim a handler may make there is its `doVerb` body. So the
+following stops at that bound (`if script in self.global_homed: return`); every other scope
+follows. Recorded gap, not touched: `real_uses` has no `global_homed` exclusion (a third
+consumer of the doctrine, alongside `build_maps`' guard refusal) — adding it moves the blessed
+KQ6 surface, a bless conversation. Lesson for the runner: a golden red that AGREES by name
+can still grow a line; read the diff every run.
 
 ## §1.41 Icon presence, floored: the bayou exists only under flag 268 (2026-09-03)
 

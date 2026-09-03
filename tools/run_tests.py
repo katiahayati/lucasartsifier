@@ -711,6 +711,28 @@ KNOWN_RED = {
     },
 }
 
+# --- THE DECLARED DETAIL OF A RED ------------------------------------------------------------
+#
+# A red is matched by CHECK NAME above, and a golden's check name never changes -- so a declared
+# golden red could GROW a line and still "agree" (2026-09-03: KQ6's diff gained
+# `dangerous: huntersLamp@rm240 -> 74 rooms` under a round that followed method sends into
+# the inventory scope; found by reading the log). For a red whose detail lines are the whole
+# claim, declare them: the runner captures the indented lines under the `[FAIL]` and any
+# difference is reported as MOVEMENT and fails the run. `file -> {check name: [detail lines]}`.
+KNOWN_RED_DETAIL = {
+    "test_golden.py": {
+        "LSL2: full output surface matches the frozen golden":
+            ["scene_carryins: golden=None got=[]"],
+        "KQ4: full output surface matches the frozen golden":
+            ["scene_carryins: golden=None got=[]"],
+        # the empty scene_carryins key + the sacredWater toll row the USER ruled an FP (2026-09-01,
+        # derived away by the door-closer round d76e757): both await the KQ6 golden refresh.
+        "KQ6: full output surface matches the frozen golden":
+            ["scene_carryins: golden=None got=[]",
+             "tolls: +[]  -['sacredWater@one-visit-toll-pocket/rm370->rm380']"],
+    },
+}
+
 CHECK = re.compile(r"^\s*\[(PASS|FAIL)\]\s*(.*?)\s*$")
 TALLY = re.compile(r"^(\d+) passed, (\d+) failed")
 # A gate that cannot find its game says so and returns True. That is the right behaviour on a
@@ -723,24 +745,34 @@ SKIPPED = re.compile(r"^\s*\(skip\b", re.I)
 def run_one(path, echo=True):
     """Run one test file, streaming its output.
 
-    Returns (passed, failed_names, exit_code, skips)."""
+    Returns (passed, failed_names, exit_code, skips, {failed name: [its detail lines]})."""
     proc = subprocess.Popen([sys.executable, "-u", path], cwd=SRC,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     passed, failed, skips = 0, [], []
+    details, cur, cur_indent = {}, None, 0
     for line in proc.stdout:
         if echo:
             sys.stdout.write("    " + line)
             sys.stdout.flush()
         m = CHECK.match(line)
         if m:
+            cur = None
             if m.group(1) == "PASS":
                 passed += 1
             else:
                 failed.append(m.group(2))
+                cur, cur_indent = m.group(2), len(line) - len(line.lstrip())
+                details[cur] = []
         elif SKIPPED.match(line):
             skips.append(line.strip())
+        elif cur is not None:
+            # the indented lines under a FAIL are its detail; anything shallower ends it
+            if line.strip() and (len(line) - len(line.lstrip())) > cur_indent and not TALLY.match(line.strip()):
+                details[cur].append(line.strip())
+            else:
+                cur = None
     proc.wait()
-    return passed, failed, proc.returncode, skips
+    return passed, failed, proc.returncode, skips, details
 
 
 def main(argv=None):
@@ -755,15 +787,18 @@ def main(argv=None):
 
     t0 = time.time()
     total_pass, unexpected, promoted, crashed = 0, [], [], []
-    skipped, silent = [], []
+    skipped, silent, moved = [], [], []
     for f in names:
         print(f"\n\033[1m=== {f}\033[0m", flush=True)
         t1 = time.time()
-        passed, failed, code, skips = run_one(os.path.join(SRC, f))
+        passed, failed, code, skips, details = run_one(os.path.join(SRC, f))
         total_pass += passed
         red = KNOWN_RED.get(f, {})
         unexpected += [(f, n) for n in failed if n not in red]
         promoted += [(f, n) for n in red if n not in failed]
+        for n, want in KNOWN_RED_DETAIL.get(f, {}).items():
+            if n in failed and details.get(n, []) != want:
+                moved.append((f, n, details.get(n, []), want))
         skipped += [(f, s) for s in skips]
         # A file that asserts NOTHING is not a passing file. Under the old accounting it was
         # indistinguishable from a clean one, because only failures were ever compared to
@@ -783,6 +818,7 @@ def main(argv=None):
     print("\n" + "=" * 78)
     print(f"\033[1m{total_pass} passed, {n_red - len(promoted)} known-red, "
           f"{len(unexpected)} unexpected, {len(crashed)} crashed"
+          + (f", {len(moved)} declared red moved" if moved else "")
           + (f", {len(skipped)} skipped" if skipped else "")
           + f"\033[0m  ({time.time() - t0:.0f}s)")
     # SKIPS IN THE HEADLINE, so "green" cannot quietly mean "absent". Each one is a gate that
@@ -795,6 +831,9 @@ def main(argv=None):
 
     for f, name in unexpected:
         print(f"  \033[31mUNEXPECTED FAILURE\033[0m  {f}: {name}")
+    for f, name, got, want in moved:
+        print(f"  \033[31mDECLARED RED MOVED\033[0m  {f}: {name}\n"
+              f"      declared: {want}\n      got:      {got}")
     for f, code in crashed:
         print(f"  \033[31mCRASHED\033[0m  {f}: exit {code} with no FAIL line -- import error or "
               f"traceback; run it directly")
@@ -806,7 +845,8 @@ def main(argv=None):
               f"that silently stops being one is a limitation nobody will remember to re-check.")
     # A file that asserted nothing is always a failure; a SKIPPED section is one only under
     # --strict, because skipping is correct on a machine that does not have the game.
-    bad = bool(unexpected or crashed or promoted or silent or (strict and skipped))
+    # ...and a declared red whose DETAIL moved (KNOWN_RED_DETAIL) is movement, i.e. a failure.
+    bad = bool(unexpected or crashed or promoted or silent or moved or (strict and skipped))
     if not bad:
         # ⛔ "AGREES WITH KNOWN_RED" IS NOT "GREEN", AND SAYING SO IN GREEN WAS A LIE OF TONE.
         # USER 2026-08-16: "I don't like that we report a suite green when we're in the process of

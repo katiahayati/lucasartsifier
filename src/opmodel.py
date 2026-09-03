@@ -1283,6 +1283,19 @@ class OpEmitter:
         are measured by the six-game suite, goldens byte-identical."""
         if recv is None or sum(1 for k in seen if isinstance(k, tuple) and k[0] == "m") >= self._SEND_DEPTH:
             return
+        # NOT IN THE ICON-BAR SCOPE. An inventory script is homed to EVERY room, and the
+        # standing bound there is "the claim a handler may make is its `doVerb` body" (the
+        # loop above: `global_homed` walks doVerb and only doVerb). A callee followed out of a
+        # doVerb widens that claim: KQ6's `huntersLamp` doVerb reaches a method that raises a
+        # flag under `own(lamp) AND own(sacredWater)`, and `real_uses` -- which reads every
+        # own()-guarded gating write as "the item is USED here" -- then counted the lamp as
+        # used in all 86 rooms, moving the golden's `dangerous_sinks` row for the lamp from 3
+        # rooms to 74 (2026-09-03, measured). The doctrine says keep the EFFECT and drop the
+        # CLAIM; `real_uses` has no global_homed exclusion (a third consumer of that rule, a
+        # recorded gap -- changing it moves the blessed KQ6 surface), so the following stops
+        # at the scope's own bound. Every other scope follows.
+        if script in self.global_homed:
+            return
         sc = self.ir.scripts.get(script)
         if sc is None:
             return
