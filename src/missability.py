@@ -7329,11 +7329,42 @@ class IrSccReach(SccReach):
                                             if facts.get(R) == v}
         return acc or {}
 
-    def _staged_pre(self, C, k, confine_extra):
+    def _step_live(self, C, j, rooms, pv, confine):
+        """Is the counter step j -> j+1 PRODUCIBLE in a stage's closure: a `_wbranch` branch
+        of `C := j+1` at a room the closure reaches whose every dep value is in hand under the
+        confinement? Returns the (room, deps) that makes it so, else None -- the closure's own
+        `_flip_live` (docs GK1 §1.44)."""
+        def allowed(reg):
+            b = set(pv.get(reg, {0}))
+            c = confine.get(reg)
+            return b & c if c is not None else b
+        for (Ck, room, tk), brs in self._wbranch.items():
+            if Ck != C or tk != j + 1 or room not in rooms:
+                continue
+            for (d, _cost, _co) in brs:
+                if j not in d.get(C, {j}):
+                    continue
+                if all(set(vs) & allowed(S) for S, vs in d.items() if S != C):
+                    return room, d
+        return None
+
+    def _staged_pre(self, C, k, confine_extra, require_steps=False):
         """PRE closure for a crosser standing at C==k: stage j=0..k-1, each stage a closure
         confined C<=j (plus confine_extra), seeded from the previous stage's PV with the
         step's necessary co-effects applied -- a MONOTONE latch fact becomes a confinement
         (it persists), a clear becomes a seed override. Over-approximating at every stage.
+
+        ⭐ A CROSSING MUST BE PRODUCIBLE UNDER THE VALUE IT CARRIES (2026-09-03, docs GK1
+        §1.44). With `require_steps`, every stage's step j -> j+1 must have a producer LIVE in
+        that stage's closure (`_step_live`); a stage that cannot take its step returns
+        `(None, confine)` -- the crosser the caller asked about cannot exist. GK1's ten
+        presence rows were exactly that: "day 2 with the police lobby unknown" is a dead end
+        on the far side, and also a player who never was, because day 1 ends only through
+        Grace's "go home", which flag 65 gates, which only the lake's cutscene raises, which
+        the police lobby's chain alone reveals. Seeding "the crosser stands at w" by hand
+        skipped the question. The unconfined caller (`_consumer_windows`) keeps the
+        unchecked seeding: a window is read permissively and a missing stage would widen,
+        not narrow, its answer.
 
         POSITIONS RESET AT EVERY STEP: a stage is seeded at the rooms where the step LANDS
         (`_rstep[C]`'s (j-1, j) rooms), not everywhere the previous stage stood -- values
@@ -7350,6 +7381,8 @@ class IrSccReach(SccReach):
         for j in range(0, k):
             confine[C] = {v for v in dom if v <= j}
             rooms, pv, items = self._pclose(rooms, pv, items, confine, refine=True)
+            if require_steps and self._step_live(C, j, rooms, pv, confine) is None:
+                return None, confine
             neco = self._step_neco(C, j, j + 1)
             for R, v in neco.items():
                 if R in mono and mono[R] == v:
@@ -7360,7 +7393,11 @@ class IrSccReach(SccReach):
             land = {r for r, sts in self._rstep.get(C, {}).items() if (j, j + 1) in sts}
             rooms = land or rooms
         confine[C] = {v for v in dom if v <= k}
-        return self._pclose(rooms, pv, items, confine, refine=True), confine
+        final = self._pclose(rooms, pv, items, confine, refine=True)
+        # ...and the FLIP itself, k -> k+1: the step the seal arm used to add by hand.
+        if require_steps and self._step_live(C, k, final[0], final[1], confine) is None:
+            return None, confine
+        return final, confine
 
     def _consumer_windows(self):
         """{(S, v): set of counter values at which S==v can be IN HAND} for every dep value
@@ -7869,7 +7906,9 @@ class IrSccReach(SccReach):
                         # STAGED PRE (docs GK1 §1.31): the crosser stands at w, so
                         # every step below w was taken and its necessary co-effects
                         # hold; the stage's monotone confinements ride into POST.
-                        pre_g, conf_g = self._staged_pre(R, w - 1, {})
+                        pre_g, conf_g = self._staged_pre(R, w - 1, {}, require_steps=True)
+                        if pre_g is None:
+                            continue        # nobody can take this flip at all: not a seal
                         pvw = dict(pre_g[1])
                         pvw[R] = set(pvw.get(R, {0})) | {w}
                         post_g = self._pclose({r}, pvw, pre_g[2],
@@ -7886,7 +7925,10 @@ class IrSccReach(SccReach):
                                              - wb_prod.get(S, set())):
                                 if not (set(pre_g[1].get(S, {0})) - {b0}):
                                     continue  # S == b0 is universal, not a choice
-                                pre_b, conf_b = self._staged_pre(R, w - 1, {S: {b0}})
+                                pre_b, conf_b = self._staged_pre(R, w - 1, {S: {b0}},
+                                                                 require_steps=True)
+                                if pre_b is None:
+                                    continue    # carrying S == b0, this player never crosses
                                 pvb = dict(pre_b[1])
                                 pvb[R] = set(pvb.get(R, {0})) | {w}
                                 conf_post = {k2: v2 for k2, v2 in conf_b.items()

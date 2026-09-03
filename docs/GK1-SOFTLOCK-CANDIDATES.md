@@ -1753,11 +1753,54 @@ go-home clears it with the day-end, no raise is live on day ≥ 2, so days 2-5 m
 `endDay`'s evidence arms and the day-4 flip becomes the point of no return R4 claims.
 
 Design: keep the pair, and ALSO add `(A, B, C)` when B's write depends on C and C's write
-depends on A — bounded by the same product size (here 9 × 2 × 2) and the cap of eight. Risk
-named before measuring: KQ5's counting flag 331 "filled the cap with eight permutations of
-four registers, 550s of walks for no row" under the unqualified rule; the qualified triple
-may re-open some of that, so it is measured on all six (`sim_triple.py` first, per game, in
-the loaded models; the rvs probe must finish first — one model at a time).
+depends on A. **SIMULATED AND DROPPED (2026-09-03):** the triple the rule finds on GK1 is
+`(123, 178, 257)` — the conversation register, not flag 65: `307 := 1`'s branches carry no
+day DEP at all (the lake's cutscene is day-1-only by REACHABILITY — the lake exists only
+through the radio, the sergeant, and Grace's day-1 topic — not by a register it tests), so
+no joint over registers can see it. The flat arm cannot carry this; the closure arm is the
+instrument, and §1.44 is its missing check.
+## §1.44 A crossing must be producible under the value it carries (2026-09-03, simulating)
+
+The ten closure-arm rows, read to the bottom in game terms. Flag 63 (the police lobby icon)
+is raised by arm 78 of Grace's Teller — the FOURTH press of her topic 26 on day 1 (`(cond
+((== gDay 1) (proc50_8 5)) ...)`, the asked-bits 2→3→4→5 chain, grace.sc:150-214) — after
+`interrogateGrace` has set the conversation register (178 := 2, bookstore.sc:1114, the only
+writer of that value). Flag 66 is the sergeant's day-0/1 topic; 64 (the lake) the radio on
+day 1 with 66; 269 the travel agent. So the closure is structurally RIGHT that none of them is
+producible after day 1 — and the rows are still false, because DAY 1 CANNOT END WITHOUT
+THEM: "go home" (topic 49) is offered on flag 65 alone, 65 is raised only by rm470's
+cutscenes, rm470 is the LAKE, and the lake exists only through the radio, the sergeant and
+Grace's fourth press. `_staged_pre` builds the crosser's world stage by stage and SEEDS each
+next day from the previous stage's values with the step's co-effects applied — it never asks
+whether the step itself has a live producer under `confine_extra`. The seal arm then adds
+`R := w` by hand ("the crosser stands at w") and finds, correctly, that the far side cannot
+produce the flag: a true statement about a player who cannot exist.
+
+**The check (general, the closure's `_flip_live`).** At every stage j of a confined PRE, the
+step j→j+1 must have a producer LIVE in that stage's closure: a `_wbranch[(C, room, j+1)]`
+branch at a room the closure reaches whose every dep value is in hand under the confinement.
+None → the crossing is impossible for a player carrying that value → no row. Sound in the
+usual direction: the stage closure over-approximates, so a step it cannot produce, the game
+cannot either. Applied to both the confined and the unconfined crosser of the seal arm (a
+flip nobody can take is not a seal); `_consumer_windows` keeps the unchecked seeding (its
+callers read the windows permissively). Simulated first (`sim_stepcheck.py`: the day-2 flip
+with 63 = 0 and with 64 = 0, the day-8 flip with 269 = 0, and the unconfined day-2 control).
+
+**The triple joint (§1.43) is not this.** Flag 65's raise has no day DEP — the lake is
+day-1-only by reachability — so no register joint sees it; only the closure does.
+
+**SIMULATED (loaded model, seconds per case).** The first cut checked only the stages BELOW
+the crosser's day and let the flip itself through — the very step the arm adds by hand — so
+all three cases "stood". With the flip step checked: the day-2 flip carrying flag 63 = 0 has
+NO live producer (day 1's end needs the day-end flag, whose only day-1 producer, go-home,
+needs 65, which needs the lake, which needs 63) — the row retires; likewise flag 64 = 0. The
+unconfined control crosser ends day 1 through rm370 as it must. The day-8 flip carrying
+269 = 0 STANDS on this check: its stages 1..7 and the flip are live through rm370's increments
+with the day-end flag in hand — the §1.34 family (the record's day-7 ending is a phantom;
+rm480's increment is unmodelled), not a crossing question. Built as `_step_live` +
+`_staged_pre(require_steps=True)`, pinned by `test_crossing_producible.py`; measuring with the
+rvs probe and the suite.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
