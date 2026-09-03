@@ -332,6 +332,13 @@ def _warn_unknown(t):
           "Classify it in ir.control_shape / LEAF_NODES." % t, file=_sys.stderr)
 
 
+def is_return(n):
+    """A `Return` statement -- the classifier's, so the walkers never name the node. The
+    method-path walker (`extract.method_paths`) ends a path on it; vocab asks whether a loop body
+    or a method returns a value."""
+    return isinstance(n, dict) and n.get("t") == "Return"
+
+
 def is_global(n, index=None):
     return (n and n["t"] == "Variable" and n["vtype"] == "Global"
             and (index is None or n["index"] == index))

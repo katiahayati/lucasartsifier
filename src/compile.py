@@ -349,8 +349,7 @@ def _count_cues_send(recv, msgs):
         # mid-list (`say: noun verb cond seq self room`) -- and `(self cue:)` with no arguments
         # is an IMMEDIATE self-cue. Kept in lockstep with machine._is_cue_send; a last-argument
         # test here read every speaking state as PARKing and truncated the cutscene there.
-        if (any(isinstance(p, dict) and p.get("t") == "Self" for p in params)) or \
-           (sel == "cue" and not params and recv.get("t") == "Self") or \
+        if X.is_self_callback(recv, [(sel, params)]) or \
            (sel == "changeState" and recv.get("t") != "Self") or \
            (sel == "setScript" and recv.get("t") == "Self" and params
                 and I.as_int(params[0]) != 0):

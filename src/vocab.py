@@ -1818,7 +1818,7 @@ def derive_oneof(ir):
         for name, body in s.procs.items():
             for lp in (n for n in I.walk(body) if I.control_shape(n)[0] == "loop"):
                 inner = list(I.walk(lp))
-                if not any(n.get("t") == "Return" for n in inner):
+                if not any(I.is_return(n) for n in inner):
                     continue
                 for n in inner:
                     if n.get("t") != "Eq":
@@ -3946,7 +3946,7 @@ def _teller_icon_prop(classes, species):
                 # first one assigned (`addY`, `numButtons` are the menu's layout scratch).
                 for n in I.walk(body):
                     ks = n.get("kids") or []
-                    if n.get("t") == "Return" and ks and isinstance(ks[0], dict):
+                    if I.is_return(n) and ks and isinstance(ks[0], dict):
                         a = ks[0]
                         ak = a.get("kids") or []
                         if (a.get("t") == "Assignment" and ak and isinstance(ak[0], dict)

@@ -228,7 +228,7 @@ def run():
           not r1,
           f"register_strandings rows for VoodooCode1: "
           f"{[(r.get('register'), r.get('value')) for r in rows_by_det['register_strandings'] if s.g.item_name(r['item']) == 'VoodooCode1']} "
-          f"-- none on the day counter at 5; the inset's `theInView` site (rm300.sc:1368, "
+          f"-- the check wants NO row on the day counter (any value) -- the 5->6/6->7 rows are the flag-65 phantom, docs GK1 1.39; the inset's `theInView` site (rm300.sc:1368, "
           f"`(== view 3022)`) stays live because object-property state is not modelled")
     # R2/R3: the hounfour's twelve scenes are `Script`s inside ONE room (800) and Grace's room
     # (sHRoom8) is entered by an intra-room scene switch, so the one-way door is invisible.

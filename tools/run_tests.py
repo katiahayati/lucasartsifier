@@ -97,7 +97,11 @@ KNOWN_RED = {
             "cure was MEASURED 2026-08-30 and does not retire it, docs GK1 §1.15). "
             "PLUS talisman (2026-09-01, the case-(c) trap round): the rod+talisman carry-in row at rm455->rm800 PROVED FP from the scripts, both halves forced -- the talisman is granted by BOTH Africa-exit cutscenes (get:69 before newRoom:216, rm720.sc:1040/:1285; Africa has no other exit) and the rod is required to LEAVE Africa (keyWorks, the only wall opener into rm720, arms exclusively from rodCode's success arm, rm710.sc:2303-2328); no put:60/69 exists before the finale. See test_gk1_ground_truth's talisman entry. sLakePatter RETIRED 2026-08-31: the travel-movie fan (§1.17) removed the phantom "
             "Magentia demand its dangerous_sinks row rested on -- an FP dying of honest wiring. "
-            "All four in CONFIRMED_SAFE; cure the detectors, never the list",
+            "PLUS crocMask and oil (2026-09-02b, docs GK1 1.39): bought TOGETHER at the voodoo shop "
+            "(rm250 states 18/28), whose map icon closes after day 6 -- so at the 6->7 flip they read "
+            "unobtainable-but-needed (maze 490, Napoleon's useTheOil 460). In the game day 6 ends only "
+            "at the ritual, which R5's mask survives; in the model through go-home's phantom (same "
+            "class as the sketch's 6/7 rows). All in CONFIRMED_SAFE; cure the detectors, never the list",
         "a safe item is not flagged":
             "same four false positives as the row above (the two checks are one defect seen "
             "from the oracle's two sides)",
@@ -106,11 +110,13 @@ KNOWN_RED = {
         # read `own(19) OR own(20)` out of the deposit's doVerb case, and the group row
         # carries the pair as ONE alternatives unit.
         "R1 (retired): VoodooCode1 is NOT reported at any day flip -- day 4 cannot end without it":
-            "the sketch's day-5 row is GONE (right: Magentia's full show, day 4, demands it -- docs "
-            "GK1 1.37), but a row reappears at DAY 9: the record lets the player fly to Germany/"
-            "Africa on any day (the airport is booked by paying with the master card, held from "
-            "the opening; no captured tie to a day), and rm750's `(= day 9)` clamp is then a flip "
-            "from day 4. The flights' day tie is unfound in the scripts (1.37 end).",
+            "the sketch's 4->5 row is GONE (right: Magentia's full show, day 4, demands it -- docs "
+            "GK1 1.37), but rows stand at the 5->6 and 6->7 flips (and did in the committed model "
+            "all along -- the 09-02 'day 9' prose described a simulation, never the artifact): the "
+            "flat register model ends days 5 and 6 through go-home's accumulate-only flag 65, the "
+            "once-only phantom of 1.29/1.31. The flights' day tie IS found and built (1.39: the "
+            "airport icon's select boards on day 7 only) -- it closed the museum on day 7 (need "
+            "site 260 gone) and did not move these rows.",
         "R4: flag 44 (Cazaunoux topic 54 -> Crash's 'Voodoo Hounfour') is caught as a stranding":
             "REBLOCKED ON ONCE-ONLY FLAG 65 (2026-09-02, docs GK1 1.29). The old reasons are "
             "gone: the producible closure treats flags as strandable, the record's every ->50 "

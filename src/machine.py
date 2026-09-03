@@ -149,16 +149,11 @@ def _is_cue_send(recv, msgs):
         # last-argument test read those states as PARKing and truncated every cutscene that
         # speaks: KQ6's minotaur fight stalls at state 1 and never reaches the state where the
         # red scarf decides it.
-        if any(isinstance(p, dict) and p.get("t") == "Self" for p in params):
-            return True
-        if sel in ("cue", "setCycle", "setMotion", "setScript") and params and \
-                any(p.get("t") == "Self" for p in params):
-            return True
-        # `(self cue:)` -- an IMMEDIATE self-cue, the way a state says "nothing to wait for,
-        # carry on". No arguments, so the callback tests above cannot see it, and the state
-        # read as PARKing: KQ6's minotaur fight takes this branch whenever it is not the
-        # talking variant, and stalled one state before the scarf decides the outcome.
-        if sel == "cue" and not params and recv.get("t") == "Self":
+        # ...and the immediate `(self cue:)` (no arguments -- KQ6's minotaur fight takes that
+        # branch whenever it is not the talking variant, and read as PARKing it stalled one
+        # state before the scarf decides the outcome). ONE predicate, in extract, shared with
+        # `compile._count_cues_send` and the icon gate (`extract._select_permits`).
+        if X.is_self_callback(recv, [(sel, params)]):
             return True
         # `(otherInstance changeState: K)` starts another script that cues back here
         if sel == "changeState" and recv.get("t") != "Self":

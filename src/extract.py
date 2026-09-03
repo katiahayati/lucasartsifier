@@ -3356,6 +3356,353 @@ def script_slot(recv, selfobj=None):
     return None
 
 
+class _PathCap(Exception):
+    """method_paths gave up: the body fans past its cap (the caller reads None as "unknown")."""
+
+
+def method_paths(ast, cap=512):
+    """Every control path through a METHOD body -> [(pc, tests, nodes, ret)].
+
+    `pc` is the path's atoms (may hold None for an unreadable test), `tests` the raw
+    (test_node, polarity) pairs it passed, `nodes` every node it executed (leaves and their
+    subtrees, in order), `ret` the Return node that ended it or None (fell off the end).
+
+    The third walker over `ir.control_shape` (streaming: `walk_stream`; machine bodies:
+    `compile._paths_of`), and the one that reads an EARLY RETURN as a path condition:
+    `walk_stream` visits a statement after `(if C ... (return))` under the same condition as
+    before it, which is right for "what CAN this body do" and wrong for "under what condition
+    does THIS send run" -- grandma's map icon cues its destination only after `(if (<= 7 gDay 10)
+    (say ...) (return))` has not fired. Loops fan "skipped" and "ran once", `_paths_of`'s policy.
+    None past `cap` paths, never a truncated list: the callers treat unknown as unguarded."""
+    def go(node, pc, tests, nodes):
+        if node is None:
+            return [(pc, tests, nodes, None)]
+        shape = I.control_shape(node)
+        kind = shape[0]
+        if kind == "seq":
+            paths = [(pc, tests, nodes, None)]
+            for k in shape[1]:
+                nxt = []
+                for (p, t, ns, r) in paths:
+                    if r is not None:
+                        nxt.append((p, t, ns, r))
+                        continue
+                    nxt.extend(go(k, p, t, ns))
+                    if len(nxt) > cap:
+                        raise _PathCap()
+                paths = nxt
+            return paths
+        if kind == "branch":
+            res = []
+            for conds, body in shape[1]:
+                ext, tn = [], []
+                for (test, pol) in conds:
+                    a = atom(test)
+                    ext.append(a if pol else (GNot(a) if a is not None else None))
+                    tn.extend(I.walk(test) if test is not None else ())
+                res.extend(go(body, pc + ext, tests + list(conds), nodes + tn))
+                if len(res) > cap:
+                    raise _PathCap()
+            return res
+        if kind == "loop":
+            once = [(pc, tests, nodes, None)]
+            for k in [k for k in shape[1:] if k is not None]:
+                nxt = []
+                for (p, t, ns, r) in once:
+                    if r is not None:
+                        nxt.append((p, t, ns, r))
+                        continue
+                    nxt.extend(go(k, p, t, ns))
+                    if len(nxt) > cap:
+                        raise _PathCap()
+                once = nxt
+            return [(pc, tests, nodes, None)] + once
+        ns = nodes + list(I.walk(node))
+        if I.is_return(node):
+            return [(pc, tests, ns, node)]
+        return [(pc, tests, ns, None)]
+    try:
+        return go(ast, [], [], [])
+    except _PathCap:
+        return None
+
+
+def _pairs(n):
+    try:
+        return I.send_pairs(n)
+    except Exception:                                   # noqa: BLE001
+        return None, []
+
+
+def is_self_callback(recv, msgs):
+    """A send that hands `self` out as a CALLBACK -- the universal SCI cue-back. `self`
+    anywhere in the arguments (SCI1.1's Messager puts it mid-list: `say: noun verb cond seq self
+    room`), or the immediate `(self cue:)`. The ONE spelling of that reading: `machine._is_cue_send`
+    and `compile._count_cues_send` call this for their first clauses, and `_select_permits` reads
+    it as "this path reaches the object's `cue` later, even though it returns 0 now"."""
+    if recv is None:
+        return False
+    for sel, params in msgs:
+        if any(isinstance(p, dict) and p.get("t") == "Self" for p in params):
+            return True
+        if sel == "cue" and not params and recv.get("t") == "Self":
+            return True
+    return False
+
+
+def _same_var(a, b):
+    return (isinstance(a, dict) and isinstance(b, dict) and a.get("t") == "Variable"
+            and b.get("t") == "Variable" and a.get("vtype") == b.get("vtype")
+            and a.get("index") == b.get("index"))
+
+
+def _class_chain(ir, obj):
+    """The class objects above `obj`, nearest first (an instance starts at its `super`)."""
+    idx = V._class_index(ir)
+    out, seen = [], set()
+    sp = obj.species if obj.is_class else obj.super
+    while sp is not None and sp not in seen:
+        seen.add(sp)
+        c = idx.get(sp)
+        if c is None:
+            break
+        out.append(c)
+        sp = c.super
+    return out
+
+
+def _method_tests(ast):
+    """Every test node a method branches on, through `control_shape` (never the node names)."""
+    for n in I.walk(ast):
+        shape = I.control_shape(n)
+        if shape[0] == "branch":
+            for conds, _body in shape[1]:
+                for (test, _pol) in conds:
+                    if test is not None:
+                        yield test
+
+
+def _delegated_gate(chain, tsel):
+    """`(self SEL: elem ...)` as a test: which selector does the container's own SEL test on
+    the element? One method-send deep: `IconMap::select` is `(if (elem select: ...) ... 1)`."""
+    for c in chain:
+        ast = c.methods.get(tsel)
+        if ast is None:
+            continue
+        sels = []
+        for tnode in _method_tests(ast):
+            if not isinstance(tnode, dict) or tnode.get("t") != "Send":
+                continue
+            r, msgs = _pairs(tnode)
+            if r is not None and r.get("t") == "Variable" and r.get("vtype") == "Parameter":
+                sels.extend(sel for sel, _p in msgs)
+        if tsel in sels:
+            return tsel
+        return sels[0] if len(set(sels)) == 1 else None
+    return None
+
+
+_CLASS_CUE_GATE = {}        # (id(ir), species) -> (gate_sel, gated_sel, class, method) | None
+_CONTAINER_GATE = {}        # (id(ir), script, object) -> same | None
+
+
+def _class_cue_gate(ir, C):
+    """Does the container class send an ELEMENT a message only under a test of the element?
+
+    `IconMap::dispatchEvent` (and `IconBar`'s twin): `(cond ... ((self select: icon 1) (icon
+    cue:)))` -- `cue:` to a variable receiver on a path whose test is a send naming that same
+    variable. Read from the class chain's methods, never from a selector catalogue: the pair
+    (gate = `select`, gated = `cue`) is the ANSWER, derived. None when no such shape exists."""
+    key = (id(ir), C.species if C.is_class else C.super)
+    if key in _CLASS_CUE_GATE:
+        return _CLASS_CUE_GATE[key]
+    _IR_PINS[id(ir)] = ir
+    found = None
+    chain = _class_chain(ir, C)
+    for c in chain:
+        for mn, ast in c.methods.items():
+            paths = method_paths(ast)
+            if paths is None:
+                continue
+            for (_pc, tests, nodes, _ret) in paths:
+                for n in nodes:
+                    if n.get("t") != "Send":
+                        continue
+                    recv, msgs = _pairs(n)
+                    if recv is None or recv.get("t") != "Variable":
+                        continue
+                    for sel, _params in msgs:
+                        for (tn, pol) in tests:
+                            if not pol or not isinstance(tn, dict) or tn.get("t") != "Send":
+                                continue
+                            trecv, tmsgs = _pairs(tn)
+                            if trecv is None:
+                                continue
+                            for tsel, tparams in tmsgs:
+                                if trecv.get("t") == "Self" and \
+                                        any(_same_var(p, recv) for p in tparams):
+                                    g = _delegated_gate(chain, tsel)
+                                    if g:
+                                        found = (g, sel, c.name, mn)
+                                elif _same_var(trecv, recv):
+                                    found = (tsel, sel, c.name, mn)
+                                if found:
+                                    break
+                            if found:
+                                break
+                        if found:
+                            break
+                    if found:
+                        break
+                if found:
+                    break
+            if found:
+                break
+        if found:
+            break
+    _CLASS_CUE_GATE[key] = found
+    return found
+
+
+def _container_gate(ir, sc, obj):
+    """The gate `obj` lives under: it is `add:`ed to some container instance in this script
+    whose class has the `_class_cue_gate` shape. None = no container, or one without a gate."""
+    key = (id(ir), sc.number, obj.name)
+    if key in _CONTAINER_GATE:
+        return _CONTAINER_GATE[key]
+    found = None
+    for o in sc.objects:
+        for _mn, ast in o.methods.items():
+            for n in I.walk(ast):
+                if n.get("t") != "Send":
+                    continue
+                recv, msgs = _pairs(n)
+                if recv is None:
+                    continue
+                for sel, params in msgs:
+                    if sel != "add" or not any(isinstance(p, dict) and p.get("t") == "Object"
+                                               and p.get("name") == obj.name for p in params):
+                        continue
+                    C = sc.by_name.get(recv.get("name")) if recv.get("t") == "Object" else None
+                    if C is not None:
+                        found = found or _class_cue_gate(ir, C)
+    _CONTAINER_GATE[key] = found
+    return found
+
+
+def _readable(pc):
+    """The atoms a guard can act on. Dropping the others (None, opaque, Said, position) leaves a
+    WEAKER conjunction -- the permissive direction for a requirement."""
+    out = []
+    for a in pc:
+        core = a.kid if isinstance(a, GNot) else a
+        if core is None or (isinstance(core, Pred) and core.kind in ("OPAQUE", "SAID", "POS")):
+            continue
+        out.append(a)
+    return out
+
+
+def _one_of(pcs):
+    """The single readable condition several paths agree on, else None: the paths' honest
+    reading is their OR, and an OR is not a conjunct (`_script_prop_values`' rule for a value
+    from several sites). Paths that differ only in an unreadable test collapse to one."""
+    distinct = {}
+    for pc in pcs:
+        r = _readable(pc)
+        distinct.setdefault(repr(r), r)
+    if len(distinct) != 1:
+        return None
+    r = next(iter(distinct.values()))
+    return _conj(r) if r else None
+
+
+_NEVER = object()           # _select_permits: no path permits -- the element is never cued
+
+
+def _select_permits(ir, sc, obj, gate_sel):
+    """Under what condition does `obj`'s gate method let the container reach its gated method?
+
+    The container reads the gate's RETURN: nonzero permits. So a path permits when it returns
+    a nonzero literal, a non-literal, nothing, or falls off the end (the accumulator, unknown:
+    permissive) -- and when it returns 0 but hands `self` out as a callback on the way (GK1's
+    airport: `(gMessager say: 1 0 4 0 self 205) (return 0)` on day 7 -- the Messager cues the
+    icon when the text ends, and THAT reaches `cue`; the other day's branch says its line with
+    no caller and returns 0 for good). Nearest definer wins: the object's own method, else the
+    first class up the chain (IconI's `(return 1)` = unconditional, None)."""
+    definer = obj if gate_sel in obj.methods else \
+        next((c for c in _class_chain(ir, obj) if gate_sel in c.methods), None)
+    if definer is None:
+        return None
+    paths = method_paths(definer.methods[gate_sel])
+    if paths is None:
+        return None
+    permitting = []
+    for (pc, _tests, nodes, ret) in paths:
+        ks = (ret.get("kids") or []) if ret is not None else []
+        v = I.as_int(ks[0]) if ks else None
+        if ret is None or not ks or v is None or v != 0:
+            permitting.append(pc)
+        elif any(n.get("t") == "Send" and is_self_callback(*_pairs(n)) for n in nodes):
+            permitting.append(pc)
+    if not permitting:
+        return _NEVER
+    return _one_of(permitting)
+
+
+def _site_guard(ast, node):
+    """The condition under which `node` runs inside its method, early returns respected."""
+    paths = method_paths(ast)
+    if paths is None:
+        return None
+    pcs = [pc for (pc, _t, nodes, _r) in paths if any(n is node for n in nodes)]
+    return _one_of(pcs) if pcs else None
+
+
+_SCRIPT_GWRITES = {}        # (id(ir), script) -> {global index written anywhere in it}
+
+
+def _script_global_writes(ir, sn):
+    """Every global a script assigns or increments, in any method or procedure (lowered flags
+    included: `lower_flags` rewrote their sets into assignments before this runs)."""
+    key = (id(ir), sn)
+    got = _SCRIPT_GWRITES.get(key)
+    if got is None:
+        _IR_PINS[id(ir)] = ir
+        got = _SCRIPT_GWRITES[key] = set()
+        sc = ir.scripts.get(sn)
+        if sc is not None:
+            for ast in [a for o in sc.objects for a in o.methods.values()] + list(sc.procs.values()):
+                for n in I.walk(ast):
+                    t = n.get("t") or ""
+                    if t in ("Increment", "Decrement") or t.startswith("Assignment"):
+                        k = (n.get("kids") or [None])[0]
+                        if I.is_global(k):
+                            got.add(k.get("index"))
+    return got
+
+
+def _rides(ir, g, *scripts):
+    """Which of a value's assignment-site atoms survive a CROSS-SCRIPT hop: the register atoms
+    on globals that NONE of `scripts` writes. A path condition is a fact about its own script's
+    moment; a register fact persists exactly while nobody writes the register, and the assigning
+    script and the reading one are the two that run between the write and the read. Anything
+    else (an item test, a disjunction, an atom on a written register) drops -- weaker, never
+    stronger. GK1: rm205's dispatch raises flag 449 on its way to the movie, so `¬449` drops;
+    the day is written by nine scripts, none of them a map or the movie, so `day == 7` rides."""
+    if g is None:
+        return None
+    ws = set()
+    for sn in scripts:
+        ws |= _script_global_writes(ir, sn)
+    keep = []
+    for a in (g.kids if isinstance(g, GAnd) else [g]):
+        core = a.kid if isinstance(a, GNot) else a
+        if isinstance(core, Pred) and core.kind in ("CMP", "FLAG") \
+                and isinstance(core.var, int) and core.var not in ws:
+            keep.append(a)
+    return _conj(keep)
+
+
 def _script_prop_values(ir, s, var):
     """`newRoom: register` -- a routing SCRIPT whose destination was handed to it when armed.
 
@@ -3371,8 +3718,14 @@ def _script_prop_values(ir, s, var):
         parameter index `Script::init` stores the property from;
       * V a literal: a destination, under the arming site's path condition;
       * V a PARAMETER of the enclosing method M: every send of selector M in this script whose
-        argument at that position is a literal -- the icons -- each a destination, unguarded
-        (the icon that was clicked is the player's choice, not a state);
+        argument at that position is a literal -- the icons -- each a destination. The icon
+        clicked is the player's choice, not a state, but whether the click REACHES the send
+        is: the value carries the send's own path condition inside its method (early returns
+        respected, `_site_guard`) and, when the sending object sits in a container whose
+        class gates that method on another (`_container_gate`: IconMap cues an icon only
+        under its `select`), the condition under which the gate permits (`_select_permits`).
+        GK1's airport icon boards the plane on day 7 only; four more icons are day-gated;
+        an icon the gate NEVER permits contributes no destination;
       * plus any `(= register lit)` inside the owner and `(OBJ register: lit)` anywhere here.
     Filtered to real rooms as the variable scan is. A value from several sites drops its guard,
     for the same permissive reason (OR of conditions is not a conjunct)."""
@@ -3429,17 +3782,25 @@ def _script_prop_values(ir, s, var):
             walk_stream(ast, [], on_leaf)
     for (mname, pidx) in set(param_flows):
         for o in s.objects:
-            for ast in o.methods.values():
+            for mn, ast in o.methods.items():
                 for n in I.walk(ast):
                     if n.get("t") != "Send":
                         continue
-                    try:
-                        _r, msgs = I.send_pairs(n)
-                    except Exception:           # noqa: BLE001
-                        continue
+                    _r, msgs = _pairs(n)
                     for sel, params in msgs:
-                        if sel == mname and len(params) >= pidx:
-                            note(I.as_int(params[pidx - 1]), None)
+                        if sel != mname or len(params) < pidx:
+                            continue
+                        v = I.as_int(params[pidx - 1])
+                        if v is None:
+                            continue
+                        g = _site_guard(ast, n)
+                        gate = _container_gate(ir, s, o)
+                        if gate and gate[1] == mn:
+                            act = _select_permits(ir, s, o, gate[0])
+                            if act is _NEVER:
+                                continue
+                            g = _conj([act, g])
+                        note(v, g)
     return {v: (gs[0] if len(gs) == 1 else None) for v, gs in seen.items()}
 
 
@@ -3611,10 +3972,15 @@ def var_room_values(ir, room, var):
     #     room change, so the game-wide scan would fan the engine loop's own dispatch over every
     #     room ever named -- a hub that exists nowhere. (`prev` never reaches here: it returned
     #     the PREV_DEST sentinel at the top.)
-    #   * cross-script values carry NO guard. A path condition is a fact about ITS OWN script's
-    #     moment -- rm205's dispatch runs under "flag 449 clear" and raises flag 449 on the very
-    #     path that leads to rm372, so conjoining it onto rm372's exit would seal the edge the
-    #     moment it exists. Permissive is the sound direction for a destination set.
+    #   * a cross-script value carries only what RIDES (`_rides`): the register atoms of its
+    #     assignment guard on globals neither script writes. A path condition is a fact about
+    #     ITS OWN script's moment -- rm205's dispatch runs under "flag 449 clear" and raises
+    #     flag 449 on the very path that leads to rm372, so conjoining it onto rm372's exit
+    #     would seal the edge the moment it exists (it drops: rm205 writes it). The day the
+    #     airport icon boards on is written by no map and not by the movie, so it rides
+    #     (2026-09-02: the any-day flights to Germany and Africa, GK1 docs §1.37). Permissive
+    #     is the sound direction for a destination set; a persisting register fact is not a
+    #     guess.
     if not seen and vtype == "Global" and vindex is not None \
             and vindex not in (pending_room_global(ir), current_room_global(ir)):
         for osn, osc in sorted(ir.scripts.items()):
@@ -3629,9 +3995,9 @@ def var_room_values(ir, room, var):
                             if is_room(v):
                                 seen.setdefault(v, []).append(None)
                         elif is_script_prop_dest(ir, rhs):
-                            for v2 in _script_prop_values(ir, osc, rhs):
-                                seen.setdefault(v2, []).append(None)
-        return {v: None for v in seen}
+                            for v2, g2 in _script_prop_values(ir, osc, rhs).items():
+                                seen.setdefault(v2, []).append(_rides(ir, g2, osn, room))
+        return {v: (gs[0] if len(gs) == 1 else None) for v, gs in seen.items()}
     return {v: (gs[0] if len(gs) == 1 else None) for v, gs in seen.items()}
 
 

@@ -1501,6 +1501,88 @@ before, the survivor `{216:1, 299:1}` projected onto nothing and was lost. Simul
 one new trap row, `rm480: req {216:[1], 299:[1]}` — survive the clearing iff the mask was
 used AND the tattoo done — and no other room moves on GK1.
 
+## §1.39 The airport's day, read from the click: an icon-derived destination carries its gate (2026-09-02)
+
+§1.37 ended on one open trail — how the day-7 message in `rm205 airport::select` reaches
+`airport::cue` — and the scripts settle it in one class and one method. `IconMap::
+dispatchEvent` (theMapPrint.sc:128-200) cues an icon only under `(self select: icon 1)`, and
+`IconMap::select` returns 1 only if the ICON's own `select` does (`IconI::select` = `(return
+1)`). The airport overrides it and returns 0 on BOTH branches — the map never cues it. On day
+7 the branch says `(global91 say: 1 0 4 0 self 205)`: the Messager stores its `caller`
+(Messager.sc:84) and, when the text ends, adds a `Cue` for it (Messager.sc:34-41), so the icon
+is cued BACK — `airport::cue` → `(global2 cue: 750)` → `rm205::cue` → `chgRoom` → the plane.
+On any other day the message has no caller. The boarding is the say:-caller cue-back, the
+exact reading `machine._is_cue_send` has always given a Script state ("`self` anywhere in the
+arguments is the cue callback"), applied to a method the model never walked.
+
+**The rule, general.** `_script_prop_values`' param-flow branch (the icons' `(global2 cue:
+N)` sends) used to note each destination unguarded. Now each carries (a) the send's own path
+condition inside its method with EARLY RETURNS respected (`method_paths`, the third walker
+over `control_shape`: grandma's `cue` returns after `(<= 7 gDay 10)` before reaching its
+send), and (b) when the sending object is `add:`ed to a container whose class sends an
+element a message only under a test of that element (`_class_cue_gate`, read from the class
+chain: `(icon cue:)` under `(self select: icon 1)`, and `IconMap::select` testing `(param1
+select: …)` one method-send deep — the pair (`select`, `cue`) is derived, never spelled), the
+condition under which the icon's gate PERMITS (`_select_permits`): a path that returns
+nonzero, a non-literal, nothing, or falls off the end, or one that returns 0 after handing
+`self` out as a callback (`is_self_callback`, now the ONE predicate `machine._is_cue_send`
+and `compile._count_cues_send` call). Paths that differ only in an unreadable test (the
+`((ScriptID 20 0) dialog:)` disposal) collapse to one; several distinct permitting paths
+read permissive (an OR is not a conjunct); a gate that never permits drops the destination.
+
+**Second hop.** The first-visit movie (rm372, `newRoom: global175`) resolves through the
+game-wide fallback, whose values used to carry NO guard by design (rm205's dispatch raises
+flag 449 on the very path to the movie). The value now carries what RIDES (`_rides`): the
+register atoms on globals written by NEITHER the assigning script nor the reading one. Flag
+449 drops (rm205 writes it); the day is written by nine scripts (17, 93, 180, 370, 480, 500,
+550, 750, 800) and by no map and not the movie, so `day == 7` rides.
+
+**Census, from the sim on the cached model (no src touched), then the red test.** Five icons
+on the two maps override `select`, all day-tests: rm205 airport → 750 `day == 7`; grandma →
+380 `¬g181 ∧ ¬(day ≥ 7)` (g181 has no writer: always 0); rm200 voodooShop → 250 `¬(day >
+6) ∧ ¬g181`; voodooMus → 260 `¬(flag465 ∧ day 5) ∧ ¬(flag114 ∧ day 6) ∧ ¬(day > 6)`;
+moonBeam → 290 `¬(day ≥ 5)`. Every other icon inherits `(return 1)`: unguarded, as before;
+rm200 → 205 is named by two icons and drops its guard as before. rm372 → 750 rides `day ==
+7`, → 380 rides grandma's, everything else free, the destination SET unchanged (19).
+`src/test_icon_select_gate.py` pins all of it (13 green before the change on the unchanged
+rows, 10 red on the new guards).
+
+**Side finding, NOT built.** `(<= 7 gDay 10)` reads as `day ≥ 7` — `_cmp_atom` takes the
+first two operands of an n-ary compare. Harmless here (the model's day never exceeds 9) and
+permissive on a positive test, but the negated branch is STRONGER than the truth. Census of
+chained compares: LSL2 3, KQ4 15, KQ6 70, so a fix is bless-gated; recorded, parked.
+
+**Expected payoff (§1.37).** The any-day flights to Germany and Africa close at both hops:
+the day-9 rows should vanish and R4's arm may fire (`reg286==[0]@seal123=4`); if it fires as
+an rvs row rather than register_strandings, the oracle's R4 check changes its spelling.
+Measuring: the icon test (a GK1 rebuild), then the suite on all six.
+
+**MEASURED on GK1 (the oracle in the pre-change worktree vs the rebuilt model, row by row;
+`snapshot.py gk1` times out at 30 min on this title and is not the instrument).** 33 rows →
+41. The GK1 checks stay at the same four declared reds. ⛔ The prose was wrong and the
+artifact right: the committed model's sketch rows were at days 5/6/7, NOT at day 9 (KNOWN_RED
+and the 09-02 handoff said 9 — a simulated state that never shipped). The delta:
+  * VoodooCode1's day-7 rows lose need site 260 — the voodoo MUSEUM icon closes after day 6
+    (`voodooMus::select`), so on day 7+ the museum is not where the sketch is still needed.
+  * reconVeve's `(123,257)=(0,0)` joint row — a day-0 flip — is gone.
+  * braceMold and reconVeve gain a row at the 4→5 flip (they had 4, 6, 7): the same declared
+    class (the item is consumed and its use site day-dead by the end of day 3; the flat model
+    ends days through go-home's accumulate-only flag 65 — §1.29/§1.31's phantom).
+  * TWO NEW ITEMS at the 6→7 flip, `crocMask` (21) and `oil` (22): bought TOGETHER at the
+    voodoo shop (rm250 state 18 `get: 21 put: 30`, state 28 `get: 22` + flag 358), whose
+    icon closes after day 6 (`voodooShop::select`, `(> gDay 6)` refuses) — so on day 7 they
+    are unobtainable, and the maze (490, `has: 21`) and Napoleon's `useTheOil` (460, `put:
+    22`) still name them. In the GAME day 6 ends only at the bayou ritual (rm480's `(++
+    day)`, §1.34's unmodelled increment), which kills the maskless player (R5) — a maskless
+    day 7 is unreachable. The MODEL ends day 6 through go-home's phantom, so these two rows
+    stand on exactly the phantom the sketch's 6/7 rows stand on. Same class, declared; the
+    §1.31+§1.34 round retires the whole family, and before the flights were day-tied the shop
+    stayed open on day 7 in the model, which is why they were absent.
+  * edge_strandings: the knife's row splits off on its own; crocMask and oil join the
+    New-Orleans-items row (past the flight, none of them is obtainable — honest).
+  * R4 does NOT fire: the day-7 tie closes the phantom flights, but the day-4 crosser is still
+    blocked on once-only flag 65 (§1.29) — the next round, now unblocked on its prerequisite.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
