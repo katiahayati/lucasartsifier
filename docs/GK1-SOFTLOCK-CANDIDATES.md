@@ -1435,6 +1435,34 @@ harvest walks, so the card has no source. Once captured it is free from the open
 airport topic. Every rm750 entrance tests flag 470 (reg 712), whose only writers sit in
 rm93 (`doTheRestart`), so in play it stays 0 and the `712 == 0` alternatives are the open
 ones. Where the game keeps Germany off the day-4 map remains to be found in the scripts.
+
+RULED (2026-09-02i): the GK1 oracle is this project's own derivation (the USER: "I didn't
+enumerate anything as real, you've been owning gk1 entirely"), so the question is settled
+where it lives — the scripts — and the answer is NO, day 4 cannot end without showing
+Magentia the tomb sketch. **R1 RETIRED**: VoodooCode1 → CONFIRMED_SAFE; the R1 check now
+asserts NO day-flip row for it. The bundle (doomed arming, chain roots, staged closure +
+windows) ships with this correction; its remaining known movement — day-flip rows drifting
+to day 9 through the any-day flights — is declared, not hidden.
+## §1.38 R5 — the croc mask at the ritual clearing, derived by the tool (2026-09-02)
+
+The bundle's measurement (goldens and LB2 byte-identical) moved GK1 by exactly one guard:
+`rm490→rm480: (gEgo has: 21)` — the croc mask, at the bayou maze's exit into the ritual
+clearing. It is the doomed-arming rule's direct payoff: `bayouRitual`'s room script arms
+`killGabe` on the ego at state 5 unless flag 216 is set (state 9 likewise unless flag 299),
+and 216 is raised only by `maskAction` in the maze — using the mask. A player who walks into
+the clearing without having done that dies with nothing to do about it on that screen:
+"you walked into the finale without X", THE ONE RULE's in-scope shape. Before this round the
+walk resumed past the death and the crossing read as free.
+
+Mechanism, honestly: the row is an `edge_strandings` line, not a trap carry-in — with the
+maskless crossing now a dead end, the mask is "obtainable before, unobtainable after, still
+needed" (its need site is the maze itself, which the flat graph reaches again). The death is
+what the row is about, and the guard it yields is right in direction and weaker than the
+truth: `has: 21` lets a mask-holder who has not used it through, to die. The exact guard is
+flag 216; a "doomed arrival" reading of `death_traps` (a room whose init-armed script dies
+unless a register is set) would say so directly. R5 joins the oracle as EXPECTED_CAUGHT with
+this pin.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED

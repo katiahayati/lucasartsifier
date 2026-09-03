@@ -40,7 +40,18 @@ def _names(units):
 # `debugHandler`'s jump-to-day catch-up (script 99), called from nowhere. So day 4 cannot end
 # without the sketch; every day-5 player holds it; the day-5 flip strands nothing. The 2026-08-28
 # "catch" stood on Grace's go-home ending day 4 for free -- the leak the once-only proof closes.
-EXPECTED_CAUGHT = _units(set())
+# R5 -- DERIVED BY THE TOOL 2026-09-02 (docs GK1 §1.38), the doomed-arming rule's first payoff:
+# the bayou ritual clearing (rm480, `bayouRitual`) kills a player who has not USED the croc
+# mask -- `roomScript` state 5 arms `killGabe` on the ego unless flag 216 is set, and 216 is
+# raised only by `maskAction` in the maze (rm490, verb 31 with the mask) -- with nothing to do
+# about it on that screen. "You walked into the finale without X." The tool reads it as an
+# EDGE stranding of the mask at rm490->rm480: the maskless crosser's world is dead, so the
+# mask is "unobtainable past the edge and still needed". The guard it yields (`has: 21`) is
+# necessary, not sufficient -- a player holding the mask unused dies too; the exact guard is
+# flag 216.
+EXPECTED_CAUGHT = _units({
+    "crocMask",             # R5: use the mask in the maze before the ritual clearing
+})
 
 # REAL per the scripts, MISSED by the tool. Each is a declared RED below with its mechanism.
 KNOWN_GAPS = _units({
@@ -225,6 +236,11 @@ def run():
           _unit("rod") in caught and _unit(("signalDev", "signalDev2")) in caught,
           "the point of no return is sHRoom8.sc:71 inside room 800; the model has no intra-room "
           "scene boundary to hang a carry-in on")
+    check("R5: the croc mask is caught at the maze->ritual crossing (rm490->rm480)",
+          any(e["from_room"] == 490 and e["to_room"] == 480 and 21 in e["items"]
+              for e in s.edge_strandings()),
+          "no edge_strandings row 490->480 naming item 21; the maskless arrival at bayouRitual "
+          "arms killGabe (state 5) and the doomed-arming rule must make that path a DEATH")
     check("R3: the two guises are caught as carry-ins to Grace's room",
           _unit("BoarGuise") in caught and _unit("WolfGuise") in caught,
           "same intra-room boundary as R2")
