@@ -1456,7 +1456,10 @@ message 6 on days ≠ 7, message 4 on day 7 — so which branch boards the plane
 structurally decidable (the messages would say; a play-check or the message resource
 settles it). The honest capture, once settled: an icon-derived destination carries the
 boarding branch's path condition (`gDay == 7`), which the day projection can read
-directly — no window needed. Not built; recorded with its one open question. Every rm750 entrance tests flag 470 (reg 712), whose only writers sit in
+directly — no window needed. Not built; recorded with its one open question.
+The USER (2026-09-02, from play, "pretty sure"): the airport can be used on ONE day only —
+a lead confirming the day-7 branch boards. NOT a value to encode: the rule must read the
+boarding branch structurally (how msg 1/0/4 reaches `airport::cue`), or stay unbuilt. Every rm750 entrance tests flag 470 (reg 712), whose only writers sit in
 rm93 (`doTheRestart`), so in play it stays 0 and the `712 == 0` alternatives are the open
 ones. Where the game keeps Germany off the day-4 map remains to be found in the scripts.
 
