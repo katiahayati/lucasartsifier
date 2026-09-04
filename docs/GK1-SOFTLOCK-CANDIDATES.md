@@ -1981,6 +1981,46 @@ FAILED. Two reasons, both general and both worth their own round:
 Neither blocks anything today: the bayou's day is the drum puzzle's answer either way (§1.41),
 so this was never §1.34's blocker. Reverted rather than shipped inert with a red test.
 
+## §1.51 §1.34 UNPARKED: its two blockers are cured (2026-09-04, measuring)
+
+The day increments the model never had (§1.34: `(++ day)` in rm480, rm500, rm550 — the bayou
+ritual, Germany's departure, the dream — dropped because those scripts never COMPARE the day,
+so `_glob_domains` returned {}) were reverted on 2026-09-02 for two reasons, and this session
+cured both:
+  * **the any-day flights** (§1.35's diagnosis: rm480's new increment fired at day 3 because
+    Germany was enterable on any day) — the airport icon's `select` ties the flight to day 7
+    (§1.39) and the map icons carry their presence (§1.41);
+  * **the phantom endings** (a day ended for free because flag 15 accumulated) — the step's own
+    co-effects clear it and the stages are confined to exactly their day (§1.45, §1.48).
+So the fallback ships as designed: an incremented global whose SCRIPT-LOCAL literal domain is
+empty falls back to the GAME-WIDE literal range (every integer between the smallest and largest
+literal the game compares or assigns it), each fanned branch an ORDERED step `k → k+delta`,
+bounded at 64 values (past it the increment is dropped exactly as before). Static blast radius,
+re-stated: LSL2 9 sites, KQ4 9, KQ6 1, KQ5 8, LB2 10, GK1 3 — and the 2026-09-02 measurement
+found all five games byte-identical (the shovel counter, the snake oil, the scores, KQ6's 153
+inert), which this run re-measures.
+
+Expected on GK1: days 6→7→8 gain real producers, so the closure's second opinion (§1.48) can
+finally judge the day-7 rows.
+
+**MEASURED AND REVERTED AGAIN (2026-09-04) — and the real blocker is now named.** It made GK1
+strictly worse: **R4 DIED** (the day-4 crossing without flag 44 reads "not a seal"), all six
+§1.48 pins failed, and every row moved a day EARLIER (the mold and the veve to day 3, the
+sketch to day 4, the mask and the oil to day 6) — §1.35's symptom again, with the flights
+already tied. The reason is not the flights and not the endings: **an increment with no
+evidence demand is a FREE day-ender.** rm480's `(++ day)` costs nothing but standing in the
+bayou, and the bayou is reachable early (flag 268's raise is the drum puzzle, opaque), so with
+the increment modelled a player ends any day by walking there — and every fact §1.45 and §1.48
+rest on ("day k ends only through its own `endDay` arm") collapses, taking R4 with it.
+
+So §1.34 and the closure's second opinion are in DIRECT tension, and §1.34 loses: the arms are
+the game's real day structure, the ritual's increment is the game's real one too but its DAY is
+knowledge the record does not carry (§1.41: the phrases). Shipping §1.34 needs the bayou's day
+first, in this order: the drum book's own day gate (own(14) at the arming, §1.50's blocked
+half), then the phrases. Until then the day-7 rows stay, and R1's check stays declared on this
+gap. The apply script is `apply_134.py` in the session scratchpad; the tension is the thing to
+remember, not the patch.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
