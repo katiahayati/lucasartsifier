@@ -1929,6 +1929,38 @@ links (flag 42, the Tulane icon, the three asked-bits); the airport's day-8 row 
 Cazaunoux icon's are gone — nobody reaches day 8 in the record, so no seal. The JOINT twins
 of the retired scalar rows ((123, 257) at the same flips) get the same second opinion next.
 
+## §1.49 One story, told once: the closure arm's chain rows collapse to their root (2026-09-03)
+
+After §1.48 the closure-arm probe reports six rows for the day-4 crossing — flag 44 and every
+link that produces it: asked-bits 263, 262, 240, flag 42 (the photo shown at the voodoo shop),
+and the Tulane icon's flag 14 — each "carried at 0 into day 4, the goal never enters the
+closure". They share the crossing and the sealed region: one finding seen at each link.
+`_collapse_value_chains` groups rows by (register, value, sealed region), reads the links'
+dependencies out of `_wbranch` (S depends on T when a producer of an accepted value of S names
+T among its deps), keeps one row per ROOT — a link no other link in the group produces, the
+earliest thing the player failed to do — with `chain` = the links downstream in dependency
+order, and leaves independent roots as separate rows (the Tulane icon is its own story beside
+the photo's). Pure post-processing before `_collapse_value_flips`; `test_value_chains.py` pins
+it on synthetic rows. Exposure: a golden with several closure-arm rows on one crossing would
+collapse too — the suite decides.
+
+## §1.50 An armed object is present under its arming condition (2026-09-03, designed)
+
+§1.41's tail named it: the drum inset's handlers — the only raise of the bayou icon's flag 268
+— read as available wherever rm410 is, because `armed_rooms` holds rooms and not guards. The
+presence table already exists for the receiver-side spelling: `MachineBuilder.foreign_inits`
+collects every `(<ScriptID obj> init:)` with its path condition conjoined with the calling
+room, and `cast_conditions` turns it into the object's cast guard, which the harvest applies
+as the scope guard `og` of the object's handlers. The argument-side arming
+(`client_arming_selectors`, §1.40 — `(gRoom setInset: (ScriptID 815 0) self gRoom)`) now
+feeds the same table with the same claim: the inset is PRESENT under that site's condition.
+For the drum inset the site is `sGoToDrum` state 2, whose machine is armed from `tom::doVerb
+18` — "use the drum book on the drummer" — so the cast guard folds the machine's entry guard
+(`machine_guard`, the existing callback) and every raise of 268 carries own(14). The bayou's
+day is still the puzzle's answer (§1.41), but its floor is honest now: not before the book.
+Exposure: KQ6 has one `setInset:` site, LB2 twenty-six (its close-up insets gain their rooms
+as presence); the suite decides, and LB2 is reported row by row if it moves.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED

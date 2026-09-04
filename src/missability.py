@@ -356,6 +356,73 @@ def _fold_demands(guard, placed):
     return groups, ctx
 
 
+def _collapse_value_chains(rows, wbranch):
+    """One story, told once (2026-09-03, GK1 docs §1.49). The seal arm reports a row per REGISTER
+    a crossing must carry: GK1's day-4 crossing without flag 44 is a dead end, and so is the same
+    crossing without asked-bit 263, or 262, or 240, or flag 42 -- the links of the one chain that
+    produces 44 (the photo shown at the voodoo shop raises 42, which unlocks NPC 40's topic 240,
+    which unlocks Cazaunoux's 262 and 263, which unlock her topic 54 = flag 44). Six rows with the
+    SAME crossing and the SAME sealed region are one finding.
+
+    Rows sharing (register, value, sealed region) are grouped; inside a group a link S depends on
+    T when some producer of an accepted value of S names T among its deps (`wbranch`), and the
+    ROOTS -- links no other link in the group produces -- each keep a row, with `chain` = the
+    links downstream of that root in dependency order (`reg` stays the root: the earliest thing
+    the player failed to do). A group of independent roots stays several rows (the Tulane icon's
+    flag 14 is its own story beside the photo's). Rows without a `_sealed` region pass through."""
+    groups, order, rest = {}, [], []
+    for r in rows:
+        if "_sealed" not in r or r.get("pattern") != "producible-dead-end":
+            rest.append(r)
+            continue
+        k = (repr(r["register"]), repr(r["value"]), r["_sealed"])
+        if k not in groups:
+            groups[k] = []
+            order.append(k)
+        groups[k].append(r)
+    out = list(rest)
+    for k in order:
+        grp = groups[k]
+        if len(grp) == 1:
+            out.append(grp[0])
+            continue
+        regs = [r["reg"] for r in grp]
+        byreg = {r["reg"]: r for r in grp}
+        deps = {S: set() for S in regs}
+        for (Sk, _room, vk), brs in wbranch.items():
+            if Sk not in byreg or vk not in set(byreg[Sk].get("accepted", ())):
+                continue
+            for (d, _cost, _co) in brs:
+                for T in d:
+                    if T in byreg and T != Sk:
+                        deps[Sk].add(T)
+        roots = [S for S in regs if not deps[S]]
+        if not roots:                      # a cycle: keep every row
+            out.extend(grp)
+            continue
+        placed = set()
+        for root in roots:
+            chain, frontier = [root], [root]
+            placed.add(root)
+            while frontier:
+                nxt = []
+                for T in frontier:
+                    for S in regs:
+                        if S not in placed and T in deps[S] and deps[S] <= placed | {S}:
+                            placed.add(S)
+                            chain.append(S)
+                            nxt.append(S)
+                frontier = nxt
+            row = dict(byreg[root])
+            row["chain"] = chain
+            row["chain_bad"] = {S: byreg[S].get("bad") for S in chain}
+            out.append(row)
+        for S in regs:                     # a link reachable from no root (a cycle tail)
+            if S not in placed:
+                out.append(byreg[S])
+    return out
+
+
 def _collapse_by(rows, key, merge_fields, value_key=None):
     """Merge rows that state the SAME FACT, keeping the first row's identity and unioning the
     listed fields. The shared body of `_collapse_flips` and `_collapse_value_flips`.
@@ -8018,7 +8085,7 @@ class IrSccReach(SccReach):
                                         "raise_rooms": [],
                                         "flip_rooms": [r],
                                         "_sealed": frozenset(post_b[0])})
-        return self._collapse_value_flips(out)
+        return self._collapse_value_flips(_collapse_value_chains(out, self._wbranch))
 
     def _closure_flip_dead(self, R, w, it):
         """Is item `it` THE DIFFERENCE between crossing into `R == w` and not: the staged PRE takes
