@@ -1961,6 +1961,26 @@ day is still the puzzle's answer (§1.41), but its floor is honest now: not befo
 Exposure: KQ6 has one `setInset:` site, LB2 twenty-six (its close-up insets gain their rooms
 as presence); the suite decides, and LB2 is reported row by row if it moves.
 
+**BUILT, MEASURED INERT, REVERTED (2026-09-03, the same night).** The recording works —
+`foreign_inits[815]` gains `('drumInset', 'init', 11==410)` — and NOTHING moved: GK1's rows
+byte-identical, five surfaces unchanged, and the test asserting own(14) on flag 268's raises
+FAILED. Two reasons, both general and both worth their own round:
+  * **the guard is an OR over sites, and one site is unresolvable.** Script 815 is armed
+    twice: `sGoToDrum@410` (a room, so `11 == 410`) and `sCeremonialRoom` (script 900, a
+    CUTSCENE script — not a room, so the existing rule contributes None, "a scope with no room
+    cannot say where you are"). `cast_guard` is `any_guard` over the sites, so the None wins
+    and the object is present always. The cure is to resolve a non-room caller through the
+    rooms that arm IT (`mb.arms`, the same transitive walk `opmodel.armed_rooms` already does)
+    — until then the ignorance floor is doing its job.
+  * **the arming MACHINE's entry guard never joins.** `_cast`'s `machine_guard` callback
+    resolves an object armed by a machine in its OWN script; a cross-script arm consults
+    nothing, so `_entry_guard[(410, 'sGoToDrum')] = own(14)` — already computed — is not
+    conjoined. It cannot be done where `foreign_inits` is built (`__init__`, before the
+    entry guards exist); the site must record its enclosing (script, object) and resolve
+    lazily in `_cast`.
+Neither blocks anything today: the bayou's day is the drum puzzle's answer either way (§1.41),
+so this was never §1.34's blocker. Reverted rather than shipped inert with a red test.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
