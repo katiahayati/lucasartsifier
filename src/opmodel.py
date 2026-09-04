@@ -27,7 +27,7 @@ import machine as M
 import compile as C
 import vocab
 import extract as X
-from extract import extract, atom, item_transfer, item_transfers, _room_object, verb_param_scope, EGO
+from extract import extract, atom, item_transfer, item_transfers, _room_object, verb_param_scope, EGO, is_self_callback
 from guard_ast import GAnd, GOr, GNot, Pred
 
 
@@ -337,6 +337,7 @@ class OpEmitter:
         #   statement walk cannot see it, and `missability._death_fuses` for what reads it.
         self._dec_cache = {}
         self.handler_gets = []         # (room, script, item, guard)
+        self.inventory_gets = []       # (script, item, guard): placeless gets of the icon-bar scope (§1.46)
         self.handler_drops = []        # (room, script, item, guard, dest) -- `gEgo put: N <dest>`
         #   handler. Consuming an item requires owning it; the Pamphlet handed to the bore on
         #   the plane (rm62) is a Said-handler consumption, invisible to the machine-body scan.
@@ -1209,6 +1210,15 @@ class OpEmitter:
     def _heffect(self, room, script, node, pc, seen, owner=None):
         """What one statement MEANS to the handler model. The part that is ours, not shared."""
         tp = node["t"]
+        if getattr(self, "_placeless_only", False):
+            # inside an icon-bar `cue` continuation: only the placeless GETS are claims here
+            if tp == "Send":
+                recv, msgs = I.send_pairs(node)
+                for sel, params in msgs:
+                    for (it, dest0) in item_transfers(recv, sel, params):
+                        if X._here(dest0, room) == EGO:
+                            self.inventory_gets.append((script, it, _conj_atoms(pc)))
+            return
         if tp == "Assignment":
             dst, src = node["kids"][0], node["kids"][1]
             v = _int(src.get("value"))
@@ -1247,6 +1257,14 @@ class OpEmitter:
                     # inventory combination has no source here. That is the pre-existing
                     # behaviour (the scope was not walked at all), not a new loss.
                     if script in self.global_homed:
+                        # ...BUT A GET THERE IS A PLACELESS CONVERSION, and it is recorded as
+                        # one (2026-09-03, GK1 docs §1.46): "open the envelope" hands over
+                        # the murder photo wherever the player stands, at the cost of the
+                        # envelope -- `own(container)` is the whole condition. Drops stay
+                        # refused (a drop homed everywhere is 86 destruction sites);
+                        # `inventory_gets` feeds the closure's anywhere-gets, never `sources`.
+                        if dest == EGO:
+                            self.inventory_gets.append((script, it, _conj_atoms(pc)))
                         continue
                     g = _conj_atoms(pc)
                     self.handler_moves.append((room, script, it, dest, g))
@@ -1255,10 +1273,39 @@ class OpEmitter:
                     else:
                         self.handler_drops.append((room, script, it, g, dest))
             self._follow_send(room, script, recv, msgs, pc, seen, owner)
+            self._follow_self_cue(room, script, recv, msgs, pc, seen, owner)
         elif tp in ("PublicCall", "LocalCall"):
             self._follow_call(room, script, node, pc, seen, owner)
 
     _SEND_DEPTH = 3
+
+    def _follow_self_cue(self, room, script, recv, msgs, pc, seen, owner):
+        """A handler that hands `self` out as a callback CONTINUES in its own `cue` (2026-09-03,
+        GK1 docs §1.46) -- the airport icon's reading (§1.39) applied to the icon bar: GK1's
+        `phoEnvelope::doVerb 6` says its line with `self` as caller and `cue` is where the
+        envelope is opened (`put: 0`, `get: 2`, `get: 1` -- the murder photo, the root of R4's
+        day-4 chain); the wallet's `cue` hands over the master card the same way.
+        In the ICON-BAR scope only, and for GETS only: the continuation walks the owner's `cue`
+        with `_placeless_only` set, so `_heffect` records the placeless gets and nothing else
+        (the KQ6 lamp lesson -- a write under an own() guard in that scope is read as a use
+        everywhere). Elsewhere the callback's effects already reach the model through the
+        machine walker (`_is_cue_send`)."""
+        if script not in self.global_homed or owner is None or recv is None:
+            return
+        if not is_self_callback(recv, msgs):
+            return
+        key = ("cue", script, owner.name)
+        if key in seen:
+            return
+        body = owner.methods.get("cue")
+        if body is None:
+            return
+        saved = getattr(self, "_placeless_only", False)
+        self._placeless_only = True
+        try:
+            self._hwalk(room, script, body, pc, seen | {key}, owner=owner)
+        finally:
+            self._placeless_only = saved
 
     def _follow_send(self, room, script, recv, msgs, pc, seen, owner):
         """A handler's SAME-SCRIPT METHOD SEND is a call: the callee runs under the handler's

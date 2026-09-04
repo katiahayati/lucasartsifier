@@ -3696,24 +3696,29 @@ def inventory_scripts(ir):
     {0} on LSL2/KQ4 and the rule is inert on the goldens by construction. Measured: LSL2 {0},
     KQ4 {0}, KQ5 {0}, KQ6 {907}, Dagger {15}.
 
-    A script counts only if it is where the items MOSTLY live: a game may declare a stray item
-    instance beside the room that hands it over, and one such instance does not make that room an
-    always-live scope. The threshold is a plurality of the declared items, which is what "the
-    inventory script" means and is not a tunable -- an inventory split evenly across two scripts
-    would return both."""
+    ⭐ EVERY NON-ROOM SCRIPT THAT DECLARES ITEMS (2026-09-03, GK1 docs §1.46). The old rule kept
+    the PLURALITY holder -- "where the items mostly live" -- and GK1 splits its inventory 52/30
+    across `tile1.sc` (24) and `GKInvItem.sc` (15, the `Inv` instance and the item class), so the
+    thirty items of script 15 (the photo envelope, the drum book, ...) were homed nowhere and
+    their handlers never walked: the murder photo, granted by opening its envelope, had no
+    source in the game. The stray-item worry ("one instance beside the room that hands it
+    over") is the ROOM test: a room script is a room, whatever it declares. Census: LSL2 {0},
+    KQ4 {0}, KQ5 {758}, KQ6 {907}, LB2 {15} unchanged -- each declares every item in one
+    non-room script -- GK1 {15, 24}."""
+    import extract as _X
     fam = _item_family(ir)
     if not fam:
         return frozenset()
     per = {}
     for sn in sorted(ir.scripts):
-        n = sum(1 for o in ir.scripts[sn].objects
+        sc = ir.scripts[sn]
+        if _X._room_object(sc, ir) is not None:
+            continue
+        n = sum(1 for o in sc.objects
                 if not o.is_class and (o.super in fam or o.species in fam))
         if n:
             per[sn] = n
-    if not per:
-        return frozenset()
-    top = max(per.values())
-    return frozenset(sn for sn, n in per.items() if n == top)
+    return frozenset(per)
 
 
 def item_names(ir):

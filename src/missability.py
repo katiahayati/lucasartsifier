@@ -7221,6 +7221,9 @@ class IrSccReach(SccReach):
                         grants.append((it2, i2["room"], g2, ents, mu))
         for (r2, _sc2, it2, g2) in getattr(self.em, "handler_gets", ()):
             gets.append((it2, r2, g2))
+        # the icon bar's PLACELESS gets (§1.46): room None = anywhere the guard holds
+        for (_sc2, it2, g2) in getattr(self.em, "inventory_gets", ()):
+            gets.append((it2, None, g2))
         edges = []
         for a2, bs2 in self.edges.items():
             for b2 in bs2:
@@ -7705,7 +7708,7 @@ class IrSccReach(SccReach):
                         not ents or any(sat(e, True, r2) for e in ents)):
                     items.add(it2)
             for (it2, r2, g2) in gets:
-                if r2 in rooms and sat(g2, True, r2):
+                if (r2 is None or r2 in rooms) and sat(g2, True, r2):
                     items.add(it2)
             for (a2, b2, rq2, st2, al2) in edges:
                 # NOT `or b2 in rooms`: an edge into an already-present room still LANDS
