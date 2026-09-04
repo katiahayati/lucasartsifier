@@ -1886,6 +1886,40 @@ which the detector itself now calls) with the detector's own forward-reachable d
 the unconfined control — in seconds. R4 leaves KNOWN_RED. The GK1 oracle stands at R2, R3,
 R4, R5 caught, R1 retired (the sketch is forced by day 4's own ending).
 
+## §1.48 The closure as a second opinion on the flat day-flip rows (2026-09-03, simulating)
+
+The three GK1 reds left are one family: `register_strandings`' day-flip rows for the sketch
+(days 5/6/7), the mold and the veve (days 4-7), the croc mask and the oil (day 7) — each
+"obtainable before the flip, needed after, and the item-less player can reach the flip". The
+last clause is `_flip_live`, asked of the flat projections, which carry one register each and
+answer permissively: the flag that ends a day is "ever raised" in every projection that does
+not carry it, so every day flip is reachable without every item. The staged closure
+(§1.44-1.46) is the reading that knows better — it ends each day through that day's own arm
+with the crosser's holdings. Asked with the item BANNED (`_staged_pre(..., require_steps,
+ban={item})`: its grants and gets filtered out of the closure tables, so `own(item)` never
+satisfies), a day whose ending demands the item cannot end, and the flip is no point of no
+return for it: the day system prevents that stranding — the USER's words for GK1. Expected:
+the sketch's rows (day 4's arm demands flag 248, raised only by showing it), the mold's and
+the veve's (day 3's arm) retire as derived FPs; the mask's and the oil's (day 6's ending is
+the record's phantom, §1.34) stand until the bayou's day is derivable. Scalar counters only.
+Exposure: KQ4's day clock and LB2's act counter are counters — their flip rows (the pouch and
+the pole; the act rows) face the same question; a retirement there is a bless (LB2's pressPass
+act-1 rows are the one the USER already predicted, [[lb2-pass-necessary-for-act1]]).
+
+**SIMULATED — three findings before it held.** (1) `_step_live` read a step branch's register
+deps and ignored its item COST; honoured now (the closure's own `mu <= items`). (2) The flip's
+step at rm370 costs nothing itself — it needs flag 15 — and flag 15 was being raised at stage
+3 by DAY 2's ending arm, because a stage confined the counter to "at most j" and PV keeps the
+earlier values: an arm gated on `day == 2` fired on day 3. The stage confinement is EXACTLY j
+now (the crosser is on day j; a write gated on an earlier day cannot fire). Under exact
+stages the control crosser ends days 1-4 through their arms and R4 still fires; days 6-7 have
+no ending in the record (§1.34), so no crosser reaches day 7 there. (3) Therefore the rule
+retires a row only when the item is THE DIFFERENCE: the unbanned crosser takes the flip and
+the banned one does not. Verdicts: the sketch into days 5/6 → FP (day 4 ends only by showing
+it); the veve and the mold into day 4 → FP (day 3's arm); the croc mask and the oil into day
+7 → the row STANDS (nobody reaches day 7 in the record — §1.34's gap, not the item's). R1's
+retirement is now the tool's own derivation.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED

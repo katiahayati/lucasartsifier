@@ -40,6 +40,17 @@ def main():
     s._rp_xcache = {}
     pre_old, _c = s._staged_pre(123, 1, {base + 63: {0}})
     check("without `require_steps` the staged PRE still seeds as before (the windows' caller)", pre_old is not None)
+    # -- exact stages and the banned item (§1.48) ------------------------------------------------
+    s._rp_xcache = {}
+    check("the control crosser takes the day-4 -> 5 flip with every item",
+          s._staged_pre(123, 4, {}, require_steps=True)[0] is not None)
+    for it, w, what in ((32, 5, "the first tomb sketch: day 4 ends only by showing it"),
+                        (38, 4, "reconVeve: day 3's arm demands it"),
+                        (40, 4, "the bracelet mold: day 3's arm demands its use")):
+        check(f"banning item {it} ({what}), nobody takes the flip into day {w}: its flat row is an FP",
+              s._closure_flip_dead(123, w, it), f"flip_dead = {s._closure_flip_dead(123, w, it)}")
+    check("the croc mask's day-7 row STANDS: nobody reaches day 7 in the record (the missing day-6 "
+          "ending, docs 1.34), so the mask is not the difference", not s._closure_flip_dead(123, 7, 21))
     live = s._step_live(123, 1, pre_g[0], pre_g[1], {123: {0, 1}})
     check("`_step_live` names the producer it found (room 370, the day-end flag)",
           live is not None and live[0] == 370 and (base + 15) in live[1], f"got {live}")

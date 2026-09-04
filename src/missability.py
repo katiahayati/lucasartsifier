@@ -6929,6 +6929,20 @@ class IrSccReach(SccReach):
                             continue                # no item-less pre-flip player -> arrival
                         if not _flip_live(R, r, w, ban):
                             continue                # the flip itself needs the item: not a strand
+                        # ⭐ ...ASKED OF THE CLOSURE TOO (2026-09-03, GK1 docs §1.48). The flat
+                        # projections carry one register each and answer "can the item-less
+                        # player reach the flip" permissively -- GK1's day flips are all
+                        # reachable there, because the flag that ends a day is "ever raised"
+                        # in every projection that does not carry it. The staged closure
+                        # (§1.44-1.46) ends each day through that day's own arm with the
+                        # crosser's holdings: with the item BANNED, a day whose ending demands
+                        # it cannot end, and the flip is not a point of no return for the
+                        # item -- the day system prevents it (the USER's words). The sketch
+                        # (day 4's arm, flag 248), the veve and the mold (day 3's) are that.
+                        # Scalar counters only: the staged PRE is a counter's.
+                        if not isinstance(R, tuple) and R in getattr(self, "_counters", ()) \
+                                and self._closure_flip_dead(R, w, it):
+                            continue
                         cog = self._cogrants.get((R, r, w)) if not isinstance(R, tuple) else None
                         if cog and all(it in c for c in cog):
                             continue                # every write of the flip HANDS OVER the item
@@ -7363,7 +7377,7 @@ class IrSccReach(SccReach):
             pv[R2] = {v2}
         return confine
 
-    def _step_live(self, C, j, rooms, pv, confine):
+    def _step_live(self, C, j, rooms, pv, confine, items=None):
         """Is the counter step j -> j+1 PRODUCIBLE in a stage's closure: a `_wbranch` branch
         of `C := j+1` at a room the closure reaches whose every dep value is in hand under the
         confinement? Returns the (room, deps) that makes it so, else None -- the closure's own
@@ -7375,14 +7389,16 @@ class IrSccReach(SccReach):
         for (Ck, room, tk), brs in self._wbranch.items():
             if Ck != C or tk != j + 1 or room not in rooms:
                 continue
-            for (d, _cost, _co) in brs:
+            for (d, cost, _co) in brs:
                 if j not in d.get(C, {j}):
                     continue
+                if items is not None and not set(cost) <= set(items):
+                    continue                # the step's own item cost, unheld
                 if all(set(vs) & allowed(S) for S, vs in d.items() if S != C):
                     return room, d
         return None
 
-    def _staged_pre(self, C, k, confine_extra, require_steps=False):
+    def _staged_pre(self, C, k, confine_extra, require_steps=False, ban=frozenset()):
         """PRE closure for a crosser standing at C==k: stage j=0..k-1, each stage a closure
         confined C<=j (plus confine_extra), seeded from the previous stage's PV with the
         step's necessary co-effects applied -- a MONOTONE latch fact becomes a confinement
@@ -7413,9 +7429,13 @@ class IrSccReach(SccReach):
         pv, items = {}, set()
         rooms = {self.em.cfg.start_room}
         for j in range(0, k):
-            confine[C] = {v for v in dom if v <= j}
-            rooms, pv, items = self._pclose(rooms, pv, items, confine, refine=True)
-            if require_steps and self._step_live(C, j, rooms, pv, confine) is None:
+            # ⭐ EXACTLY j, NOT "AT MOST j" (2026-09-03, GK1 docs §1.48). The crosser standing at
+            # day j is on day j; PV keeps the earlier values in hand, but a WRITE gated on
+            # `day == 2` cannot fire on day 3. Confined to "<= j", day 2's ending arm re-fired
+            # at every later stage and every day ended for free -- the last phantom.
+            confine[C] = {j}
+            rooms, pv, items = self._pclose(rooms, pv, items, confine, refine=True, ban=ban)
+            if require_steps and self._step_live(C, j, rooms, pv, confine, items) is None:
                 return None, confine
             neco = self._step_neco(C, j, j + 1)
             for R, v in neco.items():
@@ -7431,10 +7451,10 @@ class IrSccReach(SccReach):
             pv[C] = set(pv.get(C, {0})) | {j + 1}
             land = {r for r, sts in self._rstep.get(C, {}).items() if (j, j + 1) in sts}
             rooms = land or rooms
-        confine[C] = {v for v in dom if v <= k}
-        final = self._pclose(rooms, pv, items, confine, refine=True)
+        confine[C] = {k}
+        final = self._pclose(rooms, pv, items, confine, refine=True, ban=ban)
         # ...and the FLIP itself, k -> k+1: the step the seal arm used to add by hand.
-        if require_steps and self._step_live(C, k, final[0], final[1], confine) is None:
+        if require_steps and self._step_live(C, k, final[0], final[1], confine, final[2]) is None:
             return None, confine
         return final, confine
 
@@ -7524,7 +7544,7 @@ class IrSccReach(SccReach):
                         rq2[C] = (set(rq2[C]) & narrowed) if C in rq2 else set(narrowed)
                         metas[j] = (rq2, st, al)
 
-    def _pclose(self, rooms0, pv0, items0, confine, refine=True):
+    def _pclose(self, rooms0, pv0, items0, confine, refine=True, ban=frozenset()):
         """The PRODUCIBLE CLOSURE (docs GK1 §1.27): everything a player seeded at `rooms0`
         with holdings `pv0`/`items0` can EVER produce, as one mutual fixpoint of rooms x
         (register, value) pairs x items over the recorded writes, grants and edges.
@@ -7548,13 +7568,18 @@ class IrSccReach(SccReach):
         player -- the unsound direction for every claim built on top. It is also the fast
         early verdict for a POST closure: pass 1 is a superset, so a goal missing from it
         is missing from the refined result too."""
-        r1, p1, i1 = self._pclose_pass(rooms0, pv0, items0, confine, None)
+        r1, p1, i1 = self._pclose_pass(rooms0, pv0, items0, confine, None, ban)
         if not refine:
             return r1, p1, i1
-        return self._pclose_pass(rooms0, pv0, items0, confine, frozenset(r1))
+        return self._pclose_pass(rooms0, pv0, items0, confine, frozenset(r1), ban)
 
-    def _pclose_pass(self, rooms0, pv0, items0, confine, rp_rooms):
+    def _pclose_pass(self, rooms0, pv0, items0, confine, rp_rooms, ban=frozenset()):
         writes, grants, gets, edges, _gr = self._closure_tables()
+        if ban:
+            # THE ITEM-LESS PLAYER (§1.48): a banned item is never granted, so `own(X)` never
+            # satisfies -- the closure of the player who does not have X and cannot get it.
+            grants = [g for g in grants if g[0] not in ban]
+            gets = [g for g in gets if g[0] not in ban]
         pv = {k: set(vs) for k, vs in pv0.items()}
         items = set(items0)
         rooms = set(rooms0)
@@ -7985,6 +8010,31 @@ class IrSccReach(SccReach):
                                         "flip_rooms": [r],
                                         "_sealed": frozenset(post_b[0])})
         return self._collapse_value_flips(out)
+
+    def _closure_flip_dead(self, R, w, it):
+        """Is item `it` THE DIFFERENCE between crossing into `R == w` and not: the staged PRE takes
+        the flip with everything, and dies with `it` banned (§1.44's `require_steps`)? Then the
+        flip needs the item and cannot strand it. A flip nobody takes in the record (a missing
+        ending, §1.34) is not the item's doing and the flat row stands. Memoised per (R, w, item);
+        a closure that cannot run is permissive."""
+        memo = getattr(self, "_cfd_memo", None)
+        if memo is None:
+            memo = self._cfd_memo = {}
+        key = (R, w, it)
+        if key not in memo:
+            try:
+                self._rp_xcache = {}
+                free, _c = self._staged_pre(R, w - 1, {}, require_steps=True)
+                if free is None:
+                    memo[key] = False       # nobody crosses in the record: not the item's doing
+                else:
+                    self._rp_xcache = {}
+                    pre, _c = self._staged_pre(R, w - 1, {}, require_steps=True,
+                                               ban=frozenset({it}))
+                    memo[key] = pre is None
+            except Exception:                                   # noqa: BLE001
+                memo[key] = False
+        return memo[key]
 
     def _seal_case(self, R, w, r, S, b0, goal, fwd):
         """ONE case of the seal arm: the crosser of the counter flip into `R == w` at room `r`,

@@ -123,17 +123,12 @@ KNOWN_RED = {
         # read `own(19) OR own(20)` out of the deposit's doVerb case, and the group row
         # carries the pair as ONE alternatives unit.
         "R1 (retired): VoodooCode1 is NOT reported at any day flip -- day 4 cannot end without it":
-            "the sketch's 4->5 row is GONE (right: Magentia's full show, day 4, demands it -- docs "
-            "GK1 1.37), but rows stand at the 5->6 and 6->7 flips (and did in the committed model "
-            "all along -- the 09-02 'day 9' prose described a simulation, never the artifact): the "
-            "flat register model ends days 5 and 6 through go-home's accumulate-only flag 65, the "
-            "once-only phantom of 1.29/1.31. The flights' day tie IS found and built (1.39: the "
-            "airport icon's select boards on day 7 only) -- it closed the museum on day 7 (need "
-            "site 260 gone) and did not move these rows.",
-        # ✅ R4 PROMOTED 2026-09-03 (docs GK1 1.44-1.47): the closure arm's flip-liveness (1.44), the
-        # step's own co-effects (1.45) and the icon bar's placeless gets + the two-script inventory
-        # scope (1.46) made the day-4 crossing carrying flag 44 = 0 a dead end the closure can see;
-        # the oracle reads it through `producible_seal` in seconds.
+            "the sketch's 4->5 and 5->6 rows are GONE -- the closure's second opinion (docs GK1 1.48: "
+            "with the sketch banned nobody ends day 4) derived the USER's 2026-09-02 ruling. What "
+            "stands is its 6->7 row (scalar and joint): under exact-day stages NOBODY reaches day 7 "
+            "in the record (day 6 ends only at the bayou ritual, whose `(++ day)` is the unmodelled "
+            "increment of 1.34), so the closure cannot call the sketch the difference there and the "
+            "flat arm's phantom day-6 ending (go-home, 1.29) keeps the row. Closes with 1.34.",
     },
     "test_lb2_ground_truth.py": {
         "mechanism pinned: pressPass":
