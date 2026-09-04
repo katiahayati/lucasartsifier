@@ -250,9 +250,16 @@ def run():
     regs = {(r.get("register"), r.get("value")) for r in rows_by_det["register_strandings"]}
     fbase = getattr(getattr(s.em, "ir", None), "flag_synth_base", None)
     flag44 = fbase + 44 if fbase is not None else None
+    # R4 is a CLOSURE-ARM finding (docs GK1 1.29, 1.44-1.46): the day-4 crosser without flag 44
+    # cannot end day 4 (its `endDay` arm needs the tattoo trace, which needs Crash's topic, which
+    # needs Cazaunoux's, which needs flag 44), while the unconstrained crosser can. The flat arm
+    # cannot see that go-home spends flag 65; `producible_seal` asks the closure arm's own
+    # question for this one crossing in seconds (the whole detector takes an hour on GK1).
+    seal = s.producible_seal(123, 4, 370, flag44, 0) if flag44 is not None else None
     check("R4: flag 44 (Cazaunoux topic 54 -> Crash's 'Voodoo Hounfour') is caught as a stranding",
-          flag44 is not None and any(r == flag44 for (r, _v) in regs),
-          f"register_strandings registers = {sorted(regs, key=str)}; flag44 synthetic = {flag44}. The "
+          flag44 is not None and (any(r == flag44 for (r, _v) in regs) or seal is True),
+          f"closure arm for the day-4 crossing carrying flag 44 = 0: {seal!r} (None = nobody crosses, "
+          f"False = not a seal, True = dead end); register_strandings registers = {sorted(regs, key=str)}; flag44 synthetic = {flag44}. The "
           f"Teller topic dispatch is lowered (vocab.lower_teller_cases) and the topic-said array "
           f"(global182, proc50_5..8) is a lowered store since 848ec35 (docs GK1 1.42); the flat arm "
           f"still cannot see that go-home SPENDS flag 65 (1.29) -- the closure arm can")

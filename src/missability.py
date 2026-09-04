@@ -7968,26 +7968,10 @@ class IrSccReach(SccReach):
                                              - wb_prod.get(S, set())):
                                 if not (set(pre_g[1].get(S, {0})) - {b0}):
                                     continue  # S == b0 is universal, not a choice
-                                pre_b, conf_b = self._staged_pre(R, w - 1, {S: {b0}},
-                                                                 require_steps=True)
-                                if pre_b is None:
+                                verdict = self._seal_case(R, w, r, S, b0, goal, fwd)
+                                if verdict is None:
                                     continue    # carrying S == b0, this player never crosses
-                                pvb = dict(pre_b[1])
-                                pvb[R] = set(pvb.get(R, {0})) | {w}
-                                conf_b = self._apply_neco(R, w, pvb, conf_b)
-                                conf_post = {k2: v2 for k2, v2 in conf_b.items()
-                                             if k2 not in (R, S)}
-                                conf_post[R] = set(fwd)
-                                # S is NOT confined here: whether the crossing player can
-                                # still fix S is exactly what the closure must decide.
-                                # Pass 1 first -- its rooms are a SUPERSET of the refined
-                                # result's, so a goal missing there is missing, full stop;
-                                # the refined pass runs only to double-check a pass-1 leak.
-                                post_b = self._pclose({r}, pvb, pre_b[2],
-                                                      conf_post, refine=False)
-                                if goal and (goal & post_b[0]):
-                                    post_b = self._pclose({r}, pvb, pre_b[2],
-                                                          conf_post)
+                                post_b = verdict
                                 if goal and not (goal & post_b[0]):
                                     out.append({
                                         "pattern": "producible-dead-end",
@@ -8001,6 +7985,63 @@ class IrSccReach(SccReach):
                                         "flip_rooms": [r],
                                         "_sealed": frozenset(post_b[0])})
         return self._collapse_value_flips(out)
+
+    def _seal_case(self, R, w, r, S, b0, goal, fwd):
+        """ONE case of the seal arm: the crosser of the counter flip into `R == w` at room `r`,
+        carrying `S == b0`. Returns the post-flip closure, or None when that player cannot
+        exist (`_staged_pre(require_steps)`, §1.44). A dead end iff `goal` is missing from the
+        closure's rooms. Factored out so an oracle can pin one verdict in seconds
+        (`producible_seal`) instead of running the whole detector -- an hour on GK1."""
+        self._rp_xcache = {}
+        pre_b, conf_b = self._staged_pre(R, w - 1, {S: {b0}}, require_steps=True)
+        if pre_b is None:
+            return None
+        pvb = dict(pre_b[1])
+        pvb[R] = set(pvb.get(R, {0})) | {w}
+        conf_b = self._apply_neco(R, w, pvb, conf_b)
+        conf_post = {k2: v2 for k2, v2 in conf_b.items() if k2 not in (R, S)}
+        conf_post[R] = set(fwd)
+        # S is NOT confined here: whether the crossing player can still fix S is exactly what
+        # the closure must decide. Pass 1 first -- its rooms are a SUPERSET of the refined
+        # result's, so a goal missing there is missing, full stop; the refined pass runs only
+        # to double-check a pass-1 leak.
+        post_b = self._pclose({r}, pvb, pre_b[2], conf_post, refine=False)
+        if goal and (goal & post_b[0]):
+            post_b = self._pclose({r}, pvb, pre_b[2], conf_post)
+        return post_b
+
+    def producible_seal(self, R, w, r, S, b0):
+        """The closure arm's verdict for one crossing, in seconds: None = nobody crosses
+        carrying S == b0; True = a dead end (the goal never enters that player's closure while
+        the unconstrained crosser's does); False = not a seal on S. `fwd` and the unconfined
+        control are computed as the detector computes them."""
+        goal = set(self.em.cfg.goal_rooms)
+        fwd = {w}
+        grew = True
+        while grew:
+            grew = False
+            for _r3, sts3 in self._rstep.get(R, {}).items():
+                for (f3, t3) in sts3:
+                    if f3 in fwd and t3 not in fwd:
+                        fwd.add(t3)
+                        grew = True
+        for vs3 in self._inroom.get(R, {}).values():
+            fwd |= set(vs3)
+        self._rp_xcache = {}
+        pre_g, conf_g = self._staged_pre(R, w - 1, {}, require_steps=True)
+        if pre_g is None:
+            return False
+        pvw = dict(pre_g[1])
+        pvw[R] = set(pvw.get(R, {0})) | {w}
+        conf_g = self._apply_neco(R, w, pvw, conf_g)
+        post_g = self._pclose({r}, pvw, pre_g[2],
+                              {**{k2: v2 for k2, v2 in conf_g.items() if k2 != R}, R: set(fwd)})
+        if goal and not (goal & post_g[0]):
+            return False
+        post_b = self._seal_case(R, w, r, S, b0, goal, fwd)
+        if post_b is None:
+            return None
+        return bool(goal and not (goal & post_b[0]))
 
     @staticmethod
     def _collapse_value_flips(rows):

@@ -1865,6 +1865,27 @@ MURDER PHOTO (item 1); and the murder photo is granted by OPENING ITS ENVELOPE �
    GK1 the envelope's two photos and the wallet's card; LSL2/KQ4 declare in Main and are
    untouched.
 
+## §1.47 R4 CAUGHT — the closure arm sees the day-4 crossing without flag 44 (2026-09-03)
+
+The rvs probe after §1.46 (66 min): `(123, 4, 286, [0])` — crossing into day 4 carrying flag
+44 = 0 is a producible dead end: day 4's `endDay` arm costs the tattoo trace, the trace needs
+Crash's topic (flag 74), Crash's topic is a follow-up of Cazaunoux's topic 54 (flag 44), and
+nothing after day 3 can raise 44 — while the unconstrained crosser reaches the goal. Three
+rounds made it visible: §1.44 (a crossing must be producible under the value it carries: the
+nine presence rows were players who never existed), §1.45 (the step's own co-effects: flag 15
+no longer accumulates, so day 4 must end through ITS arm), §1.46 (the murder photo's source:
+the icon bar's placeless gets and the two-script inventory scope — the root of the chain). At
+the same flip the probe reports one row per LINK of the chain — flag 42 (the photo shown at
+the voodoo shop), the Cazaunoux (266) and Tulane (14) icons, the asked-bits 240/262/263, bit 7
+— the same dead end seen at each step; a collapse by sealed region would name the root once.
+The airport row `(123, 8, 511, [0])` stands on §1.34's phantom day-7 ending.
+
+**The oracle's spelling.** `register_value_strandings` takes an hour on GK1, so the R4 check
+reads `producible_seal(123, 4, 370, flag44, 0)` — the seal arm's per-case body (`_seal_case`,
+which the detector itself now calls) with the detector's own forward-reachable day set and
+the unconfined control — in seconds. R4 leaves KNOWN_RED. The GK1 oracle stands at R2, R3,
+R4, R5 caught, R1 retired (the sketch is forced by day 4's own ending).
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED

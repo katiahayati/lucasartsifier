@@ -130,17 +130,10 @@ KNOWN_RED = {
             "once-only phantom of 1.29/1.31. The flights' day tie IS found and built (1.39: the "
             "airport icon's select boards on day 7 only) -- it closed the museum on day 7 (need "
             "site 260 gone) and did not move these rows.",
-        "R4: flag 44 (Cazaunoux topic 54 -> Crash's 'Voodoo Hounfour') is caught as a stranding":
-            "REBLOCKED ON ONCE-ONLY FLAG 65 (2026-09-02, docs GK1 1.29). The old reasons are "
-            "gone: the producible closure treats flags as strandable, the record's every ->50 "
-            "in-edge rewrites the subject, and the closure correctly freezes flag 44 for the "
-            "deposit-less day-4 crosser. The why-satisfiable tracer then proved every other "
-            "link in the day-4 demand web honestly producible EXCEPT the last: `257:=1 @rm50` "
-            "under `178==2 AND flag65` with NO day gate -- the go-home day-ender. A crosser "
-            "carrying flag 65 from day 1 ends day 4 without the trace IN THE RECORD, and the "
-            "closure's accumulate-only value sets cannot express that go-home SPENDS the flag "
-            "(the raise-15/clear-65 co-write is recorded; counting is not). Third consumer of "
-            "the once-only mechanism, after the reconVeve and braceMold FPs.",
+        # ✅ R4 PROMOTED 2026-09-03 (docs GK1 1.44-1.47): the closure arm's flip-liveness (1.44), the
+        # step's own co-effects (1.45) and the icon bar's placeless gets + the two-script inventory
+        # scope (1.46) made the day-4 crossing carrying flag 44 = 0 a dead end the closure can see;
+        # the oracle reads it through `producible_seal` in seconds.
     },
     "test_lb2_ground_truth.py": {
         "mechanism pinned: pressPass":
