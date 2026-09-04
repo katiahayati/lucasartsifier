@@ -93,7 +93,14 @@ KNOWN_RED = {
     },
     "test_gk1_ground_truth.py": {
         "no UNEXPECTED unit flagged (suspicion)":
-            "four FALSE POSITIVES: knife (fatal_uses -- an on-screen death, not a consumption; "
+            "SIX FALSE-POSITIVE UNITS, in three families (2026-09-04). (A) THE DAY-7 FAMILY, all "
+            "waiting on ONE gap: the sketch, the mold, the veve, the croc mask and the oil each keep "
+            "a 6->7 row because NOBODY reaches day 7 in the record -- day 6 ends only at the bayou "
+            "ritual, whose `(++ day)` is unmodelled (docs GK1 1.34/1.51), so the closure's second "
+            "opinion (1.48) cannot ask whether the item is the difference and the flat arm's phantom "
+            "ending keeps the row. ⛔ Modelling that increment was measured TWICE and reverted twice: "
+            "unguarded, it is a FREE day-ender that kills R4 (1.51). It needs the bayou's own day "
+            "first. (B) knife (fatal_uses -- an on-screen death, not a consumption; "
             "USER ruling 2026-08-27 -- plus two register rows of the flip-precondition class, "
             "`reg12=720` since the travel-movie fan and the sHRoom8-state-0 row since the hounfour "
             "scene fan (a lowered script-808 register whose NUMBER moves with the synthetic "
@@ -110,14 +117,17 @@ KNOWN_RED = {
             "cure was MEASURED 2026-08-30 and does not retire it, docs GK1 §1.15). "
             "PLUS talisman (2026-09-01, the case-(c) trap round): the rod+talisman carry-in row at rm455->rm800 PROVED FP from the scripts, both halves forced -- the talisman is granted by BOTH Africa-exit cutscenes (get:69 before newRoom:216, rm720.sc:1040/:1285; Africa has no other exit) and the rod is required to LEAVE Africa (keyWorks, the only wall opener into rm720, arms exclusively from rodCode's success arm, rm710.sc:2303-2328); no put:60/69 exists before the finale. See test_gk1_ground_truth's talisman entry. sLakePatter RETIRED 2026-08-31: the travel-movie fan (§1.17) removed the phantom "
             "Magentia demand its dangerous_sinks row rested on -- an FP dying of honest wiring. "
-            "PLUS crocMask and oil (2026-09-02b, docs GK1 1.39): bought TOGETHER at the voodoo shop "
-            "(rm250 states 18/28), whose map icon closes after day 6 -- so at the 6->7 flip they read "
-            "unobtainable-but-needed (maze 490, Napoleon's useTheOil 460). In the game day 6 ends only "
-            "at the ritual, which R5's mask survives; in the model through go-home's phantom (same "
-            "class as the sketch's 6/7 rows). All in CONFIRMED_SAFE; cure the detectors, never the list",
+            "crocMask and oil (family A, docs GK1 1.39/1.48): bought TOGETHER at the voodoo shop "
+            "(rm250 states 18/28), whose map icon closes after day 6, so at the 6->7 flip they read "
+            "unobtainable-but-needed (maze 490, Napoleon's useTheOil 460); in the game day 6 ends only "
+            "at the ritual, which R5's mask survives. ⭐ WHAT THE CLOSURE ALREADY RETIRED (1.48, "
+            "2026-09-03): the sketch's 4->5 and 5->6 rows, the mold's and the veve's 3->4..5->6, scalar "
+            "and joint -- with the item banned nobody ends that day, so the day system prevents the "
+            "stranding (the USER's words, derived). All in CONFIRMED_SAFE; cure the detectors, never "
+            "the list",
         "a safe item is not flagged":
-            "same four false positives as the row above (the two checks are one defect seen "
-            "from the oracle's two sides)",
+            "the same six false-positive units as the row above (the two checks are one defect "
+            "seen from the oracle's two sides)",
         # R2 RETIRED 2026-09-01: the register carry-in (docs GK1 §1.26) names the rod AND the
         # device pair -- the cost-only tier prices flag 351's chain, the shared-message groups
         # read `own(19) OR own(20)` out of the deposit's doVerb case, and the group row
