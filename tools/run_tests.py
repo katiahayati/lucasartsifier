@@ -125,7 +125,7 @@ KNOWN_RED = {
         "R1 (retired): VoodooCode1 is NOT reported at any day flip -- day 4 cannot end without it":
             "the sketch's 4->5 and 5->6 rows are GONE -- the closure's second opinion (docs GK1 1.48: "
             "with the sketch banned nobody ends day 4) derived the USER's 2026-09-02 ruling. What "
-            "stands is its 6->7 row (scalar and joint): under exact-day stages NOBODY reaches day 7 "
+            "stands is its 6->7 row (scalar and joint alike): under exact-day stages NOBODY reaches day 7 "
             "in the record (day 6 ends only at the bayou ritual, whose `(++ day)` is the unmodelled "
             "increment of 1.34), so the closure cannot call the sketch the difference there and the "
             "flat arm's phantom day-6 ending (go-home, 1.29) keeps the row. Closes with 1.34.",

@@ -1920,6 +1920,15 @@ it); the veve and the mold into day 4 → FP (day 3's arm); the croc mask and th
 7 → the row STANDS (nobody reaches day 7 in the record — §1.34's gap, not the item's). R1's
 retirement is now the tool's own derivation.
 
+**MEASURED (7f465de).** GK1's scalar rows: the sketch's 4→5 and 5→6, the mold's and the
+veve's 3→4, 4→5, 5→6 are GONE; every item's 6→7 row stands (nobody reaches day 7 in the
+record) and so does R1's check, now declared on that gap alone. The suite: exactly the
+declared fifteen — LB2's act rows and KQ4's day-clock rows did not move. The closure-arm probe
+runs in 26 minutes under exact stages (66 before) and reports six rows: R4 and its chain
+links (flag 42, the Tulane icon, the three asked-bits); the airport's day-8 row and the
+Cazaunoux icon's are gone — nobody reaches day 8 in the record, so no seal. The JOINT twins
+of the retired scalar rows ((123, 257) at the same flips) get the same second opinion next.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED

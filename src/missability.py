@@ -6940,8 +6940,17 @@ class IrSccReach(SccReach):
                         # item -- the day system prevents it (the USER's words). The sketch
                         # (day 4's arm, flag 248), the veve and the mold (day 3's) are that.
                         # Scalar counters only: the staged PRE is a counter's.
-                        if not isinstance(R, tuple) and R in getattr(self, "_counters", ()) \
-                                and self._closure_flip_dead(R, w, it):
+                        _Cc = None if isinstance(R, tuple) else R
+                        _wc = w
+                        if isinstance(R, tuple):
+                            # a JOINT row over the counter and its gate ((123, 257) on GK1) is
+                            # the same flip as the scalar one: ask about the counter component
+                            for _i, _Rc in enumerate(R):
+                                if _Rc in getattr(self, "_counters", ()):
+                                    _Cc, _wc = _Rc, w[_i]
+                                    break
+                        if _Cc is not None and _Cc in getattr(self, "_counters", ()) \
+                                and self._closure_flip_dead(_Cc, _wc, it):
                             continue
                         cog = self._cogrants.get((R, r, w)) if not isinstance(R, tuple) else None
                         if cog and all(it in c for c in cog):
