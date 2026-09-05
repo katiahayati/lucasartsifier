@@ -2278,7 +2278,7 @@ same missing composition §1.50 named from the other side (the arming machine's 
 115 seconds**, and `producible_seal` answers in 4–5 s on that model. This frontier is cheap to
 iterate and does not need the box.
 
-## §1.57 §1.34's fan is SELF-JUSTIFYING — the three leaks, mapped (2026-09-05, measured)
+## §1.57 §1.34's fan is SELF-JUSTIFYING — the leaks, mapped (2026-09-05, measured; leak 3 RETRACTED, see below)
 
 §1.56 named the fan as the thing to bound and shaped one rule for it. Building that rule in the
 product (not in `src/`) got rm550 exactly right and **still left the seal False**, so the
@@ -2339,21 +2339,33 @@ date ([[qfg-guards-loud-not-holdy]] is not it; this is §1.41's flag, and §1.51
 its raise opaque). Until 268 carries a day, rm480 is attainable at day 0 and the fan there
 cannot be bounded. ⛔ This is the one genuinely NEW blocker in the map.
 
-### Leak 3 — rm500/rm510, Germany: rm50's self-return fan, §1.53's rule at its narrow scope
-Germany hangs off ONE edge:
+### ⛔ Leak 3 — RETRACTED THE SAME NIGHT: there is no self-return leak
+**What this section first said, and it was WRONG:** that Germany hangs off `50 -> 510`, a
+self-return from rm50's `newRoom: global12` fan, and that the question was whether §1.53's
+`no_self_return` may widen its scope to `_pclose`. That was read off the closure's EDGE TABLE
+(`50 -> 510` is indeed the only recorded way in, and prevRoom `:= 510` is indeed written by
+nothing but the four edges LEAVING rm510) and then *assumed* to be the route the closure takes.
+It is not. The control that settles it is the model WITHOUT §1.34, where no fan exists:
 
-    50 -> 510    {12: [510], 178: {...17 values}}
+    MAIN (no fan)    landing rooms for every step 1->2, 2->3, 3->4:  [370]
+                     day-3 staged closure:  39 rooms
+                     rm50 IN, rm480 IN, rm490 IN
+                     rm500 / 510 / 520 / 530 / 540 / 550 / 700 / 750 / 800:  ALL ABSENT
+                     pv[12] contains 510:  False
 
-which is a SELF-RETURN — rm50's `newRoom: global12` fan, the very shape §1.53 named. And it is a
-pure bootstrap: prevRoom `:= 510` is written by *nothing* except the four edges LEAVING rm510
-(measured: `510 -> 50 / 530 / 540 / 500`), so the only way to satisfy the guard is to have been
-in rm510, and the only way in is the guard. §1.53's `no_self_return` refuses exactly this — but
-it is ⛔ SCOPED TO `_flip_live` ALONE, on purpose: "dropping self-returns in the ordinary walk
-SHRINKS the reachable set = INVENTS strandings". In `_pclose` the direction is genuinely the
-other way (an over-wide closure MISSES findings, it does not invent them), so widening the
-rule's scope to the producible closure is arguable and is the natural next question — but it is
-a corpus-wide change to a rule whose narrowness was deliberate, and it must be measured on all
-six games, not reasoned about.
+⭐ **`_pclose` already refuses the bootstrap.** prevRoom is tracked, `allowed(12)` never admits
+510, so the edge is never taken and the fixpoint never closes on it — exactly as designed.
+§1.53's rule does NOT need to widen its scope, and the corpus-wide measurement this section
+called for is not owed.
+
+Germany is in the §1.34 closure for one reason only: **the landing-seed teleport of leak 1**.
+`_staged_pre` reseeds at `{370, 480, 500, 550}` after every step, so the crosser simply STARTS
+in Germany, and the prevRoom values they pick up standing there ride forward in `pv` into the
+post-flip closure. The blast radius is exact: **39 rooms without the fan, 51 with it.**
+
+So the map is two leaks, not three, and leak 3 was the fifth wrong diagnosis this line has
+produced. The lesson is the one §1.52 already wrote down and this section proves again: an edge
+table says what edges EXIST, never which one a closure took. Ask the closure.
 
 ### Where that leaves §1.34
 Three leaks, one solved in simulation, one blocked on flag 268's date, one turning on whether
