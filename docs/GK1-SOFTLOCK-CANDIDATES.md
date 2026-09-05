@@ -2600,6 +2600,66 @@ With all three fences the corpus census is **exactly one site — GK1's `drumIns
 else in any game.** Gate on the box: **986 passed / 14 known-red / 0 unexpected / 0 crashed**,
 the failing set exactly the declared one.
 
+## §1.61 A counter step at a value its room cannot hold is not a step (2026-09-05)
+
+The fourth change §1.60 named, built: `_prune_unattainable_steps`, run right after `_pstates`.
+`_rstep[C][room]` says the game advances C from f to t HERE; `_pstates[C]` says which values C
+can actually hold at each room. Where they disagree the step is a fiction — and not a harmless
+one, because a counter's steps are what `_staged_pre` reseeds the crosser at, so an unattainable
+step TELEPORTS a player into the room it names (§1.57's landing-seed leak).
+
+Sound because `_pstates` OVER-approximates (the permissive walk ignores every guard on a
+register it does not carry, so "not attainable" is a refutation, never a guess); terminating
+because it only ever removes. The branch tables are pruned with the steps
+([[same-rule-two-places]]) — `_step_neco` and `_step_live` read those, not `_rstep` — and a
+branch naming no from-value at all is "from anywhere" and cannot be refuted, so it stays.
+
+**On the live model** it takes rm750 from `(1,9) … (10,10)` to `(7,9) …` and drops the opening
+rooms' phantom `(1,1)` self-steps. GK1's oracle is unchanged (11 passed / 2 failed, R1–R5 as
+before).
+
+**On the §1.34 worktree it does what the whole round was for.** With the bayou dated (§1.60) and
+the steps pruned, the fan collapses onto the record:
+
+    rm480:  (6,7) (7,8) (8,9) (9,10) (10,11)      the bayou ritual ends day 6 — §0 says 6->7
+    rm550:  (7,8) (8,9) (9,10) (10,11)            the dream — §0 says 7->8
+    rm370:  (1,2) … (7,8)                          unchanged, the bedroom day loop
+
+⛔ **And rm500 does not**, so §1.34 is still not landable: `producible_seal` is still `False` and
+`_step_neco(123, 3, 4)` is still `{}` (the flag-15 clear still lost), because rm500 keeps a
+`(3,4)` step — it reads attainable from day 2.
+
+### The last leak, traced state by state
+A BFS over the day projection, recording each state's predecessor, gives the chain outright:
+
+    rm500@2  <-  rm510@2  <-  rm50@2  <-  rm210@2  <-  rm370@2  <- … <- rm17@0
+    rm750@2  <-  rm216@2  <-  rm720@2 <-  rm50@2   <- …
+
+⭐ Both go through **rm50 — the conversation screen — and its `newRoom: global12` SELF-RETURN
+FAN**, the same twenty edges §1.53 named. `50 -> 510` demands `prev == 510` and `50 -> 720`
+demands `prev == 720`; on the LIVE model both carry a native day floor of `[7..10]` (§1.39's
+icon-destination click gate), but under §1.34 the fan makes everything producible everywhere,
+the consumer windows stop narrowing, and the floors are gone. So the conversation screen becomes
+a free teleport into Germany and Africa on day 2.
+
+⚠️ This does NOT contradict §1.57's leak-3 retraction, and the difference is worth keeping
+straight: `_pclose` TRACKS prevRoom and really does refuse the bootstrap, which is what that
+retraction measured. `_walk`/`_psucc` on a scalar projection does not carry prevRoom at all, so
+the same edge is free there. Two walks, two answers, both correctly measured.
+
+⭐ **THE NEXT RULE, and it is not §1.53's:** a self-return may not be dropped state-by-state —
+§1.53's warning stands, since leaving b for a and returning with a higher counter is a real
+state only the round trip reaches. But at ROOM level the statement is exact: **a self-return
+delivers no room the player could not otherwise enter.** You cannot satisfy `prev == b` without
+having stood in b, and every real first entrance is a non-self-return edge, so *rooms reachable
+without any self-return = rooms genuinely reachable*. Refuse a self-return INTO a room outside
+that set, and rm510 and rm720 stop being day-2 destinations while every legitimate round trip
+survives.
+
+**Gate on the box: 986 passed / 14 known-red / 0 unexpected / 0 crashed**, failing set exactly
+the declared one — and 507 s against ~790 s, because pruned steps shrink every walk that reads
+them. `test_step_prune.py` pins it, red-proven at `7d594da` (3 of 7 checks fail there).
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED

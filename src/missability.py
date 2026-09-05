@@ -4121,6 +4121,62 @@ class IrSccReach(SccReach):
         # register, and only the four reachability walks look at `self.proj`.
         self.proj = list(self.regs) + list(self._joints)
         self._pstates = {R: self._walk(R, frozenset()) for R in self.proj}
+        # ⭐ ...AND A STEP AT A VALUE ITS ROOM CANNOT HOLD IS NOT A STEP (docs GK1 §1.61).
+        self._prune_unattainable_steps()
+
+    def _prune_unattainable_steps(self):
+        """⭐ A COUNTER STEP AT A VALUE ITS ROOM CANNOT HOLD IS NOT A STEP (2026-09-05, docs
+        GK1 §1.61).
+
+        `_rstep[C][room]` says the game advances C from f to t HERE; `_pstates[C]` says which
+        values C can actually hold at each room. Where the two disagree the step is a fiction --
+        nobody standing in that room is ever at f -- and the fiction is not harmless: the day
+        counter's steps are what `_staged_pre` reseeds the crosser at, so an unattainable step
+        TELEPORTS a player into the room it names (docs §1.57's landing-seed leak).
+
+        SOUND because `_pstates` OVER-approximates: it is the permissive walk, which ignores
+        every guard on a register it does not itself carry, so "not attainable" is a refutation
+        and never a guess. TERMINATING because it is monotone decreasing -- each pass only
+        removes, and removal can only shrink the next walk. Bounded anyway, and a pass that
+        removes nothing stops it.
+
+        ⛔ The branch tables are pruned WITH the steps ([[same-rule-two-places]]): a `_wbranch`
+        row whose every from-value is unattainable at its room is the same fiction one table
+        over, and `_step_neco`/`_step_live` read that one rather than `_rstep`. A branch that
+        names no from-value at all is "from anywhere" and cannot be refuted, so it stays."""
+        counters = [C for C in sorted(getattr(self, "_counters", ()))
+                    if C in self._pstates and C in self._rstep]
+        if not counters:
+            return
+        cset = set(counters)
+        for _pass in range(8):
+            changed = False
+            for C in counters:
+                att = {}
+                for (q, v) in self._pstates[C]:
+                    att.setdefault(q, set()).add(v)
+                for room, sts in list(self._rstep.get(C, {}).items()):
+                    gone = {(f, t) for (f, t) in sts if f not in att.get(room, ())}
+                    if gone:
+                        sts -= gone
+                        changed = True
+                for tbl in (self._wbranch, getattr(self, "_wbranch_dom", None) or {}):
+                    for key in [k for k in tbl if k[0] == C]:
+                        ok = att.get(key[1], set())
+                        brs = tbl[key]
+                        keep = [b for b in brs if not b[0].get(C) or (set(b[0][C]) & ok)]
+                        if len(keep) != len(brs):
+                            changed = True
+                            if keep:
+                                tbl[key] = keep
+                            else:
+                                del tbl[key]
+            if not changed:
+                return
+            self._psucc_cache = {}
+            for R in self.proj:
+                if R in cset or (isinstance(R, tuple) and cset & set(R)):
+                    self._pstates[R] = self._walk(R, frozenset())
 
     def _gate_joints(self, dom):
         """The (counter, gate) pairs whose gating is MUTUAL: an ordered step of A is armed under
