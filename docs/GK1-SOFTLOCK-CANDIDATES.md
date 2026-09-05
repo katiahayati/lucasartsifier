@@ -2052,6 +2052,50 @@ test: with the demand present on the only real in-edge and `entry_musts` naming 
 why does the row survive `_flip_live`? Next step is to read that flow rather than infer it —
 the three wrong calls above were all inference where a read was cheap.
 
+## §1.53 A self-return is not a first entrance (2026-09-04)
+
+§1.52's diagnosis, finished by reading the code instead of inferring it. `register_strandings`
+DOES ask whether the item-less player can reach the flip (`_flip_live`, and item 33 is in the
+`priced` set so the ban applies) — and the answer came back YES for rm302, which is the whole
+bug. Probed: `_walk(488, banned={33})` reaches rm302 at flag 246 ∈ {0, 1}.
+
+**Why.** rm50's `roomScript` ends `newRoom: global12` — return to sender — and the destination
+fan gives it twenty edges, each guarded `prev == <that room>`, one of them `50 -> 302` with
+`req {12: [302]}`. In the projection that TRACKS prevRoom that guard is enforced and the walk is
+right. In the scalar projection over flag 246 — the only one tracking it — prevRoom is
+unconstrained, so the guard reads as satisfiable and the edge becomes a free door INTO rm302,
+whose only real entrance (`sGoToCode`) demands own(32) ∧ own(33). Hence a sketch-less player
+standing in the tomb-code room, hence the flip looking avoidable, hence the FP.
+
+**The rule.** An edge `a → b` whose guard NECESSARILY demands `prev == b` is the return half of
+a round trip: taking it presupposes having stood in b. So it grants no FIRST entrance to b, and
+`_flip_live`'s walk drops it (`_walk(..., no_self_return=True)`, threaded to `_psucc` and
+`_psucc_joint`, in the cache key). Derived: the register is `em._prev_reg`, never a literal;
+the value set must be exactly `{b}`; and the drop is skipped in any projection that carries
+prevRoom itself, where the guard already does the work.
+
+**⛔ Scoped deliberately.** Only the first-entrance question asks it. Dropping self-returns in
+the ordinary walk would SHRINK the reachable set, and a smaller reachable set INVENTS
+strandings — the unsound direction. `test_self_return_entrance.py` pins both halves: the
+sketch-less player can no longer enter rm302, and a player banned from nothing loses no room.
+GK1 has 30 self-return metas of 284; the rule is inert wherever prevRoom is tracked or the
+guard is not exactly the destination.
+
+**MEASURED (the full gate, 8 cores, 13.6 min): 961 passed, 14 declared reds, 0 unexpected, 0
+crashed.** Goldens and LB2 unmoved (no `DECLARED RED MOVED`, so their diff lines are exactly the
+blessed ones). Two GK1 payoffs, one of them unlooked-for:
+  * **sVoodooCode's FP is GONE** — the FP list drops from 7 units to 6.
+  * **R1's check WENT GREEN and is promoted**: with self-returns refused, VoodooCode1 has no
+    day-flip row at all, so the USER's 2026-09-02 ruling ("day 4 cannot end without showing
+    Magentia the sketch") is now derived end to end rather than declared. GK1's oracle is
+    11 passed / 2 failed.
+  * Side effect worth noting: `test_gk1_ground_truth` fell from 738 s to **211 s** — refusing
+    twenty phantom doors shrinks every walk that passes through rm50.
+
+The two reds left are the same FP pair seen from both sides, over five items: the day-7 family
+(sketch, mold, veve, mask, oil — all waiting on the bayou's day, §1.51) plus the USER-ruled
+knife and the talisman.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED

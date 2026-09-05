@@ -4823,7 +4823,12 @@ class IrSccReach(SccReach):
 
     _FREE = ({}, {}, (frozenset(),))
 
-    def _psucc(self, R, node, banned, commit=frozenset()):
+    def _prev_reg_id(self):
+        """The previous-room register, or a sentinel that matches nothing when the game has
+        none. `_prev_reg` is the emitter's own name for it -- never a literal."""
+        return getattr(self.em, "_prev_reg", None)
+
+    def _psucc(self, R, node, banned, commit=frozenset(), no_self_return=False):
         """Successors of a (room, value-of-R) node in projection R. `banned` is a set of items you
         do not hold, so edges needing them are false -- the ITEM dimension of gate-awareness, and
         what the old `_sealed` heuristic crudely approximated: you cannot use the parachute to
@@ -4846,16 +4851,21 @@ class IrSccReach(SccReach):
         calls covering a few thousand distinct arguments. The cache is invalidated wherever
         `_emeta` is (see `guards.apply_guards`), because that is the only thing under it that
         ever changes."""
-        key = (R, node, banned, commit)
+        key = (R, node, banned, commit, no_self_return)
         got = self._psucc_cache.get(key)
         if got is not None:
             return got
-        out = self._psucc_cache[key] = self._psucc_uncached(R, node, banned, commit)
+        out = self._psucc_cache[key] = self._psucc_uncached(R, node, banned, commit,
+                                                            no_self_return)
         return out
 
-    def _psucc_uncached(self, R, node, banned, commit=frozenset()):
+    def _psucc_uncached(self, R, node, banned, commit=frozenset(),
+                        no_self_return=False):
+        # The prev register, and ONLY when this projection does not itself carry it: where it
+        # IS carried the guard `prev == b` is enforced by the walk and the edge behaves
+        # correctly, so dropping it there would lose states the player really has.
         if isinstance(R, tuple):
-            return self._psucc_joint(R, node, banned, commit)
+            return self._psucc_joint(R, node, banned, commit, no_self_return)
         r, st = node
         out = {(r, v) for v in self._inroom[R].get(r, ())
                if not (banned and self._inroom_own.get((R, r, v), frozenset()) & banned)}
@@ -4863,8 +4873,28 @@ class IrSccReach(SccReach):
         # Same item cost as any other write: knowing WHEN the game makes it does not make it free.
         out |= {(r, to) for (frm, to) in self._rstep[R].get(r, ()) if frm == st
                 and not (banned and self._inroom_own.get((R, r, to), frozenset()) & banned)}
+        _pv = self._prev_reg_id()
+        if _pv is not None and _pv in (R if isinstance(R, tuple) else (R,)):
+            _pv = None
         for b in self.edges.get(r, ()):
             for (req, sets, alts) in self._emeta.get((r, b), (self._FREE,)):
+                # ⭐ A SELF-RETURN IS NOT A FIRST ENTRANCE (2026-09-04, GK1 docs §1.53). An edge
+                # `a -> b` whose guard demands `prevRoom == b` is the return half of a
+                # round trip -- taking it presupposes having stood in b already. In the
+                # projection that TRACKS prevRoom the guard says so and the walk is correct;
+                # in every other projection prevRoom is unconstrained, so the edge reads as a
+                # free door INTO b. GK1: rm50's `newRoom: global12` fans 20 such returns, and
+                # the one into rm302 let a player with no tomb sketch stand in the tomb-code
+                # room -- rm302's only real entrance (`sGoToCode`) demands own(32) AND own(33)
+                # -- which is what kept sVoodooCode's flip row alive.
+                # ⛔ ASKED ONLY WHERE THE QUESTION IS "CAN THIS PLAYER FIRST GET IN", i.e. by
+                # `register_strandings._flip_live`. Dropping these edges everywhere would
+                # SHRINK the post-flip walk, and a smaller reachable set INVENTS strandings --
+                # the unsound direction. A player who has been in b keeps the edge in every
+                # other consumer, exactly as before.
+                if (no_self_return and req and _pv is not None
+                        and set(req.get(_pv, ())) == {b}):
+                    continue
                 need = req.get(R)
                 if need is not None and st not in need:
                     continue                      # guard forbids this move at this value of R
@@ -4880,7 +4910,7 @@ class IrSccReach(SccReach):
                 out.add((b, arrive))
         return out
 
-    def _psucc_joint(self, Rs, node, banned, commit=frozenset()):
+    def _psucc_joint(self, Rs, node, banned, commit=frozenset(), no_self_return=False):
         """`_psucc` over a TUPLE of registers tracked together -- see `_trap_joints`.
 
         Same rules, one value per register (`commit` included -- see `_psucc` for its contract).
@@ -4918,8 +4948,15 @@ class IrSccReach(SccReach):
                         if gj in Rs:
                             nv[Rs.index(gj)] = vj
                     out.add((r, tuple(nv)))
+        _pv = self._prev_reg_id()
+        if _pv is not None and _pv in Rs:
+            _pv = None                       # the joint carries prevRoom: the guard is enforced
         for b in self.edges.get(r, ()):
             for (req, sets, alts) in self._emeta.get((r, b), (self._FREE,)):
+                # the self-return rule, as in `_psucc_uncached` (docs GK1 §1.53)
+                if (no_self_return and req and _pv is not None
+                        and set(req.get(_pv, ())) == {b}):
+                    continue
                 if any(req.get(Ri) is not None and st[i] not in req[Ri]
                        for i, Ri in enumerate(Rs)):
                     continue
@@ -4932,7 +4969,8 @@ class IrSccReach(SccReach):
                                   else sets.get(Ri, st[i]) for i, Ri in enumerate(Rs))))
         return out
 
-    def _walk(self, R, banned, starts=None, commit=frozenset(), barrier=frozenset()):
+    def _walk(self, R, banned, starts=None, commit=frozenset(), barrier=frozenset(),
+              no_self_return=False):
         """Forward reachable (room, value) states in projection R.
 
         `barrier` rooms are entered and not left: the walk keeps the state but expands no
@@ -4955,7 +4993,7 @@ class IrSccReach(SccReach):
             u = q.pop()
             if u[0] in barrier:
                 continue
-            for v in self._psucc(R, u, banned, commit):
+            for v in self._psucc(R, u, banned, commit, no_self_return):
                 if v not in seen:
                     seen.add(v)
                     q.append(v)
@@ -6834,9 +6872,13 @@ class IrSccReach(SccReach):
         live_cache = {}
 
         def _live(R, ban):
-            """The states a player NOT holding the banned item can actually be in."""
+            """The states a player NOT holding the banned item can actually be in.
+
+            `no_self_return`: this walk answers "can the item-less player GET to the flip",
+            a FIRST-ENTRANCE question, so an edge that presupposes having already stood in its
+            own destination grants nothing here (docs GK1 §1.53). Every other walk keeps them."""
             if (R, ban) not in live_cache:
-                live_cache[(R, ban)] = set(self._walk(R, ban))
+                live_cache[(R, ban)] = set(self._walk(R, ban, no_self_return=True))
             return live_cache[(R, ban)]
 
         def _regs_of(P):

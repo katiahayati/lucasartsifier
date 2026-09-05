@@ -112,10 +112,12 @@ KNOWN_RED = {
             "day for free because flag 65 is re-raised by rm470's cutscenes, whose once-only "
             "gate flag 11 does not reach their write branches -- needs the one-shot reading, "
             "docs GK1 §1.14); braceMold (day 3 cannot end without flag 256, whose only setter "
-            "`napoleon.sc:858` runs after the mold is `put:`); sVoodooCode (the tomb-writing "
-            "write at rm302 carries no cost because the `has: 32/33` demand is at rm300, where "
-            "the scene is armed -- the cost does not cross the `newRoom`; ⛔ the return-edge "
-            "cure was MEASURED 2026-08-30 and does not retire it, docs GK1 §1.15). "
+            "`napoleon.sc:858` runs after the mold is `put:`). ✅ sVoodooCode RETIRED 2026-09-04 "
+            "(docs GK1 1.52-1.53): its flip row lived on a MODEL hole, not a missing cost -- "
+            "rm50's prevRoom-guarded return edge let a sketch-less player into rm302, whose only "
+            "real entrance demands own(32) AND own(33), so the flip's own precondition was "
+            "invisible. ⛔ The older reading in this list ('the cost does not cross the newRoom') "
+            "was WRONG and was verified wrong against the model before the cure. "
             "PLUS talisman (2026-09-01, the case-(c) trap round): the rod+talisman carry-in row at rm455->rm800 PROVED FP from the scripts, both halves forced -- the talisman is granted by BOTH Africa-exit cutscenes (get:69 before newRoom:216, rm720.sc:1040/:1285; Africa has no other exit) and the rod is required to LEAVE Africa (keyWorks, the only wall opener into rm720, arms exclusively from rodCode's success arm, rm710.sc:2303-2328); no put:60/69 exists before the finale. See test_gk1_ground_truth's talisman entry. sLakePatter RETIRED 2026-08-31: the travel-movie fan (§1.17) removed the phantom "
             "Magentia demand its dangerous_sinks row rested on -- an FP dying of honest wiring. "
             "crocMask and oil (family A, docs GK1 1.39/1.48): bought TOGETHER at the voodoo shop "
@@ -133,13 +135,12 @@ KNOWN_RED = {
         # device pair -- the cost-only tier prices flag 351's chain, the shared-message groups
         # read `own(19) OR own(20)` out of the deposit's doVerb case, and the group row
         # carries the pair as ONE alternatives unit.
-        "R1 (retired): VoodooCode1 is NOT reported at any day flip -- day 4 cannot end without it":
-            "the sketch's 4->5 and 5->6 rows are GONE -- the closure's second opinion (docs GK1 1.48: "
-            "with the sketch banned nobody ends day 4) derived the USER's 2026-09-02 ruling. What "
-            "stands is its 6->7 row (scalar and joint alike): under exact-day stages NOBODY reaches day 7 "
-            "in the record (day 6 ends only at the bayou ritual, whose `(++ day)` is the unmodelled "
-            "increment of 1.34), so the closure cannot call the sketch the difference there and the "
-            "flat arm's phantom day-6 ending (go-home, 1.29) keeps the row. Closes with 1.34.",
+        # ✅ R1 PROMOTED 2026-09-04 (docs GK1 1.53): the self-return rule closed the last hole.
+        # rm50's `newRoom: global12` fan gives every room a prevRoom-guarded return edge, and in
+        # a projection that does not carry prevRoom those read as free doors -- so a sketch-less
+        # player could stand where the fan reached and no day flip could be shown to demand the
+        # sketch. With first-entrance walks refusing self-returns, VoodooCode1 has NO day-flip
+        # row at all and the USER's 2026-09-02 ruling is fully derived.
     },
     "test_lb2_ground_truth.py": {
         "mechanism pinned: pressPass":
