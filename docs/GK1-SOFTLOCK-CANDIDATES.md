@@ -2021,6 +2021,38 @@ half), then the phrases. Until then the day-7 rows stay, and R1's check stays de
 gap. The apply script is `apply_134.py` in the session scratchpad; the tension is the thing to
 remember, not the patch.
 
+## §1.52 sVoodooCode's FP, diagnosed to two independent gaps (2026-09-04)
+
+The FP row: `register_strandings`, flag 246 (reg 488) flips to 1 at **rm302**, and item 33
+(`sVoodooCode`, the second tomb sketch) is sourced ONLY at rm300 and still needed at 240/260/300
+— so the flip reads as a point of no return for it. In the game it cannot be: rm302 is the tomb-
+code inset, and the only way in is rm300's `sGoToCode`, armed at FOUR sites (rm300.sc:955, 1107,
+1163, 1350) under the SAME conjunction every time —
+`¬flag246 ∧ flag249 ∧ has:32 ∧ has:33` — so whoever flips 246 is holding both sketches. The
+necessary reading is clean here (no disjunction to intersect away, unlike
+[[an-item-some-armings-demand-is-not-a-gate]]), which is what makes this a good specimen.
+
+Probed in the loaded model, and it is TWO gaps, either of which alone keeps the row:
+
+1. **The arming's cost does not cross the `newRoom`.** `_wbranch[(488, 302, 1)]` has two
+   branches, both `deps={} COST=[]`. The write lives in the inset's `dispose` (rm302.sc:147-152,
+   guarded by the player's answer — honestly opaque), while the has-demand sits back at rm300 on
+   the doVerb that armed the scene. A machine's writes DO carry `emust` (the arming's item
+   musts) — the gap is that this write is a HANDLER's, in a room the arming delivered you to.
+   The general rule, and the sound one: **a write in room r costs what EVERY in-edge of r
+   costs.** If reaching r is impossible without X, a write there is impossible without X.
+2. **A PHANTOM in-edge.** `s.edges` gives rm302 two in-edges, from rm300 and from **rm50** —
+   and the game has exactly ONE `newRoom: 302` in the whole source (rm300.sc:325, inside
+   `sGoToCode`). So the rm50 edge is invented, and it is what would defeat rule 1 even if rule 1
+   shipped: the intersection over in-edges would include a free one and price the write at
+   nothing. `guard_required[(300,302)]` is `None` today, confirming the demand rides neither
+   edge.
+
+Order: find the rm50 phantom first (it is a movement-graph fact and cheap to trace), then the
+in-edge cost rule. Both are general; neither is GK1-shaped. ⛔ Not yet built — this section is
+the diagnosis, and the premise was verified against the scripts before any code
+([[re-derive-a-reds-premise]]).
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
