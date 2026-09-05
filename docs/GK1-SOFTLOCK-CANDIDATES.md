@@ -2494,6 +2494,38 @@ So the next round is a BUILD, fully specified: the switch-valued-local rule, the
 to the one non-room script, and the `want`-from-edges widening. Blast radius is 20 sites with
 KQ4 provably untouched, and the gate is the arbiter.
 
+### ⛔ THE BUILD WAS ATTEMPTED THE SAME NIGHT, AND STOPS ONE LINK SHORT — REVERTED
+Written and measured, not guessed: `derive_switch_locals` + `sink_switch_assignments`
+(rewriting `(= L <switch tree>)` into the tree with `(= L <lit>)` in each arm, so the lowering
+sees ordinary guarded constant writes) wired in beside `derive_room_locals`. It WORKS as far as
+it goes — `drumInset.local0` lowers to register **1237**, and flag 268's write becomes
+
+    268:=1 @rm410  deps={268: [0], 1237: [2]}          ⭐ the mode gate, captured
+
+⛔ **And then nothing.** Register 1237 has **no writes anywhere in the model** — empty in
+`handler_writes`, `init_writes`, `init_seq`, `_inroom` and `_rstep` alike — so the new
+dependency is on a register the model can never satisfy. `reg_vals[1237]` comes back `[0, 2, 4]`
+from the domain scan alone, and the day projection does not move: rm410, rm490 and rm480 still
+read `[0..10]`.
+
+The reason is one scope layer further down. `drumInset::checkPhrases`'s write IS lifted to the
+rooms that arm the inset (410 and 800), which is how flag 268 got its rooms in the first place —
+but the assignment lives in **`drumInset::init`**, and an `init` of a non-room script is
+attributed to no room by any of the three channels. So the mode register is read everywhere and
+written nowhere.
+
+**Reverted, and deliberately.** Today the unenforced dep is harmless — 1237 is untracked, so the
+atom reads permissively and flag 268 stays raisable — but that is a LATENT TRAP of exactly the
+kind `derive_room_locals`' docstring warns about: "a register missing one of its writes can
+fabricate a seal, and half a store is worse than none." The moment 1237 became tracked the bayou
+would become unreachable and every stranding behind it invented.
+
+⭐ **So the round is THREE changes, not two, and the third is the load-bearing one:** the
+switch-valued-local rule (written, works), the `want`-from-edges widening (simulated, works),
+and **a non-room script's `init` writes must reach the rooms that arm it** — the same
+attribution `checkPhrases` already gets, extended to `init`. Build them together or not at all.
+
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
