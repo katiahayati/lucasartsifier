@@ -2021,37 +2021,36 @@ half), then the phrases. Until then the day-7 rows stay, and R1's check stays de
 gap. The apply script is `apply_134.py` in the session scratchpad; the tension is the thing to
 remember, not the patch.
 
-## §1.52 sVoodooCode's FP, diagnosed to two independent gaps (2026-09-04)
+## §1.52 sVoodooCode's FP: the premise checked out, MY FIRST TWO DIAGNOSES DID NOT (2026-09-04)
 
 The FP row: `register_strandings`, flag 246 (reg 488) flips to 1 at **rm302**, and item 33
 (`sVoodooCode`, the second tomb sketch) is sourced ONLY at rm300 and still needed at 240/260/300
-— so the flip reads as a point of no return for it. In the game it cannot be: rm302 is the tomb-
-code inset, and the only way in is rm300's `sGoToCode`, armed at FOUR sites (rm300.sc:955, 1107,
-1163, 1350) under the SAME conjunction every time —
-`¬flag246 ∧ flag249 ∧ has:32 ∧ has:33` — so whoever flips 246 is holding both sketches. The
-necessary reading is clean here (no disjunction to intersect away, unlike
-[[an-item-some-armings-demand-is-not-a-gate]]), which is what makes this a good specimen.
+— so the flip reads as a point of no return for it. In the game it cannot be: rm302 is the
+tomb-code inset, its only entrance is rm300's `sGoToCode`, and all FOUR arming sites
+(rm300.sc:955, 1107, 1163, 1350) carry the SAME conjunction — `¬flag246 ∧ flag249 ∧ has:32 ∧
+has:33` — so whoever flips 246 holds both sketches. That much is confirmed against the scripts.
 
-Probed in the loaded model, and it is TWO gaps, either of which alone keeps the row:
+**⛔ Two diagnoses I wrote here earlier were WRONG, both refuted by probing the loaded model:**
+1. *"rm302 has a phantom in-edge from rm50."* It is not a phantom. `cs_edges` gives
+   `50 -> 302 guard=12==302 via='roomScript'` — a RETURN-TO-SENDER edge, correctly guarded on
+   prevRoom, one of 20 such edges out of rm50. You can only take it having already been in 302.
+2. *"the arming's cost does not cross the `newRoom`."* It crosses. The flat edge
+   `300 -> 302` is `via='sGoToCode'` and its guard is an OR of the arming alternatives, EVERY
+   one carrying `own(32), own(33)` (and own(44)); `entry_musts(sGoToCode)` is `{32, 33, 44}`
+   at all eight states. The model knows the demand.
+   (The "cost does not cross" wording came from KNOWN_RED's older text and I repeated it
+   instead of checking — [[re-derive-a-reds-premise]] exists for exactly this.)
 
-1. **The arming's cost does not cross the `newRoom`.** `_wbranch[(488, 302, 1)]` has two
-   branches, both `deps={} COST=[]`. The write lives in the inset's `dispose` (rm302.sc:147-152,
-   guarded by the player's answer — honestly opaque), while the has-demand sits back at rm300 on
-   the doVerb that armed the scene. A machine's writes DO carry `emust` (the arming's item
-   musts) — the gap is that this write is a HANDLER's, in a room the arming delivered you to.
-   The general rule, and the sound one: **a write in room r costs what EVERY in-edge of r
-   costs.** If reaching r is impossible without X, a write there is impossible without X.
-2. **A PHANTOM in-edge.** `s.edges` gives rm302 two in-edges, from rm300 and from **rm50** —
-   and the game has exactly ONE `newRoom: 302` in the whole source (rm300.sc:325, inside
-   `sGoToCode`). So the rm50 edge is invented, and it is what would defeat rule 1 even if rule 1
-   shipped: the intersection over in-edges would include a free one and price the write at
-   nothing. `guard_required[(300,302)]` is `None` today, confirming the demand rides neither
-   edge.
+**A third claim of mine was also unfounded**: I read `guard_required[(300,302)]` as `None` and
+concluded the demand rode neither edge. `build_maps` does not key `guard_required` by edge
+tuple, so that probe asked a malformed question and the `None` meant nothing.
 
-Order: find the rm50 phantom first (it is a movement-graph fact and cheap to trace), then the
-in-edge cost rule. Both are general; neither is GK1-shaped. ⛔ Not yet built — this section is
-the diagnosis, and the premise was verified against the scripts before any code
-([[re-derive-a-reds-premise]]).
+**What is actually true, and where the diagnosis now stands.** `_wbranch[(488, 302, 1)]` still
+has both its branches at `deps={} COST=[]` — the WRITE carries no cost even though the ROOM is
+gated. So the open question is not the movement graph but `register_strandings`' own liveness
+test: with the demand present on the only real in-edge and `entry_musts` naming both sketches,
+why does the row survive `_flip_live`? Next step is to read that flow rather than infer it —
+the three wrong calls above were all inference where a read was cheap.
 
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
