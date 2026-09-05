@@ -2660,6 +2660,64 @@ survives.
 the declared one — and 507 s against ~790 s, because pruned steps shrink every walk that reads
 them. `test_step_prune.py` pins it, red-proven at `7d594da` (3 of 7 checks fail there).
 
+## §1.62 §1.34 IS REACHABLE — the windows/prune fixpoint, and the one thing it breaks (2026-09-05)
+
+⭐⭐ **The circularity §1.55, §1.56 and §1.57 all ran into has a name and a shape: the consumer
+windows and the step prune FEED EACH OTHER, and running each once stops far short of what the
+record supports.** A narrower fan means fewer stages in which a value is producible, which
+windows more branches, which prunes more steps. Iterate the pair and GK1's day model collapses
+onto the scripts. Measured pass by pass on the §1.34 worktree, everything from §1.56–§1.61 in:
+
+    pass 0   rm500 [2..11]  rm510 [2..11]   neco(3,4) = {}
+    pass 1   rm500 [3..11]  rm510 [3..11]   neco(3,4) = {647: 1}
+    pass 2   rm500 [4..11]  rm510 [4..11]   neco(3,4) = {257: 0, 647: 1}   ⭐ the clear is BACK
+    pass 3   rm500 [5..11]      …
+    pass 5   rm500 [7..11]  rm510 [7..11]   fixpoint
+
+    rm480: (6,7) (7,8) (8,9) (9,10) (10,11)      the ritual ends day 6   -- §0 says 6->7
+    rm550: (7,8) (8,9) (9,10) (10,11)            the dream               -- §0 says 7->8
+    rm500: (7,8) (8,9) (9,10) (10,11)            Germany's departure     -- §0 says 8->9
+    rm370: (1,2) … (7,8)                          the bedroom loop, untouched
+
+⭐⭐ **And with it, `producible_seal(123, 4, 370, flag44, 0) = True`.** R4 survives §1.34.
+Confirmed in a real build, not a simulation: GK1 under §1.34 builds in 291 s and the seal answers
+in 5 s. **The day-7 family — the two GK1 reds this whole line has been chasing since 2026-09-02 —
+is finally askable.** §1.51's "the record's floor" was wrong; so was §1.55's `fwd`, §1.56's lost
+clear, §1.57's leak 3 and §1.59's "undatable" flag 268. This is what was actually in the way.
+
+### ⛔ AND IT IS NOT LANDED, because it drops R5
+With the outer fixpoint in, GK1's oracle goes **10 passed / 3 failed**: the croc mask's
+`edge_strandings` row `rm490 -> rm480` — R5, a CONFIRMED softlock, tool-derived in §1.38 — is
+gone. A drop from EXPECTED_CAUGHT is a regression and stops the round.
+
+**Isolated, not guessed.** Disabling only the `_apply_consumer_windows()` re-run inside the
+fixpoint (keeping the re-walk and the repeated prune) restores it: **11 passed / 2 failed**. So
+it is the window RE-RUN specifically, not the prune and not the extra walks.
+
+⛔ **One hypothesis tested and REFUTED**: that a second narrowing intersects a requirement down
+to EMPTY, killing the edge (`rq2[C] = set(rq2[C]) & narrowed` has no non-empty guard, and §1.58
+already noted three GK1 edges carrying a natively empty day req). A guard refusing the empty
+intersection at both the branch and the edge site was written and measured: **R5 still drops.**
+So the mechanism is something else, and the three empty-req edges remain their own lead.
+
+What is NOT the cause, also measured: rm490 and rm480's attainable days are `[6..10]` and the
+`(490, 480)` edge metas are identical with and without the fixpoint, and the mask's source is
+rm250 either way. The row's disappearance is downstream of all three.
+
+### 📝 Also built, measured INERT, and reverted: the room-level self-return rule
+§1.61 proposed it — "a self-return delivers no room the player could not otherwise enter", room
+level so it does not collide with §1.53's state-level warning. It is TRUE and it is useless:
+censused over three games, **0 refusals**. GK1 has 26 pure self-return edges and every one of
+their destinations has a real entrance elsewhere (rm510 and rm720 come in through the endgame
+chain), LB2 has 4, KQ6 none. rm50's fan reaches Germany at day 2 because the day VALUE is
+unbounded there, not because the room is unreachable — a state-level fact, which is §1.53's
+scope and stays there. Reverted rather than carried as dead code.
+
+⭐ **NEXT: find why the window re-run costs R5.** Everything else is measured and in place; the
+attempt is kept whole in `tools/probes/gk1_fan/fixpoint_attempt_missability.py` with
+`sim_fixpoint.py` beside it, so the next round starts by reproducing the drop rather than
+rebuilding the fixpoint.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
