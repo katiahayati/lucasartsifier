@@ -2278,6 +2278,89 @@ same missing composition §1.50 named from the other side (the arming machine's 
 115 seconds**, and `producible_seal` answers in 4–5 s on that model. This frontier is cheap to
 iterate and does not need the box.
 
+## §1.57 §1.34's fan is SELF-JUSTIFYING — the three leaks, mapped (2026-09-05, measured)
+
+§1.56 named the fan as the thing to bound and shaped one rule for it. Building that rule in the
+product (not in `src/`) got rm550 exactly right and **still left the seal False**, so the
+investigation continued until every leak had a number. Here is the whole map. ⛔ Nothing in this
+section is built; the simulation ran against `wt134` = `8ca65a0` + `apply_134.py` + §1.56's cures.
+
+### Why an unbounded fan cannot be falsified from inside
+Give rm550 a `123 := k+1` step for every k and THREE separate things follow at once, each of
+them a place the model is permissive for good reasons elsewhere:
+
+1. **The staged closure LANDS the crosser there.** `_staged_pre` resets positions at every step
+   — `land = {r for r, sts in _rstep[C].items() if (j, j+1) in sts}` (`missability.py:7597`),
+   which is right and was measured right (§1.44's "places are not carried in hand"). Under
+   §1.34 the day-1→2 step lands at rooms `{370, 480, 500, 550}`, so the day-2 crosser is SEEDED
+   standing in Germany and in the bayou.
+2. **The scalar day projection admits it.** `_psucc` checks `req.get(R)` and nothing else — by
+   construction, a projection of one register cannot read a guard on another. So `50 -> 510`'s
+   `prev == 510` is invisible to the day walk, and `_pstates[123]` reads rm480 at `[0..11]` and
+   rm500 at `[2..11]`.
+3. **The write's own branch has no day dep to contradict either of them** — that is what being
+   fanned MEANS.
+
+⭐ So the fan supplies its own evidence, and no downstream repair can undo it: each of the three
+would have to be tightened, and two of them are load-bearing elsewhere. **The bound has to be
+composed BEFORE the fan is believed.**
+
+### Leak 1 — rm550, the dream: SOLVED in simulation, exact
+The room's own `init` arms the increment unconditionally (`rm550.sc:47`), so its only guard is
+the entrance, and the entrance is a prevRoom test one hop away from a day gate:
+
+    500 -> 550   prev == 540                                     (the only edge in)
+    540 -> 500   {123: [7], 1096, 1108-1111, 1218}               (the only edge from rm540)
+
+§1.56's rule — **a `prev == p` guard imports the persisting reqs of the edges `p -> a`**, fenced
+to the counter's lower bound because `123 == 7` then means `123 >= 7` now (the `_counters` rule)
+— was simulated over the whole `_emeta`:
+
+    2 edge-metas gain a bound:  500 -> 550 : 123 [2..11] -> [7..11]   (lo=7)
+                                750 -> 500 : 123 [0..11] -> [7..11]   (lo=7)
+    rm550's steps then:  (7,8) (8,9) (9,10) (10,11)      -- the record's 7->8, and nothing below
+
+⭐ Two edges in the whole game, and the answer the scripts give. Adding "a counter write cannot
+happen at a value its ROOM cannot hold" (`_pstates`-bounded, a sound filter since `_pstates`
+over-approximates) pruned a further 77 `_wbranch` branches and 13 `_rstep` steps. **Seal: still
+False**, because of leaks 2 and 3.
+
+### Leak 2 — rm480, the bayou: blocked on the UNDATABLE flag 268
+rm480's own day branches are honestly gated (`{458: [1], 541: [1]}` = flags 216 ∧ 299, or
+`{1213: [1]}` = flag 971) — §1.55 was right about that chain and §1.51's "the ritual costs only
+standing in the bayou" was wrong. The leak is the ENTRANCE again:
+
+    372 -> 490   {510: [1], 712: [0, 1]}        reg 510 = FLAG 268
+    205 -> 490   {12: [750], 712, 510: [1], 691}
+    490 -> 480   {}                              (free, once you are in the maze)
+
+So the maze and the ritual hang on flag 268, whose raise is the drum puzzle the model cannot
+date ([[qfg-guards-loud-not-holdy]] is not it; this is §1.41's flag, and §1.51 already called
+its raise opaque). Until 268 carries a day, rm480 is attainable at day 0 and the fan there
+cannot be bounded. ⛔ This is the one genuinely NEW blocker in the map.
+
+### Leak 3 — rm500/rm510, Germany: rm50's self-return fan, §1.53's rule at its narrow scope
+Germany hangs off ONE edge:
+
+    50 -> 510    {12: [510], 178: {...17 values}}
+
+which is a SELF-RETURN — rm50's `newRoom: global12` fan, the very shape §1.53 named. And it is a
+pure bootstrap: prevRoom `:= 510` is written by *nothing* except the four edges LEAVING rm510
+(measured: `510 -> 50 / 530 / 540 / 500`), so the only way to satisfy the guard is to have been
+in rm510, and the only way in is the guard. §1.53's `no_self_return` refuses exactly this — but
+it is ⛔ SCOPED TO `_flip_live` ALONE, on purpose: "dropping self-returns in the ordinary walk
+SHRINKS the reachable set = INVENTS strandings". In `_pclose` the direction is genuinely the
+other way (an over-wide closure MISSES findings, it does not invent them), so widening the
+rule's scope to the producible closure is arguable and is the natural next question — but it is
+a corpus-wide change to a rule whose narrowness was deliberate, and it must be measured on all
+six games, not reasoned about.
+
+### Where that leaves §1.34
+Three leaks, one solved in simulation, one blocked on flag 268's date, one turning on whether
+§1.53's rule may widen its scope to `_pclose`. **§1.34 stays reverted**, and the two GK1 day-7
+reds stay red — but they are no longer "the record's floor" as §1.51 called them. They are three
+named, measured, independently attackable gaps.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
