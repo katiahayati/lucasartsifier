@@ -2130,6 +2130,10 @@ granting) and does not touch the room-init rule. Recorded, not built.
 
 ## §1.55 The bayou's day IS derivable — and §1.34's real blocker, finally named (2026-09-04)
 
+⛔ **ITS CONCLUSION IS SUPERSEDED BY §1.56** (2026-09-05): the chain traced below is right and
+still stands, but `fwd` is NOT the blocker — the live-step fixpoint this section proposes was
+built and measured as a NO-OP. Read §1.56 for what actually kills R4.
+
 ⛔ **My "the record does not carry the bayou's day" was WRONG** (the USER pushed back; they were
 right). Every link is a plain register fact in the scripts, and the model already holds all of
 them:
@@ -2163,6 +2167,116 @@ judge it), so the honest shape is a fixpoint: start from `{w}`, admit a step who
 current stage's PV can satisfy, re-close, repeat. ⛔ Cost warning: with §1.34 the GK1 model
 REBUILD alone runs ~55 min (the day fan multiplies machine states), so this is a box job, and
 each iteration is an hour.
+
+## §1.56 `fwd` was NOT the blocker — the day's clear was (2026-09-05, measured)
+
+⛔ **§1.55's conclusion is WRONG, and this section replaces it.** It named `producible_seal`'s
+`fwd` — "the bayou's new steps enlarge `fwd`, the post-flip confinement widens with it, the
+closure roams days it could never reach" — and shaped a live-step fixpoint as the next fix.
+Both halves were inference where a read was cheap, which is the same failure §1.52 recorded
+three times in one day. Read instead:
+
+**1. The proposed fix is a NO-OP, and was measured as one before anything was built.** For the
+day-4 crossing at rm370 the live-step fixpoint returns exactly the structural answer:
+
+    CURRENT fwd: [4, 5, 6, 7, 8, 9, 10]     LIVE fwd: [4, 5, 6, 7, 8, 9, 10]
+      iter 1  fwd=[4]              38 rooms, goal False   admit 4->5..7->8 @rm370 (deps 257=1)
+      iter 2  fwd=[4,5,6,7,8]      51 rooms, goal False   admit 4->9 @rm750 (deps prev=500), 4->10 @rm750 (deps {})
+      iter 3  fwd=[4..10]          54 rooms, goal True
+
+**2. `fwd` could not have been the cause anyway.** It is already saturated: `reg_vals[123]` is
+`0..10` and `fwd` holds every value at or forward of `w`. §1.34 widens the literal range by one
+(`0..11`), so its whole effect on `fwd` is the value 11, which gates nothing.
+
+### What actually kills R4 under §1.34
+`_step_neco(123, 3, 4)`, read on both models:
+
+    without §1.34:  {257: 0}
+    with    §1.34:  {123: 1, 179: 70, 545: 0, 1215: 1}
+
+Three separate things are wrong there, and only the third is still open.
+
+⭐ **(A) A step's co-effects are what it does to OTHER registers.** `_step_neco`'s own-co-writes
+half already says `if R != C`; its dep-producer half did not, so `C` came back as its own
+necessary co-effect — GK1 reads `_step_neco(123, 0, 1) = {123: 1, ...}`, "to advance the day
+from 0 to 1 the day must become 1". Harmless at `0 -> 1` and fatal anywhere else, because
+`_apply_neco` writes the answer as `pv[R] = {v}` AFTER the seal arm has seeded `pv[C] = {w}` by
+hand. The crossing was erased, `allowed(123) = {1} ∩ {4..11} = ∅`, the crosser could not leave
+the flip room, and the arm read "the flip dooms everyone: not S's fault" and emitted NOTHING —
+which is why R4 and R1 both died at once. [[same-rule-two-places]], inside one function.
+
+⭐ **(B) A dep the zero-init already satisfies has no producer.** `_value_neco` intersects the
+co-writes of every recorded producer of `S in vs` — sound only if the player must have run one.
+Registers are zero-init here (`pv.get(reg, {0})` is the closure's floor, §1.41's reading), so a
+dep admitting 0 is satisfied by never writing `S` at all. GK1's specimen is flag 470, a PLATFORM
+test the bayou and dream scripts spell BOTH ways (`(if (and (== (Platform) 1) (not (proc13_0
+470))) ...)` against `(if (proc13_0 470) ...)`), reaching the branch table as `deps {712: [0,1]}`
+— the register's whole domain, establishing nothing. Read as a demand, its "producers" are the
+game's opening at rm93, and the opening's co-writes (`global123 := 1`, `global179 := 70`) were
+handed back as facts about a day-4 crossing. That is where the `123: 1` in (A) came from.
+
+Both cures only ever REMOVE entries from a map applied as `pv[R] = {v}`, so both WIDEN the
+modelled player: the sound direction. Both landed with `test_step_coeffects.py`, red-proven at
+`8ca65a0` (2 of 6 checks fail there).
+
+### ⛔ (C) THE BLOCKER THAT REMAINS: the fan itself, and rm550 is the specimen
+⚠️ **An earlier draft of this section blamed the lost day-end clear and was REFUTED by its own
+probe** — the fourth wrong diagnosis in this line, and the reason every claim below is a
+measurement. The clear IS lost, and that is real; it is simply not sufficient.
+
+With (A) and (B) cured the neco reads `{545: 0, 1215: 1}` — and **`257: 0` is gone**. That entry
+is §1.45's landing: every one of rm370's five day advances does `(proc13_2 15)` first, so the
+step CLEARS the day-end flag and the far side must earn its own ending. It disappears because
+`own` is an intersection over every branch performing the step, and §1.34 gives rm480, rm500 and
+rm550 a `123 := 4` branch too, none of which clears flag 15. Verified in the scripts, not
+inferred: `(proc13_2 15)` appears five times in the whole game and all five are `rm370.sc:71,
+173, 230, 632, 739`, each immediately before a `(++ global123)`.
+
+**But forcing `257: 0` back — measured, `own` restricted to rm370's branches, cures A+B in —
+leaves `producible_seal(123, 4, 370, flag44, 0)` at `False`.** The flag-44-less crosser's
+post-flip closure still reaches the goal, and the write that takes it there is:
+
+    123:=k+1 @rm550  deps={123: [k], 712: [0, 1]}          for every k in 1..10
+
+⭐ **rm550's day advance has NO dependency at all** — 712 is the platform flag, whose dep spans
+its whole domain (cure B's specimen, in its other costume). So the crosser winds the day from 4
+to 11 at the dream room whatever they hold, and no clear of flag 15 can stop them. rm480 by
+contrast is HONESTLY gated (`{458: [1], 541: [1]}` = flags 216 ∧ 299, or `{1213: [1]}` = flag
+971) — §1.55 was right about the bayou's chain; the bayou is not the leak.
+
+**Why rm550 has no guard, read in the scripts:** `rm550.sc:47`, the ROOM'S OWN `init`, does
+`(global2 setScript: doTheDream)` unconditionally, and the increment is state 61 of that script
+(`rm550.sc:533`). Entering the room *is* the day advance. The only guard is the ROOM'S ENTRANCE,
+and the model holds it — one hop too far away to use:
+
+    500 -> 550   guard  prev == 540              (the only edge into rm550)
+    540 -> 500   req    {123: [7], 1096, 1108-1111, 1218}   (the only edge from rm540 into rm500)
+
+⭐ **THE NAMED NEXT ROUND — a `prev == p` guard imports the edges from p.** Standing at `a` with
+`prev == p` means the player TOOK some edge `p -> a`, so the disjunction of those edges' reqs
+held at the crossing. Import it, and `500 -> 550` demands day 7, rm550's sub-7 steps die to the
+step-pruning `_apply_consumer_windows` already performs, and the fan is bounded by the record
+instead of by a literal range. ⛔ SOUNDNESS FENCE: the req held *when they crossed*, not now, so
+only facts that PERSIST may be imported — a monotone latch, or a counter's lower bound
+(`123 == 7` then means `123 >= 7` now, by the `_counters` rule). A clearable flag may not be.
+This is [[teleport-two-hop-prevroom]] generalised from room inits to edge guards, and it is the
+same missing composition §1.50 named from the other side (the arming machine's entry guard).
+
+**Two routes MEASURED AND REFUTED before that one, so nobody rebuilds them:**
+* **`_pstates` cannot bound the fan.** It reads rm550 at days `[2..11]` and rm480 at `[0..11]`
+  — the scalar day projection does not track prevRoom, so `(550, 3)` is attainable in it.
+* **The consumer windows cannot either, yet.** `win[541=1]` (flag 299, the tattoo) is the WHOLE
+  domain, so no branch of rm480's is narrowed. ⛔ And §1.55's provenance for that flag is wrong:
+  `proc13_1 299` occurs ONCE in the game, at `rm220.sc:909` (doTheTattoo state 18), not at
+  `bookstore.sc:1899`; `bookstore.sc:1899` is the day-6-gated ARMING of a second `doTheTattoo`
+  copy, and `:1899` in the other file is `bayouMaze.sc`, which sets flag 216. The day-6 gate is
+  one arming hop away from the write, which is why the window cannot see it — the same
+  arming-floor gap as the rest of this section.
+
+### Cost, corrected
+§1.55 warned the GK1 rebuild under §1.34 is "~55 min … each iteration is an hour". **Measured:
+115 seconds**, and `producible_seal` answers in 4–5 s on that model. This frontier is cheap to
+iterate and does not need the box.
 
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 

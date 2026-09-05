@@ -7418,6 +7418,19 @@ class IrSccReach(SccReach):
         for S, vs in deps.items():
             got = self._value_neco(S, vs, C, f, depth, frozenset())
             for R, v in got.items():
+                # ⭐ A STEP'S CO-EFFECTS ARE WHAT IT DOES TO *OTHER* REGISTERS (2026-09-05, docs
+                # GK1 §1.56). The step's own half below already says `if R != C`; this half did
+                # not, so a dep whose producers happen to write C handed C back as its own
+                # necessary co-effect. GK1 read `_step_neco(123, 0, 1) = {123: 1, ...}` -- "to
+                # advance the day from 0 to 1 the day must become 1", which is the step, not an
+                # effect of it. Harmless at 0 -> 1 and fatal anywhere else: `_apply_neco` writes
+                # the answer as `pv[R] = {v}` AFTER the seal arm has seeded `pv[C] = {w}` by
+                # hand, so the crossing was ERASED, the post-flip confinement (the values
+                # forward of w) intersected the day to nothing, and the crosser could not leave
+                # the flip room -- whereupon the arm reads "the flip dooms everyone" and emits
+                # nothing at all. [[same-rule-two-places]], both readings inside one function.
+                if R == C:
+                    continue
                 if out.get(R, v) == v:
                     out[R] = v
         # ⭐ THE STEP'S OWN CO-WRITES ARE NECESSARY TOO (2026-09-03, GK1 docs §1.45). Every branch
@@ -7459,6 +7472,20 @@ class IrSccReach(SccReach):
                 acc = facts if acc is None else {R: v for R, v in acc.items()
                                                 if facts.get(R) == v}
             return acc or {}
+        # ⭐ A DEP THE ZERO-INIT ALREADY SATISFIES HAS NO PRODUCER (2026-09-05, docs GK1 §1.56).
+        # The intersection below is sound only when the player MUST have run one of the recorded
+        # producers. Registers are zero-init throughout this model -- `pv.get(reg, {0})` is the
+        # closure's own floor, §1.41's reading -- so a dep admitting 0 is satisfied by never
+        # writing S at all, and nothing whatever is necessary. GK1's specimen is flag 470, a
+        # PLATFORM test the bayou and dream scripts spell in both directions (`(if (and
+        # (== (Platform) 1) (not (proc13_0 470))) ...)` against `(if (proc13_0 470) ...)`), which
+        # reaches the branch table as `deps {712: [0, 1]}` -- the register's whole domain,
+        # establishing nothing. Read as a demand, its "producers" are the game's opening at
+        # rm93, and the opening's co-writes (`global123 := 1`, `global179 := 70`) came back as
+        # facts about a day-4 crossing. Placed AFTER the prevRoom branch, which has its own
+        # reading and no zero-init to speak of.
+        if 0 in vs:
+            return {}
         prods = []
         for (Sk, _room, vk), brs in self._wbranch.items():
             if Sk != S or vk not in vs:
