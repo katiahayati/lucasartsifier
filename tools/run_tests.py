@@ -23,6 +23,7 @@ a new test file needs no registration unless it is deliberately red.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -753,18 +754,50 @@ TALLY = re.compile(r"^(\d+) passed, (\d+) failed")
 SKIPPED = re.compile(r"^\s*\(skip\b", re.I)
 
 
-def run_one(path, echo=True):
-    """Run one test file, streaming its output.
+_DURATIONS = os.path.join(_ROOT, "build", ".test_durations.json")
 
-    Returns (passed, failed_names, exit_code, skips, {failed name: [its detail lines]})."""
+
+def _load_durations():
+    """{test file: seconds} from the last run, for longest-first scheduling. Advisory only --
+    a wrong or missing number costs wall clock, never correctness."""
+    try:
+        with open(_DURATIONS) as f:
+            return {k: float(v) for k, v in json.load(f).items()}
+    except Exception:                                       # noqa: BLE001
+        return {}
+
+
+def _save_durations(d):
+    try:
+        os.makedirs(os.path.dirname(_DURATIONS), exist_ok=True)
+        with open(_DURATIONS, "w") as f:
+            json.dump({k: round(v, 1) for k, v in d.items()}, f, indent=0, sort_keys=True)
+    except Exception:                                       # noqa: BLE001
+        pass                                                # a cache we cannot write is not a failure
+
+
+def run_one(path, echo=True):
+    """Run one test file, streaming its output (or capturing it when `echo` is False).
+
+    Returns (passed, failed_names, exit_code, skips, {failed name: [its detail lines]}, text,
+    seconds). `seconds` is measured around the SUBPROCESS, not around the future: a file that
+    waited in the pool's queue must not record the wait as its own cost, or longest-first
+    scheduling inverts itself on the next run (measured: test_walkers, a 0.1 s file, recorded
+    812 s because it was submitted early and picked up late).
+    `text` is the captured output, empty when echoing -- the parallel runner prints it as one
+    block per file, because interleaving six games' streams is unreadable."""
+    _t0 = time.time()
     proc = subprocess.Popen([sys.executable, "-u", path], cwd=SRC,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     passed, failed, skips = 0, [], []
     details, cur, cur_indent = {}, None, 0
+    buf = []
     for line in proc.stdout:
         if echo:
             sys.stdout.write("    " + line)
             sys.stdout.flush()
+        else:
+            buf.append("    " + line)
         m = CHECK.match(line)
         if m:
             cur = None
@@ -783,13 +816,22 @@ def run_one(path, echo=True):
             else:
                 cur = None
     proc.wait()
-    return passed, failed, proc.returncode, skips, details
+    return passed, failed, proc.returncode, skips, details, "".join(buf), time.time() - _t0
 
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     strict = "--strict" in argv
     argv = [a for a in argv if a != "--strict"]
+    # -jN: run N test files at once. DEFAULT 1 -- the serial behaviour this file has always had.
+    # The verdict is order-independent (every check is accounted per file against KNOWN_RED), so
+    # parallelism cannot change it; what it changes is wall clock, because the six games'
+    # model builds are independent and each is single-threaded.
+    jobs = 1
+    for a in list(argv):
+        if a.startswith("-j"):
+            jobs = int(a[2:] or 0) or (os.cpu_count() or 1)
+            argv.remove(a)
     names = sorted(f for f in os.listdir(SRC) if f.startswith("test_") and f.endswith(".py"))
     if argv:
         names = [f for f in names if any(a in f for a in argv)]
@@ -799,18 +841,21 @@ def main(argv=None):
     t0 = time.time()
     total_pass, unexpected, promoted, crashed = 0, [], [], []
     skipped, silent, moved = [], [], []
-    for f in names:
-        print(f"\n\033[1m=== {f}\033[0m", flush=True)
-        t1 = time.time()
-        passed, failed, code, skips, details = run_one(os.path.join(SRC, f))
+    durations = _load_durations()
+
+    def account(f, result, secs):
+        """Fold one file's result into the accumulators. Shared by both modes so the two can
+        never drift -- the accounting IS the contract this file exists to enforce."""
+        nonlocal total_pass
+        passed, failed, code, skips, details, _text, _secs = result
         total_pass += passed
         red = KNOWN_RED.get(f, {})
-        unexpected += [(f, n) for n in failed if n not in red]
-        promoted += [(f, n) for n in red if n not in failed]
+        unexpected.extend((f, n) for n in failed if n not in red)
+        promoted.extend((f, n) for n in red if n not in failed)
         for n, want in KNOWN_RED_DETAIL.get(f, {}).items():
             if n in failed and details.get(n, []) != want:
                 moved.append((f, n, details.get(n, []), want))
-        skipped += [(f, s) for s in skips]
+        skipped.extend((f, s) for s in skips)
         # A file that asserts NOTHING is not a passing file. Under the old accounting it was
         # indistinguishable from a clean one, because only failures were ever compared to
         # KNOWN_RED -- so a machine without the games printed "agrees with KNOWN_RED" having
@@ -821,9 +866,32 @@ def main(argv=None):
         # under a pure check-line count -- it has no FAIL lines to find. Catch it on the code.
         if code != 0 and not failed:
             crashed.append((f, code))
+        durations[f] = secs
         print(f"  \033[2m-- {passed} passed, {len(failed)} failed"
               + (f", {len(skips)} skipped" if skips else "")
-              + f" ({time.time() - t1:.0f}s)\033[0m", flush=True)
+              + f" ({secs:.0f}s)\033[0m", flush=True)
+
+    if jobs > 1:
+        # LONGEST FIRST: the makespan of a parallel run is set by its slowest file, so a file
+        # that took ten minutes last time must not be picked up last. Unknown files sort first
+        # (a new test is assumed slow) -- see `_load_durations`.
+        order = sorted(names, key=lambda f: -durations.get(f, float("inf")))
+        print(f"\n\033[1m=== running {len(order)} file(s), {jobs} at a time\033[0m", flush=True)
+        import concurrent.futures as _cf
+        with _cf.ThreadPoolExecutor(max_workers=jobs) as ex:
+            futs = {ex.submit(run_one, os.path.join(SRC, f), False): f for f in order}
+            for fut in _cf.as_completed(futs):
+                f = futs[fut]
+                result = fut.result()
+                print(f"\n\033[1m=== {f}\033[0m", flush=True)
+                sys.stdout.write(result[5])
+                account(f, result, result[6])
+    else:
+        for f in names:
+            print(f"\n\033[1m=== {f}\033[0m", flush=True)
+            r = run_one(os.path.join(SRC, f))
+            account(f, r, r[6])
+    _save_durations(durations)
 
     n_red = sum(len(v) for k, v in KNOWN_RED.items() if k in names)
     print("\n" + "=" * 78)
