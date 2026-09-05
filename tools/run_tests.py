@@ -94,9 +94,10 @@ KNOWN_RED = {
     },
     "test_gk1_ground_truth.py": {
         "no UNEXPECTED unit flagged (suspicion)":
-            "SIX FALSE-POSITIVE UNITS, in three families (2026-09-04). (A) THE DAY-7 FAMILY, all "
-            "waiting on ONE gap: the sketch, the mold, the veve, the croc mask and the oil each keep "
-            "a 6->7 row because NOBODY reaches day 7 in the record -- day 6 ends only at the bayou "
+            "SIX FALSE-POSITIVE UNITS, in three families (2026-09-04). (A) THE DAY-7 FAMILY, FOUR "
+            "units waiting on ONE gap -- the sketch, the mold, the veve and the oil (the croc mask "
+            "keeps a 6->7 row too, but it is EXPECTED_CAUGHT as R5, so it is not an FP unit). Each "
+            "keeps that row because NOBODY reaches day 7 in the record -- day 6 ends only at the bayou "
             "ritual, whose `(++ day)` is unmodelled (docs GK1 1.34/1.51), so the closure's second "
             "opinion (1.48) cannot ask whether the item is the difference and the flat arm's phantom "
             "ending keeps the row. ⛔ Modelling that increment was measured TWICE and reverted twice: "
