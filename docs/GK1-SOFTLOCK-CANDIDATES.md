@@ -2128,6 +2128,42 @@ EXIT-PATH grant — every edge leaving a region passes through a state that unco
 grants X, so no player leaves the region without X. That is provable here (two exits, both
 granting) and does not touch the room-init rule. Recorded, not built.
 
+## §1.55 The bayou's day IS derivable — and §1.34's real blocker, finally named (2026-09-04)
+
+⛔ **My "the record does not carry the bayou's day" was WRONG** (the USER pushed back; they were
+right). Every link is a plain register fact in the scripts, and the model already holds all of
+them:
+
+| link | where | the model's own record |
+|---|---|---|
+| the ritual advances the day TWICE | `bayouRitual.sc:890` (roomScript state 81) and **`:911` (`abortCartoon`)** | two write branches at room 480 |
+| the main path demands mask + tattoo | §1.36's doomed-arming rule | `deps {flag216:[1], flag299:[1], g123:[k]}` |
+| **the ESC "skip this cutscene?" path is the free day-ender** | armed from `roomScript::handleEvent` under `local4`, `proc13_5` = the yes/no dialog | `deps {flag971:[1], g123:[k]}` |
+| but the skip only opens at **state 13**, past the deaths at 5 and 9 | `bayouRitual.sc:207` | local4 is lowered to register **1213** (= "flag971"), and `_wbranch[(1213, 480, 1)]` = `deps {flag216:[1], flag299:[1]}` |
+| and the tattoo is day-gated | `bookstore.sc:1899`, armed under `(== global123 6)` | a plain register dep |
+
+So the chain closes: **day ⟸ 1213 ⟸ (216 ∧ 299) ⟸ day 6.** Nothing needs hand-carrying, and
+`apply_134.py` is NOT the problem.
+
+**MEASURED with §1.34 applied on top of everything from 2026-09-04 (the morning attempt
+predated §1.53): R4 STILL DIES, and R1 with it.** 9 passed / 4 failed. So the third revert
+stands — but the cause is now named rather than guessed:
+
+⭐ **`producible_seal` computes `fwd` — the day values forward-reachable from the crossing —
+straight off `_rstep`, with no liveness test.** Adding the bayou's steps grows `fwd`, the
+post-flip confinement `conf_post[R] = set(fwd)` widens with it, the post-flip closure roams
+days it could never actually reach, finds the goal, and the seal dissolves. The flat
+projections have the same shape one level down: `1213 != 0` reads satisfiable wherever 1213 is
+untracked — the SAME defect class as §1.53's self-return, in a different costume.
+
+**THE NEXT FIX, shaped:** `fwd` must be built from LIVE steps only — a step counts only if its
+deps are producible in the crosser's own closure, which is exactly what `_step_live` (§1.44)
+already asks between stages. Doing it naively is circular (fwd feeds the closure that would
+judge it), so the honest shape is a fixpoint: start from `{w}`, admit a step whose deps the
+current stage's PV can satisfy, re-close, repeat. ⛔ Cost warning: with §1.34 the GK1 model
+REBUILD alone runs ~55 min (the day fan multiplies machine states), so this is a box job, and
+each iteration is an hour.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
