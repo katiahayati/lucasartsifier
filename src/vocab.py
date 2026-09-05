@@ -2632,6 +2632,245 @@ def derive_room_locals(ir, rooms):
     return out
 
 
+def _switch_leaf_values(node):
+    """`(ok, [values])` for a value-position tree whose every arm yields ONE integer literal.
+
+    Deliberately narrow: `Switch`, `If`, a one-element `List` and a bare `Number`. A `Cond`, a
+    computed arm or a multi-statement arm makes it `(False, [])` and the local is left alone --
+    this recogniser exists to admit a shape that is provably decomposable, not to guess."""
+    t = node.get("t") if isinstance(node, dict) else None
+    if t == "Number":
+        return True, [node["value"]]
+    if t == "List":
+        ks = [k for k in (node.get("kids") or []) if isinstance(k, dict)]
+        return _switch_leaf_values(ks[0]) if len(ks) == 1 else (False, [])
+    if t == "If":
+        ks = [k for k in (node.get("kids") or []) if isinstance(k, dict)]
+        if len(ks) < 3:
+            return False, []
+        g1, v1 = _switch_leaf_values(ks[1])
+        g2, v2 = _switch_leaf_values(ks[2])
+        return (g1 and g2), (v1 + v2)
+    if t == "Switch":
+        out, any_arm = [], False
+        for c in (node.get("kids") or [])[1:]:
+            if not isinstance(c, dict) or c.get("t") not in ("Case", "Else"):
+                return False, []
+            ks = [k for k in (c.get("kids") or []) if isinstance(k, dict)]
+            if not ks:
+                return False, []
+            ok, vals = _switch_leaf_values(ks[-1])
+            if not ok:
+                return False, []
+            out += vals
+            any_arm = True
+        return any_arm, out
+    return False, []
+
+
+def _sink_assignment(tree, lhs):
+    """A copy of `tree` with every leaf `Number v` replaced by `(= <lhs> v)`. The caller has
+    already proved the shape with `_switch_leaf_values`, so every value position is a literal."""
+    t = tree.get("t")
+    if t == "Number":
+        return {"t": "Assignment", "kids": [copy.deepcopy(lhs), copy.deepcopy(tree)]}
+    out = copy.deepcopy(tree)
+    if t == "List":
+        out["kids"] = [_sink_assignment(k, lhs) for k in out["kids"] if isinstance(k, dict)]
+        return out
+    if t == "If":
+        out["kids"][1] = _sink_assignment(out["kids"][1], lhs)
+        out["kids"][2] = _sink_assignment(out["kids"][2], lhs)
+        return out
+    for c in out["kids"][1:]:                 # Switch: kids[0] is the SUBJECT
+        c["kids"][-1] = _sink_assignment(c["kids"][-1], lhs)
+    return out
+
+
+def _readable_test(node):
+    """Is this test a REGISTER condition the model can actually read -- at least one global and
+    nothing untracked (a local, a temp, a send, a kernel call)?"""
+    has_global, bad = [False], [False]
+
+    def visit(n):
+        if not isinstance(n, dict):
+            return
+        t = n.get("t")
+        if t == "Variable":
+            if n.get("vtype") == "Global":
+                has_global[0] = True
+            else:
+                bad[0] = True
+        elif t in ("Send", "KernelCall", "PublicCall", "LocalCall"):
+            bad[0] = True
+        for k in (n.get("kids") or []):
+            visit(k)
+
+    visit(node)
+    return has_global[0] and not bad[0]
+
+
+def _switches_on_registers(node):
+    """Does EVERY test in this value tree read a register?
+
+    ⛔ THE FENCE, and it is the whole difference between a rule and a re-plumbing. Lowering a
+    local is only worth anything when its value is a FUNCTION OF TRACKED STATE -- that is the
+    entire claim, "not a per-visit constant but a derived register". A switch on a send, or an
+    `if` comparing two other locals, derives nothing any projection can carry: it invents a
+    register whose writes are guarded by conditions nothing reads, and the strandings that fall
+    out are attributed to nothing.
+
+    MEASURED, 2026-09-05, and this fence is why it exists: WITHOUT it the corpus census admits
+    twenty locals and the gate goes RED -- LSL2's FROZEN GOLDEN grows a `Sewing_Kit@reg490=1`
+    stranding plus a malformed `rmNone->rmNone` placement row, LB2's watched surface moves
+    26 -> 36, and `mechanism pinned: smellingSalts` breaks. LSL2's `rm22Script` local0 is
+    assigned from `(< (local6 <selector>:) ...)` -- a SEND -- and GK1's own `geddeTomb` local12
+    compares two other locals. Both are exactly what this refuses.
+    """
+    if not isinstance(node, dict):
+        return False
+    t = node.get("t")
+    ks = node.get("kids") or []
+    if t == "Switch":
+        if not ks or not I.is_global(ks[0]):
+            return False
+        return all(_switches_on_registers(c) for c in ks[1:])
+    if t == "If":
+        if len(ks) < 3 or not _readable_test(ks[0]):
+            return False
+        return _switches_on_registers(ks[1]) and _switches_on_registers(ks[2])
+    for k in ks:
+        if isinstance(k, dict) and not _switches_on_registers(k):
+            return False
+    return True
+
+
+def _read_as_condition(script, idx):
+    """Is local `idx` ever READ BACK AS A CONDITION -- a `switch` subject, or inside an `if`
+    test or a comparison?
+
+    ⛔ THE SECOND FENCE, and it is `derive_room_locals`' own discipline, which this rule had
+    dropped: that one admits a local "written with a CONSTANT and read back", and READ BACK is
+    doing real work. A local that is only ever CONSUMED -- handed to a call, used as an
+    argument -- is a computed value, not state; lowering it makes a register nothing gates on
+    and every consumer of registers then has one more thing to attribute rows to.
+
+    MEASURED, 2026-09-05: LB2's `actBreak.sc` local0 is the specimen. It is assigned 230 / 330 /
+    355 / `(if (== global12 620) 610 else 510)` / 420 / 750 -- a DESTINATION -- and read exactly
+    once, at `(global2 newRoom: local0)`. Lowering it moved LB2's watched surface 26 -> 36 rows
+    and broke `mechanism pinned: smellingSalts`, against a standing "err toward not moving LB2".
+    GK1's `drumInset` local0, by contrast, is the subject of `switch local0` in `checkPhrases`,
+    which is exactly what gates flag 268."""
+    def in_test(node):
+        if not isinstance(node, dict):
+            return False
+        if (node.get("t") == "Variable" and node.get("vtype") == "Local"
+                and node.get("index") == idx):
+            return True
+        return any(in_test(k) for k in (node.get("kids") or []))
+
+    bodies = [b for o in script.objects for b in o.methods.values()]
+    bodies += list((getattr(script, "procs", None) or {}).values())
+    for body in bodies:
+        for n in I.walk(body):
+            if not isinstance(n, dict):
+                continue
+            ks = n.get("kids") or []
+            if not ks:
+                continue
+            t = n.get("t")
+            if t == "Switch" and in_test(ks[0]):
+                return True
+            if t in ("If", "Cond", "And", "Or", "Not", "Eq", "Ne", "Lt", "Gt", "Le", "Ge") \
+                    and any(in_test(k) for k in ks[:1] if t in ("If", "Cond")) :
+                return True
+            if t in ("Eq", "Ne", "Lt", "Gt", "Le", "Ge") and any(in_test(k) for k in ks):
+                return True
+    return False
+
+
+def derive_switch_locals(ir):
+    """⭐ A LOCAL ASSIGNED BY A SWITCH TREE IS A DERIVED REGISTER (2026-09-05, docs GK1 §1.59).
+
+    `derive_room_locals` refuses these three times over, and each refusal is right about a
+    different case: the script may not be a ROOM (it never looks); the switch rhs is not a
+    constant, so the local is TAINTED (the rule that keeps KQ4's stepped ocean-grid locals out);
+    and every write may sit in `init`, excluded as "a per-visit CONSTANT ... the entry reset IS
+    its entire semantics". ⭐ That last rationale is exactly what fails here: a switch-valued
+    local's value is a FUNCTION OF STATE, so the entry reset is not its semantics -- it is the
+    thing we need.
+
+    GK1's drum inset is the specimen. `proc13_1 268` -- the bayou's map icon, the gate on the
+    whole bayou region -- happens once, under `local0 == 2`, and
+
+        local0 = switch global11 { 410 -> switch global123 { 6 -> 2, 7 -> 1, 10 -> 3, else 0 },
+                                   800 -> 4, else (if (< global123 6) 0 else 1) }
+
+    so flag 268 is raisable exactly in room 410 on day 6, and at rm800 the mode is 4 and it can
+    never be raised at all. Unlowered, the model reads the write's guard as `not flag268` alone,
+    dates the bayou nowhere, and files a phantom raise in the endgame.
+
+    Corpus census: LSL2 1, KQ4 0, KQ6 3, KQ5 4, LB2 4, GK1 8 -- twenty sites, exactly one
+    outside a room script.
+    """
+    out = set()
+    for sn, sc in sorted(ir.scripts.items()):
+        if not getattr(sc, "locals", None):
+            continue
+        bodies = [b for o in sc.objects for b in o.methods.values()]
+        bodies += list((getattr(sc, "procs", None) or {}).values())
+        for body in bodies:
+            for n in I.walk(body):
+                if not isinstance(n, dict) or n.get("t") != "Assignment":
+                    continue
+                ks = n.get("kids") or []
+                if len(ks) < 2 or not isinstance(ks[0], dict):
+                    continue
+                lhs = ks[0]
+                if lhs.get("t") != "Variable" or lhs.get("vtype") != "Local":
+                    continue
+                ok, vals = _switch_leaf_values(ks[1])
+                if (ok and len(set(vals)) >= 2 and _switches_on_registers(ks[1])
+                        and _read_as_condition(sc, lhs["index"])):
+                    out.add((sn, lhs["index"]))
+    return out
+
+
+def sink_switch_assignments(ir, keys):
+    """Rewrite `(= L <switch tree>)` into the tree with `(= L <lit>)` in every arm, IN PLACE --
+    a source-to-source move that is sound because every arm is a bare literal
+    (`_switch_leaf_values` proved it), so the switch has no effect but the assignment. After it,
+    `lower_room_locals` sees ordinary constant writes and the enclosing switch supplies each
+    one's guard."""
+    if not keys:
+        return 0
+    done = 0
+    for sn, idx in sorted(keys):
+        sc = ir.scripts.get(sn)
+        if sc is None:
+            continue
+        bodies = [b for o in sc.objects for b in o.methods.values()]
+        bodies += list((getattr(sc, "procs", None) or {}).values())
+        for body in bodies:
+            for n in I.walk(body):
+                if not isinstance(n, dict) or n.get("t") != "Assignment":
+                    continue
+                ks = n.get("kids") or []
+                if len(ks) < 2 or not isinstance(ks[0], dict):
+                    continue
+                lhs = ks[0]
+                if (lhs.get("t") != "Variable" or lhs.get("vtype") != "Local"
+                        or lhs.get("index") != idx):
+                    continue
+                if not _switch_leaf_values(ks[1])[0]:
+                    continue
+                rewritten = _sink_assignment(ks[1], lhs)
+                n.clear()
+                n.update(rewritten)
+                done += 1
+    return done
+
+
 def lower_room_locals(ir, keys):
     """Rewrite the derived room locals into synthetic globals, IN PLACE -- same shape as
     `lower_flags` / `lower_prop_flags` / `lower_obj_props`, so nothing downstream learns a new

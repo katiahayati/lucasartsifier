@@ -7625,6 +7625,18 @@ class IrSccReach(SccReach):
                         for S, vs in d.items():
                             if S != C:
                                 want.update((S, v) for v in vs)
+            # ⭐ ...AND EVERY VALUE AN EDGE DEMANDS (2026-09-05, docs GK1 §1.59). The window is
+            # "at which counter values can S == v be in hand", and it was collected from the
+            # WRITE branches alone -- so a value nothing writes ON but something GATES ON had no
+            # window, and `_apply_consumer_windows`' own edge pass below could never narrow the
+            # edge that demanded it. GK1's flag 268 is exactly that shape: the bayou's whole
+            # region hangs off `372 -> 490` needing it, and no write depends on it anywhere, so
+            # the day the drum inset raises it was unaskable. Same question, one more source.
+            for _key, _metas in self._emeta.items():
+                for (_rq, _st, _al) in _metas:
+                    for S, vs in _rq.items():
+                        if S != C:
+                            want.update((S, v) for v in vs)
             if not want:
                 continue
             win = {}
@@ -9977,7 +9989,15 @@ def _build(cfg, ir_path):
     #   for every cross-scope consumer, which is the store's whole point. Pinned:
     #   `destroyed_is_permanent(huntersLamp)` True (test_kq6_ground_truth), the rm690 latch
     #   fixture in test_toll, and byte-identical LSL2/KQ4/Dagger surfaces.
-    V.lower_room_locals(ir, V.derive_room_locals(ir, _X._room_numbers(ir)))
+    # ⭐ ...AND THE SWITCH-VALUED LOCALS (docs GK1 §1.59). `derive_room_locals` refuses these
+    # three times over -- non-room script, computed rhs, init-only -- and each refusal is right
+    # about a different case. A local assigned by a switch/if tree of literal arms is a DERIVED
+    # register: sink the assignment into the arms first, and what the lowering then sees is one
+    # guarded CONSTANT write per arm. GK1's `drumInset.local0` is the specimen: it is where
+    # flag 268's "room 410 on day 6" lives, and the whole bayou region hangs on that flag.
+    _swkeys = V.derive_switch_locals(ir)
+    V.sink_switch_assignments(ir, _swkeys)
+    V.lower_room_locals(ir, V.derive_room_locals(ir, _X._room_numbers(ir)) | _swkeys)
     _X.install_vocabulary(ir)
     V.lower_item_bit_flags(ir, V.derive_item_bit_flags(ir, _X._at_item), _X._at_item)
     # SIXTH container: a plain global used as a BIT-MASK WORD -- written `(|= gN $mask)`, read

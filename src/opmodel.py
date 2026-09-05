@@ -377,6 +377,26 @@ class OpEmitter:
                 # recorded the declared initial values per room.
                 for gi, v in getattr(ir, "_room_local_resets", {}).get(rn, {}).items():
                     self.init_writes.setdefault(rn, {}).setdefault(gi, v)
+            else:
+                # ⭐ A LOWERING MUST HARVEST THE WRITES IT CREATED (2026-09-05, docs GK1 §1.59).
+                # `_init_writes` walks the ROOM object's `init` and runs only for real rooms, so
+                # an `init` in a NON-ROOM script reaches no room through any channel. That is
+                # fine while its locals stay locals -- and fatal once one is lowered, because the
+                # register is then READ everywhere (its guards became register tests) and WRITTEN
+                # nowhere, which is `derive_room_locals`' own "a register missing one of its
+                # writes can fabricate a seal". GK1's drum inset is the case: `drumInset::init`
+                # computes the mode that gates flag 268, and the inset is armed from rm410 and
+                # rm800 (`armed_rooms`), which is already how `checkPhrases`' writes get their
+                # rooms.
+                #
+                # ⛔ SCOPED TO THE LOWERING'S OWN REGISTERS, and that is what makes it safe: these
+                # synthetic globals did not exist a moment ago, so no existing surface can move.
+                # A general "harvest every non-room init" would be a different, much larger claim.
+                # ⛔ And NOT through `init_writes`: an inset's `init` runs when the inset opens,
+                # not on arrival, so committing it as an entry write would assert a value the
+                # player need never have. `init_seq` is the POSSIBLE-write channel and is the
+                # honest one.
+                self._armed_init_writes(rn, s, targets)
             for m in self.mb.machines(s):
                 for room in sorted(targets):
                     info = self._machine_info(room, m)
@@ -1375,6 +1395,34 @@ class OpEmitter:
         if body is None or name in seen:
             return
         self._hwalk(room, tgt_script, body, pc, seen | {name}, owner=owner)
+
+    def _armed_init_writes(self, rn, script, targets):
+        """The `init` writes of a NON-ROOM script's objects, filed at the rooms that ARM it --
+        for the lowering's own synthetic registers only. See the call site for why this exists
+        and why it is scoped this way (docs GK1 §1.59)."""
+        idx = getattr(self.ir, "_room_local_index", None) or {}
+        mine = {gi for gi, (sn, _i) in idx.items() if sn == rn}
+        if not mine:
+            return
+        from extract import walk_stream
+
+        def leaf(node, pc):
+            if node.get("t") != "Assignment":
+                return
+            ks = node.get("kids") or []
+            if len(ks) < 2 or not I.is_global(ks[0]) or ks[0]["index"] not in mine:
+                return
+            v = _int(ks[1].get("value"))
+            if v is None:
+                return
+            g = _conj_atoms(pc)
+            for room in sorted(targets):
+                self.init_seq.setdefault(room, []).append((ks[0]["index"], v, g))
+
+        for o in script.objects:
+            body = o.methods.get("init")
+            if body:
+                walk_stream(body, [], leaf, undecided=Pred("OPAQUE"))
 
     def _init_writes(self, room, script):
         # `by_name["rm<N>"]` -- the LSL2 decompiler naming convention, for the FOURTH time. KQ4

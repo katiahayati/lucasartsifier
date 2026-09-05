@@ -2526,6 +2526,80 @@ and **a non-room script's `init` writes must reach the rooms that arm it** — t
 attribution `checkPhrases` already gets, extended to `init`. Build them together or not at all.
 
 
+## §1.60 The bayou is dated: the switch-local round, BUILT (2026-09-05)
+
+§1.59 specified three changes and said "build them together or not at all". Built together, and
+they close leak 2 on the live model: **rm490 and rm480 read days `[6..10]` instead of `[0..10]`.**
+In game terms the tool now knows the bayou is a day-6 place, because it can read why.
+
+| # | the change | where |
+|---|---|---|
+| 1 | **a local assigned by a switch/if tree of literal arms is a DERIVED REGISTER** — one guarded constant write per arm, sunk into the arms before lowering so nothing downstream learns a concept | `vocab.derive_switch_locals` / `_sink_assignment` / `sink_switch_assignments` |
+| 1a | ⛔ **…whose every test READS A REGISTER** — a switch on a send or an `if` comparing two other locals derives nothing a projection carries | `vocab._switches_on_registers` |
+| 1b | ⛔ **…and which is READ BACK AS A CONDITION** — `derive_room_locals`' own discipline, which the first draft dropped; a local only ever CONSUMED is a computed value, not state | `vocab._read_as_condition` |
+| 2 | **a lowering must harvest the writes it created** — a NON-ROOM script's `init` reaches no room through any channel, so a lowered local there is read everywhere and written nowhere | `opmodel._armed_init_writes` |
+| 3 | **the consumer windows want every value the model DEMANDS, edges included** — flag 268 is demanded by an edge and by no write, so it had no window at all | `missability._consumer_windows` |
+
+The chain, end to end, as the model now holds it:
+
+    init_seq[410]:  1237:=2  under  11==410 AND 123==6          ⭐ the arms, with the room test
+                    1237:=1  under  11==410 AND !6 AND 123==7
+                    1237:=3  under  11==410 AND !6 AND !7 AND 123==10
+                    1237:=4  under  !(11==410) AND 11==800
+    _wbranch:       268:=1 @rm410  deps {268:[0], 1237:[2]}      the mode gate, captured
+    window:         win[1237=2] = [6..10]  ->  win[268=1] = [6..10]
+    projection:     rm490 [6..10]   rm480 [6..10]
+
+⛔ **Change 2 is the one that makes it safe as well as the one that makes it work.** It is scoped
+to the lowering's OWN synthetic registers — globals that did not exist a moment earlier — so no
+existing surface can move through it. A general "harvest every non-room `init`" is a much larger
+claim and is NOT made here. And it files into `init_seq` (the POSSIBLE-write channel), never
+`init_writes`: an inset's `init` runs when the inset opens, not on arrival, so committing it as
+an entry write would assert a value the player need never have.
+
+📝 One inert artifact, pinned rather than fixed: `lower_room_locals` files its reset under the
+SCRIPT number, which for a non-room script is a room that does not exist
+(`init_writes[815] = {1237: 0}`). No walk can arrive at 815, so it is dead weight; the test fails
+loudly if 815 ever becomes a room, at which point the reset would start asserting a value on
+arrival somewhere real.
+
+### What this does NOT yet do — §1.34 is still not landable
+The bayou is dated, but with §1.34's fan applied `_rstep[123]` at rm480 still carries a step at
+EVERY value — `(1,2) … (10,11)` — because `_pstates` bounds ATTAINABILITY and nothing prunes the
+steps by it. Measured on the §1.34 worktree with this whole round in:
+
+    rm480 days [6..11]   but   rm480 steps (1,2) (2,3) … (10,11)
+    producible_seal(123, 4, 370, flag44, 0) = False
+
+⭐ **So the next round is the fourth change, and it is small: a counter step at a value its ROOM
+cannot hold is not a step.** Prune `(f, t) @ room` when `(room, f)` is outside `_pstates[C]`,
+prune the matching `_wbranch` branches, and iterate to a fixpoint — sound because `_pstates`
+over-approximates, so "not attainable" is a refutation, and monotone decreasing, so it
+terminates. Simulated in §1.57 (it removed 77 branches and 13 steps there); with the bayou now
+dated it should bound rm480 to `(6,7) …` and rm550 to `(7,8) …`, which is what the scripts say.
+
+### ⛔ THE TWO FENCES WERE FORCED BY THE GATE, not designed in
+The first build had neither, admitted twenty locals corpus-wide, and went **RED**:
+* **LSL2's FROZEN GOLDEN grew** `register_strandings +['Sewing_Kit@reg490=1->[138]']`,
+  `register_write_specs +['reg490=1: (gEgo has: 12)']` and a MALFORMED
+  `placements +['rmNone->rmNone: applied=False …']` — a room of `None`, which is a bug, not a
+  finding. `rm22Script`'s local0 is assigned from `(< (local6 <sel>:) …)`, a SEND: fence 1a.
+* **LB2's watched surface moved 26 → 36 rows** and `mechanism pinned: smellingSalts` broke.
+  `actBreak.sc` local0 is assigned 230 / 330 / 355 / `(if (== global12 620) 610 else 510)` /
+  420 / 750 and read exactly once, at `(global2 newRoom: local0)` — a DESTINATION, never a
+  condition: fence 1b. ([[lb2-err-toward-not-moving]] is a standing instruction.)
+
+⚠️ **AND ONE OF THE THREE "MOVERS" WAS NOT THE RULE AT ALL.** LSL2 kept moving after fence 1a,
+with the census reporting ZERO switch locals for it — because the `else:` of change 2 had been
+inserted BETWEEN `_init_writes(...)` and the room-local reset loop, orphaning the reset into the
+else branch and silently deleting **every game's** room-local entry resets. A pure editing slip,
+invisible to `ast.parse`, caught only because the golden moved and the bisect asked which change
+did it. The lesson is the file's own: an edit anchored on two lines can capture a third.
+
+With all three fences the corpus census is **exactly one site — GK1's `drumInset` — and nothing
+else in any game.** Gate on the box: **986 passed / 14 known-red / 0 unexpected / 0 crashed**,
+the failing set exactly the declared one.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
