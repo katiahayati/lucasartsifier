@@ -2096,6 +2096,38 @@ The two reds left are the same FP pair seen from both sides, over five items: th
 (sketch, mold, veve, mask, oil — all waiting on the bayou's day, §1.51) plus the USER-ruled
 knife and the talisman.
 
+## §1.54 The talisman: verified FP, and DELIBERATELY not cured (2026-09-04)
+
+The last unblocked FP unit, run to ground and then left alone on purpose.
+
+**The row.** There is exactly one, and it carries six of GK1's remaining FP units at once:
+`edge_strandings from_room 455 to_room 800, items [21, 22, 32, 38, 40, 60, 69]` — the crossing
+from the confessional into the hounfour, claiming crocMask, oil, the sketch, the veve, the mold,
+the rod and the talisman are all unobtainable past it while still needed. The ROD half is real
+(it is R2's own mechanism: `rm455.sc:827` deposits it, `bench1::doVerb 76` under flag 272,
+raising flag 280). Five of the other six are the day-7 family, blocked on §1.51.
+
+**The talisman half, verified from the scripts:** granted at `rm720.sc:1040` and `:1281`, each
+immediately before `newRoom: 216` — both of Africa's real exits — and never taken back before
+`EndGame.sc:1940`. The third `newRoom` out of rm720 (`askWolf`, line 1025) goes to rm50, the
+CONVERSATION room, and returns; it is not an exit. So nobody reaches the hounfour without the
+talisman, and demanding it at the crossing is vacuous.
+
+**⛔ Why it is not cured.** The natural cure is `_unrefusable_grants`, and that rule is
+deliberately STRICT: the grant must sit in a room's `init` with the guard's whole conjunct
+spine being the `not (has: X)` idempotence check. Its docstring states the reason — "the
+failure direction here is LOST FINDINGS (a barrier shrinks `_reach_without`, and a room dropped
+from it is a room no detector will judge)" — and records that the looser reading was measured
+on 2026-08-15. GK1's grant is unconditional inside a CUTSCENE STATE, not a room init, so
+admitting it means relaxing a measured-strict rule that protects real findings, to retire ONE
+unit of six on the game whose oracle is my own derivation. Both red checks stay red either way,
+because the day-7 family keeps them red.
+
+**If it is ever built**, the honest shape is narrower than relaxing the strict rule: an
+EXIT-PATH grant — every edge leaving a region passes through a state that unconditionally
+grants X, so no player leaves the region without X. That is provable here (two exits, both
+granting) and does not touch the room-init rule. Recorded, not built.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
