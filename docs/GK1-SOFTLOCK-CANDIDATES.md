@@ -2336,6 +2336,9 @@ standing in the bayou" was wrong. The leak is the ENTRANCE again:
     205 -> 490   {12: [750], 712, 510: [1], 691}
     490 -> 480   {}                              (free, once you are in the maze)
 
+⛔ **SUPERSEDED BY §1.59: flag 268 IS datable** (room 410 ∧ day 6, in `drumInset`'s `local0`).
+What follows was written before that was read.
+
 So the maze and the ritual hang on flag 268, whose raise is the drum puzzle the model cannot
 date ([[qfg-guards-loud-not-holdy]] is not it; this is §1.41's flag, and §1.51 already called
 its raise opaque). Until 268 carries a day, rm480 is attainable at day 0 and the fan there
@@ -2414,6 +2417,82 @@ Three GK1 edges carry a NATIVELY EMPTY day requirement — `(205, 380)`, `(370, 
 `(370, 372)` — identical with and without this rule, so they are somebody else's bug. An empty
 req is an edge no day-projection walk can ever take; if that is not intended, it is silently
 deleting three doors.
+
+## §1.59 Leak 2 is NOT undatable: flag 268's day-6 gate is in a LOCAL (2026-09-05, measured)
+
+§1.57 called flag 268 "the drum puzzle the model cannot date" and made it the one genuinely new
+blocker. ⛔ **That was wrong too — the sixth.** The date is in the scripts, in plain sight, and
+the model misses it for three specific reasons, each of which has a documented rationale that
+does not cover this case.
+
+### The chain, read end to end
+`proc13_1 268` occurs ONCE in the whole game — `drumInset.sc:914`, in `checkPhrases`, under
+`local0 == 2` (`switch local0`, case 2) plus "the three phrases are 6, 10, 26" and `¬flag268`.
+No day gate on the write. But `local0` is assigned exactly once, in `drumInset::init`
+(`drumInset.sc:246`), and its value IS the date:
+
+    local0 = switch global11                  ; the room
+               410 -> switch global123        ; the DAY
+                        6  -> 2      ⭐ the only arm that can raise flag 268
+                        7  -> 1
+                        10 -> 3
+                        else -> 0
+               800 -> 4
+               else -> (if (< global123 6) 0 else 1)
+
+So **flag 268 ⟸ room 410 ∧ day 6**, and the model's `_wbranch[(268, 410, 1)]` reads
+`deps {268: [0]}` — the `¬flag268` conjunct alone. It also files a raise at **rm800**, where
+`local0` is 4 and flag 268 can never be raised at all: a phantom writer in the endgame.
+
+⛔ The arming route gives nothing, checked: the inset is armed by `sGoToDrum` (`neJackson.sc:871`,
+room 410), which `tom::doVerb 18` arms with no guard whatever. §1.50's rule would not have found
+this. The day lives in the local and nowhere else.
+
+### THREE reasons `derive_room_locals` cannot see it, each rationally scoped elsewhere
+1. **Scope.** It iterates `set(rooms) & set(ir.scripts)`; script 815 is an `Inset`, not a room,
+   so it is never examined. (Census below: this is the ONLY non-room case in the corpus.)
+2. **Taint.** The write is `(= local0 (switch ...))`, so `I.as_int(rhs)` is None and the local is
+   tainted outright — the rule that keeps KQ4's stepped ocean-grid locals out.
+3. **Init-only.** Every write sits in `init`, which is excluded as "a per-visit CONSTANT, not
+   state ... the entry reset IS its entire semantics". ⭐ That rationale is exactly what fails
+   here: a SWITCH-VALUED local's value is a function of STATE, so the entry reset is not its
+   semantics, it is the thing we need.
+
+### ⭐ THE SHAPED RULE, and its measured blast radius
+**A local assigned by a switch / cond / if tree whose leaves are all integer literals is a
+DERIVED REGISTER — one guarded constant write per leaf — not a taint and not a per-visit
+constant.** Census over all six games (`tools/probes/gk1_fan/census_switch_locals.py`):
+
+| game | sites | in ROOM scripts | switching on a GLOBAL |
+|---|---|---|---|
+| LSL2 | 1 | 1 | 0 |
+| KQ4 | **0** | 0 | 0 |
+| KQ6 | 3 | 1 | 0 |
+| KQ5 | 4 | 3 | 1 |
+| LB2 | 4 | 4 | 1 |
+| GK1 | 8 | 7 | 1 |
+
+**20 sites corpus-wide, and exactly ONE outside a room script — GK1's `drumInset`.** KQ4 cannot
+move at all. ⛔ The `If`-armed shape was invisible to the first census pass (drumInset's outer
+`else` is an `if`, not a literal) and the first run reported 5 sites; the table is the corrected
+run.
+
+### ⛔ AND IT CANNOT BE SIMULATED — the lowering has to be BUILT to be tested
+Injecting the day dep into `_wbranch[(268, 410, 1)]` and deleting the rm800 row changes nothing:
+`win[268=1]` comes back as the whole domain. Two reasons, both worth knowing:
+* `_consumer_windows` collects its `want` set from the WRITE-BRANCH tables only. Flag 268 is
+  demanded by an EDGE (`372 -> 490`, `{510: [1]}`) and by no write at all, so no window is ever
+  built for it. **A second, independent gap** — the windows should cover every value the model
+  demands, edges included. (Widening `want` to `_emeta` was simulated: the window then exists.)
+* Even then it reads `[0..11]`, because `_pclose` — which `_staged_pre` and therefore the
+  windows run on — reads `_closure_tables`' ORIGINAL GUARD TREES, not `_wbranch`
+  (`_closure_tables`' own docstring says so: "the branch tables are the wrong source here").
+  A `_wbranch` injection is invisible to it. The day gate has to be in the guard tree, which is
+  what lowering actually produces.
+
+So the next round is a BUILD, fully specified: the switch-valued-local rule, the scope extension
+to the one non-room script, and the `want`-from-edges widening. Blast radius is 20 sites with
+KQ4 provably untouched, and the gate is the arbiter.
 
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
