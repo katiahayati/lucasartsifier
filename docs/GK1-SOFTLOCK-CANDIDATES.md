@@ -2312,7 +2312,9 @@ the entrance, and the entrance is a prevRoom test one hop away from a day gate:
     500 -> 550   prev == 540                                     (the only edge in)
     540 -> 500   {123: [7], 1096, 1108-1111, 1218}               (the only edge from rm540)
 
-§1.56's rule — **a `prev == p` guard imports the persisting reqs of the edges `p -> a`**, fenced
+§1.56's rule — **a `prev == p` guard imports the persisting reqs of the edges `p -> a`**
+(⚠️ the numbers below are the §1.34 worktree's; on the LIVE model the windows already bound
+rm550 to `[7..10]` unaided — see §1.58), fenced
 to the counter's lower bound because `123 == 7` then means `123 >= 7` now (the `_counters` rule)
 — was simulated over the whole `_emeta`:
 
@@ -2372,6 +2374,46 @@ Three leaks, one solved in simulation, one blocked on flag 268's date, one turni
 §1.53's rule may widen its scope to `_pclose`. **§1.34 stays reverted**, and the two GK1 day-7
 reds stay red — but they are no longer "the record's floor" as §1.51 called them. They are three
 named, measured, independently attackable gaps.
+
+## §1.58 The prev-import rule, LANDED and corpus-neutral — with what it does NOT do (2026-09-05)
+
+§1.57's leak-1 rule is in `src/missability.py` as `_apply_prev_import`, called from the build
+just before `_apply_consumer_windows` so the windows read the tightened edges.
+`src/test_prev_import.py` pins it (8 checks). **Gate on the box: 967 passed / 14 known-red /
+0 unexpected / 0 crashed — byte-identical accounting to the run without it. No golden, no
+watched surface, no emitted tree moves on any of the six games.**
+
+### ⚠️ What it does NOT do, stated plainly so nobody re-measures it
+⛔ **On the LIVE model the dream room was ALREADY day-7-bounded.** §1.57 reported the rule
+taking rm550 from `[2..11]` to `[7..11]`; that was measured on the §1.34 worktree. Against a
+true control (`a6357db`, this session's cures in, the rule out) rm550 reads `[7, 8, 9, 10]`
+*without* the rule — `_apply_consumer_windows` already gets there, because without the fan
+everything downstream of day 7 is honestly windowed. So on today's corpus the rule's headline
+checks are green either way and **the rule is inert for R4**; its purpose is to hold rm550 down
+once §1.34's fan removes the windows' ability to do it.
+
+Its one measurable effect on today's model is in the other direction, and is the SOUND one:
+`_emeta[(750, 500)]`'s day requirement is EMPTY at control — an edge the windows had narrowed
+out of existence — and non-empty with the rule, because tightening the edges first changes what
+the windows compute. A restored edge WIDENS the projection, which can only remove findings,
+never invent them. Nothing on the corpus depended on it.
+
+### Why it is landed anyway rather than parked
+It is measured, tested, corpus-neutral, and the §1.34 round needs it; parking it costs the next
+session a re-derivation and two box gates to learn what is written here. The precedent is
+§1.28's `entry_ggets` — landed inert, "which is the point: the FP never gets to exist".
+
+⛔ **Its second site is still unwritten.** `_closure_tables`' edge list is built from `em.*`
+rather than from `_emeta`, so `_pclose` does not see this bound ([[same-rule-two-places]]).
+Measured as not needed for the case at hand — `_pclose` tracks prevRoom and already refuses the
+bootstrap it would fix (§1.57 leak 3, retracted) — but it is one rule with two readings and the
+second should land with the first consumer that needs it.
+
+### A lead dropped in passing
+Three GK1 edges carry a NATIVELY EMPTY day requirement — `(205, 380)`, `(370, 371)`,
+`(370, 372)` — identical with and without this rule, so they are somebody else's bug. An empty
+req is an edge no day-projection walk can ever take; if that is not intended, it is silently
+deleting three doors.
 
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 

@@ -4106,6 +4106,9 @@ class IrSccReach(SccReach):
         self._apply_hazard_gates()
         self._apply_death_traps()
         self._own_fixpoint()
+        # ⭐ A `prev == p` GUARD IMPORTS THE EDGES FROM p (docs GK1 §1.56/§1.57):
+        # before the windows, which read the tightened edges.
+        self._apply_prev_import()
         # ⭐ CONSUMER WINDOWS (docs GK1 §1.31): before `_pstates` walks the projections.
         self._apply_consumer_windows()
         # ...PLUS the joints a counter asks for when its advance is gated by a flag whose own
@@ -7638,6 +7641,64 @@ class IrSccReach(SccReach):
                 out[C] = win
         self._cwin_memo = out
         return out
+
+    def _apply_prev_import(self):
+        """⭐ A `prev == p` GUARD IMPORTS THE EDGES FROM p (2026-09-05, docs GK1 §1.56/§1.57).
+
+        Standing at `a` with `prev == p` means the player TOOK some edge `p -> a`, so the
+        disjunction of those edges' requirements held at that crossing. ⛔ Only what PERSISTS
+        may be imported -- a flag can be cleared between the crossing and now -- and the one
+        thing that always does is a COUNTER'S LOWER BOUND: `C == 7` at the crossing means
+        `C >= 7` now, because a counter may not be wound backwards (the `_counters` rule).
+
+        GK1 is the specimen, and the reason this exists. rm550's `(++ day)` is armed by the
+        ROOM'S OWN init (`rm550.sc:47` does `setScript: doTheDream` unconditionally), so
+        ENTERING the room is the day advance and its only guard is the entrance: `500 -> 550`
+        demands `prev == 540`, and the only edge from rm540 into rm500 demands day 7. Without
+        the import the dream room reads attainable from day 2 and its increment is a free
+        day-ender -- which is what defeated §1.34 three times.
+
+        PERMISSIVE wherever the record is thin: an UNRECORDED way in from p, or a recorded one
+        with no guard, constrains nothing, and the import is skipped for that edge entirely.
+
+        ⛔ SECOND SITE, deliberately not written yet: `_closure_tables`' edge list is built from
+        `em.*` rather than from `_emeta`, so `_pclose` does not see this bound
+        ([[same-rule-two-places]]). Measured 2026-09-05 as not needed for the case at hand --
+        `_pclose` tracks prevRoom and already refuses the bootstrap it would fix (§1.57 leak 3,
+        retracted) -- but it IS a second reading of one rule and should land with the first
+        consumer that needs it.
+        """
+        prev = self._prev_reg_id()
+        counters = sorted(getattr(self, "_counters", ()))
+        if prev is None or not counters:
+            return
+        for (a, _b), metas in list(self._emeta.items()):
+            for idx, (req, sets, alts) in enumerate(list(metas)):
+                P = set(req.get(prev, ()))
+                if not P:
+                    continue
+                cands = []
+                for p in P:
+                    got = self._emeta.get((p, a)) if a in self.edges.get(p, ()) else None
+                    if not got:
+                        cands = None       # unrecorded, or recorded and free: says nothing
+                        break
+                    cands.extend(rq for (rq, _s, _al) in got)
+                if not cands:
+                    continue
+                req2 = None
+                for C in counters:
+                    if not all(rq.get(C) for rq in cands):
+                        continue           # some way in constrains nothing about this counter
+                    lo = min(min(rq[C]) for rq in cands)
+                    dom = set(self.em.reg_vals.get(C, ())) | {0}
+                    cur = set(req.get(C, dom))
+                    new = {v for v in cur if v >= lo}
+                    if new != cur and new:
+                        req2 = dict(req2 if req2 is not None else req)
+                        req2[C] = new
+                if req2 is not None:
+                    metas[idx] = (req2, sets, alts)
 
     def _apply_consumer_windows(self):
         """Narrow every branch whose deps pin a windowed value to the counter values the
