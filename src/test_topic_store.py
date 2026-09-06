@@ -12,9 +12,15 @@ The read-back writer is rewritten EXACTLY where its value is used: as the test o
 a bare statement it is the set. Census: 233 + 77 of the 312 `proc50_6` sites; the 2 nested in
 an `or` lower as plain sets (the write matters, the read stays opaque there).
 
-DECLARED RED, a bless-gated gap: the PRIMARY store's set proc returns the bit too and the games
-use it as a test (KQ6 24 sites, LB2 8, GK1 3) -- the same rewrite would capture those hidden
-writes, and moving KQ6/LB2 is the USER's call. Runs on the cached GK1 model + two fresh IRs."""
+✅ PROMOTED 2026-09-05: the PRIMARY store's set proc returns the bit too and the games use it as
+a test -- KQ6 **22** sites (the note said 24; measured, it is 22), LB2 8, GK1 3 -- so the same
+rewrite is ON for it now. The USER set the criterion before the measurement: fine if it only
+makes a flag visible, a BUG if it changes a finding. Full gate on the box says it changes
+NOTHING -- KQ6's golden shows byte-for-byte its two already-declared lines and no others, its
+oracle is 19/0, LB2's oracle shows exactly its six declared pins, LB2's watched surface is
+unmoved, and every emitted tree is unchanged. The capture is real (KQ6 flag 90: empty domain ->
+`[0, 1]`); these are score-once latches gating POINTS and NARRATION, so nothing's reachability
+turns on them. Runs on the cached GK1 model + two fresh IRs."""
 import sys
 
 import config

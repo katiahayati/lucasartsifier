@@ -86,12 +86,6 @@ KNOWN_RED = {
     # the write inside them is invisible. The exact read-back rewrite exists and runs on the
     # EXTRA stores (GK1's topic-said array); switching it on for the primary store captures
     # those hidden writes and moves the play-validated KQ6/LB2 surfaces -- the USER's bless.
-    "test_topic_store.py": {
-        "KQ6's primary-store set/clear calls in test position are read as test-and-set "
-        "(the exact rewrite is ON for the primary store)":
-            "the read-back rewrite is gated to the extra stores; enabling it for the primary "
-            "store is a genuine capture that moves KQ6 (22 sites) and LB2 (8) -- bless-gated",
-    },
     "test_gk1_ground_truth.py": {
         "no UNEXPECTED unit flagged (suspicion)":
             "SIX FALSE-POSITIVE UNITS, in three families (2026-09-04). (A) THE DAY-7 FAMILY, FOUR "

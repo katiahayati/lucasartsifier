@@ -1244,10 +1244,16 @@ def _classify_flag_store(ir, acc, base, readback=True):
     # gap, not a rule: every game's primary set proc returns the bit it read, and the games USE
     # that -- census 2026-09-03 of set/clear calls in TEST position: KQ6 22 (`(if (not (proc913_1
     # 5)) ...)`, "first time only"), LB2 8, GK1 3, KQ5 0. Under the plain reading those tests are
-    # opaque and their WRITE is invisible (a test is never walked). The exact rewrite exists and
-    # runs on the extra stores; switching it on for the primary store changes the KQ6 and LB2
-    # models by genuine captures, which moves play-validated surfaces -- a bless, so it waits
-    # (`test_topic_store.py` keeps the red for it; docs GK1 §1.42).
+    # opaque and their WRITE is invisible (a test is never walked).
+    #
+    # ✅ ON FOR THE PRIMARY STORE TOO, 2026-09-05, after the USER set the criterion: fine if it
+    # only makes a flag visible, a BUG if it changes a finding. MEASURED, full gate on the box:
+    # it changes NOTHING. KQ6's frozen golden shows byte-for-byte its two already-declared
+    # lines and no others, its oracle is 19/0, LB2's oracle shows exactly its six declared pins,
+    # LB2's watched surface is unmoved, and every emitted tree is unchanged. The capture IS real
+    # -- KQ6's flag 90 goes from an EMPTY domain to `[0, 1]`, flag 70 gains four writes -- but
+    # these are score-once / first-time-only latches gating POINTS and NARRATION, so nothing's
+    # reachability turns on them. A store we could not see, now seen, and no row moves.
     tests = {n for n, op in procs.items() if op == "test"}
     for name, op in list(procs.items()):
         if not readback or op not in ("set", "clear") or name not in acc:
@@ -1279,7 +1285,7 @@ def derive_flags(ir):
         return None
     from collections import Counter
     base = Counter(v[0][0] for v in acc.values()).most_common(1)[0][0]
-    procs = _classify_flag_store(ir, acc, base, readback=False)
+    procs = _classify_flag_store(ir, acc, base, readback=True)
     # ⭐ EVERY STORE, NOT THE MOST COMMON ONE (2026-09-03, GK1 docs §1.42). A game can keep TWO
     # bit-arrays in this idiom, and GK1 does: base 127 is its flags (proc13_0/1/2 and the script-50
     # wrappers, 1,845 literal sites) and base 182 is the TOPIC-SAID array of the conversation
