@@ -2718,6 +2718,68 @@ attempt is kept whole in `tools/probes/gk1_fan/fixpoint_attempt_missability.py` 
 `sim_fixpoint.py` beside it, so the next round starts by reproducing the drop rather than
 rebuilding the fixpoint.
 
+## §1.63 The R5 "regression" is not one: the fixpoint and §1.34 are ONE round (2026-09-05)
+
+§1.62 stopped with the windows/prune fixpoint making `producible_seal` True but dropping R5, the
+croc mask's `rm490 -> rm480` row. Diagnosed to the bottom, and the answer reverses the verdict.
+
+### The drop, traced conjunct by conjunct
+`_stranding_drops[(490, 480)]` is EMPTY and the row is absent from the RAW, pre-filter rows — so
+none of the three refutations (FORCED / UNHOLDABLE / RETIRED) touched it and the shared core in
+`scc_core.edge_strandings` never produced it. Of that core's conjuncts, exactly one flips:
+
+    edge_kind goto ✓   reachable ✓   not freely reversible ✓   comp_of ✓
+    mask obtainable before 490, lost after 480 ✓      need rooms {490} ∩ fwd = {490} ✓
+    ⛔ rooms_after(480): goal reachable = FALSE      -> "death sink", the edge is SKIPPED
+
+`rooms_after(480)` loses **16 rooms** — 216, 371, 500, 510, 520, 530, 540, 550, 670, **680**,
+700, 710, 720, 750, 800, 899: Germany, Africa, the finale and the goal itself.
+
+⭐ **And it is ONE projection that does it.** `rooms_after` walks every projection from the
+crossing's states and INTERSECTS. The day projection is fine (51 rooms against the control's 52,
+identical day values `[6..10]` from `(480, 6)`). The one that loses the goal is the JOINT
+`(123, 257)` — day × day-end flag — which from rm480 has exactly ONE start state, `(day 6,
+flag 15 clear)`, and cannot advance from it: rm370's `(6, 7)` step demands `257 == 1`, and
+without §1.34 nothing models day 6's ending at all, because day 6 ends AT THE BAYOU RITUAL
+(§0) whose `(++ day)` is exactly what §1.34 supplies.
+
+### ⭐ So the fixpoint removed a PHANTOM, and R5 was standing on it
+Before the fixpoint the joint carried a `(480, day 6, flag 15 SET)` state it has no business
+having — the day-end flag raised in the bayou, which no arm of `endDay` does. That phantom let
+the day advance out of rm480, made the goal reachable from it, and kept the crossing out of the
+death-sink exclusion. Narrowing it away is CORRECT; the row's disappearance is the detector
+faithfully reporting a model in which the bayou cannot reach the ending — which, without §1.34,
+it genuinely cannot.
+
+### The prediction, and the measurement that confirms it
+If that reading is right, then adding §1.34 — which gives the bayou its own day advance — must
+bring R5 back. **Measured on the §1.34 worktree with the whole round in:**
+
+    R1 PASS   R2 PASS   R3 PASS   R4 PASS   R5 PASS   no confirmed softlock DROPPED: PASS
+    11 passed / 2 failed  -- the same two declared reds as today
+
+⭐⭐ **The windows/prune fixpoint and §1.34 are ONE round and must land together.** Measured
+apart, each looks like a regression the other repairs: the fixpoint alone drops R5, and §1.34
+alone (measured five times since 2026-09-02) kills R4. Together the oracle is exactly what it is
+today, plus `producible_seal` returns True for the day-4 crossing — the thing the day-7 family
+has been waiting on.
+
+### ⛔ WHAT LANDING THEM COSTS, and why it is the USER's call
+Under §1.34 + the fixpoint GK1's two declared reds keep failing, but their CONTENT moves:
+
+    FLAGGED: ['VoodooCode1', 'braceMold', 'knife', 'reconVeve', 'sLakePatter', 'talisman']
+    (today:  the day-7 family + knife + two model gaps + talisman)
+
+`sLakePatter` returns after being retired 2026-08-31, `crocMask` and `oil` leave the flagged
+list, and the NEW list gains a disjunctive group. That is a COVERAGE CHANGE to a
+USER-enumerated oracle, so it is reported and not decided
+([[report-coverage-changes-loudly]], [[dont-flip-enumerated-ground-truth]]). And §1.34 touches
+`_glob_domains` for every game — static blast radius LSL2 9 sites, KQ4 9, KQ6 1, KQ5 8, LB2 10 —
+so the corpus gate is owed before anything is believed.
+
+**Nothing from this section is in `src/`.** The fixpoint lives in
+`tools/probes/gk1_fan/fixpoint_attempt_missability.py`, §1.34 in `apply_134.py` beside it.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
