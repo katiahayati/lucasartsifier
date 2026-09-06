@@ -88,29 +88,31 @@ KNOWN_RED = {
     # those hidden writes and moves the play-validated KQ6/LB2 surfaces -- the USER's bless.
     "test_gk1_ground_truth.py": {
         "no UNEXPECTED unit flagged (suspicion)":
-            "FOUR FALSE-POSITIVE UNITS (2026-09-05, down from six with docs GK1 1.65 + 1.66): "
-            "(A) VoodooCode1 on a REGISTER row, not an edge -- `register_strandings` at "
-            "reg492(=flag 250)=1 'still needed at 240/260/300'; the era-forced filter is an "
-            "EDGE-row rule and the register arm has no equivalent yet, which is the next cure. "
-            "(B) knife -- the USER's 2026-08-27 ruling (an on-screen death, not a consumption), "
-            "plus its two flip-precondition register rows (`reg12=720` from the travel-movie fan "
-            "and the sHRoom8-state-0 row from the hounfour scene fan): day 7 cannot end without "
-            "the knife (rm540.sc:299-307) and no `put: 64` exists. (C) the GROUP "
+            "⭐ THREE FALSE-POSITIVE UNITS, AND NOT ONE IS A MODELLING GAP (2026-09-06). Every "
+            "remaining flag is the USER's decision or a deliberate non-cure, so this red now "
+            "records a POLICY boundary rather than a missing rule. (A) knife -- the USER's "
+            "2026-08-27 ruling (an on-screen death, not a consumption), plus its two "
+            "flip-precondition register rows: day 7 cannot end without the knife "
+            "(rm540.sc:299-307) and no `put: 64` exists. (B) the GROUP "
             "[veveCopy|policeVeve|sLakePatter] -- GROUPS pass every refutation filter untouched, "
             "by MEASURED design (the FORCED filter's one corpus effect on a group deletes LSL2's "
-            "play-validated raft guard, 2026-08-02), so the era filter cannot reach this row and "
-            "sLakePatter rides along; its own need is empty and the group's is policeVeve's at "
-            "rm230. (D) talisman -- proved FP from the scripts and DELIBERATELY uncured (docs "
-            "1.54): both Africa exits grant it before `newRoom: 216`, and the cure would relax "
-            "`_unrefusable_grants`, whose strictness is measured and whose failure direction is "
-            "LOST FINDINGS. ⭐ RETIRED 2026-09-05 by the era-forced rule (1.65) with 1.34 + the "
-            "windows/prune fixpoint (1.62): reconVeve, braceMold, oil, and with them wolfPhone, "
+            "play-validated raft guard, 2026-08-02), so no filter can reach this row and "
+            "sLakePatter rides along; its own need is empty. (C) talisman -- proved FP from the "
+            "scripts and DELIBERATELY uncured (docs 1.54): both Africa exits grant it before "
+            "`newRoom: 216`, and the cure would relax `_unrefusable_grants`, whose strictness is "
+            "measured and whose failure direction is LOST FINDINGS. "
+            "⭐ RETIRED 2026-09-06 by docs 1.67 (`prev == p` costs entering p): VoodooCode1's "
+            "register row -- flag 250 is set only under `prev == 302` and rm302's only entrance "
+            "demands both tomb sketches, so the flip can only be made by a player already "
+            "holding the item it was said to strand. "
+            "⭐ RETIRED 2026-09-05 by 1.65 + 1.66 (the era-forced edge rule with the day fan and "
+            "the windows/prune fixpoint): reconVeve, braceMold, oil, and with them wolfPhone, "
             "tatooTrace, braceRep and policeVeve's singleton -- every one an edge row whose era "
             "forces the item (day 3's endDay demands `has: 38` and flag 256; day 4's demands "
             "flag 248 and `has: 26`/`has: 41`). All in CONFIRMED_SAFE; cure the detectors, "
             "never the list",
         "a safe item is not flagged":
-            "the same four false-positive units as the row above (the two checks are one defect "
+            "the same three false-positive units as the row above (the two checks are one defect "
             "seen from the oracle's two sides)",
     },
     "test_lb2_ground_truth.py": {
