@@ -2782,6 +2782,10 @@ so the corpus gate is owed before anything is believed.
 
 ## §1.64 §1.34 MEASURED END TO END — and it does not pay for itself (2026-09-05)
 
+⛔ **ITS VERDICT IS OVERTURNED BY §1.65** (same day): the measurement below
+was taken BEFORE the era-forced filter existed. With that filter in, §1.34 + the fixpoint gives
+the best FP surface GK1 has had (4 flagged / 4 new against today's 6 / 6). The park is LIFTED.
+
 With §1.63's finding that §1.34 and the fixpoint are one round, the round was measured whole
 against today's HEAD. **It catches nothing extra and it enlarges the false-positive surface, so
 it is PARKED.** Both oracles read 11 passed / 2 failed; the difference is entirely in the FPs:
@@ -2826,6 +2830,66 @@ reconVeve and braceMold, and the site that "still needs" it is the site that CON
 Nothing demands the flag it raises — `(proc13_0 258)` occurs four times, all inside `napoleon.sc`
 choosing Sam's dialogue variant, and no `endDay` arm asks for it (`theMapPrint.sc:231-278` covers
 days 2-5). Added to `CONFIRMED_SAFE`; the FP count is 6 units, not 5.
+
+## §1.65 An edge cannot strand what its ERA forces — and §1.64's park verdict is overturned
+
+§1.64 parked §1.34 because, measured whole, it enlarged the FP surface. That measurement was
+right and its conclusion was premature: it was taken **before** this section's filter existed.
+With the filter in, the same combination is the best result GK1 has had.
+
+### The rule
+§1.48's second opinion, asked of an EDGE row. The FLAT version is useless and was measured so on
+2026-09-04: `_pclose` with the item banned reaches everything, because it has no day structure —
+"the honest instrument is day-staged, and the row does not carry a day". Re-measured 2026-09-05,
+and every one of GK1's fifteen (edge, item) pairs comes back `True` for "the item-less player
+reaches the crossing", refuting nothing.
+
+⭐ **The row does carry a day — not on the edge, on its DESTINATION.** `_pstates[C]` says the
+least counter value `b` can be entered at, and that IS the era the crossing happens in. With `w`
+in hand the question is exactly `_closure_flip_dead(C, w, item)`, which already existed for
+counter flips: the staged closure takes the step into `w` with everything and dies with the item
+banned ⟹ nobody lacking it is ever in that era ⟹ nobody crosses this edge without it.
+
+`rm372 -> rm490`, into the bayou maze at era **day 6**, refutes three standing FPs at once:
+
+    reconVeve     day 3's endDay arm demands `has: 38`        (theMapPrint.sc:245-256)
+    braceMold     ...and flag 256, raised only by showing it  (napoleon.sc:858)
+    VoodooCode1   day 4's demands flag 248 -- Magentia's show (§1.37)
+
+The row is refuted whole and disappears. ⛔ **And R5 survives**, which is the check that matters:
+the croc mask is NOT era-forced — a day-6 player *can* lack it, which is exactly why the maskless
+arrival at the ritual is a real dead end.
+
+⛔ Permissive wherever the record is thin, and one fence is load-bearing: `_closure_flip_dead`
+answers False when NOBODY crosses into `w` at all ("not the item's doing"). That is what stops
+this being a blanket suppressor on a game whose late days are unmodelled — and it is why the
+era-7 crossings (`rm372 -> rm750`, `rm455 -> rm800`) keep their rows here.
+
+**Gate on the box: 1005 passed / 13 known-red / 0 unexpected / 0 crashed**, failing set exactly
+the declared one. `test_era_forced.py` pins it, including that KQ4 *does* keep a counter
+(global116) so the rule is live there and refutes nothing.
+
+### ⭐⭐ AND IT OVERTURNS §1.64: with the filter, §1.34 pays for itself
+The era-7 rows are exactly the ones §1.34 unblocks, because it makes day 7 reachable and
+`_closure_flip_dead(123, 7, ·)` stops answering "nobody crosses". Measured, all three together
+(§1.34 + the windows/prune fixpoint + this filter):
+
+| | HEAD today | §1.34 + fixpoint (§1.64) | **all three** |
+|---|---|---|---|
+| R1..R5 | all handled | all handled | **all handled** |
+| FLAGGED | 6 | 6 | **4** |
+| NEW | 6 | 11 | **4** |
+
+The four that remain each have a known cause: `VoodooCode1` on a register row rather than an
+edge, `knife` (the USER's 2026-08-27 ruling), `sLakePatter` inside a GROUP (groups pass every
+one of these filters untouched, by measured design), and `talisman` (§1.54, proved FP from the
+scripts and deliberately uncured).
+
+⭐ **So §1.34 + the fixpoint is the next landing after all**, and §1.64's park is lifted. What it
+still needs is its own corpus gate — it touches `_glob_domains` for every game (LSL2 9 sites,
+KQ4 9, KQ6 1, KQ5 8, LB2 10) — and a re-declaration of GK1's two reds against the shorter FP
+list. Nothing about it is guesswork now; the pieces are
+`tools/probes/gk1_fan/apply_134.py` and `fixpoint_attempt_missability.py`.
 
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 

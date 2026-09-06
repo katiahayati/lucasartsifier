@@ -5245,6 +5245,47 @@ class IrSccReach(SccReach):
         return ("need %s unreachable past the crossing's own register commit "
                 "(projections %s)" % (sorted(need), evidence))
 
+    def _era_forced(self, b, item):
+        """⭐ AN EDGE CANNOT STRAND AN ITEM EVERY CROSSER OF ITS ERA MUST HOLD (2026-09-05, docs
+        GK1 §1.65) -- a why-string, or None to keep the row.
+
+        §1.48's second opinion, asked of an EDGE. The flat version of that question is useless
+        here and was measured so: `_pclose` with the item banned reaches everything, because it
+        has no day structure (the 2026-09-04 probe, "the honest instrument is day-staged, and
+        the row does not carry a day"). ⭐ THE ROW DOES CARRY ONE -- not on the edge, but on its
+        DESTINATION: `_pstates[C]` says the least counter value `b` can be entered at, and that
+        IS the era the crossing happens in. With `w` in hand the question is exactly
+        `_closure_flip_dead(C, w, item)`: the staged closure takes the step into `w` with
+        everything and dies with the item banned, so nobody without it is ever in that era, so
+        nobody crosses this edge without it and the crossing cannot strand it.
+
+        GK1's `rm372 -> rm490` -- into the bayou maze, era day 6 -- is the specimen, and it
+        refutes three of the six standing false positives at once: `reconVeve` and `braceMold`
+        (day 3's `endDay` arm demands `has: 38` and flag 256, `theMapPrint.sc:245-256`) and
+        `VoodooCode1` (day 4's demands flag 248, raised only by showing Magentia the tomb
+        sketch, §1.37). Every day-6 player holds all three.
+
+        ⛔ Permissive wherever the record is thin: `_closure_flip_dead` already answers False
+        when NOBODY crosses into `w` at all ("not the item's doing"), when the closure cannot
+        run, and for any destination with no attainable counter value. Counters only -- the
+        staged closure is a counter's instrument."""
+        for C in sorted(getattr(self, "_counters", ())):
+            if C not in getattr(self, "_pstates", {}):
+                continue
+            vals = {v for (q, v) in self._pstates[C] if q == b}
+            if not vals:
+                continue
+            w = min(vals)
+            if w <= 0:
+                continue
+            try:
+                if self._closure_flip_dead(C, w, item):
+                    return ("no player lacking it reaches the crossing's era "
+                            "(register %s == %s), so every crosser holds it" % (C, w))
+            except Exception:                              # noqa: BLE001 -- a closure that
+                pass                                       #   cannot run refutes nothing
+        return None
+
     def edge_strandings(self):
         """The shared core, minus the rows three existing rules already refute.
 
@@ -5292,6 +5333,12 @@ class IrSccReach(SccReach):
             for it in set(e["items"]) - set(why):
                 w = self.crossing_retires_need(a, b, it,
                                                self._unit_need_rooms(frozenset({it})))
+                if w:
+                    why[it] = w
+            # ERA-FORCED -- no player lacking the item is ever in the era this crossing happens
+            # in, so nobody crosses without it (docs GK1 §1.65). Items only, like the two above.
+            for it in set(e["items"]) - set(why):
+                w = self._era_forced(b, it)
                 if w:
                     why[it] = w
             if why:
