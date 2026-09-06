@@ -4889,6 +4889,45 @@ class IrSccReach(SccReach):
 
         value_cost = _value_cost
         own = dict(self._inroom_own)
+        # ⭐ `prev == p` COSTS ENTERING p (2026-09-05, docs GK1 §1.67). prevRoom takes the value
+        # p only by LEAVING p, and leaving presupposes having entered -- so a guard naming
+        # `prev == p` is priced at whatever every way into p demands. Without it the register
+        # chain below asks `_value_cost(prev, p, own)`, finds nothing writes prevRoom in
+        # `_inroom_own` (edges set it through `sets`, a different channel), and answers FREE.
+        #
+        # GK1's tomb is the specimen, and this oracle's own `sVoodooCode` note asked for it
+        # verbatim -- "a return edge should carry its origin's entry cost". Flag 250 is set by
+        # `sIncorrectMessage`, armed from rm300's `init` only under `prev == 302` AND flag 247;
+        # the ONLY way into rm302 is `sGoToCode`, whose guard is `¬246 ∧ 249 ∧ has:32 ∧ has:33`.
+        # So the flip can only ever be made by a player already holding both tomb sketches --
+        # and unpriced it read as a point of no return that STRANDS the first sketch.
+        #
+        # ⛔ A SELF-RETURN IS NOT AN ENTRANCE (§1.53), so it may not cheapen the price: rm50's
+        # `newRoom: global12` fan reaches rm302 guarded `prev == 302`, which requires nothing and
+        # would intersect the cost away to free. An item is required to enter p when every
+        # NON-self-return way in requires it; a room with no such way in prices nothing (the
+        # permissive side).
+        _prev = self._prev_reg_id()
+        if _prev is not None:
+            for q, dests in self.edges.items():
+                for pdest in dests:
+                    metas = self._emeta.get((q, pdest))
+                    if metas is None:
+                        need = frozenset()                 # a free edge in: nothing required
+                    else:
+                        need = None
+                        for (rq, _st, alts) in metas:
+                            if set(rq.get(_prev, ())) == {pdest}:
+                                continue                   # a RETURN, not an entrance
+                            per = None                     # required by THIS edge = in every alt
+                            for a in (alts or (frozenset(),)):
+                                per = frozenset(a) if per is None else (per & frozenset(a))
+                            per = per or frozenset()
+                            need = per if need is None else (need & per)
+                        if need is None:
+                            continue                       # every way in is a return: say nothing
+                    key = (_prev, pdest, pdest)
+                    own[key] = (own[key] | need) if key in own else frozenset(need)
         for _round in range(6):           # chains in practice are 2-3 links; bound the walk
             changed = False
             for key, deps in guards.items():

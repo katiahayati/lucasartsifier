@@ -2943,6 +2943,54 @@ exactly the declared one. §1.34 touches `_glob_domains` for every game — LSL2
 KQ6 1, KQ5 8, LB2 10 — and **no golden, watched surface or emitted tree moves.** GK1's model
 build goes ~115 s → ~290 s; the gate itself is unchanged at ~8 minutes.
 
+## §1.67 `prev == p` costs entering p — and GK1 has no modelling gap left (2026-09-06)
+
+The last GK1 false positive that was a GAP rather than a decision, closed — and this oracle's own
+`sVoodooCode` note had asked for the rule verbatim two weeks earlier: *"a return edge should
+carry its origin's entry cost."*
+
+### The row, and why it was wrong
+`register_strandings` reported `reg492(= flag 250) = 1 @rm300` as a point of no return stranding
+`VoodooCode1`, "still needed at 240/260/300". Read in the scripts:
+
+    rm300.sc:152-165   `sIncorrectMessage` is armed from rm300's OWN `init`, only under
+                       `prev == 302` AND flag 247 (an incorrect message was entered)
+    rm300.sc:1101      the only way into rm302 is `sGoToCode`, guarded
+                       `¬246 ∧ 249 ∧ has:32 ∧ has:33`
+
+⭐ **So flag 250 can only ever be set by a player already holding BOTH tomb sketches.** The flip
+the detector called a stranding of the first sketch is one only its owner can cause.
+
+### The rule
+prevRoom takes the value p only by LEAVING p, and leaving presupposes having entered — so a guard
+naming `prev == p` is priced at whatever every way into p demands. Unpriced, the register chain
+asks `_value_cost(prev, p, own)`, finds nothing writes prevRoom in `_inroom_own` (edges set it
+through `sets`, a different channel), and answers **free**. Seeded before the chain fixpoint, the
+cost flows: `_inroom_own[(12, 302, 302)] = {32, 33}` → `_wbranch[(492, 300, 1)]` inherits both →
+`_flip_live` refuses the flip for a sketch-less player → the row is gone.
+
+⛔ **A SELF-RETURN IS NOT AN ENTRANCE** (§1.53) and may not cheapen the price: rm50's
+`newRoom: global12` fan reaches rm302 guarded `prev == 302`, requires nothing, and would
+intersect the cost away to free. An item is required to enter p when every NON-return way in
+requires it; a room whose every way in is a return, or which has a free way in, prices nothing —
+the permissive side, and both halves are pinned.
+
+**Corpus gate: 1012 passed / 13 known-red / 0 unexpected / 0 crashed**, failing set exactly the
+declared one — for a rule that touches every `prev == p` guard in every game.
+
+### ⭐⭐ WHERE GK1 STANDS NOW
+`R1 R2 R3 R4 R5` all handled. The false-positive surface has gone **6 → 4 → 3** in two days, and
+**not one of the three remaining is a modelling gap**:
+
+| unit | why it stays |
+|---|---|
+| `knife` | the USER's 2026-08-27 ruling — an on-screen death, not a consumption |
+| `[veveCopy\|policeVeve\|sLakePatter]` | a GROUP; groups pass every refutation filter untouched by MEASURED design (relaxing it deletes LSL2's play-validated raft guard) |
+| `talisman` | §1.54 — proved FP from the scripts, deliberately uncured because the cure relaxes a rule whose failure direction is LOST FINDINGS |
+
+GK1's two declared reds now record a **policy boundary, not a missing rule**. Every further
+retirement is a decision someone has to take, not an analysis someone has to build.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED
