@@ -12,7 +12,13 @@ board the cruise ship, and you die days later on a raft with no way back. This f
 automatically and blocks the crossing that causes them — at the last moment you can still comply.
 
 **Four games analyzed and play-tested** — Leisure Suit Larry 2 (SCI0, 1988), King's Quest IV (SCI0, 1988), King's Quest VI (SCI1.1, 1992),
-and Laura Bow 2 (SCI1.1, 1992) — same engine, no game-specific analysis code.
+and Laura Bow 2 (SCI1.1, 1992) — same engine, no game-specific analysis code. King's Quest V
+(SCI1) and Gabriel Knight 1 (SCI2/SCI32) followed; GK1's patch is built and loads, but is
+**not** played and does not yet cover every finding (`docs/SCI2-PATCHING.md` §5.2).
+
+> ### 👋 New here? **Read [`docs/ONBOARDING.md`](docs/ONBOARDING.md) first.**
+> It has the three stages that fail independently, the rules that are not obvious from the code,
+> the commands, the state of each game, and the open edges worth picking up.
 
 ## Demo
 

@@ -216,6 +216,66 @@ Every refusal string is present in its compiled `.HEP`; `800.HEP` has none, and 
 
 ---
 
+## 5.2 ⛔⛔ COVERAGE: the patch does NOT guard everything the tool found
+
+**"GK1 has a patch" is a TOOLCHAIN claim. It is not a coverage claim, and the two were run
+together once already in this document's own summary.** Measured 2026-09-06 by dumping every
+spec `guards.guard_specs` derives and every edit `patcher.apply_guards` returns, applied and
+skipped alike — `build_patch.py` prints only the ones that LANDED (`if not e["applied"]:
+continue`), so a skipped spec leaves no trace in a build log. That measurement is now a tool:
+
+```sh
+python3 tools/measure_coverage.py gk1 --items
+```
+
+### The findings
+GK1's oracle enumerates five candidate dead ends. **R1 was RETIRED** as the oracle's own false
+positive (§1.37 — day 4 cannot end without the tomb sketch). **R2, R3, R4 and R5 are real, and
+DETECTION catches all four.**
+
+### What the patch actually guards
+
+| finding | the spec, verbatim | shipped? |
+|---|---|---|
+| **R5** croc mask | `rm490 -> rm480  (gEgo has: 21)` | ✅ applied |
+| **R2** rod + a signal device | `rm455 -> rm800  (and (has: 60) (has: 69) (or (has: 15) (has: 16) (has: 31)))` | ⚠️ **partial** — the **rod** (60) is demanded, but paired with the **talisman** (69), which this record calls an FP (§1.54). `signalDev` (19) and `signalDev2` (20) appear in **no spec at all**, so R2's other half is unguarded |
+| **R3** BoarGuise / WolfGuise | — | ❌ **no spec exists.** Items 78 and 79 appear nowhere in any of the eleven |
+| **R4** flag 44 | — | ❌ **no spec exists.** It is a FLAG stranding and no spec KIND produces a guard for one |
+
+### And what the four shipped guards are conditioned on
+`rm490->rm480` croc mask · `rm455->rm800` rod + talisman + veve group · `rm800->rm899`
+**knife** · `rm720->rm50` **knife**.
+
+⛔ **Two of the four are `(gEgo has: 64)` — the knife, a row the USER ruled a false positive**,
+and a third demands the talisman, also an FP. §5.0 retired the knife's *action* guard; these are
+its *edge* rows, and they are still shipping. Since no `put: 64` exists in GK1 the condition is
+true for anyone who ever picked the knife up, so they should be inert in play — **but "should be
+inert" is not "was measured inert", and nothing has been played.**
+
+### The eleven specs, and where the other seven went
+`4 applied, 5 skipped, 2 produced no edit at all`:
+
+* **skipped (5)** — `rm372 -> {270, 330, 490, 750}`, all four *"no controllable trigger
+  (not-found) and no room-property exit"*, each demanding the veve group; and
+  `rm750 -> rm700` *"sole-exit"*.
+* **no edit (2)** — two `register-write` specs, both `(gEgo has: 64)`, on registers 12 and 1116.
+
+### ⭐ The two shapes that have no guard at all, and why
+Both R3 and R4 are found by detectors whose findings the placement layer cannot express:
+* **R3 is an INTRA-ROOM carry-in.** The hounfour's twelve scenes are `Script`s inside ONE room
+  (800) and Grace's room is one of them, so the boundary the guises are demanded at is not a
+  room edge. Every spec kind here is an edge, a register write, an action or a market case.
+* **R4 is a FLAG stranding** (flag 44, written only by a Teller topic arm). Nothing turns "this
+  flag is needed later and can no longer be raised" into a site to guard.
+
+**A new spec kind is the work**, not another detector round. See `docs/ONBOARDING.md` §6.
+
+⚠️ One more, from the oracle itself: R5's `(has: 21)` is **necessary but not sufficient** — a
+player carrying the croc mask *unused* dies at the ritual clearing just the same. The exact
+guard is flag 216.
+
+---
+
 ## 6. ⭐⭐ Does the INTERPRETER take them? Two answers, both with controls
 
 A compiler's exit code is not a loadable resource. The script and the heap are two files that
@@ -266,6 +326,10 @@ patched scripts are late-game rooms and are not loaded at boot, which is exactly
 
 ## 7. What is NOT done
 
+* ⛔⛔ **COVERAGE — see §5.2.** Of four confirmed softlocks the patch guards ONE cleanly (R5),
+  HALF of another (R2's rod), and NEITHER R3 nor R4. Five specs were skipped for want of a
+  controllable trigger, and two of the four shipped guards are conditioned on an item the record
+  calls a false positive.
 * ⛔ **PLAY.** Nothing here is a play-test. Every guard's *condition* is still only as good as the
   detection behind it, and no guard has been seen to fire, or seen not to fire when it shouldn't.
   ([[play-beats-my-reading]].)
