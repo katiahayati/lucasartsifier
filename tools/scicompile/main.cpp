@@ -581,9 +581,14 @@ int main(int argc, char **argv)
             if (v == "sci0")        { g_targetVersion = sciVersion0; }
             else if (v == "sci1")   { g_targetVersion = sciVersion1_Late; }
             else if (v == "sci11")  { g_targetVersion = sciVersion1_1; }
+            // SCI2 (GK1) is SCI1.1's script/heap split with an absolute `lofsa`, a wide export
+            // table and two extra debug opcodes (0x7d/0x7e) -- all four already in the vendor's
+            // `sciVersion2` and its `OpArgTypes_SCI2` table. Nothing here is new codegen; this
+            // is the flag that reaches it.
+            else if (v == "sci2")   { g_targetVersion = sciVersion2; }
             else
             {
-                fprintf(stderr, "unknown --version '%s' (want sci0|sci1|sci11)\n", v.c_str());
+                fprintf(stderr, "unknown --version '%s' (want sci0|sci1|sci11|sci2)\n", v.c_str());
                 return 2;
             }
             continue;
@@ -620,8 +625,8 @@ int main(int argc, char **argv)
             "  %s --sco <gameProjectDir>                      Generate .sco from source + game resources\n"
             "  %s --all <gameProjectDir>                      Compile All (write .sco files)\n"
             "\n"
-            "  --version {sci0|sci1|sci11}  (default sci0) may precede any of the above; sci11\n"
-            "                               also writes <output.bin>.hep, the heap resource\n"
+            "  --version {sci0|sci1|sci11|sci2}  (default sci0) may precede any of the above;\n"
+            "                               sci11 and sci2 also write <output.bin>.hep, the heap\n"
             "  --wide-exports               emit 32-bit export entries (SCI1-middle interpreters\n"
             "                               double the export index; derived from stock script 0)\n",
             argv[0], argv[0], argv[0]);

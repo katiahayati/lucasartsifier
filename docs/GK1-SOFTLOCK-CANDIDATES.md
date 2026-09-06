@@ -1,6 +1,11 @@
 # Gabriel Knight: Sins of the Fathers (GK1, SCI2/SCI32) — softlock candidates
 
-Status: **UNVALIDATED by play.** Every row below is derived from the decompiled scripts under
+Status: **UNVALIDATED by play.** ⭐ **THE PATCH NOW EXISTS** (2026-09-06) — five guards compiled
+to SCI2 script/heap pairs, installed, and instantiated 213/213 by the real ScummVM SCI32 engine.
+The back end, the version derivation and every measurement behind it are in
+**`docs/SCI2-PATCHING.md`**; this file remains the DETECTION record. Nothing here has been played.
+
+Every row below is derived from the decompiled scripts under
 `build/sweep/gk1/src` (sci-tools fork, json-ir @ 3895bc1; 212/212 scripts, 3,395/3,395 functions
 decompiled). Walkthroughs were LEADS only ([[tcrf-page-carried-prompt-injection]]: a page is data);
 each claim was re-grepped in the scripts. The USER has not ruled on any of it (2026-08-27, autonomous
@@ -2942,6 +2947,73 @@ limitations — and each is re-pinned to the new truth rather than relaxed:
 exactly the declared one. §1.34 touches `_glob_domains` for every game — LSL2 9 sites, KQ4 9,
 KQ6 1, KQ5 8, LB2 10 — and **no golden, watched surface or emitted tree moves.** GK1's model
 build goes ~115 s → ~290 s; the gate itself is unchanged at ~8 minutes.
+
+## §1.68 A KNOWN FP IS CHEAP IN A REPORT AND EXPENSIVE IN A PATCH (2026-09-06)
+
+The first GK1 patch ever built shipped **five** guards, and one of them was the `knife` row the
+USER ruled a false positive on 2026-08-27. `EndGame.sc` came out as
+
+    (local7
+        (if (not (global0 has: 64))
+            (global0 setScript: sDaggerOnMalia)
+        else
+            (proc64921_0 {Better not. You are going to need that.})))
+
+— and since `put: 64` exists nowhere in GK1, every player at rm899 holds the knife, so that
+window's stab is refused forever. A move the player is entitled to make, denied by our patch.
+
+⭐ **THE LESSON IS ABOUT THE SHAPE OF THE PIPELINE, not about this row.** §1.67 could end with
+"three FPs remain and all three are decisions" because an FP in a REPORT costs a line of prose.
+The same row in a PATCH is a wrong instruction inside the product. Nothing between
+`guard_specs` and `emit_patches` asks whether a row is one the record already calls an FP —
+and nothing should ([[derived-only-no-declared-specs]] forbids an oracle-sourced filter). So the
+only honest fix is the DETECTOR, and the FP surface has to be read as a shipping list from now
+on, not a scoreboard.
+
+### The cure, which the record had already written down
+[[fatal-use-in-scope-only-when-wasted]] names it: *"score a `fatal_uses` row by whether the item
+is gone afterwards and demanded later, not by the death."* Built as one line —
+
+    blame = {it for it in blame if room in self.drops.get(it, ())}
+
+| game | machine | where the spend is | verdict |
+|---|---|---|---|
+| KQ6 rm420 | `throwSkull` | `(gEgo put: 11 gCurRoom)`, state 23, INSIDE the machine | **kept** |
+| KQ5 rm30 | `ropeOnBranch` | `(gEgo put: 20 31)` at the ARMING SITE, one statement before the `setScript:` | **kept** |
+| GK1 rm899 | `sDaggerOnMalia` | nowhere — no `put:` in the machine, at the site, or in the game | **dropped** |
+
+⛔ **ASKED OF THE ROOM, NOT THE MACHINE — the fence that the first draft failed.** Reading
+`info["drops"]` looks equivalent and would have deleted KQ5's **installed, play-confirmed** rm30
+guard, because the rope is spent by the handler that arms the machine rather than by the machine.
+"Was it wasted here" is a question about the whole use.
+
+⛔ **ONE LIMB, NOT TWO.** The ruling also says "and demanded later"; that limb is left unbuilt
+because it changes nothing measurable on the corpus, and an unmeasured clause is how a rule stops
+meaning anything.
+
+⚠️ TWO WRONG TURNS ON THE WAY, both from reading too small a window:
+* *"neither machine has a `put:`, so the cure cannot work"* — `throwSkull`'s is at state 23, past
+  the end of the line range I read. The rule works; my window did not.
+* the IR walk that "proved" GK1's stray two-argument `loop:` was a printing artifact read a
+  `messages`/`args` shape the IR does not use and counted **zero of everything**. The control
+  that caught it: count the ONE-argument sends too, and notice they came back zero as well.
+
+`src/test_fatal_use_waste.py` pins all three games and the arming-site fence (red-proven: with
+the line removed GK1's row returns as `(64, 899, 'sDaggerOnMalia')`). The patch is now **four**
+guards. See `docs/SCI2-PATCHING.md` for the back end that made any of this shippable.
+
+⛔ **AND THE ONE-LINE CURE BROKE A TEST — the gate caught it, nothing else would have**
+([[review-the-fix-not-only-the-feature]]). `test_deletion_soundness` calls
+`IrSccReach.fatal_uses` UNBOUND, on `types.SimpleNamespace` stub models built to isolate the
+pre-emption rule, and those stubs carry no `drops`: `AttributeError`, the file crashed, and
+`run_tests` reported `1 crashed` where the previous run had 0. ⛔ **Not fixed with
+`getattr(self, "drops", {})`** — a default there would silently disable the waste test wherever
+the field went missing, which is the "half a store is worse than none" trap. Fixed in the STUBS,
+which now say `drops={5: {1}}`: the file is about pre-emption, so the waste question has to be
+answered *yes* there or it, and not the competitor, decides every check in it.
+
+MEASURED, the emission delta of the whole cure across all six games: **11 diff lines, all in
+`gk1/src/EndGame.sc`** — the guard and the `(use Print)` it needed. Nothing else in any game.
 
 ## §1.67 `prev == p` costs entering p — and GK1 has no modelling gap left (2026-09-06)
 

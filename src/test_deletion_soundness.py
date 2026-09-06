@@ -228,9 +228,14 @@ def _trap_model(escape_item, sources):
                     recv=[("G", 2)], restores=(0,))
     esc = _machine("sEscape", 1, [(0, GAnd([_own(escape_item)]))],
                    {0: [([], (), (), (), ("EXIT", 2))]}, recv=[("G", 2)])
+    # `drops` says the room SPENDS item 5, because a fatal use only counts when the use wastes
+    # the item (the USER's 2026-08-27 ruling, built 2026-09-06 -- see test_fatal_use_waste). This
+    # file is about PRE-EMPTION, so the waste question has to be answered yes here or it, and not
+    # the competitor, would be what decides every check below.
     f = types.SimpleNamespace(em=types.SimpleNamespace(machines=[trap, esc],
                                                        dropped_entries=()),
-                              reach_rooms={1}, sources=dict(sources), NOWHERE=set())
+                              reach_rooms={1}, sources=dict(sources), drops={5: {1}},
+                              NOWHERE=set())
     return f
 
 
@@ -241,7 +246,7 @@ def test_preempt_requires_an_armable_competitor():
             "sTrap", 1, [(0, GAnd([_own(5)]))],
             {0: [([], (), (), (), ("ADVANCE",))], 1: [([], (), (), (), ("DEATH", 0))]},
             recv=[("G", 2)], restores=(0,))], dropped_entries=()),
-        reach_rooms={1}, sources={}, NOWHERE=set())
+        reach_rooms={1}, sources={}, drops={5: {1}}, NOWHERE=set())
     check("with no competitor at all, the fatal use is reported",
           [r["item"] for r in M.IrSccReach.fatal_uses(no_escape)] == [5])
 

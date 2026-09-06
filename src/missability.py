@@ -6078,6 +6078,37 @@ class IrSccReach(SccReach):
                 blame = set.intersection(*[
                     set(_own_required(sites[i] if i < len(sites) else g))
                     for i, _K, g in lethal])
+                # ⭐ AND THE USE MUST WASTE THE ITEM. USER ruling 2026-08-27, on this detector's
+                # own specimens: *"the problem with the skull is you waste it for later."*
+                #
+                #   KQ6 rm420 `throwSkull`   -- state 23 is `(gEgo put: 11 gCurRoom)`. The gears
+                #                               eat the skull and rm420 still needs it: a
+                #                               STRANDING wearing a death's clothes.
+                #   KQ5 rm30  `ropeOnBranch` -- `(gEgo put: 20 31)` sits at the ARMING SITE, one
+                #                               statement before the `setScript:`. Same waste,
+                #                               written outside the machine.
+                #   GK1 rm899 `sDaggerOnMalia` -- no `put:` in the machine, at the site, or
+                #                               anywhere in the game (`put: 64` does not exist).
+                #                               Stabbing Malia in the wrong window kills you, you
+                #                               restore, and the knife is still in your pocket.
+                #
+                # Deaths ARE in scope ([[one-rule-death-is-in-scope]]) and this docstring argues
+                # so at length -- but a death you restore from, offered on its own screen, is
+                # `death_traps`' business. What THIS detector exists to find is the item you
+                # cannot get back, and without this line it ships a guard that refuses a move the
+                # player is entitled to make.
+                #
+                # ⛔ ASKED OF THE ROOM, NOT THE MACHINE. The first draft read `info["drops"]` and
+                # would have deleted KQ5's INSTALLED, PLAY-CONFIRMED rm30 guard, because the rope
+                # is spent by the handler that arms the machine rather than by the machine. "Was
+                # it wasted here" is a question about the whole use, so it is the room that
+                # answers it.
+                #
+                # ⛔ ONE LIMB, NOT TWO. The ruling also says "and demanded later"; that is left
+                # out because it changes nothing measurable on the corpus (both surviving items
+                # are demanded later, and the row it would remove is already gone), and an
+                # unmeasured clause is how a rule stops meaning anything.
+                blame = {it for it in blame if room in self.drops.get(it, ())}
                 for it in blame:
                     if (it, room) not in seen:
                         seen.add((it, room))

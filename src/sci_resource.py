@@ -28,11 +28,24 @@ _TYPE_NAME = {SCRIPT: "script", VOCAB: "vocab", VIEW: "view", PIC: "pic", TEXT: 
               SOUND: "sound", FONT: "font", CURSOR: "cursor", PATCH: "patch", MEMORY: "memory"}
 
 
+# Every compression method a Sierra volume header can legally name: 0 none, 1/2 LZW/Huffman
+# (SCI0), 3/4 their SCI01 view/pic variants, 18/19/20 DCL implode (SCI1.1), 32 STACpack/LZS
+# (SCI32). A closed set, and that is what makes it usable as EVIDENCE: a candidate header layout
+# whose method byte lands outside it is not this resource's layout. Taken from ScummVM's
+# `ResourceCompression` enum and SCICompanion's `compression > 20` implausibility test.
+_METHODS = frozenset((0, 1, 2, 3, 4, 18, 19, 20, 32))
+
+_UNSET = object()          # `None` is a real answer from volume_format (= ambiguous), so the
+                           # "not computed yet" sentinel cannot be None
+
+
 class Sci0Game:
     def __init__(self, game_dir):
         self.dir = game_dir
         self.map_path = self._find("resource.map")
         self.volumes = self._volume_files()
+        self.volume_layout = None                 # set by _resolve_volume; see volume_format()
+        self._vformat = _UNSET                    # memoised: volume_format() reopens volumes
         self.entries = self._parse_map()          # (type, number) -> (package, offset)
 
     # -- path helpers (case-insensitive; games ship UPPERCASE names) --------
@@ -131,7 +144,7 @@ class Sci0Game:
 
     # -- resource extraction ------------------------------------------------
     def _read_volume_header(self, vol_path, offset, layout="sci0"):
-        """One resource's header + body. Three layouts, all validated by the caller against the
+        """One resource's header + body. Four layouts, all validated by the caller against the
         (type, number) the map asked for, so the right one is RECOGNISED rather than declared:
 
             sci0   uint16 id(type:5|number:11), uint16 comp, uint16 decomp, uint16 method
@@ -139,20 +152,38 @@ class Sci0Game:
             sci1   byte type|0x80, uint16 number, uint16 comp, uint16 decomp, uint16 method
                    -- same comp convention as sci0
             sci11  the sci1 header, but `comp` is the body length outright
+            sci32  the sci11 header with 32-BIT sizes: byte type|0x80, uint16 number,
+                   uint32 comp, uint32 decomp, uint16 method -- 13 bytes, not 9
+
+        ⛔ THE TYPE AND NUMBER ALONE DO NOT SEPARATE sci11 FROM sci32. They live at the same
+        two offsets in both, so an SCI32 header read as sci11 MATCHES: GK1's script 0 came back
+        with `decomp = 0` and `method = 5150`, and the caller accepted it. What separates them is
+        the COMPRESSION METHOD, which is drawn from a small closed set -- so a layout whose
+        method is not a real one is not this resource's layout. That is SCICompanion's own
+        escalation rule (`VersionDetectionHelper._DetectPackageFormat`: `compression > 20` is
+        "invalid compression for any version up to SCI1.1", and the format is stepped up
+        SCI0 -> SCI1 -> SCI1.1 -> SCI2 until the header stops being implausible).
         """
+        wide = layout == "sci32"
         with open(vol_path, "rb") as f:
             f.seek(offset)
-            hdr = f.read(9)
-            if len(hdr) < 9:
+            hdr = f.read(13 if wide else 9)
+            if len(hdr) < (13 if wide else 9):
                 return None
             if layout == "sci0":
                 rid, comp, decomp, method = struct.unpack_from("<HHHH", hdr)
                 rtype, number, skip, blen = rid >> 11, rid & 0x7FF, 8, comp - 4
+            elif wide:
+                rtype = hdr[0] & 0x7F
+                number = struct.unpack_from("<H", hdr, 1)[0]
+                comp, decomp = struct.unpack_from("<II", hdr, 3)
+                method = struct.unpack_from("<H", hdr, 11)[0]
+                skip, blen = 13, comp
             else:
                 rtype = hdr[0] & 0x7F
                 number, comp, decomp, method = struct.unpack_from("<HHHH", hdr, 1)
                 skip, blen = 9, (comp if layout == "sci11" else comp - 4)
-            if blen < 0 or decomp > 0xFFFF:
+            if blen < 0 or decomp > 0xFFFF or method not in _METHODS:
                 return None
             f.seek(offset + skip)
             return {"number": number, "type": rtype, "comp": comp, "decomp": decomp,
@@ -164,9 +195,10 @@ class Sci0Game:
         for vnum in (package, package + 1, 1, 0):
             if vnum not in self.volumes:
                 continue
-            for layout in ("sci0", "sci11", "sci1"):
+            for layout in ("sci0", "sci11", "sci1", "sci32"):
                 h = self._read_volume_header(self.volumes[vnum], offset, layout)
                 if h and h["type"] == want_type and h["number"] == want_num:
+                    self.volume_layout = layout
                     return self.volumes[vnum], h
         return None, None
 
@@ -231,11 +263,47 @@ class Sci0Game:
             return {"name": "sci0", "script": "script.%03d", "heap": None}
         if not self.list_type(HEAP):
             return {"name": "sci1", "script": "%d.SCR", "heap": None}
+        if self.volume_format() == "sci32":
+            return {"name": "sci2", "script": "%d.SCR", "heap": "%d.HEP"}
         return {"name": "sci11", "script": "%d.SCR", "heap": "%d.HEP"}
+
+    def volume_format(self):
+        """Which of the four header layouts this game's volumes actually use, DERIVED by resolving
+        a sample rather than asked of the caller -- the same discipline `_entries_resolve` uses to
+        pick the map's entry width.
+
+        A SAMPLE, not one resource: `_resolve_volume` walks the layouts in order and a single
+        header can be ambiguous, so the answer is the layout every entry that resolves AT ALL
+        agrees on. Ambiguity is then reported as ambiguity (None) instead of being decided by
+        whichever resource happened to be asked for first.
+
+        ⛔ Entries that resolve to NOTHING are skipped, not counted against the vote. GK1's
+        `view.0` is one: the map names an offset in a volume that does not hold it (the game also
+        ships RESOURCE.ALT with its own map), and requiring unanimity over all eight sampled
+        entries let that one silent miss veto the other seven.
+
+        ⛔ And the sample is SPREAD across the map, not its first N keys. Entries sort by
+        (type, number), so the head of the list is one resource type -- exactly the case that
+        just bit us, since GK1's unresolvable entry is a VIEW and views sort first. A stride
+        samples every type."""
+        if self._vformat is _UNSET:
+            n = len(self.entries)
+            keys = sorted(self.entries)
+            step = max(1, n // 16)
+            won = set()
+            for key in keys[::step][:16]:
+                self.volume_layout = None
+                self._resolve_volume(*self.entries[key], key[0], key[1])
+                if self.volume_layout:
+                    won.add(self.volume_layout)
+            self._vformat = won.pop() if len(won) == 1 else None
+        return self._vformat
 
 
 def _decompress(method, body, decomp_size):
-    """method 0 = none, 1 = LZW, 2 = Huffman (SCI0); 18/19/20 = DCL implode (SCI1.1)."""
+    """method 0 = none, 1 = LZW, 2 = Huffman (SCI0); 18/19/20 = DCL implode (SCI1.1);
+    32 = STACpack/LZS (SCI32), which nothing here reads yet -- GK1's volumes are packed with it,
+    and its scripts reach the analysis through the sci-tools decompiler, not this module."""
     if method == 0:
         return body[:decomp_size] if decomp_size else body
     if method == 1:

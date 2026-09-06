@@ -91,9 +91,12 @@ KNOWN_RED = {
             "⭐ THREE FALSE-POSITIVE UNITS, AND NOT ONE IS A MODELLING GAP (2026-09-06). Every "
             "remaining flag is the USER's decision or a deliberate non-cure, so this red now "
             "records a POLICY boundary rather than a missing rule. (A) knife -- the USER's "
-            "2026-08-27 ruling (an on-screen death, not a consumption), plus its two "
-            "flip-precondition register rows: day 7 cannot end without the knife "
-            "(rm540.sc:299-307) and no `put: 64` exists. (B) the GROUP "
+            "2026-08-27 ruling (an on-screen death, not a consumption). ⭐ 2026-09-06: its "
+            "`fatal_uses` ACTION row is CURED (docs 1.68 -- a fatal use counts only when the use "
+            "wastes the item; `sDaggerOnMalia` spends nothing while KQ6's skull and KQ5's rope "
+            "both do), which is what stopped GK1's patch from shipping a guard on it. What still "
+            "flags the knife is its two flip-precondition REGISTER rows plus two edge rows: day 7 "
+            "cannot end without the knife (rm540.sc:299-307) and no `put: 64` exists. (B) the GROUP "
             "[veveCopy|policeVeve|sLakePatter] -- GROUPS pass every refutation filter untouched, "
             "by MEASURED design (the FORCED filter's one corpus effect on a group deletes LSL2's "
             "play-validated raft guard, 2026-08-02), so no filter can reach this row and "
@@ -154,10 +157,23 @@ KNOWN_RED = {
             "of =2) and the reg123=1/4/5 write specs they imply -- row-accounted; "
             "refresh is a bless -- awaits the USER",
     },
+    # ⭐⭐ A COVERAGE CHANGE, 2026-09-06: `gk1` JOINED `measure_emitted_bytes.GAMES` when it got
+    # its first patch (docs/SCI2-PATCHING.md). Until then GK1 was the one game whose emitted
+    # source no gate had ever looked at -- ten days of analysis and hand emission, with a moved
+    # placement invisible here. The two reds below are the ARRIVAL of that coverage, not a
+    # regression: the manifest has no gk1 entry yet, and the game-set check sees the sixth game.
+    # ⛔ Both clear with ONE bless (`tools/bless_emission.py --write`) and that is the USER's
+    # ([[refresh-is-a-bless]], [[report-coverage-changes-loudly]]).
     "test_emission_manifest.py": {
         "emission: dagger matches manifest":
             "LB2's rm210/rm280 setscript placements left the surface, so the emitted tree "
             "moved; bless via tools/bless_emission.py only after the USER's ruling",
+        "emission: gk1 matches manifest":
+            "gk1 joined the emitted game set 2026-09-06 with its first patch; the manifest has "
+            "no entry for it yet -- new coverage, awaiting the USER's bless",
+        "emission: manifest covers exactly the emitted game set":
+            "same arrival: the manifest names five games, the tool now emits six. Clears with "
+            "the same bless as the row above",
     },
     # ⭐ scene_carryins JOINED THE FROZEN SURFACE 2026-09-01 (the R3 catcher, docs GK1
     # §1.24) -- and a detector joins the snapshot unconditionally (the snapshot's own

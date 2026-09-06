@@ -35,7 +35,12 @@ import os
 import shutil
 import sys
 
-GAMES = ("LSL2", "KQ4", "KQ6", "dagger", "kq5")
+# ⛔ GK1 JOINED 2026-09-06, WITH ITS FIRST PATCH. Until then it was the one game whose emitted
+# source no gate had ever looked at -- it was analysed for ten days and emitted by hand, so a
+# placement that moved was invisible here ([[measure-the-emitted-bytes]] is exactly this failure,
+# one game short). Adding it costs the run GK1's model load and buys the same regression floor
+# every other game has.
+GAMES = ("LSL2", "KQ4", "KQ6", "dagger", "kq5", "gk1")
 
 
 def emit(src_dir, out_dir, games):
