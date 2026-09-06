@@ -88,65 +88,30 @@ KNOWN_RED = {
     # those hidden writes and moves the play-validated KQ6/LB2 surfaces -- the USER's bless.
     "test_gk1_ground_truth.py": {
         "no UNEXPECTED unit flagged (suspicion)":
-            "SIX FALSE-POSITIVE UNITS (2026-09-05: VoodooCode1, braceMold, knife, oil, reconVeve, talisman -- `oil` was flagged and unlisted until 2026-09-05, an accounting gap, and is derived safe: `napoleon.sc:601` `put: 22` is its only consumer and no endDay arm wants its flag). ⭐ THE CURE IS NEED-LIVENESS AT THE EDGE ERA (docs GK1 1.64), NOT 1.34: measured whole, 1.34 + the windows/prune fixpoint catches nothing extra and grows the FP surface (5 flagged -> 6, 6 new -> 11), because these are EDGE rows whose need rooms are day-1-6 city rooms counted live at a day-9/10 crossing. In three families (2026-09-04). (A) THE DAY-7 FAMILY, FOUR "
-            "units waiting on ONE gap -- the sketch, the mold, the veve and the oil (the croc mask "
-            "keeps a 6->7 row too, but it is EXPECTED_CAUGHT as R5, so it is not an FP unit). Each "
-            "keeps that row because NOBODY reaches day 7 in the record -- day 6 ends only at the bayou "
-            "ritual, whose `(++ day)` is unmodelled (docs GK1 1.34/1.56), so the closure's second "
-            "opinion (1.48) cannot ask whether the item is the difference and the flat arm's phantom "
-            "ending keeps the row. ⛔ Modelling that increment was measured THREE times and reverted "
-            "three times; 2026-09-05 finally READ why it kills R4 (1.56), after three wrong diagnoses. "
-            "The fan gives rm480, rm500 and rm550 a day step at EVERY value, and rm550's carries NO "
-            "dependency -- `rm550.sc:47`, the room's own init, arms `doTheDream` unconditionally, so "
-            "ENTERING the room is the day advance and its only guard is the ROOM'S ENTRANCE "
-            "(`500->550` needs `prev == 540`; `540->500` needs day 7 -- one composition hop the flat "
-            "closure does not make). So the day-4 crosser winds the day to 11 at the dream room "
-            "whatever they hold, and the seal dissolves. ⛔ The three older readings are WRONG and "
-            "are recorded as such: 'it needs the bayou's own day first' (1.51 -- the bayou's own "
-            "branches are honestly gated on flags 216/299/971), `producible_seal`'s `fwd` (1.55 -- the "
-            "live-fwd fixpoint was BUILT and measured a NO-OP), and the lost `flag15 := 0` clear "
-            "(1.56's own first draft -- real, but forcing it back leaves the seal False). The cure is "
-            "to BOUND THE FAN: a `prev == p` guard must import the PERSISTING reqs of the edges into "
-            "p's successor. (B) knife (fatal_uses -- an on-screen death, not a consumption; "
-            "USER ruling 2026-08-27 -- plus two register rows of the flip-precondition class, "
-            "`reg12=720` since the travel-movie fan and the sHRoom8-state-0 row since the hounfour "
-            "scene fan (a lowered script-808 register whose NUMBER moves with the synthetic "
-            "allocation -- 759 before the topic store, 1116 after): day 7 cannot "
-            "end without the knife, rm540.sc:299-307, and no `put: 64` exists), and THREE of "
-            "one class, `_flip_live` missing that the flip's own precondition demands the item: "
-            "reconVeve (day 3's endDay arm needs it, but Grace's 'go home' topic 49 ends the "
-            "day for free because flag 65 is re-raised by rm470's cutscenes, whose once-only "
-            "gate flag 11 does not reach their write branches -- needs the one-shot reading, "
-            "docs GK1 §1.14); braceMold (day 3 cannot end without flag 256, whose only setter "
-            "`napoleon.sc:858` runs after the mold is `put:`). ✅ sVoodooCode RETIRED 2026-09-04 "
-            "(docs GK1 1.52-1.53): its flip row lived on a MODEL hole, not a missing cost -- "
-            "rm50's prevRoom-guarded return edge let a sketch-less player into rm302, whose only "
-            "real entrance demands own(32) AND own(33), so the flip's own precondition was "
-            "invisible. ⛔ The older reading in this list ('the cost does not cross the newRoom') "
-            "was WRONG and was verified wrong against the model before the cure. "
-            "PLUS talisman (2026-09-01, the case-(c) trap round): the rod+talisman carry-in row at rm455->rm800 PROVED FP from the scripts, both halves forced -- the talisman is granted by BOTH Africa-exit cutscenes (get:69 before newRoom:216, rm720.sc:1040/:1285; Africa has no other exit) and the rod is required to LEAVE Africa (keyWorks, the only wall opener into rm720, arms exclusively from rodCode's success arm, rm710.sc:2303-2328); no put:60/69 exists before the finale. See test_gk1_ground_truth's talisman entry. sLakePatter RETIRED 2026-08-31: the travel-movie fan (§1.17) removed the phantom "
-            "Magentia demand its dangerous_sinks row rested on -- an FP dying of honest wiring. "
-            "crocMask and oil (family A, docs GK1 1.39/1.48): bought TOGETHER at the voodoo shop "
-            "(rm250 states 18/28), whose map icon closes after day 6, so at the 6->7 flip they read "
-            "unobtainable-but-needed (maze 490, Napoleon's useTheOil 460); in the game day 6 ends only "
-            "at the ritual, which R5's mask survives. ⭐ WHAT THE CLOSURE ALREADY RETIRED (1.48, "
-            "2026-09-03): the sketch's 4->5 and 5->6 rows, the mold's and the veve's 3->4..5->6, scalar "
-            "and joint -- with the item banned nobody ends that day, so the day system prevents the "
-            "stranding (the USER's words, derived). All in CONFIRMED_SAFE; cure the detectors, never "
-            "the list",
+            "FOUR FALSE-POSITIVE UNITS (2026-09-05, down from six with docs GK1 1.65 + 1.66): "
+            "(A) VoodooCode1 on a REGISTER row, not an edge -- `register_strandings` at "
+            "reg492(=flag 250)=1 'still needed at 240/260/300'; the era-forced filter is an "
+            "EDGE-row rule and the register arm has no equivalent yet, which is the next cure. "
+            "(B) knife -- the USER's 2026-08-27 ruling (an on-screen death, not a consumption), "
+            "plus its two flip-precondition register rows (`reg12=720` from the travel-movie fan "
+            "and the sHRoom8-state-0 row from the hounfour scene fan): day 7 cannot end without "
+            "the knife (rm540.sc:299-307) and no `put: 64` exists. (C) the GROUP "
+            "[veveCopy|policeVeve|sLakePatter] -- GROUPS pass every refutation filter untouched, "
+            "by MEASURED design (the FORCED filter's one corpus effect on a group deletes LSL2's "
+            "play-validated raft guard, 2026-08-02), so the era filter cannot reach this row and "
+            "sLakePatter rides along; its own need is empty and the group's is policeVeve's at "
+            "rm230. (D) talisman -- proved FP from the scripts and DELIBERATELY uncured (docs "
+            "1.54): both Africa exits grant it before `newRoom: 216`, and the cure would relax "
+            "`_unrefusable_grants`, whose strictness is measured and whose failure direction is "
+            "LOST FINDINGS. ⭐ RETIRED 2026-09-05 by the era-forced rule (1.65) with 1.34 + the "
+            "windows/prune fixpoint (1.62): reconVeve, braceMold, oil, and with them wolfPhone, "
+            "tatooTrace, braceRep and policeVeve's singleton -- every one an edge row whose era "
+            "forces the item (day 3's endDay demands `has: 38` and flag 256; day 4's demands "
+            "flag 248 and `has: 26`/`has: 41`). All in CONFIRMED_SAFE; cure the detectors, "
+            "never the list",
         "a safe item is not flagged":
-            "the same six false-positive units as the row above (the two checks are one defect "
+            "the same four false-positive units as the row above (the two checks are one defect "
             "seen from the oracle's two sides)",
-        # R2 RETIRED 2026-09-01: the register carry-in (docs GK1 §1.26) names the rod AND the
-        # device pair -- the cost-only tier prices flag 351's chain, the shared-message groups
-        # read `own(19) OR own(20)` out of the deposit's doVerb case, and the group row
-        # carries the pair as ONE alternatives unit.
-        # ✅ R1 PROMOTED 2026-09-04 (docs GK1 1.53): the self-return rule closed the last hole.
-        # rm50's `newRoom: global12` fan gives every room a prevRoom-guarded return edge, and in
-        # a projection that does not carry prevRoom those read as free doors -- so a sketch-less
-        # player could stand where the fan reached and no day flip could be shown to demand the
-        # sketch. With first-entrance walks refusing self-returns, VoodooCode1 has NO day-flip
-        # row at all and the USER's 2026-09-02 ruling is fully derived.
     },
     "test_lb2_ground_truth.py": {
         "mechanism pinned: pressPass":

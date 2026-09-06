@@ -2891,6 +2891,58 @@ KQ4 9, KQ6 1, KQ5 8, LB2 10) — and a re-declaration of GK1's two reds against 
 list. Nothing about it is guesswork now; the pieces are
 `tools/probes/gk1_fan/apply_134.py` and `fixpoint_attempt_missability.py`.
 
+## §1.66 §1.34 IS LANDED — the day model the record always had (2026-09-05)
+
+Five reverts since 2026-09-02 and six wrong diagnoses later, `(++ global123)` in a script that
+never compares it is in the model, and the corpus does not move. It took **three** things, and
+none of them works alone:
+
+| | what | why alone it fails |
+|---|---|---|
+| §1.34 | the game-wide fallback for an incremented counter | unbounded, it is a free day-ender and R4 dies (measured five times) |
+| §1.62 | the windows/prune FIXPOINT | alone it drops R5, because it removes a phantom the row stood on (§1.63) |
+| §1.65 | an edge cannot strand what its ERA forces | alone the era-7 rows keep every FP, since nobody reaches day 7 without §1.34 |
+
+Together the day model reads exactly what §0 says the scripts do:
+
+    rm370  (1,2) … (7,8)     the bedroom day loop
+    rm480  (6,7) …           the bayou ritual ends day 6
+    rm550  (7,8) …           the dream
+    rm500  (7,8) …           Germany's departure
+    rm490 / rm480 days [6..]  the bayou is a day-6 place
+
+### The result
+`R1 R2 R3 R4 R5` all handled, no confirmed softlock dropped, and the false-positive surface
+**halves**: FLAGGED 6 → **4**, NEW 6 → **4**. The two GK1 reds stay red and are re-declared
+against the shorter list; the four that remain each have a named cause:
+
+* **VoodooCode1** on a REGISTER row (`reg492=1`, "still needed at 240/260/300"), not an edge —
+  §1.65 is an edge-row rule and the register arm has no equivalent yet. ⭐ That is the next cure.
+* **knife** — the USER's 2026-08-27 ruling, plus its two flip-precondition register rows.
+* **the GROUP** `[veveCopy|policeVeve|sLakePatter]` — groups pass every refutation filter
+  untouched, by MEASURED design (the FORCED filter's one corpus effect on a group deletes LSL2's
+  play-validated raft guard, 2026-08-02).
+* **talisman** — §1.54, proved FP from the scripts and deliberately uncured.
+
+### ⭐ THREE TESTS WENT RED, AND ALL THREE WERE PROMOTIONS
+The gate caught exactly what it exists to catch — declared limitations that stopped being
+limitations — and each is re-pinned to the new truth rather than relaxed:
+
+* `test_crossing_producible`: *"the croc mask's day-7 row STANDS: nobody reaches day 7 in the
+  record"* → now **the mask IS the difference** at the day-6→7 flip. The bayou ritual's own day
+  advance demands flag 216 and only the maze's mask-use raises it, so a maskless player never
+  crosses into day 7. That is R5's mechanism, derived a second way.
+* `test_era_forced`: *"the rm372→rm490 row is refuted whole"* → assert the **items**, not the
+  row: the row survives on its GROUP, which by design no filter may touch.
+* `test_era_forced`: the fence was pinned at day 7 and called it unreachable — true until §1.34
+  landed the same day. Re-pinned **above the counter's whole range**, a value no record can
+  carry. ⛔ A fence must rest on something that cannot change, not on a gap that may close.
+
+**Corpus gate on the box: 1005 passed / 13 known-red / 0 unexpected / 0 crashed**, failing set
+exactly the declared one. §1.34 touches `_glob_domains` for every game — LSL2 9 sites, KQ4 9,
+KQ6 1, KQ5 8, LB2 10 — and **no golden, watched surface or emitted tree moves.** GK1's model
+build goes ~115 s → ~290 s; the gate itself is unchanged at ~8 minutes.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED

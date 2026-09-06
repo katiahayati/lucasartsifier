@@ -49,8 +49,18 @@ def main():
                         (40, 4, "the bracelet mold: day 3's arm demands its use")):
         check(f"banning item {it} ({what}), nobody takes the flip into day {w}: its flat row is an FP",
               s._closure_flip_dead(123, w, it), f"flip_dead = {s._closure_flip_dead(123, w, it)}")
-    check("the croc mask's day-7 row STANDS: nobody reaches day 7 in the record (the missing day-6 "
-          "ending, docs 1.34), so the mask is not the difference", not s._closure_flip_dead(123, 7, 21))
+    # ⭐ PROMOTED 2026-09-05 (docs GK1 §1.66). This check used to read "the croc mask's day-7 row
+    # STANDS: nobody reaches day 7 in the record, so the mask is not the difference" -- a pin on
+    # the §1.34 gap. With the day fan modelled and bounded (1.34 + the windows/prune fixpoint),
+    # day 7 IS reached, and the answer flips to what the scripts say: day 6 ends at the bayou
+    # ritual, whose `roomScript` state 81 demands flag 216, and 216 is raised ONLY by using the
+    # mask in the maze (rm490, verb 31). So a maskless player never crosses into day 7, and the
+    # mask IS the difference.
+    check("the croc mask IS the difference at the day-6 -> 7 flip: 216 gates the ritual's own "
+          "day advance and only the maze's mask-use raises it",
+          s._closure_flip_dead(123, 7, 21),
+          f"flip_dead(123, 7, crocMask) = {s._closure_flip_dead(123, 7, 21)} -- if this is False "
+          f"again, the day-6 ending has gone missing from the model (docs 1.34/1.62)")
     live = s._step_live(123, 1, pre_g[0], pre_g[1], {123: {0, 1}})
     check("`_step_live` names the producer it found (room 370, the day-end flag)",
           live is not None and live[0] == 370 and (base + 15) in live[1], f"got {live}")

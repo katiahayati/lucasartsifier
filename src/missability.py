@@ -4121,8 +4121,37 @@ class IrSccReach(SccReach):
         # register, and only the four reachability walks look at `self.proj`.
         self.proj = list(self.regs) + list(self._joints)
         self._pstates = {R: self._walk(R, frozenset()) for R in self.proj}
-        # ⭐ ...AND A STEP AT A VALUE ITS ROOM CANNOT HOLD IS NOT A STEP (docs GK1 §1.61).
-        self._prune_unattainable_steps()
+        # ⭐ ...AND A STEP AT A VALUE ITS ROOM CANNOT HOLD IS NOT A STEP (docs GK1 §1.61),
+        # run to a FIXPOINT WITH THE WINDOWS (docs GK1 §1.62/§1.66).
+        self._narrow_counter_fixpoint()
+
+    def _narrow_counter_fixpoint(self):
+        """⭐ THE WINDOWS AND THE STEP PRUNE FEED EACH OTHER; RUN THEM TO A FIXPOINT (2026-09-05,
+        docs GK1 §1.62).
+
+        `_apply_consumer_windows` narrows a branch to the counter values at which its
+        dependencies can be in hand; `_prune_unattainable_steps` drops a step at a value its room
+        cannot hold. Each makes the other sharper -- a narrower fan means fewer stages in which a
+        value is producible, which windows more branches, which prunes more steps -- and running
+        each ONCE stops well short of what the record supports.
+
+        GK1's day is the specimen, measured pass by pass with §1.34's fan applied: Germany
+        tightens one day per pass, 2 -> 3 -> 4 -> 5 -> 6 -> 7, and at pass 2 the day-end flag's
+        clear (`257: 0`, §1.45's landing) COMES BACK -- it had been lost because rm500 still held
+        a `(3,4)` step and `_step_neco` intersects over every writer of the step.
+
+        Both passes only ever REMOVE, and each removal is justified by an over-approximation
+        holding at the time, so the composition is sound and monotone decreasing -- it
+        terminates, and the bound is belt and braces. A first prune that removes nothing stops it
+        immediately, which is the common case and costs one extra call."""
+        for _ in range(12):
+            if not self._prune_unattainable_steps():
+                return
+            self._cwin_memo = None
+            self._apply_consumer_windows()
+            self._psucc_cache = {}
+            for R in self.proj:
+                self._pstates[R] = self._walk(R, frozenset())
 
     def _prune_unattainable_steps(self):
         """⭐ A COUNTER STEP AT A VALUE ITS ROOM CANNOT HOLD IS NOT A STEP (2026-09-05, docs
@@ -4147,8 +4176,9 @@ class IrSccReach(SccReach):
         counters = [C for C in sorted(getattr(self, "_counters", ()))
                     if C in self._pstates and C in self._rstep]
         if not counters:
-            return
+            return False
         cset = set(counters)
+        ever = False
         for _pass in range(8):
             changed = False
             for C in counters:
@@ -4172,11 +4202,13 @@ class IrSccReach(SccReach):
                             else:
                                 del tbl[key]
             if not changed:
-                return
+                return ever
+            ever = True
             self._psucc_cache = {}
             for R in self.proj:
                 if R in cset or (isinstance(R, tuple) and cset & set(R)):
                     self._pstates[R] = self._walk(R, frozenset())
+        return ever
 
     def _gate_joints(self, dom):
         """The (counter, gate) pairs whose gating is MUTUAL: an ordered step of A is armed under

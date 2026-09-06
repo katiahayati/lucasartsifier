@@ -47,10 +47,14 @@ def main():
               f"_era_forced(490, {it}) = {s._era_forced(490, it)!r}; "
               f"_closure_flip_dead(123, 6, {it}) = {s._closure_flip_dead(C, 6, it)!r}")
 
-    # ...so the row they made is gone
+    # ...so every ITEM they put on that row is gone. ⛔ The ROW itself may survive on its GROUP:
+    # groups pass every refutation filter untouched, by measured design (the FORCED filter's one
+    # corpus effect on a group deletes LSL2's play-validated raft guard, 2026-08-02), so
+    # `[veveCopy|policeVeve|sLakePatter]` rides through. Assert the items, not the row -- the
+    # first draft asserted the row and went red the moment §1.34 put the group there.
     rows = {(e["from_room"], e["to_room"]): sorted(e["items"]) for e in s.edge_strandings()}
-    check("the rm372 -> rm490 row is refuted whole", (372, 490) not in rows,
-          f"still present with items {rows.get((372, 490))}")
+    check("the rm372 -> rm490 row keeps no ITEM", not rows.get((372, 490)),
+          f"items still present: {rows.get((372, 490))}")
 
     # ⛔ AND R5 SURVIVES: the croc mask is NOT era-forced -- a day-6 player can lack it, which is
     # exactly why the maskless arrival at the ritual is a real dead end.
@@ -59,10 +63,14 @@ def main():
           f"_era_forced(480, 21) = {s._era_forced(480, 21)!r}; row = {rows.get((490, 480))}")
 
     # ⛔ THE FENCE: an era nobody crosses into refutes nothing ("not the item's doing"), which is
-    # what keeps this from being a blanket suppressor on a game whose late days are unmodelled.
-    check("an era nobody reaches in the record refutes nothing",
-          s._closure_flip_dead(C, 7, 38) is False,
-          "day 7 is unreachable in the record without docs §1.34, so this must be False")
+    # what keeps this from being a blanket suppressor. Asked ABOVE the counter's range, which no
+    # model can reach. ⛔ The first draft asked it at day 7 and called day 7 unreachable -- true
+    # until §1.34 landed the same day, whereupon this check correctly went red. Pin the fence on
+    # a value the record can never carry, not on a gap that may close.
+    top = max(set(s.em.reg_vals.get(C, ())) | {0}) + 5
+    check("an era nobody reaches refutes nothing (asked past the counter's whole range)",
+          s._closure_flip_dead(C, top, 38) is False,
+          f"_closure_flip_dead({C}, {top}, 38) must be False -- no player is ever at that value")
 
     # ⛔ THE SCOPE, stated accurately rather than hopefully: the rule is a COUNTER's instrument,
     # so LSL2 (no counter at all) cannot be touched -- and KQ4 CAN, because it has one. That is
