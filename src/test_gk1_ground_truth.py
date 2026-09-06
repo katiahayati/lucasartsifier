@@ -100,6 +100,19 @@ CONFIRMED_SAFE.add("knife")
 # without the priced crossing `300->302` -- a return edge should carry its origin's entry cost.
 CONFIRMED_SAFE.add("sVoodooCode")
 
+# oil (22): the edge rows at `rm372->rm750` and `rm455->rm800` say crossing into the finale
+# strands it while rm460 "still needs" it. DERIVED FALSE POSITIVE, and the same class as
+# reconVeve and braceMold -- the site that still needs it is the site that CONSUMES it:
+# `napoleon.sc` `useTheOil` state 0 is `(global0 put: 22)` (`:601`), the only `put: 22` in the
+# tree, armed from the oilTeller topic at rm460. And nothing anywhere demands the flag it
+# raises: `(proc13_0 258)` occurs four times and all four are inside `napoleon.sc` itself,
+# choosing Sam's dialogue variant -- NO `endDay` arm asks for it (`theMapPrint.sc:231-278`
+# lists days 2-5 and 258 is in none of them), so the oil is not required to end any day, or to
+# win. Its need site is a day-3/4 bar scene, dead by the day-9/10 crossings the rows are built
+# on; a walkthrough corroborates the era (after Germany, day 10 returns only to St George's
+# Books and St Louis Cathedral) but the derivation above is the evidence.
+CONFIRMED_SAFE.add("oil")
+
 # braceMold (40): register_strandings at the day-4/6/7 flips, appearing 2026-08-30 with the
 # return-to-sender pricing (docs §1.15) -- which is right about the SOURCE (`rm280.sc:794`, and
 # day 4 shuts Cazaunoux's house) and wrong about the player. The mold's only need site is

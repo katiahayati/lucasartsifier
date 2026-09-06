@@ -2780,6 +2780,53 @@ so the corpus gate is owed before anything is believed.
 **Nothing from this section is in `src/`.** The fixpoint lives in
 `tools/probes/gk1_fan/fixpoint_attempt_missability.py`, §1.34 in `apply_134.py` beside it.
 
+## §1.64 §1.34 MEASURED END TO END — and it does not pay for itself (2026-09-05)
+
+With §1.63's finding that §1.34 and the fixpoint are one round, the round was measured whole
+against today's HEAD. **It catches nothing extra and it enlarges the false-positive surface, so
+it is PARKED.** Both oracles read 11 passed / 2 failed; the difference is entirely in the FPs:
+
+| | HEAD today | §1.34 + fixpoint |
+|---|---|---|
+| R1 R2 R3 R4 R5 | all handled | all handled |
+| FLAGGED (safe items flagged) | 5 | **6** (+`sLakePatter`) |
+| NEW (flagged, unlisted) | 6 | **11** (+`braceRep`, `policeVeve`, `tatooTrace`, `wolfPhone`, +a group) |
+
+⛔ **And the day-7 family is NOT retired by it** — the thing §1.34 was wanted for. It is
+re-expressed: today `VoodooCode1`/`reconVeve`/`braceMold`/`oil` are flagged on EDGE rows, and
+under §1.34 they are flagged on the same edge rows with more company. `producible_seal` returning
+True is R4's check, which already passes at HEAD. So the round buys a cleaner day model and pays
+for it in noise.
+
+### ⭐ What the FP rows actually are, and the cure that is actually owed
+Every one of them is the SAME shape, and the rooms say it outright:
+
+    rm372 -> rm490   VoodooCode1 need=[240,260,300]   reconVeve need=[50,200,205,340]   braceMold need=[460]
+    rm372 -> rm750   + crocMask need=[490]            oil need=[460]
+    rm455 -> rm800   + rod need=[455,710]             talisman need=[800]
+
+The need rooms are day-1-6 CITY rooms and the crossings are day-9/10. `edge_strandings` counts
+them as "still needed past the edge" because `need & fwd_rooms` walks a graph in which those
+rooms are still reachable — a DEAD ERA. This is exactly the cure §1.28's note named and nobody
+built: **NEED-LIVENESS AT THE EDGE ERA** — `_need_live`'s reading, applied to the carry-out test.
+
+A walkthrough corroborates the era (leads only, verified in the scripts): after Germany the game
+returns to New Orleans on day 10 for **St George's Books and St Louis Cathedral alone**, and the
+endgame uses the rod, the tracker, the two masks, the talisman and the idol — none of the flagged
+items.
+
+⭐ **So the next round is need-liveness at the edge era, and §1.34 is not a prerequisite for it.**
+That is the redirection this section exists to record: five rounds since 2026-09-02 treated §1.34
+as the thing standing between GK1 and its two reds, and measured whole, it is not.
+
+### 📝 One reclassification, derived
+`oil` was flagged and in no list — an accounting gap. It is a FALSE POSITIVE of the same class as
+reconVeve and braceMold, and the site that "still needs" it is the site that CONSUMES it:
+`napoleon.sc` `useTheOil` state 0 is `(global0 put: 22)` (`:601`), the only `put: 22` in the tree.
+Nothing demands the flag it raises — `(proc13_0 258)` occurs four times, all inside `napoleon.sc`
+choosing Sam's dialogue variant, and no `endDay` arm asks for it (`theMapPrint.sc:231-278` covers
+days 2-5). Added to `CONFIRMED_SAFE`; the FP count is 6 units, not 5.
+
 ## §1.30 The descent-spec growth is NOT a need-liveness case (2026-09-02)
 
 Probed before building: the three sketches' need sites are day-BLIND but subject-PINNED

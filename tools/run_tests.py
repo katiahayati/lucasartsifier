@@ -88,7 +88,7 @@ KNOWN_RED = {
     # those hidden writes and moves the play-validated KQ6/LB2 surfaces -- the USER's bless.
     "test_gk1_ground_truth.py": {
         "no UNEXPECTED unit flagged (suspicion)":
-            "SIX FALSE-POSITIVE UNITS, in three families (2026-09-04). (A) THE DAY-7 FAMILY, FOUR "
+            "SIX FALSE-POSITIVE UNITS (2026-09-05: VoodooCode1, braceMold, knife, oil, reconVeve, talisman -- `oil` was flagged and unlisted until 2026-09-05, an accounting gap, and is derived safe: `napoleon.sc:601` `put: 22` is its only consumer and no endDay arm wants its flag). ⭐ THE CURE IS NEED-LIVENESS AT THE EDGE ERA (docs GK1 1.64), NOT 1.34: measured whole, 1.34 + the windows/prune fixpoint catches nothing extra and grows the FP surface (5 flagged -> 6, 6 new -> 11), because these are EDGE rows whose need rooms are day-1-6 city rooms counted live at a day-9/10 crossing. In three families (2026-09-04). (A) THE DAY-7 FAMILY, FOUR "
             "units waiting on ONE gap -- the sketch, the mold, the veve and the oil (the croc mask "
             "keeps a 6->7 row too, but it is EXPECTED_CAUGHT as R5, so it is not an FP unit). Each "
             "keeps that row because NOBODY reaches day 7 in the record -- day 6 ends only at the bayou "
