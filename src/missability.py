@@ -8635,7 +8635,8 @@ class IrSccReach(SccReach):
                                              - wb_prod.get(S, set())):
                                 if not (set(pre_g[1].get(S, {0})) - {b0}):
                                     continue  # S == b0 is universal, not a choice
-                                verdict = self._seal_case(R, w, r, S, b0, goal, fwd)
+                                verdict = self._seal_case(R, w, r, S, b0, goal, fwd,
+                                                          keep_walks=True)
                                 if verdict is None:
                                     continue    # carrying S == b0, this player never crosses
                                 post_b = verdict
@@ -8680,13 +8681,20 @@ class IrSccReach(SccReach):
                 memo[key] = False
         return memo[key]
 
-    def _seal_case(self, R, w, r, S, b0, goal, fwd):
+    def _seal_case(self, R, w, r, S, b0, goal, fwd, keep_walks=False):
         """ONE case of the seal arm: the crosser of the counter flip into `R == w` at room `r`,
         carrying `S == b0`. Returns the post-flip closure, or None when that player cannot
         exist (`_staged_pre(require_steps)`, §1.44). A dead end iff `goal` is missing from the
         closure's rooms. Factored out so an oracle can pin one verdict in seconds
-        (`producible_seal`) instead of running the whole detector -- an hour on GK1."""
-        self._rp_xcache = {}
+        (`producible_seal`) instead of running the whole detector -- an hour on GK1.
+
+        `keep_walks` (the detector, 2026-11-15, speed only): leave `_rp_xcache` as the flip
+        left it instead of emptying it. Its key is everything a restricted walk reads (the
+        register, the frozen room set, the seed values, the seed rooms), so a shared walk is
+        the walk; the detector empties it once per flip. Measured on GK1's day-8 flips: ~268
+        walks per case, ~410 distinct across a flip's 214 cases."""
+        if not keep_walks:
+            self._rp_xcache = {}
         pre_b, conf_b = self._staged_pre(R, w - 1, {S: {b0}}, require_steps=True)
         if pre_b is None:
             return None
