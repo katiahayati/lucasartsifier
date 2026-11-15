@@ -2048,6 +2048,113 @@ def resource_remedies(s):
     return out
 
 
+def _trap_register_demand(s, b):
+    """The register state a crossing INTO `b` must already carry -- `{R: values}`, or None.
+
+    `b` kills on arrival unless its ONE recorded survival alternative holds, that alternative
+    is purely register-valued, and `b` itself never writes those registers. The requirement is
+    then frozen at the door, so it IS the door's demand, in the game's own terms.
+
+    This is what an item row at such a door actually means. `edge_strandings` names the item
+    that PAYS for the register (GK1's crocodile mask, the price of flag 216), but holding the
+    price is necessary and not sufficient -- the bayou ritual tests that the mask was WORN and
+    the tattoo PAINTED (bayouRitual.sc:158-166), and a player carrying the mask unworn dies
+    exactly like one without it. Demanding the register closes that; demanding the item
+    guards the wrong thing."""
+    traps = getattr(s, "_trap_rows_memo", None)
+    if traps is None:
+        traps = s._trap_rows_memo = M.death_traps(s.em, s.regs, s._register_dom())
+    rows = traps.get(b) or ()
+    if len(rows) != 1:
+        return None
+    treq, talts = rows[0]
+    if not treq or any(a for a in talts):
+        return None                          # an item alternative: not register-only
+    for R in treq:
+        if s._inroom.get(R, {}).get(b) or s._rstep.get(R, {}).get(b):
+            return None                      # writable inside: not frozen at the door
+    return {R: set(vs) for R, vs in treq.items()}
+
+
+def _scene_rows(s):
+    got = getattr(s, "_scene_rows_memo", None)
+    if got is None:
+        got = s._scene_rows_memo = s.scene_carryins()
+    return got
+
+
+def scene_superseded(s):
+    """`{room: {item: why}}` -- possession demands on a crossing INTO `room` that a scene-level
+    commit inside it supersedes.
+
+    A `register-carry-in` row places a register demand at a SCENE of its writer room (GK1:
+    flag 351 at Grace's room, a `Script` inside the hounfour). Its items are that register's
+    PRICE, paid where the register is written -- before or inside the room -- so they are
+    gone, by design, once it is paid: demanding them on the way in walls the player who did
+    it right (the September patch's `(has: 60)` on the confessional elevator, which refuses
+    exactly the player who deposited the rod). The scene spec carries the real demand."""
+    out = defaultdict(dict)
+    for r in _scene_rows(s):
+        if r.get("pattern") != "register-carry-in":
+            continue
+        its = [r["item"]] if "item" in r else list(r.get("item_group", ()))
+        for room in r.get("writer_rooms", ()):
+            for it in its:
+                out[room][it] = ("the price of register %d, whose demand is placed at scene %s "
+                                 "inside rm%d" % (r["reg"], r["scene"], room))
+    return out
+
+
+def scene_remedies(s):
+    """One spec per room-hosted SCENE that is a point of no return: refuse to START it until
+    everything `scene_carryins` says must be carried in is in hand.
+
+    The site is the scene itself -- a `Script` its room dispatches, not a room -- so no edge
+    spec can express it (the gap `docs/SCI2-PATCHING.md` 5.2 names). Items are possession
+    tests; a register row is tested AS THE REGISTER, in the game's spelling, because its items
+    are a price already paid (see `scene_superseded`). Anything unspellable refuses the whole
+    spec rather than shipping a weaker demand."""
+    by = {}
+    for r in _scene_rows(s):
+        hosts = r.get("writer_rooms") if r.get("pattern") == "register-carry-in" else [r["room"]]
+        for host in hosts or ():
+            for sc in r["scene"]:
+                d = by.setdefault((host, sc), {"items": set(), "regs": {}, "price": []})
+                if r.get("pattern") == "register-carry-in":
+                    d["regs"].setdefault(r["reg"], set()).update(r.get("values", ()))
+                    d["price"].append(r["item_name"])
+                else:
+                    d["items"].add(r["item"])
+    out = []
+    for (host, sc), d in sorted(by.items()):
+        refused, atoms = [], ["(gEgo has: %d)" % i for i in sorted(d["items"])]
+        for R, vals in sorted(d["regs"].items()):
+            spell = [render_register(s, R, v) for v in sorted(vals)]
+            if not spell or None in spell:
+                refused.append("register %d has no spelling in the game's own terms" % R)
+                continue
+            atoms.append(spell[0] if len(spell) == 1 else "(or %s)" % " ".join(spell))
+        # the scene's ROOT machine: the one of its script that a machine of ANOTHER script in
+        # the same room arms -- the room's dispatcher. (A receiver that is merely not one of
+        # the scene's own machines is not enough: a timer or a prop is "outside" too, and the
+        # hounfour's death sorter is armed by one.)
+        mine = [i for i in s.em.machines if i["room"] == host and i.get("script") == sc]
+        outside = {i["inst"] for i in s.em.machines
+                   if i["room"] == host and i.get("script") != sc}
+        roots = sorted({i["inst"] for i in mine
+                        if any(rv and rv[0] == "O" and rv[1] in outside
+                               for rv in (i.get("entry_recv") or ()) if rv)})
+        if len(roots) != 1:
+            refused.append("no unique root machine for scene %s at rm%d (%s)" % (sc, host, roots))
+        cond = atoms[0] if len(atoms) == 1 else "(and %s)" % " ".join(atoms)
+        out.append({"site": "scene", "room": host, "script": sc,
+                    "machine": roots[0] if len(roots) == 1 else None,
+                    "condition": cond, "items": sorted(d["items"]),
+                    "reg_demand": [[R, sorted(v)] for R, v in sorted(d["regs"].items())],
+                    "price": sorted(set(d["price"])), "refused": refused})
+    return out
+
+
 def guard_specs(s):
     """ONE spec per placement site, merging both derivations.
 
@@ -2062,6 +2169,7 @@ def guard_specs(s):
     # (joint), so one guard demands both before you are swallowed.
     frontier = frontier_guards(s)
     rff = register_flip_frontier(s)
+    sup_by_room = scene_superseded(s)
     for src in (joint_frontier(s), pocket_frontier(s), pocket_carryout_frontier(s), rff):
         for (a, b), rec in src.items():
             if (a, b) in frontier:
@@ -2096,13 +2204,52 @@ def guard_specs(s):
         # the owner-store correction: past-edge needs that are fold demands are spelled by
         # their consumer's own reading (see fold_respell) -- the possession conjuncts keep
         # their satisfiability check below, the owner atoms carry their own refusals.
+        # TWO WITHDRAWALS, each reported on the spec and neither of them silent. They take a
+        # possession literal off this crossing because demanding it here is WRONG, not merely
+        # unsatisfiable -- and both are read off the model, never off a list:
+        #   superseded -- the literal is the price of a register whose demand a scene-level
+        #                 commit inside `b` carries (`scene_superseded`);
+        #   respelled  -- the literal is the price of `b`'s own frozen survival register, and
+        #                 the register is demanded instead (`_trap_register_demand`).
+        withdrawn = {}
+        sup = sup_by_room.get(b, {})
+        for it in sorted(set(rec["items"]) & set(sup)):
+            withdrawn[it] = "superseded: " + sup[it]
+        gdrop = []
+        for g in rec["groups"]:
+            if g <= set(sup):
+                gdrop.append((g, "superseded: " + sup[sorted(g)[0]]))
+        reg_atoms, reg_demand, reg_bad = [], [], []
+        td = _trap_register_demand(s, b)
+        if td:
+            priced = set()
+            for R, vals in td.items():
+                priced |= set(s._reg_cost(R, set(vals)))
+            hit = (priced & set(rec["items"])) - set(withdrawn)
+            if hit:
+                for R, vals in sorted(td.items()):
+                    spell = [render_register(s, R, v) for v in sorted(vals)]
+                    if not spell or None in spell:
+                        reg_bad.append("register %d (rm%d's survival test) has no spelling in "
+                                       "the game's own terms" % (R, b))
+                        continue
+                    reg_atoms.append(spell[0] if len(spell) == 1
+                                     else "(or %s)" % " ".join(spell))
+                    reg_demand.append([R, sorted(vals)])
+                if not reg_bad:
+                    for it in sorted(hit):
+                        withdrawn[it] = ("respelled: the price of rm%d's survival register(s) "
+                                         "%s, demanded as the register" % (b, sorted(td)))
+        if withdrawn or gdrop:
+            rec = {**rec, "items": set(rec["items"]) - set(withdrawn),
+                   "groups": [g for g in rec["groups"] if all(g != d for d, _w in gdrop)]}
         rec2, fold_atoms, fold_refused = fold_respell(s, a, b, rec)
-        bad = unsatisfiable(s, a, b, rec2) + fold_refused
+        bad = unsatisfiable(s, a, b, rec2) + fold_refused + reg_bad
         base = render_frontier(rec2)
-        terms = ([base] if base else []) + fold_atoms
+        terms = ([base] if base else []) + fold_atoms + reg_atoms
         cond = (terms[0] if len(terms) == 1 else "(and " + " ".join(
             ([base[5:-1]] if base and base.startswith("(and ") else ([base] if base else []))
-            + fold_atoms) + ")") if terms else None
+            + fold_atoms + reg_atoms) + ")") if terms else None
         stage = rec.get("stage")
         if rec.get("stage_conflict"):
             bad = bad + ["stage conflict: a staged (pre-flip-only) demand and an unstaged one "
@@ -2131,12 +2278,30 @@ def guard_specs(s):
               "refused": bad}
         if fold_atoms:
             sp["owner_atoms"] = fold_atoms
+        gd = getattr(s, "_stranding_group_drops", {}).get((a, b))
+        if gd:                               # the group twin of dropped_why: never silent
+            sp["dropped_groups"] = [{"group": [s.g.item_name(i) for i in g], "why": w}
+                                    for g, w in gd]
+        if reg_demand:
+            # the parts, kept apart so a placer can drop an atom a site establishes itself
+            sp["reg_demand"] = reg_demand
+            sp["reg_atoms"] = reg_atoms
+            sp["base_terms"] = ([base] if base else []) + fold_atoms
+        if withdrawn or gdrop:
+            sp["withdrawn"] = ({s.g.item_name(i): w for i, w in sorted(withdrawn.items())}
+                               | {"|".join(s.g.item_name(i) for i in sorted(g)): w
+                                  for g, w in gdrop})
         rec = rec2
         if ann:
             sp["dropped_incompatible"] = sorted(ann)
             sp["dropped_why"] = "cannot be held here: " + "; ".join(
                 sorted({f"{s.g.item_name(i)} -- {r}" for i, r in ann.items()}))
-        if not rec["items"] and not rec["groups"] and not fold_atoms:
+        if not rec["items"] and not rec["groups"] and not fold_atoms and not reg_atoms \
+                and "dropped_why" not in sp:
+            # ...withdrawn to nothing: the same honest "we deliberately emit nothing" row.
+            sp["refused"] = ["; ".join("%s -- %s" % kv for kv in sorted(sp["withdrawn"].items()))
+                             + " -- nothing left to demand at this edge"]
+        elif not rec["items"] and not rec["groups"] and not fold_atoms and not reg_atoms:
             # Everything this edge would have demanded is unholdable here, so there is no guard to
             # place -- but say so. Dropping the row silently is how an edge stops being guarded
             # without anyone noticing; `refused` is the channel that already exists for "we
@@ -2287,6 +2452,8 @@ def guard_specs(s):
                            f"demand, so it is UNENFORCED")
         specs.append({"site": "register-write", "register": R, "trap": trap,
                       "condition": cond, "items": items, "refused": refused})
+    # ...and the room-hosted SCENES that are points of no return. See scene_remedies.
+    specs.extend(scene_remedies(s))
     return specs
 
 

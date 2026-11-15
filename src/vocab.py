@@ -1425,6 +1425,9 @@ def lower_flags(ir, base_global, flag_procs, wrappers=None, record=True):
     if record:
         try:
             ir.flag_indices = frozenset(seen_flags)
+            # ...and WHICH procedure does what, so a placer can tell a site that RAISES a
+            # demanded flag from one that only tests it (`patcher`'s register-demand pass).
+            ir.flag_procs = dict(flag_procs)
         except Exception:                                   # noqa: BLE001
             pass
     # The block runs `synth_base + flag_number`, so the ground it takes reaches the HIGHEST

@@ -2317,3 +2317,189 @@ if __name__ == "__main__":
         forms = read_file(os.path.join(src, f"rm{room}.sc"))
         p = find_trigger(forms, target)
         print(f"rm{room} newRoom:{target}  ->  {p}")
+
+
+# ---- every route into a crossing: the uncontrollable arming, climbed to its poke -------------
+
+def form_src(form):
+    """A parsed form written back as source -- for the small test expressions a gate quotes."""
+    if isinstance(form, list):
+        return "(" + " ".join(form_src(x) for x in form) + ")"
+    return form.name if isinstance(form, Sym) else str(form)
+
+
+def _instance_methods(forms):
+    """`(instance name, method name, method form)` for every method in the file."""
+    out = []
+
+    def walk(form):
+        if not isinstance(form, list) or not form:
+            return
+        if is_sym(form[0], "instance") or is_sym(form[0], "class"):
+            name = form[1].name if len(form) > 1 and isinstance(form[1], Sym) else None
+            for s in form[2:]:
+                if isinstance(s, list) and s and is_sym(s[0], "method") \
+                        and isinstance(s[1], list) and s[1] and isinstance(s[1][0], Sym):
+                    out.append((name, s[1][0].name, s))
+            return
+        for s in form:
+            walk(s)
+    walk(forms)
+    return out
+
+
+def state_armings(forms, target):
+    """Where a Script's own `changeState` arms `target`: `[(machine, state, path)]`.
+
+    `path` is the chain of `if` tests the arming sits under inside that state, each with the
+    polarity of the branch taken -- `[(test form, True|False)]`. A state is not a handler: the
+    player has no click to refuse there, so the placer climbs from it (`find_state_pokes`)."""
+    out = []
+
+    def has_arm(form):
+        if not isinstance(form, list):
+            return False
+        for k, x in enumerate(form):
+            if is_sym(x, "setScript:") and k + 1 < len(form) and is_sym(form[k + 1], target):
+                return True
+        return False
+
+    def walk(form, path, inst, state):
+        if not isinstance(form, list) or not form:
+            return
+        if has_arm(form):
+            out.append((inst, state, list(path)))
+        if is_sym(form[0], "if") and len(form) >= 3:
+            test, rest = form[1], form[2:]
+            ei = next((k for k, x in enumerate(rest) if is_sym(x, "else")), None)
+            then = rest if ei is None else rest[:ei]
+            els = [] if ei is None else rest[ei + 1:]
+            for x in then:
+                walk(x, path + [(test, True)], inst, state)
+            for x in els:
+                walk(x, path + [(test, False)], inst, state)
+            return
+        for x in form:
+            walk(x, path, inst, state)
+
+    for (inst, meth, mform) in _instance_methods(forms):
+        if meth != "changeState":
+            continue
+        for sw in mform[2:]:
+            if not (isinstance(sw, list) and sw and is_sym(sw[0], "switch")):
+                continue
+            for clause in sw[2:]:
+                if isinstance(clause, list) and clause and isinstance(clause[0], int):
+                    for b in clause[1:]:
+                        walk(b, [], inst, clause[0])
+    return out
+
+
+def find_state_pokes(forms, state):
+    """Clauses that DRIVE a script to `state` from outside it -- the state poke.
+
+    GK1's bayou spells a walk-on exit this way (`bayouMaze.sc`, `passageExit::doit`):
+
+        (if (self onMe: global0)
+            (= temp0 (cond (isExit (= local9 -1) 16) (isRitual 16) (else 0)))
+            ((global2 script:) state: (- temp0 1))  ...cue it...
+
+    so the room script's state 16 is entered by whichever passage the ego walks onto. Returns
+    one record per poke whose value can be `state`:
+        {"instance", "method", "test": the enclosing if's test form,
+         "arms": [(discriminator form | None, {var: literal assigned in the arm})]}
+    A literal poke (`state: 15`) has the single arm `(None, {})`. Anything it cannot read --
+    a computed target that is not a `cond` of literals -- is simply not returned: an unread
+    route stays unplaced and reported, never guessed."""
+    out = []
+    for (inst, meth, mform) in _instance_methods(forms):
+        hits = []
+
+        def walk(form, tests, env):
+            if not isinstance(form, list) or not form:
+                return
+            if is_sym(form[0], "if") and len(form) >= 3:
+                for x in form[2:]:
+                    walk(x, tests + [form[1]], env)
+                return
+            if is_sym(form[0], "=") and len(form) == 3 and isinstance(form[1], Sym) \
+                    and isinstance(form[2], list) and form[2] and is_sym(form[2][0], "cond"):
+                env[form[1].name] = form[2]
+            for k, x in enumerate(form):
+                if is_sym(x, "state:") and k + 1 < len(form) and k >= 1:
+                    hits.append((form[k + 1], list(tests), dict(env)))
+            for x in form:
+                walk(x, tests, env)
+
+        for b in mform[2:]:
+            walk(b, [], {})
+        for (val, tests, env) in hits:
+            if not tests:
+                continue
+            arms = None
+            if isinstance(val, int):
+                arms = [(None, {})] if val + 1 == state else []
+            elif isinstance(val, list) and len(val) == 3 and is_sym(val[0], "-") \
+                    and isinstance(val[1], Sym) and val[2] == 1 and val[1].name in env:
+                arms, earlier = [], []
+                for arm in env[val[1].name][1:]:
+                    if not (isinstance(arm, list) and arm):
+                        continue
+                    head, body = arm[0], arm[1:]
+                    is_else = is_sym(head, "else")
+                    if body and isinstance(body[-1], int) and body[-1] == state:
+                        assigns = {x[1].name: x[2] for x in body[:-1]
+                                   if isinstance(x, list) and len(x) == 3 and is_sym(x[0], "=")
+                                   and isinstance(x[1], Sym) and isinstance(x[2], int)}
+                        conj = [["not", e] for e in earlier] + ([] if is_else else [head])
+                        disc = (None if not conj else conj[0] if len(conj) == 1
+                                else ["and"] + conj)
+                        arms.append((disc, assigns))
+                    if not is_else:
+                        earlier.append(head)
+            if arms:
+                out.append({"instance": inst, "method": meth, "test": tests[-1], "arms": arms})
+    return out
+
+
+def path_refuted(path, assigns):
+    """True when an arm's own assignments make the arming's path impossible.
+
+    Only `(== var literal)` tests on a variable the arm assigns a literal are decided; every
+    other test is unknown and refutes nothing. The bayou's exit arm sets `local9` to -1 and
+    the ritual arming sits in the ELSE of `(== local9 -1)`, so that arm never reaches it."""
+    for (test, pol) in path:
+        if isinstance(test, list) and len(test) == 3 and is_sym(test[0], "==") \
+                and isinstance(test[1], Sym) and isinstance(test[2], int) \
+                and test[1].name in assigns:
+            if (assigns[test[1].name] == test[2]) != pol:
+                return True
+    return False
+
+
+def gate_positional_test(text, instance, method, test_src, gate_src):
+    """Conjoin `gate_src` onto the `(if <test_src> ...` of `instance::method` -- the silent
+    whole-clause gate (see `find_trigger`'s arm-clause note: a positional clause has no click
+    to refuse, and a spoken refusal there repeats every cycle). Returns (text, n)."""
+    inst_span = _find_region(text, r"\((?:instance|class)\s+%s\b" % re.escape(instance))
+    if not inst_span:
+        return text, 0
+    i0, i1 = inst_span
+    meth_rel = _find_region(text[i0:i1], r"\(method\s+\(%s\b" % re.escape(method))
+    if not meth_rel:
+        return text, 0
+    m0, m1 = i0 + meth_rel[0], i0 + meth_rel[1]
+    region = text[m0:m1]
+    pat = r"\(if\s+" + r"\s+".join(re.escape(tok) for tok in
+                                    test_src.replace("(", " ( ").replace(")", " ) ").split())
+    pat = pat.replace(r"\(\s+", r"\(\s*").replace(r"\s+\)", r"\s*\)")
+    ms = list(code_finditer(region, pat))
+    if len(ms) != 1:
+        return text, 0                     # absent or ambiguous: honestly unplaced
+    m = ms[0]
+    head = "(if (and %s %s)  ; softlock-guard: this crossing only when survivable\n" % (
+        test_src, gate_src)
+    tail = region[m.end():]
+    ind = line_indent(region, m.start()) + "\t"
+    new_region = region[:m.start()] + head + ind + tail.lstrip()
+    return text[:m0] + new_region + text[m1:], 1

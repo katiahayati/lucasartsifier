@@ -257,6 +257,34 @@ def run():
     check("R3: the two guises are caught as carry-ins to Grace's room",
           _unit("BoarGuise") in caught and _unit("WolfGuise") in caught,
           "same intra-room boundary as R2")
+    # --- THE GUARDS (2026-11-14): what the patch DEMANDS, pinned beside what the detectors find.
+    # Detection was right for two months while every shipped guard was wrong: the ritual
+    # crossing asked for the mask ITEM (the ritual tests that it was WORN, and the tattoo),
+    # the elevator asked for the rod (spent by the very deposit it protects) and for veve papers
+    # the artist keeps on day 2, and Grace's room -- the real point of no return -- had no
+    # guard at all. An oracle that pins only item names cannot see any of that
+    # ([[oracle-must-pin-the-mechanism]]).
+    import guards as G
+    specs = G.guard_specs(s)
+    by_edge = {(sp["from_room"], sp["to_room"]): sp for sp in specs if sp["site"] == "edge"}
+    g5 = by_edge.get((490, 480), {})
+    check("R5 guard: the ritual crossing demands the FLAGS the ritual tests (216 mask worn, "
+          "299 tattoo painted), not possession of the mask",
+          g5.get("condition") == "(and (proc13_0 216) (proc13_0 299))" and not g5.get("refused"),
+          f"condition = {g5.get('condition')!r}, refused = {g5.get('refused')}")
+    scn = [sp for sp in specs if sp["site"] == "scene"]
+    check("R2+R3 guard: ONE scene spec refuses Grace's room (script 808, sHRoom8) until both "
+          "guises are held and the deposit flag 351 is set",
+          len(scn) == 1 and scn[0]["script"] == 808 and scn[0]["machine"] == "sHRoom8"
+          and scn[0]["condition"] == "(and (gEgo has: 78) (gEgo has: 79) (proc13_0 351))"
+          and not scn[0]["refused"],
+          f"scene specs = {[(sp.get('script'), sp.get('machine'), sp.get('condition'), sp.get('refused')) for sp in scn]}")
+    gel = (by_edge.get((455, 800), {}).get("condition") or "")
+    check("the confessional elevator demands neither the rod (the deposit spends it) nor a "
+          "veve paper (the artist keeps them on day 2)",
+          not any("has: %d)" % i in gel for i in (60, 15, 16, 31)),
+          f"rm455->rm800 condition = {gel!r}")
+
     # R4: a FLAG stranding through the conversation system. Flag 44's only writer is a Teller
     # topic (hartridge.sc:257) reachable only while day < 4 (rm270.sc:200); day 4's gate needs
     # it transitively (crash.sc:66-84 -> rm450.sc:674 -> rm450.sc:421 -> theMapPrint.sc:265).

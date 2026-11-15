@@ -175,9 +175,10 @@ def assemble(dest, cfg=None):
     # bug fixes for 420/425/460/470 (+65535.MAP) and sci-tools decompiled the PATCHED versions, so
     # without these we would pair our patched source against the unpatched mapped resource. One
     # decompilation, one set of resources, or nothing is provable.
-    for fn in os.listdir(cfg.resource_dir):
-        if _is_loose_patch(fn):
-            shutil.copy(os.path.join(cfg.resource_dir, fn), os.path.join(dest, fn))
+    # ...wherever the interpreter reads them from: the game folder AND its `patches` directory
+    # (GK1's GOG copy ships Sierra's 62 patched scripts in PATCHES/, and they are the game).
+    for fn, path in loose_patch_files(cfg.resource_dir):
+        shutil.copy(path, os.path.join(dest, fn))
     _SCHEME = _patch_scheme(cfg)
     # ⛔ THE GAME BEING PATCHED, not the one that happens to be `config.ACTIVE`. The panel
     # chooser measures the game's own panel art and font (`_install_panel_chooser`), and it used
@@ -209,6 +210,60 @@ def _is_loose_patch(fn):
     if stem and ext.isdigit():                     # script.042, view.001
         return stem.lower() in _TYPE_EXT
     return stem.isdigit() and ext.lower() in _TYPE_EXT   # 420.SCR, 65535.MAP
+
+
+def _patch_dirs(game_dir):
+    """The game folder's `patches` subdirectories, spelled in ANY case.
+
+    Sierra's own RESOURCE.CFG names the directory (GK1: `patchDir=...;D:\\patches`), the CD and
+    the GOG repack spell it PATCHES, and on a case-sensitive file system a literal "patches"
+    finds nothing -- which is how GK1 was analysed for months from 62 scripts the game does
+    not run, and patched with files the interpreter never read (2026-11-14)."""
+    return [os.path.join(game_dir, d) for d in sorted(os.listdir(game_dir))
+            if d.lower() == "patches" and os.path.isdir(os.path.join(game_dir, d))]
+
+
+def loose_patch_files(game_dir):
+    """`[(file name, path)]` -- every loose patch the interpreter reads for this game, one per
+    resource. The folder itself outranks its `patches` directory where both hold a copy: the
+    order `sci-tools` reads them in, so the compile project is built from exactly the
+    resources the decompilation was. A game with no such directory gets its top-level patches,
+    as always."""
+    chosen = {}
+    for d in _patch_dirs(game_dir) + [game_dir]:
+        for fn in sorted(os.listdir(d)):
+            if _is_loose_patch(fn) and os.path.isfile(os.path.join(d, fn)):
+                chosen[fn.upper()] = (fn, os.path.join(d, fn))
+    return [chosen[k] for k in sorted(chosen)]
+
+
+def install_patches(out_dir, game_copy, stock_dir=None):
+    """Copy an emitted patch into a PLAYABLE COPY of the game -- each file over EVERY loose
+    copy of that resource the copy already holds, or into the folder itself when it holds none.
+
+    "Drop the files in the game folder" is only right when nothing else answers for the same
+    resource. Where the game ships its own patched script in a `patches` directory, the
+    interpreter may take THAT one (ScummVM did: our top-level 490.SCR lost to PATCHES/490.SCR
+    and the guard never ran), so ours must replace it there -- and replace a top-level twin
+    too, or the two disagree. Returns one row per file written, each verified byte for byte;
+    never writes into the stock game."""
+    real = os.path.realpath
+    if stock_dir and real(game_copy) == real(stock_dir):
+        raise SystemExit("refusing to install into the stock game: %s" % game_copy)
+    rows = []
+    for fn in sorted(os.listdir(out_dir)):
+        src = os.path.join(out_dir, fn)
+        if not os.path.isfile(src):
+            continue
+        dests = [os.path.join(d, e) for d in [game_copy] + _patch_dirs(game_copy)
+                 for e in os.listdir(d) if e.upper() == fn.upper()]
+        for dst in dests or [os.path.join(game_copy, fn)]:
+            if os.path.islink(dst):
+                os.unlink(dst)                 # never write THROUGH a link into the stock game
+            shutil.copyfile(src, dst)
+            same = open(src, "rb").read() == open(dst, "rb").read()
+            rows.append({"file": fn, "dest": dst, "ok": same})
+    return rows
 
 
 _TYPE_EXT = {"script", "view", "pic", "text", "sound", "vocab", "font", "cursor", "patch",
@@ -2887,6 +2942,167 @@ def _fork_head(text, target_script, room):
     return head if in_then else "(not %s)" % head
 
 
+def _method_region(text, inst, meth):
+    """Source text of `inst::meth`, or None."""
+    isp = _find_region(text, r"\((?:instance|class)\s+%s\b" % re.escape(inst))
+    if not isp:
+        return None
+    rel = _find_region(text[isp[0]:isp[1]], r"\(method\s+\(%s\b" % re.escape(meth))
+    if not rel:
+        return None
+    return text[isp[0] + rel[0]:isp[0] + rel[1]]
+
+
+def _atom_established(code_before, atom):
+    """Does the code that runs BEFORE an arming raise the flag `atom` tests?
+
+    `atom` is a flag test in the game's spelling (`(proc13_0 216)`); the answer is yes when
+    one of the game's own flag-SET procedures is called on that flag number there. A site that
+    establishes a demanded flag itself must not be asked for it -- that would refuse the very
+    action that satisfies the guard (GK1: putting the mask ON is what raises flag 216)."""
+    testp = getattr(_IR, "flag_test_proc", None)
+    procs = getattr(_IR, "flag_procs", None) or {}
+    m = re.match(r"^\((\w+) (\d+)\)$", atom)
+    if not m or m.group(1) != testp:
+        return False
+    return any(op in ("set", "tset")
+               and code_search(code_before, r"\(%s\s+%s\s*\)" % (re.escape(nm), m.group(2)))
+               for nm, op in procs.items())
+
+
+def _guard_register_edge(dest, sp, titles_by_num):
+    """Place a crossing's REGISTER demand on EVERY route into it, or on none.
+
+    The crossing is committed by one departing Script; that Script may be armed from several
+    places, and one unguarded arming is a bypass (`find_all_armings`' doctrine). Two kinds:
+
+      * a CONTROLLABLE arming (a click) gets the refusal -- for whatever part of the demand
+        the handler does not establish itself before arming;
+      * an arming inside another Script's STATE has no click. It is climbed to the clause
+        that drives that Script to the state (`trigger.find_state_pokes`) and that clause is
+        gated silently, for only the arms that can reach the arming.
+
+    All or nothing: if any route cannot be placed the file is left untouched and the row says
+    which, because a half-guarded crossing reads as covered and is not."""
+    title = titles_by_num.get(sp["from_room"])
+    path = os.path.join(dest, "src", title + ".sc") if title else None
+    if not path or not os.path.exists(path):
+        return {**sp, "applied": False, "why": "no source for rm%s" % sp["from_room"]}
+    if REFUSE is None:
+        return {**sp, "applied": False, "why": "no literal-display form derives for this game"}
+    forms = read_file(path)
+    text = open(path, errors="replace").read()
+    trig = find_trigger(forms, sp["to_room"], ego=_EGO)
+    target = trig.get("target_script")
+    if not isinstance(target, str):
+        return {**sp, "applied": False, "placement": trig,
+                "why": "the crossing has no departing script to guard (%s)" % trig["kind"]}
+    atoms, base = list(sp.get("reg_atoms") or ()), list(sp.get("base_terms") or ())
+
+    def conj(terms):
+        return terms[0] if len(terms) == 1 else "(and %s)" % " ".join(terms)
+
+    routes, missed, n_total = [], [], 0
+    for pl in find_all_armings(forms, target):
+        where = "%s::%s" % (pl["trigger_instance"], pl["trigger_method"])
+        region = _method_region(text, pl["trigger_instance"], pl["trigger_method"]) or ""
+        am = code_search(region, r"setScript:\s*%s%s" % (re.escape(target), T._NAME_END))
+        before = region[:am.start()] if am else ""
+        live = [a for a in atoms if not _atom_established(before, a)]
+        if not base and not live:
+            routes.append({"route": where, "guard": None,
+                           "why": "the site establishes the whole demand itself"})
+            continue
+        demand = to_source_syntax(conj(base + live))
+        new_text, n = wrap_all_armings_in_source(text, pl, demand, REFUSE)
+        if not n:
+            missed.append("%s: arming found but not wrappable" % where)
+            continue
+        text, n_total = new_text, n_total + n
+        routes.append({"route": where, "guard": demand, "sites": n})
+    demand = to_source_syntax(conj(base + atoms))
+    for (machine, state, pth) in T.state_armings(forms, target):
+        where = "%s state %s" % (machine, state)
+        placed = 0
+        for pk in T.find_state_pokes(forms, state):
+            arms = [(d, a) for (d, a) in pk["arms"] if not T.path_refuted(pth, a)]
+            if not arms:
+                continue
+            discs = [T.form_src(d) for (d, _a) in arms if d is not None]
+            if len(discs) != len(arms):
+                gate = demand                              # an unconditional poke
+            else:
+                disc = discs[0] if len(discs) == 1 else "(or %s)" % " ".join(discs)
+                gate = "(or (not %s) %s)" % (disc, demand)
+            gate = stock_or(gate)          # a silent kind: stock mode lets stock play through
+            new_text, n = T.gate_positional_test(text, pk["instance"], pk["method"],
+                                                 T.form_src(pk["test"]), gate)
+            if not n:
+                missed.append("%s: driven from %s::%s, whose test could not be located"
+                              % (where, pk["instance"], pk["method"]))
+                continue
+            text, n_total, placed = new_text, n_total + n, placed + n
+            routes.append({"route": "%s <- %s::%s" % (where, pk["instance"], pk["method"]),
+                           "guard": gate, "sites": n, "silent": True})
+        if not placed and not any(m.startswith(where) for m in missed):
+            missed.append("%s arms %s and nothing readable drives it there" % (where, target))
+    if missed or not n_total:
+        return {**sp, "applied": False, "placement": {"kind": "register-routes",
+                                                      "routes": routes},
+                "why": "; ".join(missed) or "no arming of %s found" % target}
+    open(path, "w").write(_ensure_refusal_use(text, titles_by_num))
+    return {**sp, "applied": True, "title": title, "sites": n_total,
+            "placement": {"kind": "register-routes", "target_script": target,
+                          "routes": routes}}
+
+
+def _guard_scene(dest, sp, titles_by_num):
+    """Refuse a point-of-no-return SCENE at its own first step.
+
+    The scene is a Script its room arms WITH A CALLER, so disposing it cues the room's
+    dispatcher exactly as the scene's own exit does -- the player is told no and is back
+    where every scene returns to. The whole of state 0 is held, so nothing the scene does on
+    entry (its latch above all) runs first. Checked, not assumed: with no caller on the
+    room's scene arming the row stays unplaced."""
+    title, host = titles_by_num.get(sp["script"]), titles_by_num.get(sp["room"])
+    path = os.path.join(dest, "src", title + ".sc") if title else None
+    hpath = os.path.join(dest, "src", host + ".sc") if host else None
+    if not path or not os.path.exists(path) or not hpath or not os.path.exists(hpath):
+        return {**sp, "applied": False, "why": "no source for scene %s of rm%s"
+                                               % (sp["script"], sp["room"])}
+    if REFUSE is None:
+        return {**sp, "applied": False, "why": "no literal-display form derives for this game"}
+    if not code_search(open(hpath, errors="replace").read(),
+                       r"setScript:\s*\(ScriptID\s+[\w-]+\s+0\s*\)\s+[^\s()]"):
+        return {**sp, "applied": False,
+                "why": "rm%s does not arm its scenes with a caller, so a refused scene has "
+                       "no way back" % sp["room"]}
+    text = open(path, errors="replace").read()
+    isp = _find_region(text, r"\(instance\s+%s\b" % re.escape(sp["machine"]))
+    rel = _find_region(text[isp[0]:isp[1]], r"\(method\s+\(changeState\b") if isp else None
+    if not rel:
+        return {**sp, "applied": False, "why": "no %s::changeState in %s"
+                                               % (sp["machine"], title)}
+    m0, m1 = isp[0] + rel[0], isp[0] + rel[1]
+    region = text[m0:m1]
+    sw = code_search(region, r"\(switch\s+\(=\s+state\s+\w+\)")
+    cm = re.match(r"\s*\(\s*0(?=[\s)])", region[sw.end():]) if sw else None
+    if not cm:
+        return {**sp, "applied": False, "why": "%s has no state 0 to hold" % sp["machine"]}
+    c0 = sw.end() + cm.end() - len(cm.group(0).lstrip())
+    bs, be = sw.end() + cm.end(), _balanced_span(region, c0) - 1
+    ind = "\t\t\t\t"
+    refuse = REFUSE + "\n" + ind + "\t(self dispose:)"
+    wrapped = ("\n" + ind
+               + guarded_wrap(to_source_syntax(sp["condition"]), region[bs:be], refuse,
+                              site=_ModeSite(), indent=ind)
+               + "\n\t\t\t")
+    text = text[:m0] + region[:bs] + wrapped + region[be:] + text[m1:]
+    open(path, "w").write(_ensure_refusal_use(text, titles_by_num))
+    return {**sp, "applied": True, "title": title, "sites": 1,
+            "placement": {"kind": "scene-entry", "machine": sp["machine"]}}
+
+
 def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), rooms=None,
                  entry_frontier=None, defer_info=None):
     """Place each EDGE guard at its CONTROLLABLE TRIGGER.
@@ -2930,6 +3146,8 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
     for sp in specs:
         if sp["site"] != "edge" or sp["refused"] or not sp.get("condition"):
             continue
+        if sp.get("reg_demand"):
+            continue               # placed on EVERY route by `_guard_register_edge`, below
         by_title.setdefault(titles_by_num.get(sp["from_room"]), []).append(sp)
 
     # A prohibition's droppability frontier may be UNCONTROLLABLE. rm131 -> rm138 is: the ship
@@ -2973,6 +3191,12 @@ def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), roo
     seen_dispatch = set()          # (file, to_room, condition) -- one travel-dispatch edit
     seen_wrap = set()              # (file, kind, target, trigger, condition) -- one wrap per site
     #   covers every crossing the dispatch fans to that destination; siblings report shared
+    # REGISTER-DEMAND CROSSINGS and POINT-OF-NO-RETURN SCENES -- each its own placer.
+    for sp in specs:
+        if sp["site"] == "edge" and not sp["refused"] and sp.get("reg_demand"):
+            out.append(_guard_register_edge(dest, sp, titles_by_num))
+        elif sp["site"] == "scene" and not sp["refused"]:
+            out.append(_guard_scene(dest, sp, titles_by_num))
     # FATAL USES -- refuse the ACTION. The site is the arming of the machine that kills you, in the
     # room that offers the move: KQ6's rm420 `(gCurRoom setScript: throwSkull)`. `find_arming`
     # already locates an arming by name, so this reuses the Realm-entry path rather than adding a

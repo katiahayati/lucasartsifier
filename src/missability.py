@@ -4982,10 +4982,17 @@ class IrSccReach(SccReach):
         `_emeta` is (see `guards.apply_guards`), because that is the only thing under it that
         ever changes."""
         key = (R, node, banned, commit, no_self_return)
-        got = self._psucc_cache.get(key)
+        cache = self._psucc_cache
+        got = cache.get(key)
         if got is not None:
             return got
-        out = self._psucc_cache[key] = self._psucc_uncached(R, node, banned, commit,
+        # BOUNDED (2026-11-14). Nothing ever emptied it, and every (state, banned items) pair
+        # of every walk of every detector stayed: GK1's full report held 3.3M entries, ~1.7 GB,
+        # before its last detector started (dropping the 2.2M-entry cache freed 1.1 GB). The
+        # reuse it exists for is WITHIN a walk; a full cache starts over and refills.
+        if len(cache) >= _PSUCC_CACHE_CAP:
+            cache.clear()
+        out = cache[key] = self._psucc_uncached(R, node, banned, commit,
                                                             no_self_return)
         return out
 
@@ -5387,6 +5394,7 @@ class IrSccReach(SccReach):
         ruled untouchable, and a filter whose one observable effect is wrong stays off."""
         import guards as _G                    # module-level would be a cycle; resolved by now
         out = []
+        gdrops = {}                            # (a, b) -> [(group, why)], the group twin
         drops = {}                             # (a, b) -> {item: why} -- a dropped row is never
         #   silent: `guard_specs` folds these into the spec's dropped_incompatible/dropped_why,
         #   which is where the castle-door tests pin the reasons.
@@ -5415,9 +5423,30 @@ class IrSccReach(SccReach):
             if why:
                 drops.setdefault((a, b), {}).update(why)
             items = [it for it in e["items"] if it not in why]
-            if items or e["groups"]:
-                out.append({**e, "items": items, "groups": e["groups"]})
+            # ERA-FORCED, FOR A GROUP AS A UNIT (2026-11-14). The rule above is not about one
+            # item: "nobody lacking it is ever in this crossing's era" is asked the same way of
+            # an alternatives group, with every member banned at once. GK1's veve papers are
+            # the case -- day 2 cannot end until the artist has been handed a veve AND the lake
+            # pattern (flags 231/232), so the player who never held any of the three never
+            # sees day 3, and no day-3+ crossing can strand them. The demand it used to raise
+            # was worse than vacuous: the artist KEEPS the papers, so `(or has has has)` at the
+            # day-10 elevator refused every winning player.
+            #   Unlike FORCED (above), which reads `edge_demands` and whose one group effect in
+            # the corpus is LSL2's raft guard, this rule needs a COUNTER era: a game without
+            # one answers None for every group, by construction.
+            groups, gwhy = [], []
+            for g in e["groups"]:
+                w = self._era_forced(b, frozenset(g))
+                if w:
+                    gwhy.append((sorted(g), w))
+                else:
+                    groups.append(g)
+            if gwhy:
+                gdrops.setdefault((a, b), []).extend(gwhy)
+            if items or groups:
+                out.append({**e, "items": items, "groups": groups})
         self._stranding_drops = drops
+        self._stranding_group_drops = gdrops
         return out
 
     def edge_demands(self, a, b):
@@ -7996,6 +8025,46 @@ class IrSccReach(SccReach):
             return r1, p1, i1
         return self._pclose_pass(rooms0, pv0, items0, confine, frozenset(r1), ban)
 
+    def _closure_deps(self):
+        """READ SETS for `_closure_tables`' write/grant/get rows, parallel to them: per record
+        `(registers its guards compare, items its guards or arming cost own)`. What
+        `_pclose_pass` consults to decide a record's verdict cannot have changed. A superset
+        is harmless (one wasted evaluation); every atom `sat` can read is collected."""
+        tables = self._closure_tables()
+        got = getattr(self, "_pclose_deps", None)
+        if got is not None and got[0] is tables:
+            return got[1]
+        writes, grants, gets, _edges, _gr = tables
+
+        def walk(g, regs, items):
+            if g is None:
+                return
+            if isinstance(g, list):
+                for x in g:
+                    walk(x, regs, items)
+            elif isinstance(g, (GAnd, GOr)):
+                for k in g.kids:
+                    walk(k, regs, items)
+            elif isinstance(g, GNot):
+                walk(g.kid, regs, items)
+            elif isinstance(g, Pred):
+                if g.kind == "OWN":
+                    items.add(g.var)
+                elif g.kind == "CMP":
+                    regs.add(g.var)
+
+        def dep(guards, mu=()):
+            regs, items = set(), set(mu)
+            for g in guards:
+                walk(g, regs, items)
+            return (tuple(regs), tuple(items))
+
+        out = ([dep([g2] + list(ents or ()), mu2) for (_gi, _v, _r, g2, ents, mu2) in writes],
+               [dep([g2] + list(ents or ()), mu2) for (_it, _r, g2, ents, mu2) in grants],
+               [dep([g2]) for (_it, _r, g2) in gets])
+        self._pclose_deps = (tables, out)
+        return out
+
     def _pclose_pass(self, rooms0, pv0, items0, confine, rp_rooms, ban=frozenset()):
         writes, grants, gets, edges, _gr = self._closure_tables()
         if ban:
@@ -8134,59 +8203,155 @@ class IrSccReach(SccReach):
                 return True                  # OPAQUE / SAID / IPROP / untracked
             return True                      # CTR / POS tuples: permissive
 
+        # ⭐ RE-EVALUATE A RECORD ONLY WHEN SOMETHING IT READS HAS CHANGED (2026-11-14).
+        # The sweep below is the same Gauss-Seidel sweep as before, in the same order, to the
+        # same convergence test -- but a record's verdict is a pure function of the rooms,
+        # register values and items it reads, and the closure only ever GROWS, so:
+        #   * a record that has FIRED never needs asking again (its landings are idempotent);
+        #   * a record that has not fired gives the same "no" until one of its reads changes.
+        # Every change is stamped; a record remembers the stamp it was last asked at. Skipping
+        # an unchanged record cannot alter the state the next record sees, so the trajectory
+        # is identical sweep for sweep. MEASURED before the naive copy was deleted (2026-11-14,
+        # GK1, both passes run side by side on every call of `edge_strandings` +
+        # `register_strandings`): 1,334 closures, 0 differing in rooms, values or items;
+        # 93.5 s against 179.0 s. The naive sweep re-asked ~15k records up to 64 times per
+        # closure -- 100M guard evaluations in one `edge_strandings`.
+        clock = [0]
+        chg_reg, chg_item, chg_room = {}, {}, {}
+
         def land(reg, v):
             c = confine.get(reg)
             if c is not None and v not in c:
                 return
-            pv.setdefault(reg, {0}).add(v)
+            cur = pv.setdefault(reg, {0})
+            if v not in cur:
+                cur.add(v)
+                clock[0] += 1
+                chg_reg[reg] = clock[0]
 
-        for _ in range(64):
-            n0 = (len(rooms), sum(len(v) for v in pv.values()), len(items))
-            for room, ivs in self.em.init_writes.items():
-                if room in rooms:
-                    for gi2, v2 in ivs.items():
-                        land(gi2, v2)
-            for (gi2, v2, r2, g2, ents, mu2) in writes:
-                if r2 in rooms and mu2 <= items and sat(g2, True, r2) and (
-                        ents is None or not ents
-                        or any(sat(e, True, r2) for e in ents)):
-                    land(gi2, v2)
-            for (it2, r2, g2, ents, mu2) in grants:
-                if r2 in rooms and mu2 <= items and sat(g2, True, r2) and (
-                        not ents or any(sat(e, True, r2) for e in ents)):
-                    items.add(it2)
-            for (it2, r2, g2) in gets:
-                if (r2 is None or r2 in rooms) and sat(g2, True, r2):
-                    items.add(it2)
-            for (a2, b2, rq2, st2, al2) in edges:
-                # NOT `or b2 in rooms`: an edge into an already-present room still LANDS
-                # its sets -- above all prevRoom, which every crossing writes. Skipping
-                # them left PV[prev] with a handful of first-arrival values and every
-                # `prev == N`-gated band (GK1's rm500 fan) permanently shut.
-                if a2 not in rooms:
-                    continue
-                bad2 = False
-                for reg2, vs2 in rq2.items():
-                    if reg2 not in tracked:
+        def give(it):
+            if it not in items:
+                items.add(it)
+                clock[0] += 1
+                chg_item[it] = clock[0]
+
+        def enter(room):
+            if room not in rooms:
+                rooms.add(room)
+                clock[0] += 1
+                chg_room[room] = clock[0]
+
+        def stale(last, room, dregs, ditems):
+            if last < 0:
+                return True
+            if room is not None and chg_room.get(room, 0) > last:
+                return True
+            for r3 in dregs:
+                if chg_reg.get(r3, 0) > last:
+                    return True
+            for i3 in ditems:
+                if chg_item.get(i3, 0) > last:
+                    return True
+            return False
+
+        wdep, gdep, tdep = self._closure_deps()
+        if ban:
+            # the banned rows were filtered out of the tables above; keep the read sets aligned
+            _w, g_all, t_all, _e, _gr2 = self._closure_tables()
+            gdep = [d for g, d in zip(g_all, gdep) if g[0] not in ban]
+            tdep = [d for g, d in zip(t_all, tdep) if g[0] not in ban]
+        # per record: -2 fired, -1 never asked, else the clock it was last asked at
+        w_at, g_at, t_at, e_at = ([-1] * len(writes), [-1] * len(grants),
+                                  [-1] * len(gets), [-1] * len(edges))
+        init_done = set()
+        # ⛔ `sat` CALLS ITSELF, so it is a reference cycle (function -> its closure cell ->
+        # the function), and everything it closes over -- `_rp`'s `rp_memo` walks above all --
+        # outlives the pass until Python's rare FULL collection. Measured on GK1 (2026-11-14):
+        # ~250k-500k objects per counter-seal case, a 1.2 GB sawtooth in the full report.
+        # Unbinding it on the way out breaks the cycle; nothing about the result changes.
+        try:
+            for _ in range(64):
+                n0 = (len(rooms), sum(len(v) for v in pv.values()), len(items))
+                for room, ivs in self.em.init_writes.items():
+                    if room in rooms and room not in init_done:
+                        init_done.add(room)
+                        for gi2, v2 in ivs.items():
+                            land(gi2, v2)
+                for k, (gi2, v2, r2, g2, ents, mu2) in enumerate(writes):
+                    at_ = w_at[k]
+                    if at_ == -2:
                         continue
-                    av2 = allowed(reg2)
-                    if reg2 in proj_scalar:
-                        rp2 = _rp(reg2)
-                        if rp2 is not None:
-                            av2 = {v3 for v3 in av2 if (a2, v3) in rp2}
-                    if not (set(vs2) & av2):
-                        bad2 = True
-                        break
-                if bad2:
-                    continue
-                if al2 and not any(set(x2) <= items for x2 in al2):
-                    continue
-                rooms.add(b2)
-                for reg2, v2 in st2.items():
-                    land(reg2, v2)
-            if (len(rooms), sum(len(v) for v in pv.values()), len(items)) == n0:
-                break
-        return rooms, pv, items
+                    dr, di = wdep[k]
+                    if not stale(at_, r2, dr, di):
+                        continue
+                    w_at[k] = clock[0]
+                    if r2 in rooms and mu2 <= items and sat(g2, True, r2) and (
+                            ents is None or not ents
+                            or any(sat(e, True, r2) for e in ents)):
+                        w_at[k] = -2
+                        land(gi2, v2)
+                for k, (it2, r2, g2, ents, mu2) in enumerate(grants):
+                    at_ = g_at[k]
+                    if at_ == -2:
+                        continue
+                    dr, di = gdep[k]
+                    if not stale(at_, r2, dr, di):
+                        continue
+                    g_at[k] = clock[0]
+                    if r2 in rooms and mu2 <= items and sat(g2, True, r2) and (
+                            not ents or any(sat(e, True, r2) for e in ents)):
+                        g_at[k] = -2
+                        give(it2)
+                for k, (it2, r2, g2) in enumerate(gets):
+                    at_ = t_at[k]
+                    if at_ == -2:
+                        continue
+                    dr, di = tdep[k]
+                    if not stale(at_, r2, dr, di):
+                        continue
+                    t_at[k] = clock[0]
+                    if (r2 is None or r2 in rooms) and sat(g2, True, r2):
+                        t_at[k] = -2
+                        give(it2)
+                for k, (a2, b2, rq2, st2, al2) in enumerate(edges):
+                    # NOT `or b2 in rooms`: an edge into an already-present room still LANDS
+                    # its sets -- above all prevRoom, which every crossing writes. Skipping
+                    # them left PV[prev] with a handful of first-arrival values and every
+                    # `prev == N`-gated band (GK1's rm500 fan) permanently shut.
+                    at_ = e_at[k]
+                    if at_ == -2 or a2 not in rooms:
+                        continue
+                    if at_ >= 0 and chg_room.get(a2, 0) <= at_ \
+                            and not any(chg_reg.get(r3, 0) > at_ for r3 in rq2) \
+                            and not (al2 and any(chg_item.get(i3, 0) > at_
+                                                 for x3 in al2 for i3 in x3)):
+                        continue
+                    e_at[k] = clock[0]
+                    bad2 = False
+                    for reg2, vs2 in rq2.items():
+                        if reg2 not in tracked:
+                            continue
+                        av2 = allowed(reg2)
+                        if reg2 in proj_scalar:
+                            rp2 = _rp(reg2)
+                            if rp2 is not None:
+                                av2 = {v3 for v3 in av2 if (a2, v3) in rp2}
+                        if not (set(vs2) & av2):
+                            bad2 = True
+                            break
+                    if bad2:
+                        continue
+                    if al2 and not any(set(x2) <= items for x2 in al2):
+                        continue
+                    e_at[k] = -2
+                    enter(b2)
+                    for reg2, v2 in st2.items():
+                        land(reg2, v2)
+                if (len(rooms), sum(len(v) for v in pv.values()), len(items)) == n0:
+                    break
+            return rooms, pv, items
+        finally:
+            sat = None
 
     def register_value_strandings(self):
         """Crossing a SEAL while a register holds a value the far side rejects -- the REGISTER
@@ -8452,8 +8617,10 @@ class IrSccReach(SccReach):
                     memo[key] = False       # nobody crosses in the record: not the item's doing
                 else:
                     self._rp_xcache = {}
+                    # a GROUP is banned whole: the player who never held ANY member
                     pre, _c = self._staged_pre(R, w - 1, {}, require_steps=True,
-                                               ban=frozenset({it}))
+                                               ban=(frozenset(it) if isinstance(it, frozenset)
+                                                    else frozenset({it})))
                     memo[key] = pre is None
             except Exception:                                   # noqa: BLE001
                 memo[key] = False
@@ -9702,6 +9869,10 @@ class IrSccReach(SccReach):
                                     "scene": sorted(lscripts),
                                     "source_scenes": sorted(wscripts),
                                     "writer_rooms": sorted(wrooms),
+                                    # the demanded value(s): what a guard must TEST. The
+                                    # items above are the value's PRICE, paid where it is
+                                    # written -- possession at the door proves nothing.
+                                    "values": sorted(vals),
                                     "pattern": "register-carry-in"})
                     for grp in sorted(groups, key=sorted):
                         gk = (tuple(sorted(grp)), room)
@@ -9715,6 +9886,10 @@ class IrSccReach(SccReach):
                                     "scene": sorted(lscripts),
                                     "source_scenes": sorted(wscripts),
                                     "writer_rooms": sorted(wrooms),
+                                    # the demanded value(s): what a guard must TEST. The
+                                    # items above are the value's PRICE, paid where it is
+                                    # written -- possession at the door proves nothing.
+                                    "values": sorted(vals),
                                     "pattern": "register-carry-in"})
         return out
 
@@ -9873,6 +10048,10 @@ def _flag_set_inside(R, pocket, inroom):
 
 
 _MODEL_MEMO = {}                       # in-process: key -> built model
+
+
+# The successor memo's bound (`IrSccReach._psucc`): ~0.5 KB an entry measured on GK1, so ~150 MB.
+_PSUCC_CACHE_CAP = 300_000
 
 
 def _model_cache_key(cfg, ir_path, here=None):
