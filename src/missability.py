@@ -7804,20 +7804,55 @@ class IrSccReach(SccReach):
         rm470 having come from rm471" alive past the latch that seals 471, and flag 65
         re-raised. With positions reset the restricted-projection refinement (`_rp`) is
         sound here -- carried values are seeded at the landing rooms and walk from there --
-        and it is what refuses `prev == 471` once 471 cannot be entered."""
+        and it is what refuses `prev == 471` once 471 cannot be entered.
+
+        ⭐ THE STAGE TAPE (2026-11-14, speed only). Stage j's state is a function of (C, the
+        extra confinement, require_steps, ban) and j alone -- every stage reads nothing else
+        but the model's tables -- so `_staged_pre(C, k)` repeats, stage for stage, the first k
+        stages of `_staged_pre(C, k + 1)`. The seal arm asks for k = 0..9 once per seed room for
+        every (S, b0), and re-ran day 1 once per case (thousands of times on GK1). With `_spre_memo` set
+        (only inside `register_value_strandings`, while the tables cannot change -- model prep
+        rewrites `_wbranch`/`_rstep` after calling this) each stage's closure and its entry
+        state are recorded once and replayed; a stage that cannot take its step is recorded as
+        the stage every longer run dies at. Results are copied out, never shared."""
+        tape = None
+        memo = getattr(self, "_spre_memo", None)
+        if memo is not None:
+            tkey = (C, _freeze_regmap(confine_extra), bool(require_steps), frozenset(ban))
+            tape = memo.get(tkey)
+            if tape is None:
+                tape = memo[tkey] = {"st": {}, "cl": {}, "dead": None}
+            dead = tape["dead"]
+            if dead is not None and dead <= k:
+                confine = _thaw_regmap(tape["st"][dead][3])
+                confine[C] = {dead}
+                return None, confine
         mono = self._monotone_latches()
         dom = set(self.em.reg_vals.get(C, ())) | {0}
         confine = dict(confine_extra)
         pv, items = {}, set()
         rooms = {self.em.cfg.start_room}
-        for j in range(0, k):
+        j0 = 0
+        if tape is not None:
+            if 0 not in tape["st"]:
+                tape["st"][0] = _snap_stage(rooms, pv, items, confine, self._spre_fs)
+            j0 = max(j for j in tape["st"] if j <= k)
+            rooms, pv, items, confine = _thaw_stage(tape["st"][j0])
+        for j in range(j0, k):
             # ⭐ EXACTLY j, NOT "AT MOST j" (2026-09-03, GK1 docs §1.48). The crosser standing at
             # day j is on day j; PV keeps the earlier values in hand, but a WRITE gated on
             # `day == 2` cannot fire on day 3. Confined to "<= j", day 2's ending arm re-fired
             # at every later stage and every day ended for free -- the last phantom.
             confine[C] = {j}
-            rooms, pv, items = self._pclose(rooms, pv, items, confine, refine=True, ban=ban)
+            if tape is not None and j in tape["cl"]:
+                rooms, pv, items = _thaw_closure(tape["cl"][j])
+            else:
+                rooms, pv, items = self._pclose(rooms, pv, items, confine, refine=True, ban=ban)
+                if tape is not None:
+                    tape["cl"][j] = _snap_closure(rooms, pv, items, self._spre_fs)
             if require_steps and self._step_live(C, j, rooms, pv, confine, items) is None:
+                if tape is not None:
+                    tape["dead"] = j
                 return None, confine
             neco = self._step_neco(C, j, j + 1)
             for R, v in neco.items():
@@ -7833,10 +7868,19 @@ class IrSccReach(SccReach):
             pv[C] = set(pv.get(C, {0})) | {j + 1}
             land = {r for r, sts in self._rstep.get(C, {}).items() if (j, j + 1) in sts}
             rooms = land or rooms
+            if tape is not None:
+                tape["st"][j + 1] = _snap_stage(rooms, pv, items, confine, self._spre_fs)
         confine[C] = {k}
-        final = self._pclose(rooms, pv, items, confine, refine=True, ban=ban)
+        if tape is not None and k in tape["cl"]:
+            final = _thaw_closure(tape["cl"][k])
+        else:
+            final = self._pclose(rooms, pv, items, confine, refine=True, ban=ban)
+            if tape is not None:
+                tape["cl"][k] = _snap_closure(*final, self._spre_fs)
         # ...and the FLIP itself, k -> k+1: the step the seal arm used to add by hand.
         if require_steps and self._step_live(C, k, final[0], final[1], confine, final[2]) is None:
+            if tape is not None:
+                tape["dead"] = k
             return None, confine
         return final, confine
 
@@ -8354,6 +8398,16 @@ class IrSccReach(SccReach):
             sat = None
 
     def register_value_strandings(self):
+        """The detector below, with `_staged_pre`'s stage tape switched on for its duration and
+        dropped after (2026-11-14, speed only -- see `_staged_pre`). Model prep rewrites the
+        tables a stage reads, so the tape lives only while nothing can."""
+        self._spre_memo, self._spre_fs = {}, {}
+        try:
+            return self._register_value_strandings()
+        finally:
+            self._spre_memo = self._spre_fs = None
+
+    def _register_value_strandings(self):
         """Crossing a SEAL while a register holds a value the far side rejects -- the REGISTER
         twin of `register_strandings`' item rows, built on the same flips and the same walks.
 
@@ -8644,10 +8698,12 @@ class IrSccReach(SccReach):
         # S is NOT confined here: whether the crossing player can still fix S is exactly what
         # the closure must decide. Pass 1 first -- its rooms are a SUPERSET of the refined
         # result's, so a goal missing there is missing, full stop; the refined pass runs only
-        # to double-check a pass-1 leak.
+        # to double-check a pass-1 leak. The refined pass is `_pclose(refine=True)` spelled out
+        # so it reuses the pass 1 just run instead of running it a second time (2026-11-14,
+        # speed only: `_pclose` is exactly these two calls).
         post_b = self._pclose({r}, pvb, pre_b[2], conf_post, refine=False)
         if goal and (goal & post_b[0]):
-            post_b = self._pclose({r}, pvb, pre_b[2], conf_post)
+            post_b = self._pclose_pass({r}, pvb, pre_b[2], conf_post, frozenset(post_b[0]))
         return post_b
 
     def producible_seal(self, R, w, r, S, b0):
@@ -10051,6 +10107,40 @@ _MODEL_MEMO = {}                       # in-process: key -> built model
 
 
 # The successor memo's bound (`IrSccReach._psucc`): ~0.5 KB an entry measured on GK1, so ~150 MB.
+# ---- the stage tape (`_staged_pre`, 2026-11-14): immutable snapshots, copied out on use. ----
+# Value sets are interned in a per-run pool: GK1's stages hold ~340 registers each, nearly all
+# {0}, {1} or {0, 1}, and a fresh frozenset per register per stage was most of the tape's size.
+def _freeze_regmap(m, pool=None):
+    out = {}
+    for k, v in m.items():
+        f = frozenset(v)
+        if pool is not None:
+            f = pool.setdefault(f, f)
+        out[k] = f
+    return out if pool is not None else tuple(sorted(out.items(), key=lambda kv: repr(kv[0])))
+
+
+def _thaw_regmap(m):
+    return {k: set(v) for k, v in m.items()}
+
+
+def _snap_stage(rooms, pv, items, confine, pool):
+    return (frozenset(rooms), _freeze_regmap(pv, pool), frozenset(items),
+            _freeze_regmap(confine, pool))
+
+
+def _thaw_stage(st):
+    return set(st[0]), _thaw_regmap(st[1]), set(st[2]), _thaw_regmap(st[3])
+
+
+def _snap_closure(rooms, pv, items, pool):
+    return (frozenset(rooms), _freeze_regmap(pv, pool), frozenset(items))
+
+
+def _thaw_closure(cl):
+    return set(cl[0]), _thaw_regmap(cl[1]), set(cl[2])
+
+
 _PSUCC_CACHE_CAP = 300_000
 
 
