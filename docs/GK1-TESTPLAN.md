@@ -155,7 +155,7 @@ Harness shortcut, if you don't want to walk there:
 | ✓ | # | Do | Expect |
 |---|---|---|---|
 | ✅ | G1 | **leave nothing on the bench**; walk out of the booth | You ride down without a refusal (talisman held). The elevator lobby plays only its usual arrival line, not the second line G5 expects. The hallway starts (knife held). ✅ Your play, 2026-11-16. |
-| ☐ | G2 (v5) | **R2's case: both guises, nothing left on the bench.** Use the key on Grace's keypad, then try pressing the keypad too | **"Not yet!"** both times, **on the lit hallway**. The door stays shut, and Gabriel stays in front of it with control. |
+| ✅ | G2 (v5) | **R2's case: both guises, nothing left on the bench.** Use the key on Grace's keypad, then try pressing the keypad too | **"Not yet!"** both times, **on the lit hallway**. The door stays shut, and Gabriel stays in front of it with control. ✅ Your play, 2026-11-16. |
 | ❌ | G2 (v4) | **FAILED, your play, 2026-11-16: the door opens, then the game hangs.** Cause, confirmed: the refusal runs after the hounfour has faded the screen to black and cleared the room for the scene, so "Not yet!" is drawn invisibly and waits for a click. Clicking the black screen dismissed it, and then the game CRASHED: `800 disposeCode::doit @ 2873: send to non-object 0000:0000`. The hounfour's teardown runs again after a scene and disposes the scene's obstacles, but our refusal skipped the scene's own setup, so there are none to dispose. A refusal inside the scene is the wrong site. |
 | ☐ | G3 | walk back to the elevator lobby and into the elevator | you ride up to the confessional booth |
 | ✅ | G4 | use the rod on the bench, then the signal device on the bench | both are stowed; `tf 280` and `tf 281` each print 1. ✅ Your play, 2026-11-16. |
