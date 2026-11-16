@@ -1,8 +1,19 @@
-# GK1 patched-game test plan — v4 (the bayou ritual and Grace's room)
+# GK1 patched-game test plan — v5 (the bayou ritual and Grace's room)
 
-Game: `~/sierra/patched/gk1`, build `build/gk1_patch_v4`. On 2026-11-15 I compared all 10 installed
-files byte for byte with the build, including the copies inside `PATCHES/`. Every one matches.
-The night's speed fixes changed no output, so v4 is still the current build.
+**v5 INSTALLED 2026-11-16** (`build/gk1_patch_v5`), replacing v4.
+- **Change:** Grace's room is now refused at the hallway keypad, when you use the key or press it,
+  instead of inside the scene. v4's refusal there was invisible, and dismissing it crashed the
+  game (G2 below).
+- **Files:**
+  - 455, 490 and 720 are byte-identical to v4.
+  - 800 changed (it gained the keypad refusal).
+  - v5 doesn't touch 808, so Sierra's own `PATCHES/808` is back in the copy.
+- **Install check:** all 14 written files were checked byte for byte; 0 mismatches.
+- ⚠ **Restart ScummVM before block G, and don't load a save made inside the hounfour under v4.**
+  The hounfour script changed under it.
+- **Revert:** `build/gk1_patch_v4` is one copy away.
+
+Game: `~/sierra/patched/gk1`.
 Stock control, if a result looks wrong: `~/sierra/Games/gk1`.
 
 **Console = Ctrl+Alt+D.** Rules:
@@ -80,10 +91,13 @@ resource_info script 490
 resource_info script 800
 resource_info script 808
 ```
-Expect the decompressed hash to start with **c6b3b7e2 / a0497fd3 / e2938cf0**.
+Expect the decompressed hash to start with:
+- **490: c6b3b7e2** (ours; unchanged since v4);
+- **800: 41f16d18** (ours, v5);
+- **808: 13e0e348** (Sierra's own; v5 doesn't patch it).
 
-Sierra's own `PATCHES/` versions would show d40284eb / 23433274 / 13e0e348. That is exactly how
-the September patch failed: the engine ran Sierra's copies instead of ours. If your ScummVM
+If 490 or 800 shows Sierra's hash (d40284eb or 23433274), the engine is running Sierra's copies
+instead of ours, which is exactly how the September patch failed. If your ScummVM
 doesn't print a hash, skip this block, because B1 proves the patch is live anyway.
 
 ## B — the bayou ritual (R5), day 6
@@ -141,12 +155,12 @@ Harness shortcut, if you don't want to walk there:
 | ✓ | # | Do | Expect |
 |---|---|---|---|
 | ✅ | G1 | **leave nothing on the bench**; walk out of the booth | You ride down without a refusal (talisman held). The elevator lobby plays only its usual arrival line, not the second line G5 expects. The hallway starts (knife held). ✅ Your play, 2026-11-16. |
-| ❌ | G2 | **FAILED, your play, 2026-11-16: the door opens, then the game hangs.** Cause, confirmed: the refusal runs after the hounfour has faded the screen to black and cleared the room for the scene, so "Not yet!" is drawn invisibly and waits for a click. Clicking the black screen dismissed it, and then the game CRASHED: `800 disposeCode::doit @ 2873: send to non-object 0000:0000`. The hounfour's teardown runs again after a scene and disposes the scene's obstacles, but our refusal skipped the scene's own setup, so there are none to dispose. A refusal inside the scene is the wrong site. |
-| | G2 (as planned) | **R2's case: both guises, nothing left on the bench.** Use the key on Grace's keypad | **"Not yet!"**. ✅ The harness saw the scene refused, with the ceremony latch at 0. ☐ Dismiss it: you're back in the hallway with control, and nothing hangs. |
+| ☐ | G2 (v5) | **R2's case: both guises, nothing left on the bench.** Use the key on Grace's keypad, then try pressing the keypad too | **"Not yet!"** both times, **on the lit hallway**. The door stays shut, and Gabriel stays in front of it with control. |
+| ❌ | G2 (v4) | **FAILED, your play, 2026-11-16: the door opens, then the game hangs.** Cause, confirmed: the refusal runs after the hounfour has faded the screen to black and cleared the room for the scene, so "Not yet!" is drawn invisibly and waits for a click. Clicking the black screen dismissed it, and then the game CRASHED: `800 disposeCode::doit @ 2873: send to non-object 0000:0000`. The hounfour's teardown runs again after a scene and disposes the scene's obstacles, but our refusal skipped the scene's own setup, so there are none to dispose. A refusal inside the scene is the wrong site. |
 | ☐ | G3 | walk back to the elevator lobby and into the elevator | you ride up to the confessional booth |
 | ✅ | G4 | use the rod on the bench, then the signal device on the bench | both are stowed; `tf 280` and `tf 281` each print 1. ✅ Your play, 2026-11-16. |
 | ✅ | G5 | walk out and ride down again | this time the lobby **plays an extra line**, and `tf 351` prints 1. ✅ Your play, 2026-11-16. |
-| ☐ | G6 | **R3's case:** `send GKEgo put 79` (wolf guise gone), then Grace's keypad | **"Not yet!"**, dismiss it, and you're back in the hallway |
+| ☐ | G6 | **R3's case:** `send GKEgo put 79` (wolf guise gone), then Grace's keypad | **"Not yet!"** on the lit hallway, the door stays shut, and you keep control |
 | ✅☐ | G7 | `send GKEgo get 79`, then Grace's keypad | **the ceremony starts**, stock from here. ✅ The harness saw the latch at 1 with both guises and flag 351. |
 | ☐ | G8 | *optional stock control:* setup and G2 on `~/sierra/Games/gk1` | the ceremony starts unprepared. That's the softlock the guard prevents. |
 
