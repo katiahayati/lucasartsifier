@@ -2477,6 +2477,157 @@ def path_refuted(path, assigns):
     return False
 
 
+def scene_routes(forms, text, scene):
+    """The player's clicks that lead into room-hosted SCENE `scene`, for a refusal placed BEFORE
+    the room starts handing over to it.
+
+    Play-found (GK1 v4, 2026-11-16): a refusal at the scene's own first state comes too late.
+    The hounfour's dispatcher (`Hounfour.sc` `sMainHallways`) fades the screen to black and
+    disposes the hallway's cast BEFORE `(self setScript: (ScriptID local1 0) self local0)`. So
+    the "Not yet!" was drawn on a black screen. Once dismissed, the dispatcher's post-scene
+    teardown disposed obstacles the refused scene had never added: a send to 0000:0000 and a
+    crash. The last moment the player still has the room is the click that starts the
+    hand-over: the keypad's `doVerb`, whose door scripts cue the dispatcher into that state.
+
+    Shape read here (anything else is reported, never guessed):
+      * the scene is armed in a dispatcher D's `changeState` state as `(ScriptID X 0)`, where
+        X is the literal `scene` or a variable the file assigns `scene`. A variable gives the
+        discriminator `(== X scene)`, so only routes that are about to start THIS scene are
+        refused;
+      * every external `(D cue:)` sits in a Script S's `changeState`, and S's armings are all
+        controllable, so S's armings are the routes. S must not assign X;
+      * every arming of D itself is in an `init` that leaves X alone, with X's declared
+        starting value not `scene` (a room entering fresh starts some other scene), so that
+        route is refuted;
+      * nobody else pokes D's state.
+    Returns {"disc": form or None, "routes": [find_all_armings placements],
+             "refuted": [why], "missed": [why]}. Any `missed` entry means unplaced: a
+    half-guarded scene reads as covered and is not."""
+    out = {"disc": None, "routes": [], "refuted": [], "missed": []}
+    meths = _instance_methods(forms)
+
+    def scene_arg(x):
+        if (isinstance(x, list) and len(x) == 3 and is_sym(x[0], "ScriptID") and x[2] == 0):
+            return x[1]
+        return None
+
+    def assigns(form, var):
+        if not isinstance(form, list) or not form:
+            return False
+        if is_sym(form[0], "=") and len(form) == 3 and is_sym(form[1], var):
+            return True
+        return any(assigns(x, var) for x in form)
+
+    def assigns_value(form, var, val):
+        if not isinstance(form, list) or not form:
+            return False
+        if (is_sym(form[0], "=") and len(form) == 3 and is_sym(form[1], var)
+                and form[2] == val):
+            return True
+        return any(assigns_value(x, var, val) for x in form)
+
+    disp = []                                   # (D, state, X)
+
+    def walk_arm(form, inst, state):
+        if not isinstance(form, list) or not form:
+            return
+        for k, x in enumerate(form):
+            if is_sym(x, "setScript:") and k + 1 < len(form):
+                a = scene_arg(form[k + 1])
+                if a is not None and (a == scene or isinstance(a, Sym)):
+                    disp.append((inst, state, a))
+        for x in form:
+            walk_arm(x, inst, state)
+
+    for (inst, meth, mform) in meths:
+        if meth != "changeState":
+            continue
+        for sw in mform[2:]:
+            if isinstance(sw, list) and sw and is_sym(sw[0], "switch"):
+                for clause in sw[2:]:
+                    if isinstance(clause, list) and clause and isinstance(clause[0], int):
+                        for b in clause[1:]:
+                            walk_arm(b, inst, clause[0])
+    disp = [(d, st, x) for (d, st, x) in disp
+            if not isinstance(x, Sym) or assigns_value(forms, x.name, scene)]
+    if not disp:
+        out["missed"].append("no dispatcher state arms scene %s" % scene)
+        return out
+    if len({(d, x.name if isinstance(x, Sym) else x) for (d, _s, x) in disp}) != 1:
+        out["missed"].append("scene %s is armed from several dispatchers" % scene)
+        return out
+    D, _state, X = disp[0]
+    var = X.name if isinstance(X, Sym) else None
+    out["disc"] = ["==", X, scene] if var else None
+
+    _nr, _cs, ss, _pc = analyze_room(forms)
+    sends = []                                  # (owner instance, method, selector)
+
+    def walk_send(form, inst, meth):
+        if not isinstance(form, list) or not form:
+            return
+        ms = _message_send(form)
+        if ms and ms[0] == D:
+            for sel, _args in ms[1]:
+                sends.append((inst, meth, sel))
+        for x in form:
+            walk_send(x, inst, meth)
+
+    for (inst, meth, mform) in meths:
+        if inst != D:
+            walk_send(mform, inst, meth)
+    for (inst, meth, sel) in sends:
+        if sel in ("changeState", "state"):
+            out["missed"].append("%s::%s drives %s's state directly" % (inst, meth, D))
+    cuers = sorted({(i, m) for (i, m, sel) in sends if sel == "cue"})
+    if not cuers:
+        out["missed"].append("nothing outside %s cues it" % D)
+    for (S, M) in cuers:
+        if M != "changeState":
+            out["missed"].append("%s is cued from %s::%s, not from a script's state" % (D, S, M))
+            continue
+        if var and any(assigns(mf, var) for (i, _m, mf) in meths if i == S):
+            out["missed"].append("%s assigns %s before cueing %s" % (S, var, D))
+            continue
+        if not any(t == S for (_i, _m, t, _r, _p) in ss):
+            pub = re.search(r"\(public\b(.*?)\n\)", text, re.S)
+            if pub and re.search(r"\b%s\b" % re.escape(S), pub.group(1)):
+                out["missed"].append("%s cues %s and is exported, so it may be armed from "
+                                     "another script" % (S, D))
+            else:
+                out["refuted"].append("%s cues %s but nothing arms it" % (S, D))
+            continue
+        loose = sorted({"%s::%s" % (i, m) for (i, m, t, _r, _p) in ss
+                        if t == S and (i is None or m not in CONTROLLABLE_METHODS)})
+        if loose:
+            out["missed"].append("%s is also armed from %s, which has no click to refuse"
+                                 % (S, ", ".join(loose)))
+            continue
+        arms = find_all_armings(forms, S)
+        if not arms:
+            out["missed"].append("%s cues %s but has no controllable arming" % (S, D))
+        out["routes"].extend(arms)
+    start = None
+    if var:
+        lm = re.search(r"\(local\b(.*?)\n\)", text, re.S)
+        if lm and re.search(r"\b%s\b" % re.escape(var), lm.group(1)):
+            im = re.search(r"\b%s\s*=\s*(-?\d+)" % re.escape(var), lm.group(1))
+            start = int(im.group(1)) if im else 0
+    for (i, m, t, _r, _p) in ss:
+        if t != D:
+            continue
+        where = "%s::%s" % (i, m)
+        mform = next((mf for (ii, mm, mf) in meths if ii == i and mm == m), None)
+        if (var and m == "init" and start is not None and start != scene
+                and mform is not None and not assigns(mform, var)):
+            out["refuted"].append("%s starts %s with %s = %s, not %s"
+                                  % (where, D, var, start, scene))
+        else:
+            out["missed"].append("%s arms %s and may start scene %s with no click to refuse"
+                                 % (where, D, scene))
+    return out
+
+
 def gate_positional_test(text, instance, method, test_src, gate_src):
     """Conjoin `gate_src` onto the `(if <test_src> ...` of `instance::method` -- the silent
     whole-clause gate (see `find_trigger`'s arm-clause note: a positional clause has no click

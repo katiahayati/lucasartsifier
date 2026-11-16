@@ -3057,50 +3057,47 @@ def _guard_register_edge(dest, sp, titles_by_num):
 
 
 def _guard_scene(dest, sp, titles_by_num):
-    """Refuse a point-of-no-return SCENE at its own first step.
+    """Refuse a point-of-no-return SCENE at the player's click that starts the hand-over to it.
 
-    The scene is a Script its room arms WITH A CALLER, so disposing it cues the room's
-    dispatcher exactly as the scene's own exit does -- the player is told no and is back
-    where every scene returns to. The whole of state 0 is held, so nothing the scene does on
-    entry (its latch above all) runs first. Checked, not assumed: with no caller on the
-    room's scene arming the row stays unplaced."""
-    title, host = titles_by_num.get(sp["script"]), titles_by_num.get(sp["room"])
-    path = os.path.join(dest, "src", title + ".sc") if title else None
+    ⛔ NOT at the scene's own first state (v4's placement, play-failed 2026-11-16). The room's
+    dispatcher may tear the room down before arming the scene; GK1's hounfour fades to black
+    and disposes the cast first. A refusal there is invisible, and the dispatcher's
+    post-scene teardown then assumes the setup the refusal skipped, so the game crashes.
+    `trigger.scene_routes` climbs from the dispatcher state that arms the scene to every
+    controllable arming of the scripts that cue it there. Each of those gets the refusal,
+    narrowed by the discriminator to the routes about to start THIS scene. The screen is
+    still the room's and the player keeps control. All or nothing: one unreadable route
+    leaves the row unplaced and says which."""
+    host = titles_by_num.get(sp["room"])
     hpath = os.path.join(dest, "src", host + ".sc") if host else None
-    if not path or not os.path.exists(path) or not hpath or not os.path.exists(hpath):
-        return {**sp, "applied": False, "why": "no source for scene %s of rm%s"
-                                               % (sp["script"], sp["room"])}
+    if not hpath or not os.path.exists(hpath):
+        return {**sp, "applied": False, "why": "no source for rm%s" % sp["room"]}
     if REFUSE is None:
         return {**sp, "applied": False, "why": "no literal-display form derives for this game"}
-    if not code_search(open(hpath, errors="replace").read(),
-                       r"setScript:\s*\(ScriptID\s+[\w-]+\s+0\s*\)\s+[^\s()]"):
+    text = open(hpath, errors="replace").read()
+    rt = T.scene_routes(read_file(hpath), text, sp["script"])
+    if rt["missed"] or not rt["routes"]:
         return {**sp, "applied": False,
-                "why": "rm%s does not arm its scenes with a caller, so a refused scene has "
-                       "no way back" % sp["room"]}
-    text = open(path, errors="replace").read()
-    isp = _find_region(text, r"\(instance\s+%s\b" % re.escape(sp["machine"]))
-    rel = _find_region(text[isp[0]:isp[1]], r"\(method\s+\(changeState\b") if isp else None
-    if not rel:
-        return {**sp, "applied": False, "why": "no %s::changeState in %s"
-                                               % (sp["machine"], title)}
-    m0, m1 = isp[0] + rel[0], isp[0] + rel[1]
-    region = text[m0:m1]
-    sw = code_search(region, r"\(switch\s+\(=\s+state\s+\w+\)")
-    cm = re.match(r"\s*\(\s*0(?=[\s)])", region[sw.end():]) if sw else None
-    if not cm:
-        return {**sp, "applied": False, "why": "%s has no state 0 to hold" % sp["machine"]}
-    c0 = sw.end() + cm.end() - len(cm.group(0).lstrip())
-    bs, be = sw.end() + cm.end(), _balanced_span(region, c0) - 1
-    ind = "\t\t\t\t"
-    refuse = REFUSE + "\n" + ind + "\t(self dispose:)"
-    wrapped = ("\n" + ind
-               + guarded_wrap(to_source_syntax(sp["condition"]), region[bs:be], refuse,
-                              site=_ModeSite(), indent=ind)
-               + "\n\t\t\t")
-    text = text[:m0] + region[:bs] + wrapped + region[be:] + text[m1:]
-    open(path, "w").write(_ensure_refusal_use(text, titles_by_num))
-    return {**sp, "applied": True, "title": title, "sites": 1,
-            "placement": {"kind": "scene-entry", "machine": sp["machine"]}}
+                "placement": {"kind": "scene-routes", "refuted": rt["refuted"]},
+                "why": "; ".join(rt["missed"]) or "no route into scene %s" % sp["script"]}
+    demand = to_source_syntax(sp["condition"])
+    if rt["disc"] is not None:
+        demand = "(or (not %s) %s)" % (T.form_src(rt["disc"]), demand)
+    site, routes, n_total = _ModeSite(), [], 0
+    for pl in rt["routes"]:
+        where = "%s::%s -> %s" % (pl["trigger_instance"], pl["trigger_method"],
+                                  pl["target_script"])
+        new_text, n = wrap_all_armings_in_source(text, pl, demand, REFUSE, site=site)
+        if not n:
+            return {**sp, "applied": False,
+                    "placement": {"kind": "scene-routes", "refuted": rt["refuted"]},
+                    "why": "%s: arming found but not wrappable" % where}
+        text, n_total = new_text, n_total + n
+        routes.append({"route": where, "sites": n})
+    open(hpath, "w").write(_ensure_refusal_use(text, titles_by_num))
+    return {**sp, "applied": True, "title": host, "sites": n_total,
+            "placement": {"kind": "scene-routes", "guard": demand, "routes": routes,
+                          "refuted": rt["refuted"]}}
 
 
 def apply_guards(dest, specs, titles_by_num, nums, s_drops=lambda it: set(), rooms=None,
