@@ -34,6 +34,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -62,8 +63,19 @@ def emit_all(out_dir=EMIT_DIR):
     Delegates to `tools/measure_emitted_bytes.emit` -- the one harness that already mirrors the
     order, `install_mode_chooser` (a feasibility gate, not decoration) included. Returns the
     tool's exit code: nonzero means at least one game emitted NOTHING, which the caller must
-    treat as a failure, never a skip."""
-    return _tool().emit(_HERE, out_dir, games())
+    treat as a failure, never a skip.
+
+    ONE GAME PER PROCESS (2026-11-16, so the suite can run on the local 5 GB WSL VM): in one
+    process the six-game emit reached 4.7 GB RSS with 199 MB free there, because memory is not
+    handed back between games. A fresh interpreter per game caps the peak at the largest single
+    game and also rules out any state carried from one game's emit into the next. Same tool,
+    same per-game steps -- each child runs `measure_emitted_bytes.py --games <one game>`."""
+    tool = os.path.join(ROOT, "tools", "measure_emitted_bytes.py")
+    rc = 0
+    for g in games():
+        r = subprocess.run([sys.executable, tool, _HERE, out_dir, "--games", g])
+        rc = rc or r.returncode
+    return rc
 
 
 def hash_game_tree(game_dir):
