@@ -73,21 +73,9 @@ KNOWN_RED = {
     # the write inside them is invisible. The exact read-back rewrite exists and runs on the
     # EXTRA stores (GK1's topic-said array); switching it on for the primary store captures
     # those hidden writes and moves the play-validated KQ6/LB2 surfaces -- the USER's bless.
-    # ⭐⭐ A COVERAGE CHANGE, 2026-09-06: `gk1` JOINED `measure_emitted_bytes.GAMES` when it got
-    # its first patch (docs/SCI2-PATCHING.md). Until then GK1 was the one game whose emitted
-    # source no gate had ever looked at -- ten days of analysis and hand emission, with a moved
-    # placement invisible here. The two reds below are the ARRIVAL of that coverage, not a
-    # regression: the manifest has no gk1 entry yet, and the game-set check sees the sixth game.
-    # ⛔ Both clear with ONE bless (`tools/bless_emission.py --write`) and that is the USER's
-    # ([[refresh-is-a-bless]], [[report-coverage-changes-loudly]]).
-    "test_emission_manifest.py": {
-        "emission: gk1 matches manifest":
-            "gk1 joined the emitted game set 2026-09-06 with its first patch; the manifest has "
-            "no entry for it yet -- new coverage, awaiting the USER's bless",
-        "emission: manifest covers exactly the emitted game set":
-            "same arrival: the manifest names five games, the tool now emits six. Clears with "
-            "the same bless as the row above",
-    },
+    # ✅ GK1'S EMISSION BLESSED 2026-11-16 (USER yes): its manifest entry is v5's tree -- 208 stock
+    # sources plus the four patched ones (Hounfour, bayouMaze, rm455, rm720), each matching the
+    # installed v5 build's source. The six-game set is covered.
     # ⛔ NOT DECLARED (2026-09-01): the shared-steps-table feed briefly moved the KQ6 golden
     # (the capture guards toward the travel dispatch) AND two enforced oracle checks -- it was
     # PARKED instead of declared, because a play-confirmed guard shape is not a plumbing
