@@ -144,8 +144,8 @@ Harness shortcut, if you don't want to walk there:
 | ❌ | G2 | **FAILED, your play, 2026-11-16: the door opens, then the game hangs.** Cause, confirmed: the refusal runs after the hounfour has faded the screen to black and cleared the room for the scene, so "Not yet!" is drawn invisibly and waits for a click. Clicking the black screen dismissed it, and then the game CRASHED: `800 disposeCode::doit @ 2873: send to non-object 0000:0000`. The hounfour's teardown runs again after a scene and disposes the scene's obstacles, but our refusal skipped the scene's own setup, so there are none to dispose. A refusal inside the scene is the wrong site. |
 | | G2 (as planned) | **R2's case: both guises, nothing left on the bench.** Use the key on Grace's keypad | **"Not yet!"**. ✅ The harness saw the scene refused, with the ceremony latch at 0. ☐ Dismiss it: you're back in the hallway with control, and nothing hangs. |
 | ☐ | G3 | walk back to the elevator lobby and into the elevator | you ride up to the confessional booth |
-| ☐ | G4 | use the rod on the bench, then the signal device on the bench | both are stowed; `tf 280` and `tf 281` each print 1 |
-| ☐ | G5 | walk out and ride down again | this time the lobby **plays an extra line**, and `tf 351` prints 1 |
+| ✅ | G4 | use the rod on the bench, then the signal device on the bench | both are stowed; `tf 280` and `tf 281` each print 1. ✅ Your play, 2026-11-16. |
+| ✅ | G5 | walk out and ride down again | this time the lobby **plays an extra line**, and `tf 351` prints 1. ✅ Your play, 2026-11-16. |
 | ☐ | G6 | **R3's case:** `send GKEgo put 79` (wolf guise gone), then Grace's keypad | **"Not yet!"**, dismiss it, and you're back in the hallway |
 | ✅☐ | G7 | `send GKEgo get 79`, then Grace's keypad | **the ceremony starts**, stock from here. ✅ The harness saw the latch at 1 with both guises and flag 351. |
 | ☐ | G8 | *optional stock control:* setup and G2 on `~/sierra/Games/gk1` | the ceremony starts unprepared. That's the softlock the guard prevents. |
