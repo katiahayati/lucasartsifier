@@ -1,6 +1,20 @@
 # GK1 flag 14 test plan — skip the day-3 newspaper, and is Tulane gone for good?
 
-> **RESULT, 2026-11-16: a REAL softlock in the stock game.** Your play, by the console route
+> ⚠ **CORRECTED, later on 2026-11-16: a FALSE POSITIVE.** The ruling below rested on my advice
+> that Part C was enough, and it wasn't.
+> - **Day 3 does need Tulane:** the mold needs Cazaunoux to show you the bracelet (flag 67, from
+>   her topic 8). Topic 8 appears once flag 44 is set (`GKTeller.sc:84`), and flag 44 comes from
+>   her topic 54, after 37, after 50.
+> - **Topic 50 needs Hartridge's topic 6** (`hartridge.sc:37,65`), and his conversation opens only
+>   in his Tulane office (`rm340.sc:525`).
+> - **The paper is always readable:** it's on the counter at every bookstore visit
+>   (`bookstore.sc:185`). Skipping it only delays the day.
+> - **What the check below missed:** it searched the Tulane room scripts but not the "topic said"
+>   store that the shared talk screen writes. Part C set flag 256 by console and skipped that whole
+>   chain.
+> - **No guard** is or will be placed for it.
+>
+> *Superseded:* **RESULT, 2026-11-16: a REAL softlock in the stock game.** Your play, by the console route
 > (S, then C, then B): *"oh yeah, that is a softlock."* Part A wasn't played; a source check
 > replaced it.
 > - **The check:** I listed everything Tulane writes (flags 32, 45, 46, 49, 149, 224–227 and

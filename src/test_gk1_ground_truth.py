@@ -4,8 +4,8 @@ Same contract as `test_kq6_ground_truth`: columns of requirement UNITS, a DROP f
 EXPECTED_CAUGHT is a regression (STOP and confirm), an ADDITION is a suspicion (confirm), a
 CONFIRMED_SAFE name being flagged is a false positive. Every row's provenance is inline; ALL of it
 was script-derived and UNVALIDATED by play when written (2026-08-27, autonomous run). Since then
-the USER has ruled R6 (flag 14, 2026-11-16) a real softlock, and play-confirmed the R5 and R2+R3
-guards (v5, 2026-11-16). See docs/GK1-SOFTLOCK-CANDIDATES.md for the derivations, file:line each.
+the USER has play-confirmed the R5 and R2+R3 guards (v5, 2026-11-16). USER policy 2026-11-16: a
+false positive that gets no guard is not a concern, and must not be made a failing check. See docs/GK1-SOFTLOCK-CANDIDATES.md for the derivations, file:line each.
 
 What GK1 adds to the corpus: a DAY-structured game (`global123`, 1..10) whose point of no return is
 the day counter itself, not a room edge. Its four real dead ends are all "the day advanced past the
@@ -305,22 +305,6 @@ def run():
           f"Teller topic dispatch is lowered (vocab.lower_teller_cases) and the topic-said array "
           f"(global182, proc50_5..8) is a lowered store since 848ec35 (docs GK1 1.42); the flat arm "
           f"still cannot see that go-home SPENDS flag 65 (1.29) -- the closure arm can")
-
-    # R6 -- USER RULING 2026-11-16, play-confirmed by the console route (docs/GK1-FLAG14-TESTPLAN.md):
-    # skipping the day-3 newspaper is a REAL softlock in the stock game. Flag 14's only writer is
-    # the day-3 paper on the bookstore counter (bookstore.sc:2130 -> getTheNewsPaper, :684);
-    # Tulane's map icon needs it (rm205.sc:58); day 3's endDay (theMapPrint.sc:243-252) does not
-    # read it, but day 4's needs flag 227, raised only by showTheVeve in Tulane's rm340. Found by
-    # the full report 2026-11-15 as a producible-dead-end register_value_strandings row (reg 256
-    # = flag 14, day -> 4, flip room 370). Pinned like R4 on the closure arm's one-crossing
-    # question: the day-4 crosser with flag 14 clear is a dead end.
-    flag14 = fbase + 14 if fbase is not None else None
-    seal14 = s.producible_seal(123, 4, 370, flag14, 0) if flag14 is not None else None
-    check("R6: flag 14 (the day-3 newspaper -> Tulane on the map -> day 4's flag 227) is caught "
-          "as a dead end at the day-4 crossing",
-          seal14 is True,
-          f"closure arm for the day-4 crossing carrying flag 14 = 0: {seal14!r} (None = nobody "
-          f"crosses, False = not a seal, True = dead end); flag14 synthetic = {flag14}")
 
     print(f"\n  {len(PASS)} passed, {len(FAIL)} failed")
     return not FAIL
