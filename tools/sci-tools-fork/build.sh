@@ -15,7 +15,7 @@ FORK="$REPO_ROOT/vendor/sci-tools"
 #   git -C vendor/sci-tools fetch upstream && git -C vendor/sci-tools rebase upstream/main
 FORK_URL=https://github.com/katiahayati/sci-tools
 UPSTREAM_URL=https://github.com/sluicebox/sci-tools
-PIN=3895bc1a54515dc1d62e53570090a91b015afe52     # katiahayati/sci-tools json-ir
+PIN=352916ef0100067ebea16304d991b945d0016fbc     # katiahayati/sci-tools json-ir
 GAME_DIR="${1:-/mnt/i/sierra/lsl2}"
 OUT_DIR="${2:-$REPO_ROOT/build/ir}"
 
