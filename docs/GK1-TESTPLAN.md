@@ -140,8 +140,9 @@ Harness shortcut, if you don't want to walk there:
 
 | ✓ | # | Do | Expect |
 |---|---|---|---|
-| ☐ | G1 | **leave nothing on the bench**; walk out of the booth | You ride down without a refusal (talisman held). The elevator lobby plays only its usual arrival line, not the second line G5 expects. The hallway starts (knife held). |
-| ✅☐ | G2 | **R2's case: both guises, nothing left on the bench.** Use the key on Grace's keypad | **"Not yet!"**. ✅ The harness saw the scene refused, with the ceremony latch at 0. ☐ Dismiss it: you're back in the hallway with control, and nothing hangs. |
+| ✅ | G1 | **leave nothing on the bench**; walk out of the booth | You ride down without a refusal (talisman held). The elevator lobby plays only its usual arrival line, not the second line G5 expects. The hallway starts (knife held). ✅ Your play, 2026-11-16. |
+| ❌ | G2 | **FAILED, your play, 2026-11-16: the door opens, then the game hangs.** Suspected cause: the refusal runs after the hounfour has faded the screen to black and cleared the room for the scene, so "Not yet!" is drawn invisibly and waits for a click. Unconfirmed. |
+| | G2 (as planned) | **R2's case: both guises, nothing left on the bench.** Use the key on Grace's keypad | **"Not yet!"**. ✅ The harness saw the scene refused, with the ceremony latch at 0. ☐ Dismiss it: you're back in the hallway with control, and nothing hangs. |
 | ☐ | G3 | walk back to the elevator lobby and into the elevator | you ride up to the confessional booth |
 | ☐ | G4 | use the rod on the bench, then the signal device on the bench | both are stowed; `tf 280` and `tf 281` each print 1 |
 | ☐ | G5 | walk out and ride down again | this time the lobby **plays an extra line**, and `tf 351` prints 1 |
