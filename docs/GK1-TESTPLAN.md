@@ -105,8 +105,8 @@ Gabriel at x 270, y 88; `send GKEgo posn 270 88` puts him there.
 | ✓ | # | Do | Expect |
 |---|---|---|---|
 | ✅ | B1 | no tattoo: use the croc mask on Gabriel | **"Not yet!"**. Dismiss it, and you're still in the clearing with control. (Stock: he walks in, Dr John spots the missing tattoo, death.) ✅ Your play, 2026-11-16. |
-| ✅☐ | B2 | no mask, no tattoo: **walk** Gabriel up into a ritual passage | **Nothing happens**: no cutscene, no message. Then walk away, and leave by the ordinary bayou exit. ✅ The harness showed the passage arms in stock with any flags, but in the patch only with both. ☐ How it feels to walk: does he get stuck at the edge? |
-| ☐ | B3 | `sf 299` (tattoo), then use the mask | Stock: the mask goes on, he walks into the ritual, and Dr John's check passes and the ritual carries on |
+| ✅ | B2 | no mask, no tattoo: **walk** Gabriel up into a ritual passage | **Nothing happens**: no cutscene, no message. Then walk away, and leave by the ordinary bayou exit. ✅ The harness showed the passage arms in stock with any flags, but in the patch only with both. ✅ Your play, 2026-11-16: the walking side checks out too. |
+| ✅ | B3 | `sf 299` (tattoo), then use the mask | Stock: the mask goes on, he walks into the ritual, and Dr John's check passes and the ritual carries on. ✅ Your play, 2026-11-16. |
 | ☐ | B4 | *optional, the honest route:* after B1, leave the bayou, get the tattoo at the bookstore, and come back the same night | the mask works. I haven't checked that the day stays at 6 along the way, so if it doesn't, say so |
 
 ## G — Grace's room (R2 + R3), day 10
