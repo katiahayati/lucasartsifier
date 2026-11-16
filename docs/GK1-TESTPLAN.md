@@ -1,5 +1,17 @@
 # GK1 patched-game test plan — v5 (the bayou ritual and Grace's room)
 
+> **TEST BUILD `v6mode` INSTALLED 2026-11-16 over v5: block M below.** It's v5's guards plus the
+> guard-mode plumbing, with **Main (script 0) recompiled** to declare the mode (`global241`) and
+> the warned bits (`global242`).
+> - **Not a shipping build:** there's no chooser yet, so you set the mode from the console.
+> - **Built by** the scratch `build_gk1_mode_test.py`, which is `build/build_patch.py` with the
+>   chooser's feasibility gate skipped.
+> - **Checked before install:** all 44 objects in the compiled Main have Sierra's class numbers,
+>   superclasses and property counts (`GK` 134, `GKSound` 135). Main's source differs from stock
+>   only by the two declarations.
+> - **Revert:** `python3 tools/install_patch.py gk1 build/gk1_patch_v5/patch`, then delete
+>   `0.SCR` and `0.HEP` from `~/sierra/patched/gk1`.
+
 **v5 INSTALLED 2026-11-16** (`build/gk1_patch_v5`), replacing v4.
 - **Change:** Grace's room is now refused at the hallway keypad, when you use the key or press it,
   instead of inside the scene. v4's refusal there was invisible, and dismissing it crashed the
@@ -174,6 +186,31 @@ room 720              (Esc)
 | ✓ | # | Do | Expect |
 |---|---|---|---|
 | ☐ | K1 | talk to Wolfgang | the conversation plays as stock. If Wolfgang isn't on screen after the teleport, skip this row; he needs the real arrival. |
+
+## M — guard modes (test build `v6mode`)
+
+**Restart ScummVM and start a NEW game.** Main changed, so older saves won't load.
+
+Modes, read with `vv g 241` and set with `vv g 241 N`:
+- **0 = Full** (the default): always refuse.
+- **1 = Lite:** refuse once, then "You have been warned!" and stock.
+- **2 = Off:** stock.
+
+Warned bits, read with `vv g 242`: 1 = the croc mask, 2 = Grace's keypad. Clear both with `vv g 242 0`.
+
+A refusal you take in Full already counts as a warning, so it carries over into Lite. That's your
+2026-08-08 ruling, and M4 tests it.
+
+| ✓ | # | Do | Expect |
+|---|---|---|---|
+| ☐ | M0 | New game. Open the control panel; save; restore that save; play a few screens | boots and plays as v5. `vv g 241` → 0 |
+| ☐ | M1 | **Full:** block B's setup, then use the croc mask on Gabriel, **twice** | "Not yet!" both times |
+| ☐ | M2 | **Lite, fresh:** `vv g 241 1`, `vv g 242 0`, then use the mask, twice | 1st: "Not yet!". 2nd: "You have been warned!", then stock: he walks in, and Dr John kills him for the missing tattoo |
+| ☐ | M3 | **Lite, silent guard:** restore, `vv g 241 1`, then walk into a ritual passage with no mask | nothing happens, as in Full: silent guards don't warn |
+| ☐ | M4 | **Carry-over:** restore, `vv g 241 0`, use the mask (refused), then `vv g 241 1` and use it again | the second try gives "You have been warned!" right away, then stock |
+| ☐ | M5 | **Off:** restore, `vv g 241 2`, use the mask; separately, walk into a passage | both stock: no message, and he walks in |
+| ☐ | M6 | **Grace's keypad, Lite:** block G's setup without the deposit, then `vv g 241 1`, `vv g 242 0`, and use the key on the keypad twice | 1st: "Not yet!" on the lit hallway. 2nd: "You have been warned!", then the door opens and the unprepared ceremony runs as stock |
+| ☐ | M7 | *optional:* restart from the control panel, then `vv g 241` | **probably keeps the mode.** GK1's restart clears only globals 100–239, and 241/242 sit above that. If you want restart to reset to Full, say so |
 
 ## Report back
 
