@@ -161,7 +161,7 @@ Harness shortcut, if you don't want to walk there:
 | ✅ | G4 | use the rod on the bench, then the signal device on the bench | both are stowed; `tf 280` and `tf 281` each print 1. ✅ Your play, 2026-11-16. |
 | ✅ | G5 | walk out and ride down again | this time the lobby **plays an extra line**, and `tf 351` prints 1. ✅ Your play, 2026-11-16. |
 | ✅ | G6 | **R3's case:** `send GKEgo put 79` (wolf guise gone), then Grace's keypad | **"Not yet!"** on the lit hallway, the door stays shut, and you keep control. ✅ Your play on v5, 2026-11-16. |
-| ✅☐ | G7 | `send GKEgo get 79`, then Grace's keypad | **the ceremony starts**, stock from here. ✅ The harness saw the latch at 1 with both guises and flag 351. |
+| ✅ | G7 | `send GKEgo get 79`, then Grace's keypad | **the ceremony starts**, stock from here. ✅ The harness saw the latch at 1 with both guises and flag 351. ✅ Your play on v5, 2026-11-16. |
 | ☐ | G8 | *optional stock control:* setup and G2 on `~/sierra/Games/gk1` | the ceremony starts unprepared. That's the softlock the guard prevents. |
 
 ## K — Africa, Wolfgang (optional: a guard that can't fire)
