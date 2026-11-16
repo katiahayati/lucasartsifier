@@ -63,100 +63,16 @@ SRC = os.path.join(_ROOT, "src")
 # matters for a patcher edit: the snapshot surface freezes whether a guard landed, never its
 # text. R6 is not here because it never had a test -- it needs a design decision from the USER.
 KNOWN_RED = {
-    # ⚠️ LB2 AWAITS A USER RULING (2026-08-25b, branch qfg1) -- three checks, ONE story, fully
-    # decomposed in memory [[lb2-pending-ruling-presspass-relocation]] and docs/QFG-STATE-
-    # EXPLOSION.md §10. The QFG anchors work made three sound model changes (prevRoom returns,
-    # inherited room-class methods, computed-exit machines retained) and LB2 moved where those
-    # facts say it must: rm456 (Rosetta close-up) and rm521 (Meanwhile cutscene) stop being
-    # GOALS because their `newRoom: global12` returns are modelled now, and pressPass's
-    # mechanism relocates from two act-1 edge guards (rm210/rm280 -> rm250) to act-crossing
-    # register demands, because `sDoTakeOffFlight`/`sMoveBuildings` -- rm250 machines whose
-    # only tracked effect is a computed exit -- now gate destinations that had been free
-    # cs-edge fallbacks. The item is still CAUGHT (5 register rows); what changed is the PIN.
-    # Re-pinning the oracle, refreshing the watched surface and blessing the emission delta
-    # are each a bless ([[refresh-is-a-bless]]); they wait for the user's yes, together.
-    # ⛔ GK1 (SCI32, branch gk1, 2026-08-27/28): FOUR real dead ends derived from the scripts
-    # (docs/GK1-SOFTLOCK-CANDIDATES.md §1.1); R1 CAUGHT 2026-08-28 (§1.8 -- the counter x gate-flag
-    # joint, the object-local property store, room-local source liveness). Each red names the
-    # modelling gap; none of them is a limitation to pin green ([[commit-rule-and-red-tests]]).
-    # Unvalidated by play and unruled by the USER -- the rows themselves may move when they rule.
+    # ✅ CLEARED 2026-11-16 on the USER's yes: the LB2 press-pass story (watched surface, the LB2
+    # oracle's pins, LB2's emission delta) and the GK1 oracle's two policy reds. pressPass left
+    # LB2's column A (ruled not a stranding 2026-09-15) for ALLOWED_NOT_DEMANDED; the five act-5
+    # re-pins are the 2026-08-28c-audited rows; GK1's three accepted FPs are TOLERATED.
     # ⛔ BLESS-GATED (2026-09-03, docs GK1 §1.42): every game's primary flag-set proc RETURNS the
     # bit it read, and the games use that as a test -- KQ6 22 sites (`(if (not (proc913_1 5))`,
     # "first time only"), LB2 8, GK1 3. Under the plain set reading those tests are opaque and
     # the write inside them is invisible. The exact read-back rewrite exists and runs on the
     # EXTRA stores (GK1's topic-said array); switching it on for the primary store captures
     # those hidden writes and moves the play-validated KQ6/LB2 surfaces -- the USER's bless.
-    "test_gk1_ground_truth.py": {
-        "no UNEXPECTED unit flagged (suspicion)":
-            "⭐ THREE FALSE-POSITIVE UNITS, AND NOT ONE IS A MODELLING GAP (2026-09-06). Every "
-            "remaining flag is the USER's decision or a deliberate non-cure, so this red now "
-            "records a POLICY boundary rather than a missing rule. (A) knife -- the USER's "
-            "2026-08-27 ruling (an on-screen death, not a consumption). ⭐ 2026-09-06: its "
-            "`fatal_uses` ACTION row is CURED (docs 1.68 -- a fatal use counts only when the use "
-            "wastes the item; `sDaggerOnMalia` spends nothing while KQ6's skull and KQ5's rope "
-            "both do), which is what stopped GK1's patch from shipping a guard on it. What still "
-            "flags the knife is its two flip-precondition REGISTER rows plus two edge rows: day 7 "
-            "cannot end without the knife (rm540.sc:299-307) and no `put: 64` exists. (B) the GROUP "
-            "[veveCopy|policeVeve|sLakePatter] -- GROUPS pass every refutation filter untouched, "
-            "by MEASURED design (the FORCED filter's one corpus effect on a group deletes LSL2's "
-            "play-validated raft guard, 2026-08-02), so no filter can reach this row and "
-            "sLakePatter rides along; its own need is empty. (C) talisman -- proved FP from the "
-            "scripts and DELIBERATELY uncured (docs 1.54): both Africa exits grant it before "
-            "`newRoom: 216`, and the cure would relax `_unrefusable_grants`, whose strictness is "
-            "measured and whose failure direction is LOST FINDINGS. "
-            "⭐ RETIRED 2026-09-06 by docs 1.67 (`prev == p` costs entering p): VoodooCode1's "
-            "register row -- flag 250 is set only under `prev == 302` and rm302's only entrance "
-            "demands both tomb sketches, so the flip can only be made by a player already "
-            "holding the item it was said to strand. "
-            "⭐ RETIRED 2026-09-05 by 1.65 + 1.66 (the era-forced edge rule with the day fan and "
-            "the windows/prune fixpoint): reconVeve, braceMold, oil, and with them wolfPhone, "
-            "tatooTrace, braceRep and policeVeve's singleton -- every one an edge row whose era "
-            "forces the item (day 3's endDay demands `has: 38` and flag 256; day 4's demands "
-            "flag 248 and `has: 26`/`has: 41`). All in CONFIRMED_SAFE; cure the detectors, "
-            "never the list",
-        "a safe item is not flagged":
-            "the same three false-positive units as the row above (the two checks are one defect "
-            "seen from the oracle's two sides)",
-    },
-    "test_lb2_ground_truth.py": {
-        "mechanism pinned: pressPass":
-            "pressPass mechanism relocated by the QFG-anchors model fixes; caught via "
-            "register rows; re-pin awaits the USER (see the block comment above). gk1 "
-            "2026-08-28: the act-1 rows reg(12,123)=(110,2)/(330,3) and reg123=4/5 RETIRE -- "
-            "the rm335 need site is `global123==2` (dead at acts 3-5, `_need_live`) and the "
-            "item-less player cannot make those flips (`_flip_live`); reg(12,123)=(26,2) and "
-            "reg123=1 remain. The retirement [[lb2-pass-necessary-for-act1]] predicted",
-        "mechanism pinned: grapes":
-            "(gk1 2026-08-28) `grapes@reg123=5` loses need-room 520: the act-4 exit interceptor "
-            "`(== global123 4) AND has: 31` is dead at act 5 (`_need_live` reads needs per site); "
-            "[750] remains, verdict unchanged; re-pin with the pressPass ruling",
-        # gk1 2026-08-27: the COUNTER fixes (an increment is a flip -- `_flip_seeds` reads
-        # `_rstep`; relational site guards get the projection's domain; flat pickups carry the
-        # object's presence) give these four column-A items a SECOND mechanism row each,
-        # `reg123=5 -> [750]`: the act-5 flip strands them for the finale. The verdicts did not
-        # move (no drop, no surprise, the safe trio holds); only the pin gains a row. Re-pin
-        # awaits the USER with the pressPass ruling.
-        "mechanism pinned: bifocals": "gains register_strandings reg123=5->[750] (act-5 carry)",
-        "mechanism pinned: daggerOfRa": "gains register_strandings reg123=5->[750] (act-5 carry)",
-        "mechanism pinned: redHair": "gains register_strandings reg123=5->[750] (act-5 carry)",
-        "mechanism pinned: wireCutters": "gains register_strandings reg123=5->[750] (act-5 carry)",
-    },
-    "test_watched_surface.py": {
-        "LB2: full surface unchanged (24 keys)  -- 26 row(s) moved":
-            "(gk1 2026-08-28b) +4: `bifocals` and `redHair`'s act-5 joint rows move their "
-            "prev-room from rm454 to rm480 (one changed row = one REMOVED + one ADDED). The "
-            "PARK cure's delivery half gives LB2 20 more `machine_delivered` pairs -- rm455->454 "
-            "among them -- so arriving at 454 is a GATED machine edge now instead of a free flat "
-            "cs_edge, and 480 is what is left. Same items, same mechanism, same need room [750]; "
-            "only the prevRoom in the joint moved. PLUS "
-            "14 rows moved with the pressPass relocation + goals losing rm456/rm521, PLUS "
-            "(gk1, 2026-08-27) `debug_globals` gaining 110 -- LB2's Main.sc:987 mirrors "
-            "`(FileIO 10 {10.scr})` into global110, the same script-patch debug idiom GK1 has, "
-            "and vocab.derive_debug now pins it; PLUS the counter fixes' 6 register rows "
-            "(bifocals/daggerOfRa/redHair/wireCutters@reg123=5, pressPass@reg123=1/4/5 in place "
-            "of =2) and the reg123=1/4/5 write specs they imply -- row-accounted; "
-            "refresh is a bless -- awaits the USER",
-    },
     # ⭐⭐ A COVERAGE CHANGE, 2026-09-06: `gk1` JOINED `measure_emitted_bytes.GAMES` when it got
     # its first patch (docs/SCI2-PATCHING.md). Until then GK1 was the one game whose emitted
     # source no gate had ever looked at -- ten days of analysis and hand emission, with a moved
@@ -165,36 +81,12 @@ KNOWN_RED = {
     # ⛔ Both clear with ONE bless (`tools/bless_emission.py --write`) and that is the USER's
     # ([[refresh-is-a-bless]], [[report-coverage-changes-loudly]]).
     "test_emission_manifest.py": {
-        "emission: dagger matches manifest":
-            "LB2's rm210/rm280 setscript placements left the surface, so the emitted tree "
-            "moved; bless via tools/bless_emission.py only after the USER's ruling",
         "emission: gk1 matches manifest":
             "gk1 joined the emitted game set 2026-09-06 with its first patch; the manifest has "
             "no entry for it yet -- new coverage, awaiting the USER's bless",
         "emission: manifest covers exactly the emitted game set":
             "same arrival: the manifest names five games, the tool now emits six. Clears with "
             "the same bless as the row above",
-    },
-    # ⭐ scene_carryins JOINED THE FROZEN SURFACE 2026-09-01 (the R3 catcher, docs GK1
-    # §1.24) -- and a detector joins the snapshot unconditionally (the snapshot's own
-    # confession block forbids the `if rows` clause), so every golden gains EXACTLY ONE
-    # line, `"scene_carryins": []`. The 2026-08-14 precedent: re-blessed with the USER's
-    # sign-off after a key-by-key diff. ⛔ Refresh awaits the USER; the diff to present is
-    # one empty line per golden, nothing else.
-    "test_golden.py": {
-        "LSL2: full output surface matches the frozen golden":
-            "gains exactly `\"scene_carryins\": []` -- the new frozen key; bless-refresh "
-            "awaits the USER (the 2026-08-14 one-line precedent)",
-        "KQ4: full output surface matches the frozen golden":
-            "same single empty line; awaits the USER",
-        "KQ6: full output surface matches the frozen golden":
-            "TWO awaited moves: the scene_carryins empty line (every game at once, the "
-            "documented precedent shape) AND -- 2026-09-02 -- the sacredWater toll row "
-            "retiring (`sacredWater@one-visit-toll-pocket/rm370->rm380`): the USER ruled it "
-            "FP on 2026-09-01 ('if you go see the oracle she gives you the sacred water, no "
-            "way to get out without it'), and `_pocket_leavable` now reads exactly that -- "
-            "flyToBeach's arming does `(global0 get: 40)`, so the exit is not a water-free "
-            "way out. Both refreshes await the USER's bless.",
     },
     # ⛔ NOT DECLARED (2026-09-01): the shared-steps-table feed briefly moved the KQ6 golden
     # (the capture guards toward the travel dispatch) AND two enforced oracle checks -- it was
@@ -722,17 +614,6 @@ KNOWN_RED = {
 # claim, declare them: the runner captures the indented lines under the `[FAIL]` and any
 # difference is reported as MOVEMENT and fails the run. `file -> {check name: [detail lines]}`.
 KNOWN_RED_DETAIL = {
-    "test_golden.py": {
-        "LSL2: full output surface matches the frozen golden":
-            ["scene_carryins: golden=None got=[]"],
-        "KQ4: full output surface matches the frozen golden":
-            ["scene_carryins: golden=None got=[]"],
-        # the empty scene_carryins key + the sacredWater toll row the USER ruled an FP (2026-09-01,
-        # derived away by the door-closer round d76e757): both await the KQ6 golden refresh.
-        "KQ6: full output surface matches the frozen golden":
-            ["scene_carryins: golden=None got=[]",
-             "tolls: +[]  -['sacredWater@one-visit-toll-pocket/rm370->rm380']"],
-    },
 }
 
 CHECK = re.compile(r"^\s*\[(PASS|FAIL)\]\s*(.*?)\s*$")

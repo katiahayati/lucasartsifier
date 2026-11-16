@@ -77,12 +77,10 @@ EXPECTED_CAUGHT = {
     "bifocals",          # has: 26
     "redHair",           # has: 27
     "grapes",            # has: 31
-    # pressPass spans acts 1->2, and since the 2026-08-10 surface (blessed row by row) it is
-    # caught FOR THAT REASON: `analyze` flags it needed at rm250 past the act-1->2 frontier
-    # edges. The `dangerous_sinks` row on the three `put: 6` sites -- the wrong-reason catch the
-    # old comment here described -- retired in the same blessed diff. The mechanism pin below
-    # holds the new, correct shape.
-    "pressPass",
+    # pressPass LEFT this column 2026-11-16, on the USER's 2026-09-15 ruling: *"the press pass is
+    # not really a stranding. you need it for the cab rides, so you have to have it by the time
+    # the act change happens."* A gate the game enforces (rm250.sc:74, the cabbie's refusal), not
+    # a softlock -- see ALLOWED_NOT_DEMANDED.
     # The four act-boundary carries, ⭐ PROMOTED FROM KNOWN_GAPS 2026-08-10 -- each was a declared
     # RED until its cause landed (§7s: the act register could run backwards; §7y: the act-5 walls
     # are deaths on entry and `register_strandings` walks the joint projections). From here on a
@@ -202,6 +200,11 @@ NEVER_STRANDABLE = {
 # through a real use site belongs here rather than in either column.
 ALLOWED_NOT_DEMANDED = {
     "waterGlass",        # message 38; listenVerb on the rm510/560/600/610 doors -> global111
+    # A FALSE POSITIVE the model still flags, tolerated not required (USER 2026-11-16: "these FPs
+    # are okay but don't require them"). Ruled not a stranding 2026-09-15 (EXPECTED_CAUGHT note);
+    # its rows place no guard -- the act-crossing demand is REFUSED, and the old rm210/rm280 cab
+    # guards left the emission with the 2026-08-28c-audited surface.
+    "pressPass",
 }
 
 # Anything the model may flag without the run counting as a surprise.
@@ -229,33 +232,43 @@ MECHANISM_ROWS = {
     # never has, and the seal replaced it with real act-4/5 standing rooms (rm454, rm520) --
     # and wireCutters' still-needed list gained rm435 (the wire-cut cutscene). Confirmed
     # row-by-row against the game the day the seal landed.
+    # ⭐ RE-PINNED 2026-11-16 on the USER's yes, to the rows the 2026-08-28c audit passed one by one
+    # against the scripts (memory `lb2-err-toward-not-moving`): the day-counter fixes give all
+    # five a scalar `reg123=5->[750]` act-5 carry; bifocals/redHair's act-5 joint witness moves
+    # rm454 -> rm480 (the PARK cure's machine-delivered 455->454 arrival); grapes loses need-room
+    # 520 -- rm520's use is the act-4 exit interceptor `(and (== global123 4) (has: 31))`, dead
+    # at act 5 -- and with it the (520, 5) witness, since standing there at act 5 means having
+    # crossed with the grapes. Same five items caught, same need room 750.
     "wireCutters": {
         "analyze: need@rm750 sources=[29, 640] frontier=rm26->rm750",
         "register_strandings: reg(12, 123)=(26, 5)->[435, 500, 750]",
         "register_strandings: reg(12, 123)=(520, 5)->[750]",
+        "register_strandings: reg123=5->[750]",
     },
     "daggerOfRa": {
         "analyze: need@rm750 sources=[29, 620] frontier=rm26->rm750",
         "register_strandings: reg(12, 123)=(26, 5)->[500, 750]",
         "register_strandings: reg(12, 123)=(520, 5)->[750]",
+        "register_strandings: reg123=5->[750]",
     },
     "bifocals": {
         "analyze: need@rm750 sources=[29, 500] frontier=rm26->rm750",
-        "register_strandings: reg(12, 123)=(454, 5)->[750]",
+        "register_strandings: reg(12, 123)=(480, 5)->[750]",
+        "register_strandings: reg123=5->[750]",
     },
     "redHair": {
         "analyze: need@rm750 sources=[29, 500] frontier=rm26->rm750",
-        "register_strandings: reg(12, 123)=(454, 5)->[750]",
+        "register_strandings: reg(12, 123)=(480, 5)->[750]",
+        "register_strandings: reg123=5->[750]",
     },
     "grapes": {
         "analyze: need@rm750 sources=[29, 525] frontier=rm26->rm750",
-        # ...and the act-4->5 break itself demands the grapes (`(and (== global123 4)
-        # (global0 has: 31))`), which is why the scalar 123=5 row exists for it too.
-        "register_strandings: reg123=5->[520, 750]",
+        "register_strandings: reg123=5->[750]",
         "register_strandings: reg(12, 123)=(26, 5)->[750]",
-        "register_strandings: reg(12, 123)=(520, 5)->[750]",
     },
-    # pressPass: THE STREET SEAL GAVE IT ITS TRUE MECHANISM (2026-08-10, §7ag). The register
+    # pressPass: ⛔ UNPINNED 2026-11-16 -- it left EXPECTED_CAUGHT (ruled not a stranding), and only
+    # column-A items are pinned, so this entry is no longer read. Kept as history.
+    # THE STREET SEAL GAVE IT ITS TRUE MECHANISM (2026-08-10, §7ag). The register
     # rows are the act-1->2 carry itself: cross into act 2 without the pass and rm335 -- the
     # fundraiser door, which still `has:`-checks it -- is sealed off from the pass's only
     # source (rm235, act-1 street). The joint witnesses are the crossing states (the intro-skip
@@ -357,7 +370,7 @@ def run():
     missing = EXPECTED_CAUGHT - caught
     check("no confirmed softlock has DROPPED (regression)", not missing,
           f"DROPPED: {sorted(missing)} -- STOP. These are read out of rm750's own ending selector "
-          f"(or, for pressPass, off its three `put: 6` sites). Confirm with the user before "
+          f"(or, for the act carries, their act-boundary rows). Confirm with the user before "
           f"touching EXPECTED_CAUGHT; see docs/LB2-ORACLE.md §5.")
 
     surprises = caught - ALLOWED

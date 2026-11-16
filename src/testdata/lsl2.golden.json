@@ -62,6 +62,7 @@
   "register_strandings": [],
   "register_value_strandings": [],
   "register_write_specs": [],
+  "scene_carryins": [],
   "sinks": [
     "Airsick_Bag@rm61 dest=-1 refused=False",
     "Airsick_Bag@rm62 dest=-1 refused=False",

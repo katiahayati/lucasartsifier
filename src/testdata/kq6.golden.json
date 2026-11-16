@@ -87,6 +87,7 @@
   "register_write_specs": [
     "reg338=1: (gEgo has: 20)"
   ],
+  "scene_carryins": [],
   "sinks": [
     "huntersLamp@rm240 dest=-1 refused=False",
     "mint@rm0 dest=280 refused=False",
@@ -121,7 +122,6 @@
     "holeInTheWall@one-visit-pocket-carry-in/rm420->rm435",
     "mirror@one-visit-pocket-carry-in/rm340->rm155",
     "mirror@one-visit-pocket-carry-in/rm660->rm670",
-    "sacredWater@one-visit-toll-pocket/rm370->rm380",
     "skeletonKey@one-visit-toll-pocket/rm340->rm155",
     "teaCup@one-visit-pocket-carry-in/rm340->rm155"
   ],

@@ -50,12 +50,11 @@ def _names(units):
 # mask is "unobtainable past the edge and still needed". The guard it yields (`has: 21`) is
 # necessary, not sufficient -- a player holding the mask unused dies too; the exact guard is
 # flag 216.
+# THE REAL SOFTLOCKS -- REQUIRED. Only non-false-positives belong here (USER 2026-11-16). All three
+# are guarded by the v5 patch and play-confirmed by the USER on 2026-11-16 (docs/GK1-TESTPLAN.md:
+# R5 = B1-B3; R2+R3 = G1, G2, G4-G7).
 EXPECTED_CAUGHT = _units({
     "crocMask",             # R5: use the mask in the maze before the ritual clearing
-})
-
-# REAL per the scripts, MISSED by the tool. Each is a declared RED below with its mechanism.
-KNOWN_GAPS = _units({
     "rod",                  # R2: must be DEPOSITED in the left confessional (rm455.sc:828 ->
                             # flag 280) before Grace's room, which has no exit (sHRoom8.sc);
     ("signalDev", "signalDev2"),
@@ -64,6 +63,20 @@ KNOWN_GAPS = _units({
     "BoarGuise",            # R3: Mosely's disguise, demanded in Grace's room (sHRoom8.sc:690)
     "WolfGuise",            # R3: Gabriel's, demanded there too (sHRoom8.sc:1050); every
                             # combination lacking them ends in sDJKills -> newRoom: 770.
+})
+
+# REAL per the scripts, MISSED by the tool. EMPTY since R2 and R3 are caught (moved up 2026-11-16).
+KNOWN_GAPS = set()
+
+# TOLERATED FALSE POSITIVES -- USER 2026-11-16: "these FPs are okay but don't require them". A unit
+# here may be flagged or not and NEITHER fails a check: it is in ALLOWED (no suspicion) and outside
+# the safe-item check, but not in EXPECTED_CAUGHT (no regression if it goes). Each one's only guard
+# can never fire (knife: the hounfour arrival and Wolfgang; talisman: the confessional descent), and
+# the group's row places nothing. The evidence for each is in the CONFIRMED_SAFE notes below.
+TOLERATED = _units({
+    "knife",
+    "talisman",
+    ("veveCopy", "policeVeve", "sLakePatter"),
 })
 
 # Flagging one of these is a FALSE POSITIVE (script evidence, no user ruling yet).
@@ -141,7 +154,7 @@ CONFIRMED_SAFE.add("braceMold")
 # fixable until Grace's room, exactly as R2 records.
 CONFIRMED_SAFE.add("talisman")
 
-ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS
+ALLOWED = EXPECTED_CAUGHT | KNOWN_GAPS | TOLERATED
 
 # Item ids ARE the inventory `add:` order (GKInvItem.sc:93). Pinned because the tool got all 81
 # wrong on its first run (declaration order; the `(ScriptID 24 N)` entries were unresolvable and
@@ -222,8 +235,9 @@ def run():
     check("no UNEXPECTED unit flagged (suspicion)", not surprises,
           f"NEW: {sorted(sorted(u) for u in surprises)} -- promote with the user's OK or record "
           f"the false positive.")
-    check("a safe item is not flagged", not (caught_names & CONFIRMED_SAFE),
-          f"FLAGGED: {sorted(caught_names & CONFIRMED_SAFE)}")
+    # A safe item flagged INSIDE a tolerated unit is the tolerated FP itself, not a new one.
+    safe_hits = _names(caught - TOLERATED) & CONFIRMED_SAFE
+    check("a safe item is not flagged", not safe_hits, f"FLAGGED: {sorted(safe_hits)}")
 
     # --- THE FOUR GAPS, each a RED naming its mechanism -----------------------------------------
     # R1: the day counter is the point of no return. VoodooCode1's source is armed under
@@ -286,25 +300,11 @@ def run():
           not any("has: %d)" % i in gel for i in (60, 15, 16, 31)),
           f"rm455->rm800 condition = {gel!r}")
 
-    # R4: a FLAG stranding through the conversation system. Flag 44's only writer is a Teller
-    # topic (hartridge.sc:257) reachable only while day < 4 (rm270.sc:200); day 4's gate needs
-    # it transitively (crash.sc:66-84 -> rm450.sc:674 -> rm450.sc:421 -> theMapPrint.sc:265).
-    regs = {(r.get("register"), r.get("value")) for r in rows_by_det["register_strandings"]}
-    fbase = getattr(getattr(s.em, "ir", None), "flag_synth_base", None)
-    flag44 = fbase + 44 if fbase is not None else None
-    # R4 is a CLOSURE-ARM finding (docs GK1 1.29, 1.44-1.46): the day-4 crosser without flag 44
-    # cannot end day 4 (its `endDay` arm needs the tattoo trace, which needs Crash's topic, which
-    # needs Cazaunoux's, which needs flag 44), while the unconstrained crosser can. The flat arm
-    # cannot see that go-home spends flag 65; `producible_seal` asks the closure arm's own
-    # question for this one crossing in seconds (the whole detector takes an hour on GK1).
-    seal = s.producible_seal(123, 4, 370, flag44, 0) if flag44 is not None else None
-    check("R4: flag 44 (Cazaunoux topic 54 -> Crash's 'Voodoo Hounfour') is caught as a stranding",
-          flag44 is not None and (any(r == flag44 for (r, _v) in regs) or seal is True),
-          f"closure arm for the day-4 crossing carrying flag 44 = 0: {seal!r} (None = nobody crosses, "
-          f"False = not a seal, True = dead end); register_strandings registers = {sorted(regs, key=str)}; flag44 synthetic = {flag44}. The "
-          f"Teller topic dispatch is lowered (vocab.lower_teller_cases) and the topic-said array "
-          f"(global182, proc50_5..8) is a lowered store since 848ec35 (docs GK1 1.42); the flat arm "
-          f"still cannot see that go-home SPENDS flag 65 (1.29) -- the closure arm can")
+    # R4 (flag 44, root flag 42) REMOVED 2026-11-16: a FALSE POSITIVE (USER ruling on flag 42 the
+    # same day; the 10-31 review refuted 44). Day 4 needs 44 only through the Willy-photo ->
+    # Hartridge topic 6 -> Cazaunoux 50/37/54 chain, and day 3 cannot END without that chain
+    # either: the mold needs her topic 8, which needs flag 44 (GKTeller.sc:84, general topic N
+    # needs flag N+36). No guard is placed for it, so it is neither required nor checked.
 
     print(f"\n  {len(PASS)} passed, {len(FAIL)} failed")
     return not FAIL

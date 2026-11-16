@@ -6,21 +6,19 @@
       370,
       1
     ],
-    "debug_globals": [],
+    "debug_globals": [
+      110
+    ],
     "edge_specs": [
-      "rm210->rm250: (gEgo has: 6)",
       "rm26->rm330: (gEgo has: 6)",
       "rm26->rm420: (and (gEgo has: 10) (gEgo has: 11) (gEgo has: 13) (gEgo has: 14) (gEgo has: 16) (gEgo has: 19) (gEgo has: 31))",
-      "rm26->rm750: (and (gEgo has: 10) (gEgo has: 11) (gEgo has: 26) (gEgo has: 27) (gEgo has: 31) (or (gEgo has: 10) (gEgo has: 11)))",
-      "rm280->rm250: (gEgo has: 6)"
+      "rm26->rm750: (and (gEgo has: 10) (gEgo has: 11) (gEgo has: 26) (gEgo has: 27) (gEgo has: 31) (or (gEgo has: 10) (gEgo has: 11)))"
     ],
     "exhaustion": [],
     "fatal_uses": [],
     "gate_specs": [],
     "goal_rooms": [
       340,
-      456,
-      521,
       750
     ],
     "groups": [],
@@ -29,36 +27,39 @@
     "market_specs": [],
     "ownedby_death_folds": [],
     "placements": [
-      "rm210: applied=True kind=setscript sites=1",
       "rm26->rm330: applied=True kind=entry-deferral-PARTIAL sites=2 entry_sites=2",
       "rm26->rm420: applied=True kind=entry-deferral-PARTIAL sites=1 entry_sites=1",
-      "rm26->rm750: applied=True kind=demand-forwarded-to-hold sites=1",
-      "rm280: applied=True kind=setscript sites=1"
+      "rm26->rm750: applied=True kind=demand-forwarded-to-hold sites=1"
     ],
     "register_strandings": [
-      "bifocals@reg(12, 123)=(454, 5)->[750]",
+      "bifocals@reg(12, 123)=(480, 5)->[750]",
+      "bifocals@reg123=5->[750]",
       "cheese@reg(12, 123)=(26, 5)->[740]",
       "daggerOfRa@reg(12, 123)=(26, 5)->[500, 750]",
       "daggerOfRa@reg(12, 123)=(520, 5)->[750]",
+      "daggerOfRa@reg123=5->[750]",
       "grapes@reg(12, 123)=(26, 5)->[750]",
-      "grapes@reg(12, 123)=(520, 5)->[750]",
-      "grapes@reg123=5->[520, 750]",
-      "pressPass@reg(12, 123)=(110, 1)->[335]",
-      "pressPass@reg(12, 123)=(110, 2)->[335]",
-      "redHair@reg(12, 123)=(454, 5)->[750]",
+      "grapes@reg123=5->[750]",
+      "pressPass@reg(12, 123)=(26, 2)->[335]",
+      "pressPass@reg123=1->[335]",
+      "redHair@reg(12, 123)=(480, 5)->[750]",
+      "redHair@reg123=5->[750]",
       "smellingSalts@reg(12, 123)=(26, 5)->[720]",
       "smellingSalts@reg123=5->[720]",
       "snakeLasso@reg(12, 123)=(26, 5)->[700]",
       "snakeOil@reg(12, 123)=(26, 5)->[730]",
       "wireCutters@reg(12, 123)=(26, 5)->[435, 500, 750]",
-      "wireCutters@reg(12, 123)=(520, 5)->[750]"
+      "wireCutters@reg(12, 123)=(520, 5)->[750]",
+      "wireCutters@reg123=5->[750]"
     ],
     "register_value_strandings": [
       "reg150==[0]@seal(12, 123)=(26, 5)->[730] via sRepelSnakes"
     ],
     "register_write_specs": [
-      "reg123=5: (and (gEgo has: 13) (gEgo has: 31)) [REFUSED]"
+      "reg123=1: (gEgo has: 6) [REFUSED]",
+      "reg123=5: (and (gEgo has: 10) (gEgo has: 11) (gEgo has: 13) (gEgo has: 26) (gEgo has: 27) (gEgo has: 31)) [REFUSED]"
     ],
+    "scene_carryins": [],
     "sinks": [],
     "softlock_items": [
       "pressPass",

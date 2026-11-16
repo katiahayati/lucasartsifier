@@ -58,6 +58,7 @@
   "register_write_specs": [
     "reg100=1: (and (gEgo has: 1) (gEgo has: 17))"
   ],
+  "scene_carryins": [],
   "sinks": [
     "Magic_Fruit@rm0 dest=999 refused=False"
   ],
