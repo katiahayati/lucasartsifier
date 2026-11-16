@@ -1,5 +1,20 @@
 # GK1 flag 14 test plan — skip the day-3 newspaper, and is Tulane gone for good?
 
+> **RESULT, 2026-11-16: a REAL softlock in the stock game.** Your play, by the console route
+> (S, then C, then B): *"oh yeah, that is a softlock."* Part A wasn't played; a source check
+> replaced it.
+> - **The check:** I listed everything Tulane writes (flags 32, 45, 46, 49, 149, 224–227 and
+>   422, plus item 45), then searched the rest of the game for readers.
+> - **What it found:** outside Tulane, only 227 gates anything, and that's the day-4 ending. Flag 46
+>   changes some Hartridge dialogue (room 260) and adds a Walkman entry. Flag 224 makes the map set
+>   32, and nothing reads 32.
+> - **The console-set flags and items are all earned outside Tulane:**
+>   - day 3: 265 rm320, 21 rm240, 256 napoleon, item 38 neJackson, item 8 script 212 (file
+>     `startOfDay5.sc`), run from `bookstore.sc:249`;
+>   - day 4: 447 dialThePhone, 248 rm290, 36 grace, item 26 rm450, item 41 napoleon.
+>
+> **Next:** it needs a guard; the site isn't decided yet.
+
 **The claim (detector row `reg 256`, day 3 → 4).** If you never read the newspaper on day 3:
 1. Tulane never appears on the map.
 2. Day 4 can then never end.
