@@ -203,9 +203,9 @@ A refusal you take in Full already counts as a warning, so it carries over into 
 
 | ✓ | # | Do | Expect |
 |---|---|---|---|
-| ☐ | M0 | New game. Open the control panel; save; restore that save; play a few screens | boots and plays as v5. `vv g 241` → 0 |
+| ✅ | M0 | New game. Open the control panel; save; restore that save; play a few screens | boots and plays as v5. `vv g 241` → 0  ✅ Your play, 2026-11-16: "no issues". |
 | ☐ | M1 | **Full:** block B's setup, then use the croc mask on Gabriel, **twice** | "Not yet!" both times |
-| ☐ | M2 | **Lite, fresh:** `vv g 241 1`, `vv g 242 0`, then use the mask, twice | 1st: "Not yet!". 2nd: "You have been warned!", then stock: he walks in, and Dr John kills him for the missing tattoo |
+| ✅ | M2 | **Lite, fresh:** `vv g 241 1`, `vv g 242 0`, then use the mask, twice | 1st: "Not yet!". 2nd: "You have been warned!", then stock: he walks in, and Dr John kills him for the missing tattoo  ✅ Your play, 2026-11-16: "lite works with the croc mask". |
 | ☐ | M3 | **Lite, silent guard:** restore, `vv g 241 1`, then walk into a ritual passage with no mask | nothing happens, as in Full: silent guards don't warn |
 | ☐ | M4 | **Carry-over:** restore, `vv g 241 0`, use the mask (refused), then `vv g 241 1` and use it again | the second try gives "You have been warned!" right away, then stock |
 | ☐ | M5 | **Off:** restore, `vv g 241 2`, use the mask; separately, walk into a passage | both stock: no message, and he walks in |
