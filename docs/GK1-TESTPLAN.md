@@ -208,7 +208,7 @@ room 720              (Esc)
 
 | ✓ | # | Do | Expect |
 |---|---|---|---|
-| ☐ | C1 | Load a game, or start one; open the control panel | the four bottom buttons sit where the gargoyle was, with no gargoyle showing, and **"GUARDS: FULL"** is centred in the black slot below them. **Your real mouse can reach it.** The buttons still work: try Text On |
+| ✅ | C1 | Load a game, or start one; open the control panel | the four bottom buttons sit where the gargoyle was, with no gargoyle showing, and **"GUARDS: FULL"** is centred in the black slot below them. **Your real mouse can reach it.** The buttons still work: try Text On ✅ Your play, 2026-11-16: "yep works". |
 | ☐ | C2 | Click the caption | a dialog: "Softlock guards: FULL refuses dangerous moves. LITE warns once then allows. OFF is the original game.", with **Full / Lite / Off** |
 | ☐ | C3 | Pick **Lite** | the dialog closes, the panel stays open, and the caption reads **GUARDS: LITE**. `vv g 241` → 1 |
 | ☐ | C4 | Click the caption, then press **Escape** in the dialog | the dialog closes and the mode is unchanged |
