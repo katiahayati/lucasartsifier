@@ -1,6 +1,21 @@
 # GK1 patched-game test plan — v5 (the bayou ritual and Grace's room)
 
-> **TEST BUILD `v6mode` INSTALLED 2026-11-16 over v5: block M below.** It's v5's guards plus the
+> **v6 INSTALLED 2026-11-16: the guard-mode CHOOSER, block C below.** It's the ordinary pipeline's
+> build (`build/build_patch.py gk1 v6`), no bypass.
+> - **What's new:** a "GUARDS: FULL" caption in the black strip under the control panel. Clicking
+>   it opens Full / Lite / Off.
+> - **What's unchanged:** Main and the four guard scripts are byte-identical to `v6mode`, so saves
+>   made under `v6mode` should load. The only new file is script 14, the panel.
+> - **Rig-checked before install:**
+>   - all three picks set `global241`;
+>   - Escape leaves it alone;
+>   - Lite survives closing and reopening the panel;
+>   - help mode on the caption is silent;
+>   - no engine errors.
+> - **Revert to `v6mode`:** reinstall `build/gk1_patch_v6mode/patch`, then copy Sierra's own
+>   `PATCHES/14.SCR` and `14.HEP` back from `~/sierra/Games/gk1/PATCHES`.
+
+> **TEST BUILD `v6mode` (superseded by v6) 2026-11-16 over v5: block M below.** It's v5's guards plus the
 > guard-mode plumbing, with **Main (script 0) recompiled** to declare the mode (`global241`) and
 > the warned bits (`global242`).
 > - **Not a shipping build:** there's no chooser yet, so you set the mode from the console.
@@ -186,6 +201,23 @@ room 720              (Esc)
 | ✓ | # | Do | Expect |
 |---|---|---|---|
 | ☐ | K1 | talk to Wolfgang | the conversation plays as stock. If Wolfgang isn't on screen after the teleport, skip this row; he needs the real arrival. |
+
+## C — the guard-mode chooser (v6)
+
+| ✓ | # | Do | Expect |
+|---|---|---|---|
+| ☐ | C1 | Load a game, or start one; open the control panel | **"GUARDS: FULL"** centred in the black strip under the panel. Everything else on the panel is as before |
+| ☐ | C2 | Click the caption | a dialog: "Softlock guards: FULL refuses dangerous moves. LITE warns once then allows. OFF is the original game.", with **Full / Lite / Off** |
+| ☐ | C3 | Pick **Lite** | the dialog closes, the panel stays open, and the caption reads **GUARDS: LITE**. `vv g 241` → 1 |
+| ☐ | C4 | Click the caption, then press **Escape** in the dialog | the dialog closes and the mode is unchanged |
+| ☐ | C5 | Close the panel with PLAY, then reopen it | still **GUARDS: LITE**, in the same spot |
+| ☐ | C6 | **Lite at the croc mask**, set with the chooser this time: block B's setup without `vv g 241`, then use the mask twice | as M2: "Not yet!", then "You have been warned!" and stock |
+| ☐ | C7 | Pick **Off**, then use the mask | stock straight away, with no message |
+| ☐ | C8 | In Lite, save; pick Full; restore that save; open the panel | **GUARDS: LITE**: the mode comes back with the save |
+| ☐ | C9 | *optional:* with ScummVM's high-resolution graphics turned off, open the panel | the caption is still under the panel and still works |
+
+⚠ **Known limit: no keyboard.** The caption isn't wired into the panel's arrow-key navigation, so
+you reach it with the mouse.
 
 ## M — guard modes (test build `v6mode`)
 

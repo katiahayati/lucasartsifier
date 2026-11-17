@@ -1246,8 +1246,9 @@ def _mode_button(i):
 
 def install_mode_chooser(dest, titles_by_num):
     """The CHOOSER half of the mode feature -- run BEFORE any wrap is emitted, because it is
-    also the mode's own FEASIBILITY GATE: a mode nobody can switch is not a mode. If neither
-    dialect shape hosts a chooser (SCI0 menu bar / SCI1.1 control panel), the mode is
+    also the mode's own FEASIBILITY GATE: a mode nobody can switch is not a mode. If no
+    dialect shape hosts a chooser (SCI0 menu bar / SCI1.1 control panel / SCI2 settings icon
+    bar, tried in that order), the mode is
     RETRACTED (`T.MODE = None`, `_MODE_DEST` left pinned so `_init_mode` cannot re-arm) and
     every later emitter takes the classic always-refuse path: no mode conjunct in any wrap, no
     mode/warned globals, and -- on a game whose stock declarations already cover its reads --
@@ -1270,6 +1271,8 @@ def install_mode_chooser(dest, titles_by_num):
     row = _install_menu_chooser(src_dir, T.MODE["g"])
     if row is None:
         row = _install_panel_chooser(src_dir, T.MODE["g"])
+    if row is None:
+        row = _install_sci2_bar_chooser(src_dir, T.MODE["g"])
     if row is None or not row.get("applied"):
         T.MODE = None
         row = row if row is not None else {"applied": False, "ui": None, "why": ""}
@@ -1775,6 +1778,197 @@ def _bump_rung(spelling, rung, pitch):
                   lambda m: "%s%d%s%d%s" % (m.group(1), x + pitch, m.group(2), y + pitch,
                                             m.group(3)),
                   spelling, count=1)
+
+
+_SCI2_CAPTION_GAP = 3       # px between the panel's art and the caption hung under it
+_SCI2_DIALOG_W = 160        # the chooser's text width; its three buttons sit 50 px apart
+
+
+def _install_sci2_bar_chooser(src_dir, g):
+    """The SCI2 half of `install_mode_ui` (GK1, 2026-11-16). Returns an edit row, or None if no
+    settings bar.
+
+    THE HOST, BY SHAPE: SCI2's settings panel is an IconBar subclass -- GK1's `GKControls` --
+    whose `init` adds the save and restore icons (`selector: #save` / `#restore`). Neither earlier
+    shape exists there: no AddMenu bar, no SCI1.1 `GameControls` row ladder. Every surface of the
+    panel is painted art with no free plate, so the control is TEXT, not a cel:
+
+      * A new icon, of the class and stand-in properties of an entry spelled exactly like it --
+        `(X theObj: X selector: #doit yourself:)`, an icon that acts IN PLACE. Its signal is what
+        keeps the panel open after a click; the save icon's would close it ($0040).
+      * Its face is a runtime text BITMAP (`CreateTextBitmap 0 w h <template>`), the way the
+        game's own `DText::draw` makes one. The template is an instance of the class the game's
+        `Print addText:` builds, so the text class is the game's, read off its Print, never named.
+        ⛔ `CreateTextBitmap` wraps the text inside the template's textLeft..textRight box --
+        unset, that box is one pixel wide and the engine never returns (measured: the game
+        stalled at the splash). `setSize: <width>` measures it in the font.
+      * EVERY LENGTH IS MEASURED AT RUN TIME, nothing from art we cannot decode here: on each
+        `show` the caption zeroes its own rect, refits the plane (= the art's extent), hangs
+        itself `_SCI2_CAPTION_GAP` under it at the plane's full width, and refits the plane
+        again -- the plane grows over the black strip under the panel, filled with its own
+        `back`. Zeroing first is what keeps a re-show from drifting down. The engine resets the
+        rect to the stand-in cel's size when the item is added, so `init` zeroes it too.
+      * Its doit opens a Print with `_CHOOSER_TEXT` and the three MODE_NAMES buttons, under the
+        text's measured height, and re-shows the caption.
+    Measured in the rig (2026-11-16): caption under the panel, all three picks set the mode
+    global, Escape leaves it, the mode survives closing and reopening the panel, and help mode
+    on the caption is silent."""
+    files = {}
+    for fn in sorted(os.listdir(src_dir)):
+        if fn.endswith(".sc"):
+            files[fn] = open(os.path.join(src_dir, fn), errors="replace").read()
+    hosts = []
+    for fn, text in files.items():
+        for m in re.finditer(r"^\(class\s+(\w+)\s+of\s+\w+", text, re.M):
+            cs = m.start()
+            body = text[cs:_balanced_span(text, cs)]
+            isp = _find_region(body, r"\(method\s+\(init\b")
+            if isp and re.search(r"selector:\s+#save\b", body[isp[0]:isp[1]]) \
+                    and re.search(r"selector:\s+#restore\b", body[isp[0]:isp[1]]):
+                hosts.append((fn, m.group(1), cs + isp[0], cs + isp[1]))
+    if not hosts:
+        return None
+    if len(hosts) > 1:
+        return {"applied": False, "ui": "sci2-bar", "title": hosts[0][0][:-3],
+                "why": "more than one settings bar adds save/restore (%s) -- refusing to guess"
+                       % ", ".join(h[1] for h in hosts)}
+    host, bar, i0, i1 = hosts[0]
+    text = files[host]
+    row = {"applied": False, "ui": "sci2-bar", "title": host[:-3]}
+
+    # THE ELEMENT LIST of the bar's `add:` send: balanced groups and bare names, up to the next
+    # keyword selector. The new entry goes after the last element.
+    am = re.compile(r"\badd:\s").search(text, i0, i1)
+    if not am:
+        return {**row, "why": "the settings bar's init has no add: list"}
+    j, last_end, elems = am.end(), None, []
+    while j < i1:
+        while j < i1 and text[j].isspace():
+            j += 1
+        if text[j] == "(":
+            e = _balanced_span(text, j)
+            elems.append(text[j:e])
+            last_end, j = e, e
+            continue
+        tok = re.match(r"[^\s()]+", text[j:])
+        if not tok or tok.group(0).endswith(":"):
+            break
+        elems.append(tok.group(0))
+        last_end = j = j + tok.end()
+    model = None
+    for el in elems:
+        mm = re.match(r"\((\w+)\s+(\w+):\s+(\w+)\s+selector:\s+#doit\s+yourself:\)$", el)
+        if mm and mm.group(1) == mm.group(3):
+            model = (mm.group(1), mm.group(2))
+            break
+    if model is None:
+        return {**row, "why": "no in-place icon (`(X <obj>: X selector: #doit yourself:)`) in the "
+                              "bar to model the chooser on"}
+    model_inst, target = model
+    im = re.search(r"^\(instance\s+%s\s+of\s+(\w+)" % re.escape(model_inst), text, re.M)
+    if not im:
+        return {**row, "why": "the model icon %s is not an instance in %s" % (model_inst, host)}
+    icon_cls = im.group(1)
+    inst_body = text[im.start():_balanced_span(text, im.start())]
+    props = {}
+    for p in ("signal", "message", "mainView", "mainLoop", "mainCel"):
+        pm = re.search(r"^\s+%s\s+(-?\d+)\s*$" % p, inst_body, re.M)
+        if pm:
+            props[p] = pm.group(1)
+    if "mainView" not in props:
+        return {**row, "why": "the model icon %s names no mainView" % model_inst}
+
+    # THE GAME'S PRINT: the class with addText and addButton. Its addText gives the default font
+    # global and the text class; its properties give the default foreground colour.
+    pr = None
+    for fn, t in files.items():
+        for m in re.finditer(r"^\(class\s+(\w+)\s+of\s+\w+", t, re.M):
+            b = t[m.start():_balanced_span(t, m.start())]
+            if re.search(r"\(method\s+\(addText\b", b) and re.search(r"\(method\s+\(addButton\b", b):
+                pr = (fn, m.group(1), b)
+                break
+        if pr:
+            break
+    if pr is None:
+        return {**row, "why": "no Print class (addText + addButton) to build the chooser with"}
+    pfile, pcls, pbody = pr
+    at = _find_region(pbody, r"\(method\s+\(addText\b")
+    at_body = pbody[at[0]:at[1]] if at else ""
+    fm = re.search(r"\(if\s+\(==\s+font\s+-1\)\s*\(=\s+font\s+(global\d+)\)\s*\)", at_body)
+    tm = re.search(r"\(if\s+classText\s+classText\s+else\s+(\w+)\)", at_body)
+    fore = re.search(r"^\s+fore\s+(-?\d+)\s*$", pbody, re.M)
+    if not (fm and tm and fore):
+        return {**row, "why": "the Print class does not show its default font, text class and "
+                              "colour in the expected spelling"}
+    font_g, text_cls, fore = fm.group(1), tm.group(1), fore.group(1)
+    tfile = next((fn for fn, t in files.items()
+                  if re.search(r"^\(class\s+%s\s+of\b" % re.escape(text_cls), t, re.M)), None)
+    if tfile is None:
+        return {**row, "why": "the text class %s is not defined in the project" % text_cls}
+
+    def fresh(name):
+        n, k = name, 2
+        while any(re.search(r"^\((?:instance|class)\s+%s\b" % re.escape(n), t, re.M)
+                   for t in files.values()):
+            n, k = "%s%d" % (name, k), k + 1
+        return n
+    icon, face = fresh("iconGuards"), fresh("guardsFace")
+    caps = ["GUARDS: %s" % n.upper() for n in MODE_NAMES]
+    switch = "".join("\n\t\t\t\t\t(%d {%s})" % (i, caps[i]) for i in range(1, len(caps))) + \
+        "\n\t\t\t\t\t(else {%s})" % caps[0]
+    buttons = "".join("\n\t\t\t\t\taddButton: %d {%s} %d temp1" % (i + 1, n, 50 * i)
+                      for i, n in enumerate(MODE_NAMES))
+    stand_in = "".join("\n\t\t%s %s" % (p, props[p]) for p in ("signal", "message", "mainView",
+                                                                "mainLoop", "mainCel") if p in props)
+    code = ("\n(instance %(face)s of %(tcls)s\n\t(properties\n\t\tview -1\n\t\tfore %(fore)s\n"
+            "\t\tmode 1\n\t)\n)\n\n"
+            "(instance %(icon)s of %(icls)s\n\t(properties%(stand)s\n\t)\n\n"
+            "\t(method (init)\n\t\t(super init: &rest)\n"
+            "\t\t(= nsLeft (= nsTop (= nsRight (= nsBottom 0))))\n\t)\n\n"
+            "\t(method (show &tmp temp0 temp1)\n"
+            "\t\t(= nsLeft (= nsTop (= nsRight (= nsBottom 0))))\n"
+            "\t\t(plane setSize:)\n"
+            "\t\t(= temp0 (+ (- (plane right:) (plane left:)) 1))\n"
+            "\t\t(%(face)s\n\t\t\tfont: %(font)s\n\t\t\tback: (plane back:)\n\t\t\ttext:\n"
+            "\t\t\t\t(switch global%(g)d%(switch)s\n\t\t\t\t)\n\t\t\tsetSize: temp0\n\t\t)\n"
+            "\t\t(= temp1 (+ (%(face)s textBottom:) 1))\n"
+            "\t\t(%(face)s textLeft: 0 textRight: (- temp0 1))\n"
+            "\t\t(if bitmap\n\t\t\t(DisposeTextBitmap bitmap)\n\t\t)\n"
+            "\t\t(= bitmap (CreateTextBitmap 0 temp0 temp1 %(face)s))\n"
+            "\t\t(= x 0)\n"
+            "\t\t(= y (+ (- (plane bottom:) (plane top:)) %(gap)d))\n"
+            "\t\t(super show:)\n"
+            "\t\t(= nsLeft x)\n\t\t(= nsTop y)\n"
+            "\t\t(= nsRight (+ x (- temp0 1)))\n\t\t(= nsBottom (+ y (- temp1 1)))\n"
+            "\t\t(plane setSize:)\n\t\t(UpdatePlane plane)\n\t)\n\n"
+            "\t(method (doit &tmp temp0 temp1)\n"
+            "\t\t(%(face)s\n\t\t\tfont: %(font)s\n\t\t\ttext: {%(ctext)s}\n"
+            "\t\t\tsetSize: %(dw)d\n\t\t)\n"
+            "\t\t(= temp1 (+ (%(face)s nsBottom:) 6))\n"
+            "\t\t(if\n\t\t\t(= temp0\n\t\t\t\t((%(pcls)s new:)\n\t\t\t\t\twidth: %(dw)d\n"
+            "\t\t\t\t\taddText: {%(ctext)s}%(buttons)s\n\t\t\t\t\tinit:\n\t\t\t\t)\n\t\t\t)\n"
+            "\t\t\t(= global%(g)d (- temp0 1))\n\t\t)\n"
+            "\t\t(self show:)\n\t)\n)\n"
+            % {"face": face, "tcls": text_cls, "fore": fore, "icon": icon, "icls": icon_cls,
+               "stand": stand_in, "font": font_g, "g": g, "switch": switch,
+               "gap": _SCI2_CAPTION_GAP, "ctext": _CHOOSER_TEXT, "dw": _SCI2_DIALOG_W,
+               "pcls": pcls, "buttons": buttons})
+    line_start = text.rfind("\n", 0, last_end) + 1
+    indent = re.match(r"[ \t]*", text[line_start:]).group(0)
+    entry = "\n%s(%s %s: %s selector: #doit yourself:)" % (indent, icon, target, icon)
+    new = text[:last_end] + entry + text[last_end:]
+    uses = re.findall(r"^\(use\s+(\w+)\)", new, re.M)
+    add_uses = [u for u in (pfile[:-3], tfile[:-3]) if u not in uses and u != host[:-3]]
+    if add_uses:
+        lu = list(re.finditer(r"^\(use\s+\w+\)\n", new, re.M))
+        at_i = lu[-1].end() if lu else 0
+        new = new[:at_i] + "".join("(use %s)\n" % u for u in add_uses) + new[at_i:]
+    new = new.rstrip("\n") + "\n" + code
+    with open(os.path.join(src_dir, host), "w") as f:
+        f.write(new)
+    return {"applied": True, "ui": "sci2-bar", "title": host[:-3], "bar": bar,
+            "face": "text caption (%s, font %s)" % (text_cls, font_g),
+            "why": "caption icon %s (as %s) added to %s's add: list" % (icon, model_inst, bar)}
 
 
 def _install_panel_chooser(src_dir, g, cfg=None):
