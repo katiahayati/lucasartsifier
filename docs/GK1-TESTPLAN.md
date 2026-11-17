@@ -2,8 +2,10 @@
 
 > **v6 INSTALLED 2026-11-16: the guard-mode CHOOSER, block C below.** It's the ordinary pipeline's
 > build (`build/build_patch.py gk1 v6`), no bypass.
-> - **What's new:** a "GUARDS: FULL" caption in the black strip under the control panel. Clicking
->   it opens Full / Lite / Off.
+> - **What's new:** the panel's four bottom buttons (Narrator, Text, Voice, Hide Icon) move up over
+>   the gargoyle, which they cover, and "GUARDS: FULL" sits in the black slot they leave at the
+>   bottom of the panel. Clicking it opens Full / Lite / Off. (Rev. 2, your design. Rev. 1 hung
+>   the caption under the panel, outside GK1's mouse fence, so a real mouse couldn't reach it.)
 > - **What's unchanged:** Main and the four guard scripts are byte-identical to `v6mode`, so saves
 >   made under `v6mode` should load. The only new file is script 14, the panel.
 > - **Rig-checked before install:**
@@ -206,7 +208,7 @@ room 720              (Esc)
 
 | ✓ | # | Do | Expect |
 |---|---|---|---|
-| ☐ | C1 | Load a game, or start one; open the control panel | **"GUARDS: FULL"** centred in the black strip under the panel. Everything else on the panel is as before |
+| ☐ | C1 | Load a game, or start one; open the control panel | the four bottom buttons sit where the gargoyle was, with no gargoyle showing, and **"GUARDS: FULL"** is centred in the black slot below them. **Your real mouse can reach it.** The buttons still work: try Text On |
 | ☐ | C2 | Click the caption | a dialog: "Softlock guards: FULL refuses dangerous moves. LITE warns once then allows. OFF is the original game.", with **Full / Lite / Off** |
 | ☐ | C3 | Pick **Lite** | the dialog closes, the panel stays open, and the caption reads **GUARDS: LITE**. `vv g 241` → 1 |
 | ☐ | C4 | Click the caption, then press **Escape** in the dialog | the dialog closes and the mode is unchanged |

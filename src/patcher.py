@@ -1780,7 +1780,6 @@ def _bump_rung(spelling, rung, pitch):
                   spelling, count=1)
 
 
-_SCI2_CAPTION_GAP = 3       # px between the panel's art and the caption hung under it
 _SCI2_DIALOG_W = 160        # the chooser's text width; its three buttons sit 50 px apart
 
 
@@ -1790,29 +1789,35 @@ def _install_sci2_bar_chooser(src_dir, g):
 
     THE HOST, BY SHAPE: SCI2's settings panel is an IconBar subclass -- GK1's `GKControls` --
     whose `init` adds the save and restore icons (`selector: #save` / `#restore`). Neither earlier
-    shape exists there: no AddMenu bar, no SCI1.1 `GameControls` row ladder. Every surface of the
-    panel is painted art with no free plate, so the control is TEXT, not a cel:
+    shape exists there: no AddMenu bar, no SCI1.1 `GameControls` row ladder.
 
-      * A new icon, of the class and stand-in properties of an entry spelled exactly like it --
-        `(X theObj: X selector: #doit yourself:)`, an icon that acts IN PLACE. Its signal is what
-        keeps the panel open after a click; the save icon's would close it ($0040).
+    THE ROOM FOR IT (USER design, 2026-11-16: "removing the gargoyle and moving everything up").
+    Every surface of the panel is painted, and the game fences the mouse inside the panel's
+    extent -- GK1's `(SetCursor 0 0 319 155)` ends exactly at the art's bottom edge, so a control
+    hung UNDER the panel was unreachable by a real mouse (USER play; the rig's scripted clicks
+    jump the fence and could not see it). So the panel makes room INSIDE itself: its widest row
+    of icons (the most icons sharing one literal `y` -- GK1's bottom four) moves up by its own
+    measured height, over the decorative band above it (GK1's gargoyle, fully covered: measured,
+    while the ladder pitch left its wing tips showing), and the row's old footprint -- a black
+    slot in GK1's art -- becomes the control. Nothing grows and nothing leaves the fence.
+
+      * The control is a new icon, of the class and stand-in properties of an entry spelled
+        exactly like it -- `(X theObj: X selector: #doit yourself:)`, an icon that acts IN PLACE.
+        Its signal is what keeps the panel open after a click; the save icon's would close it.
+        It is the add: list's last entry, so the row has been initialized when its `init` runs.
       * Its face is a runtime text BITMAP (`CreateTextBitmap 0 w h <template>`), the way the
-        game's own `DText::draw` makes one. The template is an instance of the class the game's
-        `Print addText:` builds, so the text class is the game's, read off its Print, never named.
-        ⛔ `CreateTextBitmap` wraps the text inside the template's textLeft..textRight box --
+        game's own `DText::draw` makes one, on the template's transparent default background so
+        the slot's own art shows through. The template is an instance of the class the game's
+        `Print addText:` builds -- read off its Print, never named.
+        ⛔ `CreateTextBitmap` wraps the text inside the template's textLeft..textBottom box --
         unset, that box is one pixel wide and the engine never returns (measured: the game
         stalled at the splash). `setSize: <width>` measures it in the font.
-      * EVERY LENGTH IS MEASURED AT RUN TIME, nothing from art we cannot decode here: on each
-        `show` the caption zeroes its own rect, refits the plane (= the art's extent), hangs
-        itself `_SCI2_CAPTION_GAP` under it at the plane's full width, and refits the plane
-        again -- the plane grows over the black strip under the panel, filled with its own
-        `back`. Zeroing first is what keeps a re-show from drifting down. The engine resets the
-        rect to the stand-in cel's size when the item is added, so `init` zeroes it too.
+      * Every length is measured at RUN TIME from the row's own `ns` rects -- the row's height,
+        the slot's width -- nothing from art we cannot decode here. The engine resets an item's
+        `ns` to its view cel when it is added, so the slot rect is written after `super init:`
+        and again after each `super show:`.
       * Its doit opens a Print with `_CHOOSER_TEXT` and the three MODE_NAMES buttons, under the
-        text's measured height, and re-shows the caption.
-    Measured in the rig (2026-11-16): caption under the panel, all three picks set the mode
-    global, Escape leaves it, the mode survives closing and reopening the panel, and help mode
-    on the caption is silent."""
+        text's measured height, and re-shows the caption."""
     files = {}
     for fn in sorted(os.listdir(src_dir)):
         if fn.endswith(".sc"):
@@ -1855,6 +1860,15 @@ def _install_sci2_bar_chooser(src_dir, g):
             break
         elems.append(tok.group(0))
         last_end = j = j + tok.end()
+
+    def inst_body(name):
+        im = re.search(r"^\(instance\s+%s\s+of\s+(\w+)" % re.escape(name), text, re.M)
+        return (im.group(1), text[im.start():_balanced_span(text, im.start())]) if im else (None, "")
+
+    def prop(body, p):
+        pm = re.search(r"^\s+%s\s+(-?\d+)\s*$" % p, body, re.M)
+        return int(pm.group(1)) if pm else None
+
     model = None
     for el in elems:
         mm = re.match(r"\((\w+)\s+(\w+):\s+(\w+)\s+selector:\s+#doit\s+yourself:\)$", el)
@@ -1865,18 +1879,27 @@ def _install_sci2_bar_chooser(src_dir, g):
         return {**row, "why": "no in-place icon (`(X <obj>: X selector: #doit yourself:)`) in the "
                               "bar to model the chooser on"}
     model_inst, target = model
-    im = re.search(r"^\(instance\s+%s\s+of\s+(\w+)" % re.escape(model_inst), text, re.M)
-    if not im:
+    icon_cls, mbody = inst_body(model_inst)
+    if icon_cls is None:
         return {**row, "why": "the model icon %s is not an instance in %s" % (model_inst, host)}
-    icon_cls = im.group(1)
-    inst_body = text[im.start():_balanced_span(text, im.start())]
-    props = {}
-    for p in ("signal", "message", "mainView", "mainLoop", "mainCel"):
-        pm = re.search(r"^\s+%s\s+(-?\d+)\s*$" % p, inst_body, re.M)
-        if pm:
-            props[p] = pm.group(1)
-    if "mainView" not in props:
+    props = {p: prop(mbody, p) for p in ("signal", "message", "mainView", "mainLoop", "mainCel")}
+    if props["mainView"] is None:
         return {**row, "why": "the model icon %s names no mainView" % model_inst}
+
+    # THE ROW THAT MAKES ROOM: the most icons sharing one literal y (ties: the lowest row).
+    names = [re.match(r"\(?(\w+)", el).group(1) for el in elems]
+    by_y = {}
+    for n in names:
+        _c, b = inst_body(n)
+        x, y = prop(b, "x"), prop(b, "y")
+        if x is not None and y is not None:
+            by_y.setdefault(y, []).append((x, n))
+    rows = sorted(((len(v), y) for y, v in by_y.items() if len(v) > 1), reverse=True)
+    if not rows:
+        return {**row, "why": "no row of icons sharing a y to make room for the chooser"}
+    row_y = rows[0][1]
+    row_icons = [n for _x, n in sorted(by_y[row_y])]
+    first, last = row_icons[0], row_icons[-1]
 
     # THE GAME'S PRINT: the class with addText and addButton. Its addText gives the default font
     # global and the text class; its properties give the default foreground colour.
@@ -1918,29 +1941,32 @@ def _install_sci2_bar_chooser(src_dir, g):
         "\n\t\t\t\t\t(else {%s})" % caps[0]
     buttons = "".join("\n\t\t\t\t\taddButton: %d {%s} %d temp1" % (i + 1, n, 50 * i)
                       for i, n in enumerate(MODE_NAMES))
-    stand_in = "".join("\n\t\t%s %s" % (p, props[p]) for p in ("signal", "message", "mainView",
-                                                                "mainLoop", "mainCel") if p in props)
+    stand_in = "".join("\n\t\t%s %d" % (p, props[p]) for p in ("signal", "message", "mainView",
+                                                               "mainLoop", "mainCel")
+                       if props[p] is not None)
+    move = "".join("\n\t\t(%s\n\t\t\ty: (- (%s y:) temp0)\n\t\t\tnsTop: (- (%s nsTop:) temp0)\n"
+                   "\t\t\tnsBottom: (- (%s nsBottom:) temp0)\n\t\t)\n\t\t(UpdateScreenItem %s)"
+                   % (n, n, n, n, n) for n in row_icons)
+    slot = ("\t\t(= nsLeft x)\n\t\t(= nsTop y)\n\t\t(= nsRight (%(last)s nsRight:))\n"
+            "\t\t(= nsBottom (+ y (- (%(first)s nsBottom:) (%(first)s nsTop:))))\n"
+            % {"first": first, "last": last})
     code = ("\n(instance %(face)s of %(tcls)s\n\t(properties\n\t\tview -1\n\t\tfore %(fore)s\n"
             "\t\tmode 1\n\t)\n)\n\n"
             "(instance %(icon)s of %(icls)s\n\t(properties%(stand)s\n\t)\n\n"
-            "\t(method (init)\n\t\t(super init: &rest)\n"
-            "\t\t(= nsLeft (= nsTop (= nsRight (= nsBottom 0))))\n\t)\n\n"
-            "\t(method (show &tmp temp0 temp1)\n"
-            "\t\t(= nsLeft (= nsTop (= nsRight (= nsBottom 0))))\n"
-            "\t\t(plane setSize:)\n"
-            "\t\t(= temp0 (+ (- (plane right:) (plane left:)) 1))\n"
-            "\t\t(%(face)s\n\t\t\tfont: %(font)s\n\t\t\tback: (plane back:)\n\t\t\ttext:\n"
+            "\t(method (init &tmp temp0)\n\t\t(super init: &rest)\n"
+            "\t\t(= temp0 (+ (- (%(first)s nsBottom:) (%(first)s nsTop:)) 1))%(move)s\n"
+            "\t\t(= x (%(first)s nsLeft:))\n\t\t(= y (+ (%(first)s y:) temp0))\n%(slot)s\t)\n\n"
+            "\t(method (show &tmp temp0 temp1 temp2)\n"
+            "\t\t(= temp0 (+ (- (%(last)s nsRight:) x) 1))\n"
+            "\t\t(= temp1 (+ (- (%(first)s nsBottom:) (%(first)s nsTop:)) 1))\n"
+            "\t\t(%(face)s\n\t\t\tfont: %(font)s\n\t\t\ttext:\n"
             "\t\t\t\t(switch global%(g)d%(switch)s\n\t\t\t\t)\n\t\t\tsetSize: temp0\n\t\t)\n"
-            "\t\t(= temp1 (+ (%(face)s textBottom:) 1))\n"
-            "\t\t(%(face)s textLeft: 0 textRight: (- temp0 1))\n"
+            "\t\t(= temp2 (/ (- temp1 (+ (%(face)s textBottom:) 1)) 2))\n"
+            "\t\t(%(face)s\n\t\t\ttextLeft: 0\n\t\t\ttextRight: (- temp0 1)\n"
+            "\t\t\ttextBottom: (+ temp2 (%(face)s textBottom:))\n\t\t\ttextTop: temp2\n\t\t)\n"
             "\t\t(if bitmap\n\t\t\t(DisposeTextBitmap bitmap)\n\t\t)\n"
             "\t\t(= bitmap (CreateTextBitmap 0 temp0 temp1 %(face)s))\n"
-            "\t\t(= x 0)\n"
-            "\t\t(= y (+ (- (plane bottom:) (plane top:)) %(gap)d))\n"
-            "\t\t(super show:)\n"
-            "\t\t(= nsLeft x)\n\t\t(= nsTop y)\n"
-            "\t\t(= nsRight (+ x (- temp0 1)))\n\t\t(= nsBottom (+ y (- temp1 1)))\n"
-            "\t\t(plane setSize:)\n\t\t(UpdatePlane plane)\n\t)\n\n"
+            "\t\t(super show:)\n%(slot)s\t)\n\n"
             "\t(method (doit &tmp temp0 temp1)\n"
             "\t\t(%(face)s\n\t\t\tfont: %(font)s\n\t\t\ttext: {%(ctext)s}\n"
             "\t\t\tsetSize: %(dw)d\n\t\t)\n"
@@ -1950,9 +1976,9 @@ def _install_sci2_bar_chooser(src_dir, g):
             "\t\t\t(= global%(g)d (- temp0 1))\n\t\t)\n"
             "\t\t(self show:)\n\t)\n)\n"
             % {"face": face, "tcls": text_cls, "fore": fore, "icon": icon, "icls": icon_cls,
-               "stand": stand_in, "font": font_g, "g": g, "switch": switch,
-               "gap": _SCI2_CAPTION_GAP, "ctext": _CHOOSER_TEXT, "dw": _SCI2_DIALOG_W,
-               "pcls": pcls, "buttons": buttons})
+               "stand": stand_in, "font": font_g, "g": g, "switch": switch, "move": move,
+               "first": first, "last": last, "slot": slot, "ctext": _CHOOSER_TEXT,
+               "dw": _SCI2_DIALOG_W, "pcls": pcls, "buttons": buttons})
     line_start = text.rfind("\n", 0, last_end) + 1
     indent = re.match(r"[ \t]*", text[line_start:]).group(0)
     entry = "\n%s(%s %s: %s selector: #doit yourself:)" % (indent, icon, target, icon)
@@ -1967,8 +1993,10 @@ def _install_sci2_bar_chooser(src_dir, g):
     with open(os.path.join(src_dir, host), "w") as f:
         f.write(new)
     return {"applied": True, "ui": "sci2-bar", "title": host[:-3], "bar": bar,
-            "face": "text caption (%s, font %s)" % (text_cls, font_g),
-            "why": "caption icon %s (as %s) added to %s's add: list" % (icon, model_inst, bar)}
+            "face": "text caption (%s, font %s) in the slot of row %s"
+                    % (text_cls, font_g, ",".join(row_icons)),
+            "why": "row y=%d moved up by its own height; caption icon %s (as %s) added to %s"
+                   % (row_y, icon, model_inst, bar)}
 
 
 def _install_panel_chooser(src_dir, g, cfg=None):
