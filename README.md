@@ -11,10 +11,19 @@ Sierra games, unlike LucasArts ones, let you get stuck. Forget the sunscreen in 
 board the cruise ship, and you die days later on a raft with no way back. This finds these traps
 automatically and blocks the crossing that causes them — at the last moment you can still comply.
 
-**Four games analyzed and play-tested** — Leisure Suit Larry 2 (SCI0, 1988), King's Quest IV (SCI0, 1988), King's Quest VI (SCI1.1, 1992),
-and Laura Bow 2 (SCI1.1, 1992) — same engine, no game-specific analysis code. King's Quest V
-(SCI1) and Gabriel Knight 1 (SCI2/SCI32) followed; GK1's patch is built and loads, but is
-**not** played and does not yet cover every finding (`docs/SCI2-PATCHING.md` §5.2).
+**Six games analyzed, patched and play-tested, across three generations of the engine**:
+- **SCI0:** Leisure Suit Larry 2 (1988) and King's Quest IV (1988);
+- **SCI1:** King's Quest V (1990);
+- **SCI1.1:** King's Quest VI (1992) and Laura Bow 2 (1992);
+- **SCI2 / SCI32:** Gabriel Knight: Sins of the Fathers (1993).
+
+It's the same engine throughout, with no game-specific analysis code.
+
+> ### 🎉 New in v4.0: **Gabriel Knight 1 is supported, end to end**
+> GK1 is the first SCI2 (SCI32) title. Every real softlock the tool finds in it is guarded, and
+> each guard is play-tested in the patched game. Full / Lite / Off is switchable from the game's
+> own control panel. The patch comes out of the ordinary pipeline with nothing hand-written:
+> detect, derive the guards, patch, install. See the GK1 row under [Status](#status).
 
 > ### 👋 New here? **Read [`docs/ONBOARDING.md`](docs/ONBOARDING.md) first.**
 > It has the three stages that fail independently, the rules that are not obvious from the code,
@@ -71,8 +80,11 @@ emit anything if the guards fail verification, or if a script it edited will not
 A patched game plays normally — the patch mechanism is how Sierra shipped its own bug fixes, and
 the originals are never modified (delete the patch files to revert). You can set the guard
 behavior in-game: **Full** prevents every dangerous action; **Lite** prevents it once, then
-allows it with a warning; **Off** turns the guards off (currently that picker is not showing in Laura Bow 2
-or King's Quest 5, so the guards default to Full).
+allows it with a warning; **Off** turns the guards off. The picker lives in each game's own
+settings UI:
+- **SCI0:** a menu-bar entry;
+- **SCI1/SCI1.1:** a control-panel button;
+- **GK1:** a "GUARDS" slot in the control panel.
 
 ## What counts as a softlock? (or: Caveat Player)
 
@@ -86,7 +98,7 @@ As Al Lowe says, "Save Early, Save Often!"
 
 ## Status
 
-**Four games done, spanning the engine's two major eras (SCI0 1988 → SCI1.1 1992), with nothing
+**Six games done, spanning the engine from SCI0 (1988) to SCI2/SCI32 (1993), with nothing
 declared per title** — start room, victory room, death signal and debug flags are all derived
 from each game's own code.
 
@@ -97,6 +109,20 @@ from each game's own code.
 | **King's Quest VI** (1992) | SCI1.1 | done & tested | the two ending paths massively complicate analysis; guarding the start of the wedding (a timer) until necessary items are in hand |
 | **Laura Bow 2** (1992) | SCI1.1  | done & tested | the act structure: the plot clock is a register, act breaks are one-way, demands ride the act-flip interceptor |
 | **King's Quest V** (1990) | SCI1-middle | done & tested | the village market (matching payments to merchants, so detection becomes a matching problem); dangerous encounters guarded by allowing them to occur only when survivable; the cat&mouse interception replays until the player gets it right  |
+| **Gabriel Knight: Sins of the Fathers** (1993) | SCI2 (SCI32) | done & tested 🎉 | see below |
+
+What GK1 needed, as the first SCI2 game:
+- **A ten-day plot clock.** Each day ends only when its tasks are done.
+- **The finale's point of no return is a scene inside a single room.** Grace's room is entered
+  through the hounfour's own scene dispatcher, so the guard refuses at the keypad, the player's
+  last click before the screen goes hands-off.
+- **The bayou ritual demands state, not items.** It needs the croc mask *worn* and the snake
+  tattoo *painted*, not merely held.
+- **The game's own patches had to be read.** The analysis reads the 62 scripts Sierra shipped in
+  `PATCHES/`.
+- **Main was recompiled for the first time on SCI2,** to carry the guard modes.
+- **The guard picker is built into the painted control panel.** The bottom row moves up over the
+  gargoyle, and the picker takes its slot.
 
 ## How it works, briefly
 
@@ -204,8 +230,17 @@ your only one.
 ## Running the tests
 
 ```
-python3 tools/run_tests.py              # the whole suite (~21 min with every model cold)
+python3 tools/run_tests.py              # the whole suite (~45 min locally, every model cold)
 ```
+
+The suite is the regression gate:
+- the frozen output surfaces (the LSL2/KQ4/KQ6/KQ5 goldens and LB2's watched surface);
+- the five per-game softlock oracles (KQ4, KQ5, KQ6, LB2, GK1);
+- the emitted patch source of all six games, checked file by file;
+- the model cache's equivalence check.
+
+It runs on a 5 GB WSL VM: the emission check builds one game per process, so the peak is a single
+game.
 
 [`docs/TESTING.md`](docs/TESTING.md) has the rest: why some checks are RED on purpose, the three
 regression nets and the different questions they answer, how to measure a change against the full
@@ -243,7 +278,7 @@ from the game's own code (see `src/anchors.py`). A new title needs no config ent
   patched build yet. King's Quest V comes closest: every row of its test plan has been played on
   the patched game, the endgame included, and that is where several of its guards were found,
   corrected, or retired — a reminder that static reading and play disagree more often than is
-  comfortable. The other four are extensively tested where patched.
+  comfortable. The other five are extensively tested where patched.
 - **More games!** There is no game-specific code in the engine, but Sierra shipped a lot of
   game-specific code in each game, so every new title has so far required extending the analysis.
   Hopefully at some point this converges to zero.
